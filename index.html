@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="归序 Orderly 可控式 AI 文件与事务工作流前端交互原型"
+    />
+    <title>归序 Orderly · 交互原型</title>
+    <link rel="stylesheet" href="styles.css?v=11" />
+    <link rel="stylesheet" href="theme-bright.css?v=3" />
+  </head>
+  <body>
+    <div class="prototype-note">
+      <span class="prototype-note__dot"></span>
+      交互原型 · 所有数据与执行结果均为模拟
+    </div>
+
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="主导航">
+        <div class="brand">
+          <div class="brand__mark" aria-hidden="true"><span></span><span></span></div>
+          <div>
+            <div class="brand__name">归序</div>
+            <div class="brand__latin">ORDERLY</div>
+          </div>
+        </div>
+
+        <nav class="nav-list" aria-label="工作区">
+          <div class="nav-label">工作区</div>
+          <button class="nav-item is-active" type="button" data-view="workspace">
+            <span class="nav-item__icon" aria-hidden="true">⌘</span>
+            <span>工作流</span>
+          </button>
+          <button class="nav-item" type="button" data-view="files">
+            <span class="nav-item__icon" aria-hidden="true">□</span>
+            <span>文件与目录</span>
+          </button>
+          <button class="nav-item" type="button" data-view="todos">
+            <span class="nav-item__icon" aria-hidden="true">✓</span>
+            <span>待办</span>
+            <span class="nav-count" id="todoNavCount">4</span>
+          </button>
+          <button class="nav-item" type="button" data-view="calendar">
+            <span class="nav-item__icon" aria-hidden="true">◷</span>
+            <span>日程</span>
+          </button>
+          <button class="nav-item" type="button" data-view="audit">
+            <span class="nav-item__icon" aria-hidden="true">≋</span>
+            <span>审计记录</span>
+          </button>
+
+          <div class="nav-label nav-label--spaced">控制</div>
+          <button class="nav-item" type="button" data-view="trash">
+            <span class="nav-item__icon" aria-hidden="true">↺</span>
+            <span>回收站</span>
+          </button>
+          <button class="nav-item" type="button" data-view="settings">
+            <span class="nav-item__icon" aria-hidden="true">◎</span>
+            <span>授权与边界</span>
+          </button>
+        </nav>
+
+        <div class="sidebar__spacer"></div>
+
+        <div class="local-card">
+          <div class="local-card__head">
+            <span>本机模式</span>
+            <span class="online">● 已连接</span>
+          </div>
+          <strong>DESKTOP-7F3A</strong>
+          <p>文件操作在本机完成<br />云端备份未启用</p>
+        </div>
+
+        <div class="profile">
+          <div class="avatar">林</div>
+          <div class="profile__copy">
+            <strong>林同学</strong>
+            <span>个人工作区 · 本地</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="breadcrumb" aria-live="polite">
+            <strong id="breadcrumbPrimary">工作流</strong>
+            <span>/</span>
+            <span id="breadcrumbSecondary">总览</span>
+          </div>
+          <div class="topbar__actions">
+            <span class="status-pill status-pill--green">
+              <span class="status-dot"></span>
+              文件不出设备
+            </span>
+            <button class="icon-button" type="button" aria-label="搜索" data-action="search">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3"></circle><path d="m15.5 15.5 5 5"></path></svg>
+            </button>
+            <button class="icon-button" type="button" aria-label="通知" data-action="notifications">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 9.8a6.3 6.3 0 0 0-12.6 0c0 7.2-2.7 7.2-2.7 8.1h18c0-.9-2.7-.9-2.7-8.1Z"></path><path d="M9.6 21h4.8"></path></svg>
+            </button>
+            <button class="icon-button" type="button" id="fullscreenButton" aria-label="全屏显示界面">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 3H3v5.5M15.5 3H21v5.5M8.5 21H3v-5.5M15.5 21H21v-5.5"></path></svg>
+            </button>
+            <div class="avatar avatar--small">林</div>
+          </div>
+        </header>
+
+        <div class="main__scroll" id="mainScroll">
+          <section class="view is-active" id="view-workspace" aria-labelledby="workspaceTitle">
+            <div class="page-heading">
+              <div>
+                <p class="eyebrow">LOCAL · PRIVATE · REVERSIBLE</p>
+                <h1 id="workspaceTitle">把一团乱，变成一条可审查的工作流</h1>
+                <p>自然语言只负责表达目标；真正执行前，你会先看清每一步。</p>
+              </div>
+              <div class="boundary-pill">⌂ 工作区边界 /Users/lin/Files</div>
+            </div>
+
+            <div class="hero-grid">
+              <article class="command-card">
+                <div class="command-card__top">
+                  <span>NEW WORKFLOW</span>
+                  <span>⌘ K</span>
+                </div>
+                <label class="sr-only" for="goalInput">描述你想完成的任务</label>
+                <textarea
+                  id="goalInput"
+                  rows="2"
+                  placeholder="例如：把下载文件夹按类型和年份整理，重复文件单独放到一个文件夹里"
+                >把下载文件夹整理好，按类型和年份归档，重复文件单独放到一个文件夹里。</textarea>
+                <p class="command-card__hint" id="goalHint">
+                  AI 将先检索目录、读取元信息，再生成计划。未确认前不会改动任何文件。
+                </p>
+                <div class="command-card__foot">
+                  <div class="guard-list" aria-label="控制机制">
+                    <span><b>1</b>计划可改</span>
+                    <span><b>2</b>按风险授权</span>
+                    <span><b>3</b>随时可回滚</span>
+                  </div>
+                  <button class="button button--light" type="button" id="generatePlanButton">
+                    生成计划 <span aria-hidden="true">→</span>
+                  </button>
+                </div>
+              </article>
+
+              <article class="panel workspace-card">
+                <div class="panel-heading">
+                  <h2>当前工作区</h2>
+                  <span class="tag tag--green">本机</span>
+                </div>
+                <div class="workspace-path">
+                  <span>授权的操作边界</span>
+                  <strong>~/Documents/秋季学期</strong>
+                </div>
+                <div class="stat-grid">
+                  <div><strong>842</strong><span>已索引文件</span></div>
+                  <div><strong>1.8 GB</strong><span>待整理空间</span></div>
+                </div>
+                <p class="note-line">
+                  <span>✓</span>
+                  模型只能调用已注册工具，不能直接读取或删除文件。
+                </p>
+              </article>
+            </div>
+
+            <div class="workspace-grid">
+              <article class="panel">
+                <div class="panel-heading">
+                  <h2>最近工作流</h2>
+                  <button class="text-button" type="button" data-jump-audit>查看全部 →</button>
+                </div>
+                <button class="workflow-row" type="button" data-open-plan="archive">
+                  <span class="workflow-row__icon">01</span>
+                  <span class="workflow-row__copy"><strong>归档课程资料</strong><span>126 个文件 · 8 个步骤 · 可回滚</span></span>
+                  <span class="tag tag--green">已完成</span>
+                </button>
+                <button class="workflow-row" type="button" data-open-plan="dedupe">
+                  <span class="workflow-row__icon workflow-row__icon--amber">02</span>
+                  <span class="workflow-row__copy"><strong>清理重复安装包</strong><span>24 个文件 · 等待删除授权</span></span>
+                  <span class="tag tag--amber">待确认</span>
+                </button>
+                <button class="workflow-row" type="button" data-open-plan="schedule">
+                  <span class="workflow-row__icon workflow-row__icon--gray">03</span>
+                  <span class="workflow-row__copy"><strong>同步本周学习安排</strong><span>6 个待办 · 3 个日程</span></span>
+                  <span class="tag tag--gray">已回滚</span>
+                </button>
+              </article>
+
+              <article class="panel">
+                <div class="panel-heading">
+                  <h2>从这些任务开始</h2>
+                  <span class="tag tag--gray">示例</span>
+                </div>
+                <div class="quick-grid">
+                  <button class="quick-card" type="button" data-example="把下载目录按类型和年份归档，重复文件单独存放。">
+                    <strong>整理下载目录</strong><span>按类型、年份和重复状态归档</span>
+                  </button>
+                  <button class="quick-card" type="button" data-example="把这 60 个重复文件删掉，每组只留最新的一个。">
+                    <strong>批量去重</strong><span>先分组预览，删除项进入回收站</span>
+                  </button>
+                  <button class="quick-card" type="button" data-example="从课程资料中提取未完成的作业，并加入待办。">
+                    <strong>提取待办</strong><span>只从指定资料生成可编辑事项</span>
+                  </button>
+                  <button class="quick-card" type="button" data-example="根据已有课程和空闲时间，安排下一周学习计划。">
+                    <strong>安排下一周</strong><span>避开已有日程后生成时间块</span>
+                  </button>
+                </div>
+              </article>
+            </div>
+
+            <div class="summary-grid">
+              <article class="panel audit-summary">
+                <div>
+                  <strong>最近一次操作链</strong>
+                  <span>2026.11.04 · 归档课程资料</span>
+                </div>
+                <div class="mini-flow" aria-label="计划、执行、快照、回滚">
+                  <span>计划</span><i></i><span>执行</span><i></i><span>快照</span><i></i><span>可回滚</span>
+                </div>
+              </article>
+              <article class="panel safety-summary">
+                <div class="shield">↺</div>
+                <div><strong>撤销成本低于确认成本</strong><span>每次写入都留下可恢复快照</span></div>
+              </article>
+            </div>
+          </section>
+
+          <section class="view" id="view-plan" aria-labelledby="planTitle">
+            <div class="page-heading page-heading--compact">
+              <div>
+                <p class="eyebrow">PLAN BEFORE ACTION</p>
+                <h1 id="planTitle">先检查 AI 准备做什么</h1>
+                <p>计划是用户与 AI 的约定。确认之前，系统不会写入、移动或删除任何文件。</p>
+              </div>
+              <div class="heading-actions">
+                <button class="button button--ghost" type="button" id="regeneratePlan">重新生成</button>
+                <button class="button button--ghost" type="button" id="saveDraft">保存草稿</button>
+              </div>
+            </div>
+
+            <div class="plan-summary">
+              <article class="panel intent-card">
+                <div class="panel-heading">
+                  <span class="tag tag--green">目标复述</span>
+                  <span class="small-muted">原始输入 · 刚刚</span>
+                </div>
+                <blockquote id="intentPreview">
+                  将下载文件夹按文件类型和修改年份归档；重复文件集中移动到独立文件夹，保留每组中的一个副本。
+                </blockquote>
+                <div class="tag-row" id="planTagRow">
+                  <span class="tag">范围：Downloads</span>
+                  <span class="tag">包含子目录</span>
+                  <span class="tag">写入需确认</span>
+                  <span class="tag">删除需二次授权</span>
+                </div>
+              </article>
+
+              <article class="panel confidence-card">
+                <div class="panel-heading">
+                  <h2>意图置信度</h2>
+                  <span class="tag tag--green">可生成计划</span>
+                </div>
+                <div class="confidence-value"><strong>92%</strong><span>高于阈值 70%</span></div>
+                <div class="progress-track"><span style="width: 92%"></span></div>
+                <p>分类口径与时间基准已显式列出，仍需你确认。</p>
+              </article>
+            </div>
+
+            <div class="plan-layout">
+              <article class="panel plan-card">
+                <div class="panel-heading">
+                  <div>
+                    <h2>执行步骤</h2>
+                    <p class="small-muted">已选择 <strong id="selectedStepCount">7</strong> / <strong id="totalStepCount">7</strong> 个步骤</p>
+                  </div>
+                  <button class="text-button" type="button" id="addStepButton">＋ 添加步骤</button>
+                </div>
+                <div class="step-table" id="planStepList"></div>
+                <div class="plan-helper">
+                  <span>✓ 所有写入与删除步骤都会保存执行前状态</span>
+                  <span>删除只进入回收站，不执行物理删除</span>
+                </div>
+              </article>
+
+              <div class="side-stack">
+                <article class="panel assumption-card">
+                  <div class="panel-heading">
+                    <h2>AI 的显式假设</h2>
+                    <span class="tag tag--amber">2 项需留意</span>
+                  </div>
+                  <div class="assumption-list">
+                    <p><span>1</span><strong>“类型”按扩展名分类</strong> 无法识别的扩展名将归入“待定”。</p>
+                    <p><span>2</span><strong>“年份”取修改时间</strong> 不读取照片 EXIF 或文档创建时间。</p>
+                    <p><span>✓</span><strong>重复文件按内容哈希判断</strong> 同名但内容不同的文件不会合并。</p>
+                  </div>
+                </article>
+
+                <article class="panel impact-card">
+                  <div class="panel-heading">
+                    <h2>影响预估</h2>
+                    <span class="tag tag--green">可逆</span>
+                  </div>
+                  <div class="impact-grid">
+                  <div><strong id="impactFiles">842</strong><span id="impactFilesLabel">扫描文件</span></div>
+                  <div><strong id="impactGroups">13</strong><span id="impactGroupsLabel">重复文件组</span></div>
+                  <div><strong id="impactFolders">10</strong><span id="impactFoldersLabel">新建目录</span></div>
+                  <div><strong id="impactSpace">1.2 GB</strong><span id="impactSpaceLabel">可释放空间</span></div>
+                  </div>
+                  <p class="success-note">✓ 尚未改动任何文件。删除项只进入归序回收站，不做物理删除。</p>
+                </article>
+
+                <article class="panel confirm-box">
+                  <button class="button button--primary button--block" type="button" id="confirmPlanButton">
+                    确认计划并执行 <span aria-hidden="true">→</span>
+                  </button>
+                  <p>选中步骤中的写入操作会保存快照；删除操作需要再次授权。</p>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" id="view-execution" aria-labelledby="executionTitle">
+            <div class="execution-banner">
+              <div class="execution-banner__title">
+                <div class="running-icon" id="runningIcon">▶</div>
+                <div>
+                  <h1 id="executionTitle">正在执行已确认的计划</h1>
+                  <p id="executionSubtitle">只读步骤并行，写入步骤串行；每一步都写入事件日志</p>
+                </div>
+              </div>
+              <div class="execution-progress">
+                <div><span id="executionCurrent">准备执行</span><strong id="executionCounter">0 / 7</strong></div>
+                <div class="progress-track progress-track--dark">
+                  <span id="executionProgress" style="width: 0%"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="execution-layout">
+              <article class="panel execution-card">
+                <div class="panel-heading">
+                  <h2>执行时间线</h2>
+                  <span class="tag tag--green">失败即暂停</span>
+                </div>
+                <div class="timeline-list" id="executionTimeline"></div>
+                <div class="execution-boundary">
+                  <strong>执行边界</strong>
+                  <span>所有操作均限制在已授权工作区内</span>
+                  <span>模型无法直接接触文件系统</span>
+                </div>
+              </article>
+
+              <div class="side-stack">
+                <article class="panel stream-card">
+                  <div class="panel-heading">
+                    <h2>流式事件日志</h2>
+                    <span class="small-muted" id="eventSequence">事件 #10482</span>
+                  </div>
+                  <div class="stream-tabs" role="tablist" aria-label="日志类型">
+                    <button class="stream-tab is-active" type="button" role="tab" aria-selected="true">事件</button>
+                    <button class="stream-tab" type="button" role="tab" aria-selected="false">输入 / 输出</button>
+                    <button class="stream-tab" type="button" role="tab" aria-selected="false">错误</button>
+                  </div>
+                  <div class="event-log" id="eventLog" aria-live="polite">
+                    <p><span>14:38</span><i></i><b>任务已启动，等待首个事件</b></p>
+                  </div>
+                </article>
+
+                <article class="panel control-card">
+                  <h2>你始终可以接管</h2>
+                  <p>暂停不会丢失当前进度；中止后，已完成步骤保留并支持撤销。</p>
+                  <div class="control-actions">
+                    <button class="button button--dark" type="button" id="pauseButton">暂停</button>
+                    <button class="button button--danger-ghost" type="button" id="abortButton">中止任务</button>
+                  </div>
+                </article>
+
+                <article class="panel boundary-card">
+                  <h2>运行保障</h2>
+                  <p><span>✓</span>只读步骤可并发，写入与删除串行。</p>
+                  <p><span>✓</span>失败不会静默重试，错误将显示建议。</p>
+                  <p><span>✓</span>断线后可按事件编号补齐状态。</p>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" id="view-audit" aria-labelledby="auditTitle">
+            <div class="result-banner">
+              <div class="result-title">
+                <div class="result-icon" id="auditResultIcon">✓</div>
+                <div>
+                  <h1 id="auditTitle">任务已完成，任何一步都能倒车</h1>
+                  <p id="auditSubtitle">本次任务已完成 · 写入前快照已保存 · 审计链完整</p>
+                </div>
+              </div>
+              <div class="result-stats">
+                <div><span id="auditMovedLabel">移动文件</span><strong id="auditMoved">287</strong></div>
+                <div><span id="auditFoldersLabel">新建目录</span><strong id="auditFolders">10</strong></div>
+                <div><span id="auditTrashLabel">回收站</span><strong id="auditTrash">13</strong></div>
+              </div>
+            </div>
+
+            <div class="audit-layout">
+              <article class="panel ledger-card">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">EVENT SOURCE</p>
+                    <h2>事件账本 · 执行前后对比</h2>
+                  </div>
+                  <span class="tag tag--green" id="ledgerStatus">已校验</span>
+                </div>
+                <div class="event-table" id="eventTable">
+                  <div class="event-row event-row--head"><span>事件编号</span><span>操作</span><span>变更前 → 变更后</span><span>状态</span><span>恢复</span></div>
+                  <div class="event-row"><span>E-0186</span><span>创建目录</span><span><em>不存在 → </em><strong>文档/</strong></span><span class="tag tag--green">成功</span><button class="mini-action" type="button" data-restore-event="E-0186" aria-label="恢复事件 E-0186">↺</button></div>
+                  <div class="event-row"><span>E-0187</span><span>移动文件</span><span><em>Downloads/a.pdf → </em><strong>文档/a.pdf</strong></span><span class="tag tag--green">成功</span><button class="mini-action" type="button" data-restore-event="E-0187" aria-label="恢复事件 E-0187">↺</button></div>
+                  <div class="event-row"><span>E-0188</span><span>移动文件</span><span><em>Downloads/b.jpg → </em><strong>图片/b.jpg</strong></span><span class="tag tag--green">成功</span><button class="mini-action" type="button" data-restore-event="E-0188" aria-label="恢复事件 E-0188">↺</button></div>
+                  <div class="event-row"><span>E-0189</span><span>移入回收站</span><span><em>重复/副本.pdf → </em><strong>回收站/副本.pdf</strong></span><span class="tag tag--green">成功</span><button class="mini-action" type="button" data-restore-event="E-0189" aria-label="恢复事件 E-0189">↺</button></div>
+                  <div class="event-row"><span>E-0190</span><span>创建待办</span><span><em>不存在 → </em><strong>提交课设报告</strong></span><span class="tag tag--green">成功</span><button class="mini-action" type="button" data-restore-event="E-0190" aria-label="恢复事件 E-0190">↺</button></div>
+                </div>
+                <div class="ledger-note">
+                  <span>每次写入都生成 before / after 快照；事件只追加，不覆盖历史。</span>
+                  <strong>1,286 条完整</strong>
+                </div>
+              </article>
+
+              <div class="side-stack">
+                <article class="panel rollback-card">
+                  <div class="panel-heading">
+                    <h2>撤销与恢复</h2>
+                    <span class="tag tag--green">两种粒度</span>
+                  </div>
+                  <button class="rollback-option" type="button" data-rollback-mode="single">
+                    <span><strong>撤销单个步骤</strong><small>只恢复选择的事件</small></span>
+                    <span class="tag tag--gray">精细</span>
+                  </button>
+                  <button class="rollback-option" type="button" data-rollback-mode="all">
+                    <span><strong>撤销本次任务</strong><small>事件逆序回放，整单恢复</small></span>
+                    <span class="tag tag--red">全量</span>
+                  </button>
+                  <button class="button button--danger button--block" type="button" id="rollbackAllButton">
+                    撤销本次任务
+                  </button>
+                  <p class="small-muted centered">回滚不会二次询问；回滚事件同样写入审计链。</p>
+                </article>
+
+                <article class="panel integrity-card">
+                  <div class="integrity-title"><span>✓</span><div><strong>回滚完整性</strong><small>最近一次还原验证 · 刚刚</small></div></div>
+                  <div class="integrity-list">
+                    <p><span>原始路径恢复</span><strong>通过</strong></p>
+                    <p><span>新建目录移除</span><strong>通过</strong></p>
+                    <p><span>审计链保留</span><strong>通过</strong></p>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" id="view-files" aria-labelledby="filesTitle">
+            <div class="page-heading">
+              <div>
+                <p class="eyebrow">LOCAL FILE INDEX</p>
+                <h1 id="filesTitle">文件与目录</h1>
+                <p>浏览文件索引。原型不会读取真实目录，也不会修改本机文件。</p>
+              </div>
+              <button class="button button--primary" type="button" data-view="workspace">新建整理任务</button>
+            </div>
+            <div class="library-layout">
+              <article class="panel library-main">
+                <div class="panel-heading"><h2>秋季学期</h2><span class="tag tag--gray">842 个文件</span></div>
+                <div class="folder-grid">
+                  <button class="folder-card" type="button"><span class="folder-art">▰</span><strong>课程讲义</strong><small>128 个文件 · 856 MB</small></button>
+                  <button class="folder-card" type="button"><span class="folder-art folder-art--blue">▰</span><strong>作业与实验</strong><small>63 个文件 · 412 MB</small></button>
+                  <button class="folder-card" type="button"><span class="folder-art folder-art--amber">▰</span><strong>比赛资料</strong><small>47 个文件 · 220 MB</small></button>
+                  <button class="folder-card" type="button"><span class="folder-art folder-art--gray">▰</span><strong>待整理</strong><small>284 个文件 · 1.8 GB</small></button>
+                </div>
+                <div class="file-table">
+                  <div class="file-row file-row--head"><span>名称</span><span>类型</span><span>修改时间</span><span>大小</span></div>
+                  <div class="file-row"><span>高等数学复习提纲.pdf</span><span>PDF</span><span>今天 14:12</span><span>4.8 MB</span></div>
+                  <div class="file-row"><span>数据结构实验报告.docx</span><span>Word</span><span>昨天 21:34</span><span>1.2 MB</span></div>
+                  <div class="file-row"><span>课程设计截图.zip</span><span>压缩包</span><span>10.31</span><span>36 MB</span></div>
+                </div>
+              </article>
+              <article class="panel file-insight">
+                <p class="eyebrow">LOCAL INDEX</p>
+                <h2>索引状态</h2>
+                <div class="ring"><strong>84%</strong><span>已整理</span></div>
+                <p>索引保存在本机 SQLite 中。重启应用后仍可继续查看，原型阶段使用模拟数据。</p>
+                <button class="button button--block" type="button" data-view="workspace">让 AI 整理 →</button>
+              </article>
+            </div>
+          </section>
+
+          <section class="view" id="view-todos" aria-labelledby="todosTitle">
+            <div class="page-heading">
+              <div><p class="eyebrow">TASKS &amp; DEADLINES</p><h1 id="todosTitle">待办</h1><p>按截止时间聚焦下一步。勾选任务可立即看到完成状态变化。</p></div>
+              <span class="tag tag--green" id="todoSummary">4 项待完成</span>
+            </div>
+            <div class="todo-layout">
+              <article class="panel todo-card">
+                <div class="panel-heading">
+                  <div><h2>接下来</h2><p class="small-muted">按截止时间和优先级排序</p></div>
+                  <button class="text-button" type="button" id="addTodoButton">＋ 新建待办</button>
+                </div>
+                <div class="todo-filters" role="tablist" aria-label="待办筛选">
+                  <button class="todo-filter is-active" type="button" role="tab" aria-selected="true" data-todo-filter="all">全部</button>
+                  <button class="todo-filter" type="button" role="tab" aria-selected="false" data-todo-filter="today">今天</button>
+                  <button class="todo-filter" type="button" role="tab" aria-selected="false" data-todo-filter="week">本周</button>
+                </div>
+                <div id="todoList">
+                  <label class="todo-row" data-todo-period="week">
+                    <input type="checkbox" />
+                    <span class="checkbox"></span>
+                    <span class="todo-main">
+                      <strong>提交课程设计报告</strong>
+                      <span class="todo-meta"><span>课程作业</span><span>11 月 08 日 23:59</span></span>
+                    </span>
+                    <span class="priority priority--high">高优先级</span>
+                  </label>
+                  <label class="todo-row" data-todo-period="week">
+                    <input type="checkbox" />
+                    <span class="checkbox"></span>
+                    <span class="todo-main">
+                      <strong>完成高数第 4 章习题</strong>
+                      <span class="todo-meta"><span>高等数学</span><span>11 月 09 日</span></span>
+                    </span>
+                    <span class="priority priority--medium">中优先级</span>
+                  </label>
+                  <label class="todo-row" data-todo-period="today">
+                    <input type="checkbox" checked />
+                    <span class="checkbox"></span>
+                    <span class="todo-main">
+                      <strong>整理比赛演示材料</strong>
+                      <span class="todo-meta"><span>项目协作</span><span>今天 18:00</span></span>
+                    </span>
+                    <span class="priority priority--high">高优先级</span>
+                  </label>
+                  <label class="todo-row" data-todo-period="week">
+                    <input type="checkbox" />
+                    <span class="checkbox"></span>
+                    <span class="todo-main">
+                      <strong>复习数据结构树结构</strong>
+                      <span class="todo-meta"><span>自主学习</span><span>本周</span></span>
+                    </span>
+                    <span class="priority priority--low">低优先级</span>
+                  </label>
+                </div>
+              </article>
+              <article class="panel deadline-card">
+                <p class="eyebrow">NEXT DEADLINE</p>
+                <h2>11 月 08 日</h2>
+                <p>距离课程设计报告提交还有 4 天。日期与截止时间是模拟数据。</p>
+                <div class="progress-track"><span style="width: 64%"></span></div>
+                <small>准备工作已完成 64%</small>
+              </article>
+            </div>
+          </section>
+
+          <section class="view" id="view-calendar" aria-labelledby="calendarTitle">
+            <div class="page-heading">
+              <div><p class="eyebrow">PLAN THE NEXT WEEK</p><h1 id="calendarTitle">日程</h1><p>点击任一时间块可切换选中状态。</p></div>
+              <span class="tag tag--green">11.04 — 11.10</span>
+            </div>
+            <article class="panel calendar-card">
+              <div class="calendar-head">
+                <div><strong>2026 年 11 月</strong><span>本周</span></div>
+                <div class="calendar-weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+              </div>
+              <div class="week-board">
+                <div class="day-column"><span>04</span><button class="event-chip" type="button" data-event>数据结构课<br /><small>14:00</small></button></div>
+                <div class="day-column is-today"><span>05</span><button class="event-chip event-chip--green" type="button" data-event>算法复习<br /><small>19:30</small></button></div>
+                <div class="day-column"><span>06</span><button class="event-chip event-chip--amber" type="button" data-event>课程设计讨论<br /><small>16:00</small></button></div>
+                <div class="day-column"><span>07</span></div>
+                <div class="day-column"><span>08</span><button class="event-chip event-chip--red" type="button" data-event>报告截止<br /><small>23:59</small></button></div>
+                <div class="day-column"><span>09</span></div>
+                <div class="day-column"><span>10</span><button class="event-chip" type="button" data-event>高数错题<br /><small>20:00</small></button></div>
+              </div>
+            </article>
+          </section>
+
+          <section class="view" id="view-trash" aria-labelledby="trashTitle">
+            <div class="page-heading">
+              <div><p class="eyebrow">SAFE DELETE</p><h1 id="trashTitle">回收站</h1><p>归序只把删除项移入这里，保留原始路径与删除时间。</p></div>
+              <span class="tag tag--green">物理删除已禁用</span>
+            </div>
+            <article class="panel">
+              <div class="panel-heading"><h2>13 个文件</h2><button class="button button--ghost" type="button" id="emptyTrashButton">清空演示记录</button></div>
+              <div class="file-table" id="trashList">
+                <div class="file-row file-row--head"><span>文件</span><span>原始路径</span><span>删除时间</span><span>操作</span></div>
+                <div class="file-row"><span>课程设计-副本.pdf</span><span>Downloads/竞赛/</span><span>14:39</span><button class="text-button" type="button" data-restore-file>恢复</button></div>
+                <div class="file-row"><span>课件-最终版-副本.pdf</span><span>Downloads/课程/</span><span>14:39</span><button class="text-button" type="button" data-restore-file>恢复</button></div>
+                <div class="file-row"><span>简历(2).docx</span><span>Downloads/求职/</span><span>14:38</span><button class="text-button" type="button" data-restore-file>恢复</button></div>
+              </div>
+            </article>
+          </section>
+
+          <section class="view" id="view-settings" aria-labelledby="settingsTitle">
+            <div class="page-heading">
+              <div><p class="eyebrow">CONTROL CENTER</p><h1 id="settingsTitle">授权与边界</h1><p>按破坏性级别授权，而不是一次点头到底。</p></div>
+              <span class="tag tag--green">最小权限</span>
+            </div>
+            <div class="settings-layout">
+              <article class="panel permission-card">
+                <div class="panel-heading"><h2>工具权限</h2><span class="tag tag--gray">8 个操作原语</span></div>
+                <div class="permission-row"><span class="permission-level permission-level--green">只读</span><div><strong>列目录、读取元信息、检索</strong><small>自动放行，仅记录事件</small></div><label class="switch"><input type="checkbox" checked /><span></span></label></div>
+                <div class="permission-row"><span class="permission-level permission-level--amber">写入</span><div><strong>创建目录、移动、待办、日程</strong><small>需在计划预览中确认</small></div><label class="switch"><input type="checkbox" checked /><span></span></label></div>
+                <div class="permission-row"><span class="permission-level permission-level--red">删除</span><div><strong>移入归序回收站</strong><small>二次确认并键入确认词</small></div><label class="switch"><input type="checkbox" checked /><span></span></label></div>
+              </article>
+              <article class="panel local-settings">
+                <h2>本机运行</h2>
+                <p>文件操作由本机 Node 进程完成，模型只输出结构化调用。原型环境不会访问真实文件系统。</p>
+                <dl><div><dt>工作目录</dt><dd>~/Documents/秋季学期</dd></div><div><dt>云端备份</dt><dd>未启用</dd></div><div><dt>物理删除</dt><dd class="text-green">始终禁用</dd></div></dl>
+              </article>
+            </div>
+          </section>
+        </div>
+      </main>
+      <aside class="ai-assistant" id="aiAssistant" aria-label="归序 AI 对话">
+        <button
+          class="ai-assistant__trigger"
+          id="aiAssistantTrigger"
+          type="button"
+          aria-expanded="false"
+          aria-controls="aiAssistantPanel"
+        >
+          <span class="ai-assistant__mark" aria-hidden="true">✦</span>
+          <span>
+            <strong>问问归序</strong>
+            <small>随时追问任务、计划或风险</small>
+          </span>
+          <span class="ai-assistant__chevron" aria-hidden="true">⌃</span>
+        </button>
+        <section class="ai-assistant__panel" id="aiAssistantPanel" hidden>
+          <div class="ai-assistant__head">
+            <div>
+              <span class="eyebrow">CONTEXT-AWARE AI</span>
+          <h2>对话历史</h2>
+            </div>
+            <button class="ai-close" id="aiAssistantClose" type="button" aria-label="收起 AI 对话">×</button>
+          </div>
+          <div class="ai-transcript" id="aiTranscript" aria-live="polite">
+            <div class="ai-message ai-message--assistant">
+              <span>归序</span>
+              <p>我会先说明准备做什么，得到你的确认后才执行。你可以直接问当前计划、权限范围或回滚方式。</p>
+            </div>
+          </div>
+          <div class="ai-suggestions">
+            <button type="button" data-ai-prompt="这个计划会修改哪些文件？">会修改哪些文件？</button>
+            <button type="button" data-ai-prompt="解释一下删除操作的风险。">删除有什么风险？</button>
+            <button type="button" data-ai-prompt="我能撤销刚才的操作吗？">怎样撤销？</button>
+          </div>
+          <form class="ai-composer" id="aiComposer">
+            <label class="sr-only" for="aiInput">向归序提问</label>
+            <textarea
+              id="aiInput"
+              rows="1"
+              placeholder="随时问归序：例如“这一步安全吗？”"
+            ></textarea>
+            <button type="submit" aria-label="发送问题">↑</button>
+          </form>
+        </section>
+        <form class="ai-quickbar" id="aiQuickbar">
+          <div class="ai-quickbar__identity">
+            <span class="ai-quickbar__star" aria-hidden="true">✦</span>
+            <span><strong>随时问归序</strong><small id="aiDockStatus">当前任务上下文已连接</small></span>
+          </div>
+          <label class="sr-only" for="aiQuickInput">随时与归序 AI 对话</label>
+          <div class="ai-quickbar__field">
+            <input
+              id="aiQuickInput"
+              type="text"
+              aria-keyshortcuts="Control+/ Meta+/"
+              placeholder="问问当前计划、风险或下一步，例如“会删除原文件吗？”"
+            />
+            <kbd>Ctrl /</kbd>
+          </div>
+          <button class="ai-history-button" id="aiHistoryButton" type="button">
+            <span aria-hidden="true">↺</span>
+            <span>历史记录</span>
+            <b class="ai-history-count" id="aiHistoryCount" hidden>0</b>
+          </button>
+          <button type="submit" aria-label="发送">↑</button>
+        </form>
+      </aside>
+      <div class="task-launch" id="taskLaunch" role="status" aria-live="assertive" hidden>
+        <div class="task-launch__card">
+          <div class="task-launch__icon" id="taskLaunchIcon" aria-hidden="true">✦</div>
+          <div>
+            <strong id="taskLaunchTitle">任务已启动</strong>
+            <span id="taskLaunchDetail">AI 正在进入受控执行流程</span>
+          </div>
+          <div class="task-launch__track"><span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="motion-demo" id="motionDemo">
+      <button
+        class="motion-demo__trigger"
+        id="motionDemoTrigger"
+        type="button"
+        aria-expanded="false"
+        aria-controls="motionDemoPanel"
+      >
+        <span aria-hidden="true">▶</span>
+        任务动效
+      </button>
+      <div class="motion-demo__panel" id="motionDemoPanel" hidden>
+        <div class="motion-demo__head">
+          <div><span>TASK MOTION</span><strong>任务状态动画</strong></div>
+          <button id="motionDemoClose" type="button" aria-label="收起动效演示">×</button>
+        </div>
+        <div class="motion-demo__grid">
+          <button type="button" data-demo-action="execute"><span>01</span>任务启动</button>
+          <button type="button" data-demo-action="risk"><span>02</span>风险确认</button>
+          <button type="button" data-demo-action="advance"><span>03</span>步骤推进</button>
+          <button type="button" data-demo-action="pause"><span>04</span>暂停反馈</button>
+          <button type="button" data-demo-action="complete"><span>05</span>完成反馈</button>
+          <button type="button" data-demo-action="rollback"><span>06</span>回滚反馈</button>
+        </div>
+        <p>这些是临时演示按钮，不会执行真实文件操作。</p>
+      </div>
+    </aside>
+
+    <div class="modal-backdrop" id="riskModal" hidden>
+      <section class="modal risk-modal" role="dialog" aria-modal="true" aria-labelledby="riskModalTitle">
+        <div class="risk-modal__head">
+          <div class="risk-modal__icon">!</div>
+          <div>
+            <span class="eyebrow">RISK-GRADED AUTHORIZATION</span>
+            <h2 id="riskModalTitle">确认删除 60 个重复文件</h2>
+            <p>这一步会把文件移入归序回收站，并保留完整原始路径。系统不会执行物理删除。</p>
+          </div>
+        </div>
+        <div class="risk-modal__body">
+          <div class="risk-stat-grid">
+            <div class="danger"><span>影响文件</span><strong>60 个</strong></div>
+            <div><span>涉及目录</span><strong>3 个</strong></div>
+            <div><span>释放空间</span><strong>1.2 GB</strong></div>
+            <div><span>近期访问</span><strong>8 个</strong></div>
+          </div>
+          <div class="risk-facts">
+            <p><span>✓</span><b>每组保留最新副本</b><small>按内容哈希分组，按修改时间选择。</small></p>
+            <p><span>✓</span><b>可整单回滚</b><small>逆序恢复至原路径，事件链继续保留。</small></p>
+            <p><span>1</span><b>8 个文件近三天访问过</b><small>这些文件已单独标记，建议先预览。</small></p>
+            <p><span>2</span><b>删除不是永久删除</b><small>可在回收站找回，也可撤销本次任务。</small></p>
+          </div>
+          <label class="confirm-word">
+            <strong>请输入确认词“删除”以继续</strong>
+            <span>仅在你理解上述影响范围后才需要输入。</span>
+            <input id="deleteConfirmInput" type="text" autocomplete="off" placeholder="在这里键入“删除”" />
+            <small id="deleteConfirmError" role="alert"></small>
+          </label>
+        </div>
+        <div class="risk-modal__foot">
+          <span>授权记录将写入审计日志 · 操作可追溯</span>
+          <div>
+            <button class="button button--ghost" type="button" id="cancelRiskButton">取消本次删除</button>
+            <button class="button button--danger" type="button" id="authorizeDeleteButton" disabled>授权执行</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="app.js?v=11"></script>
+  </body>
+</html>
