@@ -1,0 +1,111 @@
+/*
+ * 设计令牌是主题系统的唯一边界。
+ * 组件只消费语义变量（如 surface、text、accent），不直接写具体主题色。
+ * 新增主题时复制一个 data-theme 块并覆盖同名变量即可。
+ */
+:root {
+    --font-ui: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    --font-display: "Songti SC", "STSong", "Noto Serif SC", Georgia, serif;
+    --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+
+    --sidebar-width: 274px;
+    --topbar-height: 78px;
+    --radius-xs: 8px;
+    --radius-sm: 12px;
+    --radius-md: 18px;
+    --radius-lg: 26px;
+    --radius-xl: 34px;
+
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+html[data-theme="paper"] {
+    color-scheme: light;
+    --canvas: #f2efe7;
+    --canvas-deep: #e9e4d8;
+    --sidebar: #e7e1d5;
+    --sidebar-raised: rgba(255, 253, 248, 0.58);
+    --surface: #fbf9f4;
+    --surface-raised: #fffdfa;
+    --surface-muted: #f0ece3;
+    --surface-strong: #e5ded0;
+    --text: #282b28;
+    --text-soft: #64675f;
+    --text-faint: #8b8c83;
+    --line: rgba(61, 64, 58, 0.12);
+    --line-strong: rgba(61, 64, 58, 0.2);
+    --accent: #b96343;
+    --accent-strong: #8d472e;
+    --accent-soft: rgba(185, 99, 67, 0.12);
+    --accent-contrast: #fffaf5;
+    --secondary: #34665d;
+    --secondary-soft: rgba(52, 102, 93, 0.12);
+    --safe: #46785d;
+    --safe-soft: rgba(70, 120, 93, 0.12);
+    --shadow-soft: 0 22px 60px rgba(73, 61, 43, 0.09);
+    --shadow-card: 0 12px 32px rgba(73, 61, 43, 0.07);
+    --shadow-ink: rgba(73, 61, 43, 0.12);
+    --grid-line: rgba(75, 70, 58, 0.06);
+    --selection: rgba(185, 99, 67, 0.22);
+}
+
+html[data-theme="midnight"] {
+    color-scheme: dark;
+    --canvas: #151a22;
+    --canvas-deep: #10141b;
+    --sidebar: #11161e;
+    --sidebar-raised: rgba(37, 44, 55, 0.7);
+    --surface: #1b222c;
+    --surface-raised: #202936;
+    --surface-muted: #242d39;
+    --surface-strong: #2a3543;
+    --text: #f0ece3;
+    --text-soft: #aeb4b7;
+    --text-faint: #767f87;
+    --line: rgba(228, 235, 236, 0.1);
+    --line-strong: rgba(228, 235, 236, 0.18);
+    --accent: #d5a660;
+    --accent-strong: #efc77f;
+    --accent-soft: rgba(213, 166, 96, 0.13);
+    --accent-contrast: #171b21;
+    --secondary: #73aa9e;
+    --secondary-soft: rgba(115, 170, 158, 0.13);
+    --safe: #7cb394;
+    --safe-soft: rgba(124, 179, 148, 0.13);
+    --shadow-soft: 0 28px 72px rgba(0, 0, 0, 0.32);
+    --shadow-card: 0 15px 36px rgba(0, 0, 0, 0.2);
+    --shadow-ink: rgba(0, 0, 0, 0.32);
+    --grid-line: rgba(227, 235, 239, 0.035);
+    --selection: rgba(213, 166, 96, 0.22);
+}
+
+html[data-theme="moss"] {
+    color-scheme: light;
+    --canvas: #e7eadf;
+    --canvas-deep: #dce1d3;
+    --sidebar: #dce2d4;
+    --sidebar-raised: rgba(249, 251, 245, 0.58);
+    --surface: #f3f5ed;
+    --surface-raised: #fafbf6;
+    --surface-muted: #e9ede2;
+    --surface-strong: #dbe2d2;
+    --text: #26322b;
+    --text-soft: #5c6961;
+    --text-faint: #7e8a81;
+    --line: rgba(45, 65, 52, 0.12);
+    --line-strong: rgba(45, 65, 52, 0.2);
+    --accent: #4f7b62;
+    --accent-strong: #355e49;
+    --accent-soft: rgba(79, 123, 98, 0.12);
+    --accent-contrast: #f8fbf5;
+    --secondary: #a56547;
+    --secondary-soft: rgba(165, 101, 71, 0.12);
+    --safe: #4c775c;
+    --safe-soft: rgba(76, 119, 92, 0.12);
+    --shadow-soft: 0 24px 64px rgba(51, 72, 55, 0.1);
+    --shadow-card: 0 12px 32px rgba(51, 72, 55, 0.07);
+    --shadow-ink: rgba(51, 72, 55, 0.13);
+    --grid-line: rgba(46, 68, 52, 0.055);
+    --selection: rgba(79, 123, 98, 0.2);
+}

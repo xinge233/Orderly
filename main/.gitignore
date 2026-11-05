@@ -1,0 +1,11 @@
+# Java 构建产物与本地依赖缓存不进入版本控制。
+backend/target/
+backend/.m2-repository/
+
+# 前端测试或本地预览产生的临时目录。
+frontend/node_modules/
+frontend/.cache/
+
+# 操作系统与编辑器生成的本地文件。
+.DS_Store
+Thumbs.db

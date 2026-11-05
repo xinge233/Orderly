@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="paper" data-motion="gentle">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#f2efe7" id="theme-color-meta">
+    <title>归序 Orderly · 本地工作台</title>
+
+    <!--
+      样式按“设计令牌、基础、布局、组件”四层拆分。
+      主题只替换 tokens.css 中的变量，不把颜色硬编码进功能模块。
+    -->
+    <link rel="stylesheet" href="./styles/tokens.css">
+    <link rel="stylesheet" href="./styles/base.css">
+    <link rel="stylesheet" href="./styles/layout.css">
+    <link rel="stylesheet" href="./styles/components.css">
+</head>
+<body>
+    <a class="skip-link" href="#main-stage">跳到主要内容</a>
+
+    <div class="app-shell" id="app-shell">
+        <aside class="sidebar" aria-label="应用导航">
+            <div class="brand-block">
+                <div class="brand-mark" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <div class="brand-copy">
+                    <p class="brand-name">归序</p>
+                    <p class="brand-caption">ORDERLY</p>
+                </div>
+            </div>
+
+            <!--
+              导航内容由 navigation.js 配置驱动。
+              中段独立滚动，底部的设置入口永远保持在视口内。
+            -->
+            <div class="sidebar-scroll" id="sidebar-navigation"></div>
+
+            <div class="sidebar-footer">
+                <div class="workspace-card" aria-label="当前工作区状态">
+                    <div class="workspace-orbit" aria-hidden="true">
+                        <span></span>
+                    </div>
+                    <div class="workspace-copy">
+                        <strong>本地工作区</strong>
+                        <span>界面骨架 · 未连接操作</span>
+                    </div>
+                </div>
+
+                <button class="settings-trigger" id="settings-trigger" type="button">
+                    <span class="settings-trigger__icon" aria-hidden="true"></span>
+                    <span class="settings-trigger__copy">
+                        <strong>设置</strong>
+                        <span>外观与偏好</span>
+                    </span>
+                    <kbd>Ctrl ,</kbd>
+                </button>
+            </div>
+        </aside>
+
+        <div class="content-shell">
+            <header class="topbar">
+                <div class="topbar-context">
+                    <span class="topbar-kicker">个人工作流</span>
+                    <div class="topbar-breadcrumb" id="topbar-breadcrumb">
+                        <span>工作台</span>
+                        <span aria-hidden="true">/</span>
+                        <strong>总览</strong>
+                    </div>
+                </div>
+
+                <div class="topbar-actions">
+                    <span class="prototype-badge">
+                        <span class="prototype-badge__dot" aria-hidden="true"></span>
+                        界面原型
+                    </span>
+                    <button class="icon-button" type="button" aria-label="通知（占位）" title="通知（占位）">
+                        <span data-icon="bell" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </header>
+
+            <!--
+              主显示区只承载已注册视图。
+              当前不轮询后端、不伪造任务完成状态，也不触发文件操作。
+            -->
+            <main class="main-stage" id="main-stage" tabindex="-1"></main>
+
+            <section class="chat-dock" aria-label="AI 指令输入区">
+                <div class="chat-dock__intro">
+                    <span class="chat-dock__spark" data-icon="sparkles" aria-hidden="true"></span>
+                    <div>
+                        <strong>告诉归序你想完成什么</strong>
+                        <span>聊天能力尚未接入 · 本输入框仅作界面占位</span>
+                    </div>
+                </div>
+
+                <form class="composer" id="chat-form">
+                    <label class="sr-only" for="chat-input">输入 AI 指令</label>
+                    <input
+                        id="chat-input"
+                        name="instruction"
+                        type="text"
+                        autocomplete="off"
+                        maxlength="240"
+                        placeholder="例如：把本周的临时文件整理到一个归档目录…"
+                    >
+                    <span class="composer__hint">Enter 发送</span>
+                    <button class="send-button" id="send-button" type="submit" aria-label="发送（占位）">
+                        <span data-icon="arrow-up" aria-hidden="true"></span>
+                    </button>
+                </form>
+            </section>
+        </div>
+    </div>
+
+    <!-- 原生 dialog 提供焦点约束与 Escape 关闭能力，设置内容由配置动态渲染。 -->
+    <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
+        <div class="settings-frame">
+            <header class="settings-header">
+                <div>
+                    <span class="settings-kicker">ORDERLY PREFERENCES</span>
+                    <h2 id="settings-title">设置</h2>
+                </div>
+                <button class="icon-button icon-button--soft" id="settings-close" type="button" aria-label="关闭设置">
+                    <span data-icon="close" aria-hidden="true"></span>
+                </button>
+            </header>
+
+            <div class="settings-body">
+                <nav class="settings-nav" id="settings-nav" aria-label="设置分类"></nav>
+                <section class="settings-panel" id="settings-panel" aria-live="polite"></section>
+            </div>
+
+            <footer class="settings-footer">
+                <p>设置仅保存在当前浏览器中。</p>
+                <button class="text-button" id="settings-reset" type="button">恢复默认</button>
+            </footer>
+        </div>
+    </dialog>
+
+    <!-- 用于反馈占位交互；不是任务完成通知，也不会暗示真实操作已执行。 -->
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="./src/app.js"></script>
+</body>
+</html>

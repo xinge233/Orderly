@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: orderly-backend
+
+server:
+  # 仅监听本机，符合“默认在本机运行”的产品边界。
+  address: 127.0.0.1
+  port: 8080
+
+logging:
+  level:
+    root: INFO
+    com.orderly.platform: INFO

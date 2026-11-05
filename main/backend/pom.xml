@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+      Orderly 控制层的最小 Spring Boot 工程。
+      Java 21 是项目固定基线；依赖版本由 Spring Boot BOM 统一治理，
+      避免各功能模块自行选择互不兼容的版本。
+    -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.4.12</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.orderly</groupId>
+    <artifactId>orderly-backend</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <name>Orderly Backend</name>
+    <description>Orderly 本地工作流控制层与模块化骨架</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <!-- REST 控制层与内嵌 Web 容器；当前只暴露平台模块目录。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- 测试骨架、模块注册与空模块行为验证。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <!--
+          前端保持独立源码目录，构建时复制到 Spring Boot 的 static 路径。
+          这样开发时仍可按 HTML/CSS/JavaScript 模块拆分，发布时又能单包运行。
+        -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>../frontend</directory>
+                <targetPath>static</targetPath>
+                <excludes>
+                    <exclude>tests/**</exclude>
+                    <exclude>scripts/**</exclude>
+                    <exclude>package.json</exclude>
+                    <exclude>README.md</exclude>
+                </excludes>
+            </resource>
+        </resources>
+
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
