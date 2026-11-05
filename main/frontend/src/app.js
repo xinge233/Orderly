@@ -71,12 +71,19 @@ function bootstrap() {
     const mainView = new MainView({ stage, breadcrumb, motionEngine });
     const sidebar = new Sidebar({
         container: navigation,
-        onSelect: (item) => mainView.show(item)
+        onSelect: (item) => {
+            void mainView.show(item).catch((error) => {
+                // 视图契约错误需要被开发者看见，但界面仍保持可操作。
+                showToast(`视图切换失败：${error.message}`);
+            });
+        }
     });
 
     const defaultItem = getDefaultNavigationItem();
     sidebar.setActive(defaultItem.id);
-    mainView.show(defaultItem);
+    void mainView.show(defaultItem).catch((error) => {
+        showToast(`主界面加载失败：${error.message}`);
+    });
 
     const settingsDialog = new SettingsDialog({
         dialog: document.querySelector("#settings-dialog"),
@@ -107,6 +114,11 @@ function bootstrap() {
         motionEngine,
         notify: showToast
     });
+
+    // 页面卸载时释放当前视图的请求、事件和定时器。
+    window.addEventListener("pagehide", () => {
+        void mainView.destroy();
+    }, { once: true });
 }
 
 // 模块脚本在 DOM 解析后执行；显式等待仍能兼容未来改为 defer 的加载方式。

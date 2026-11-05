@@ -1,45 +1,68 @@
-import { renderLab } from "../modules/lab.js";
-import { renderOverview } from "../modules/overview.js";
-import { renderPlaceholder } from "../modules/placeholder.js";
+import { labView } from "../modules/lab.js";
+import { overviewView } from "../modules/overview.js";
+import { placeholderView } from "../modules/placeholder.js";
 
 /**
- * 视图注册表把导航配置中的 view 名称解析为渲染函数。
+ * 视图注册表把导航配置中的 view 名称解析为完整生命周期定义。
  *
- * 新模块可以注册自己的渲染器，而不需要修改主界面布局或侧边栏实现。
- * 渲染函数始终接收导航项，便于不同模块读取自己的标题与说明。
+ * 新模块可以注册自己的 render/mount/unmount 钩子，而不需要修改主界面布局。
  */
 const views = new Map([
-    ["overview", () => renderOverview()],
-    ["placeholder", (item) => renderPlaceholder(item)],
-    ["lab", () => renderLab()]
+    ["overview", overviewView],
+    ["placeholder", placeholderView],
+    ["lab", labView]
 ]);
 
 /**
- * 注册或替换视图渲染器，为后续模块插件式接入预留入口。
+ * 注册或替换视图定义。
  *
  * @param {string} name 视图名
- * @param {(item: object) => string} renderer 渲染函数
+ * @param {Readonly<object>} view 完整视图定义
  */
-export function registerView(name, renderer) {
-    if (!name || typeof renderer !== "function") {
-        throw new TypeError("注册视图需要名称和渲染函数");
+export function registerView(name, view) {
+    if (
+        !name
+        || !view
+        || typeof view.render !== "function"
+        || typeof view.mount !== "function"
+        || typeof view.unmount !== "function"
+    ) {
+        throw new TypeError("注册视图需要名称和完整生命周期定义");
     }
-    views.set(name, renderer);
+    views.set(name, view);
 }
 
 /**
- * 渲染指定导航项。
+ * 判断视图是否已经注册。
  *
- * @param {object} item 导航项
- * @returns {string} 视图 HTML
+ * @param {string} name 视图名
+ * @returns {boolean} 已注册时返回 true
  */
-export function renderView(item) {
-    const renderer = views.get(item.view);
-    if (!renderer) {
-        return renderPlaceholder({
-            ...item,
-            caption: "视图尚未注册"
-        });
+export function hasView(name) {
+    return views.has(name);
+}
+
+/**
+ * 返回已注册视图。
+ *
+ * 未知视图直接抛错，配置一致性测试和运行时都不会静默降级。
+ *
+ * @param {string} name 视图名
+ * @returns {Readonly<object>} 视图定义
+ */
+export function getView(name) {
+    const view = views.get(name);
+    if (!view) {
+        throw new Error(`视图尚未注册：${name}`);
     }
-    return renderer(item);
+    return view;
+}
+
+/**
+ * 返回所有已注册视图名快照。
+ *
+ * @returns {ReadonlyArray<string>} 视图名列表
+ */
+export function registeredViewNames() {
+    return Object.freeze([...views.keys()]);
 }

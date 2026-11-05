@@ -1,6 +1,5 @@
 package com.orderly.platform.module;
 
-import java.util.List;
 import java.util.Objects;
 
 /**
@@ -12,14 +11,14 @@ import java.util.Objects;
  * @param id 稳定且唯一的模块标识，建议使用小写短横线格式
  * @param displayName 面向用户的模块名称
  * @param description 简短的能力边界说明
- * @param capabilities 当前模块声明的能力列表
+ * 动作能力不在此结构中声明，统一由 {@link ModuleHandler#actions()} 提供。
+ *
  * @param order 导航/发现顺序，数值越小越靠前
  */
 public record ModuleDescriptor(
         String id,
         String displayName,
         String description,
-        List<String> capabilities,
         int order
 ) {
     public ModuleDescriptor {
@@ -31,6 +30,5 @@ public record ModuleDescriptor(
             throw new IllegalArgumentException("模块显示名称不能为空");
         }
         description = Objects.requireNonNullElse(description, "").trim();
-        capabilities = List.copyOf(Objects.requireNonNullElse(capabilities, List.of()));
     }
 }

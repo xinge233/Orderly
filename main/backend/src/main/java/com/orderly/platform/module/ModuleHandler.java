@@ -1,27 +1,31 @@
 package com.orderly.platform.module;
 
+import com.orderly.platform.execution.ExecutionPermit;
+
+import java.util.List;
+
 /**
- * 声明模块可接收受控命令的扩展接口。
+ * 声明模块动作并提供受控执行入口。
  *
- * <p>模块必须先显式声明动作支持范围，随后才能接收命令。
- * 该双阶段设计让调度层可以在执行前拒绝未知动作，也便于未来插入
- * 风险分级、确认和审计代理。</p>
+ * <p>动作集合是唯一可信来源：注册表据此建立动作索引，执行管线据此完成
+ * 参数校验、确认和边界检查。模块执行时必须收到中央管线签发的一次性
+ * {@link ExecutionPermit}，普通调用方不能自行构造该许可。</p>
  */
 public interface ModuleHandler {
 
     /**
-     * 判断模块是否声明支持某个动作。
+     * 返回模块声明支持的全部动作。
      *
-     * @param action 动作名称
-     * @return 支持时返回 {@code true}
+     * @return 不可修改的动作定义列表
      */
-    boolean supports(String action);
+    List<ModuleActionDefinition> actions();
 
     /**
-     * 处理一条已经路由到本模块的命令。
+     * 处理已经通过中央管线校验的命令。
      *
      * @param command 统一命令信封
+     * @param permit 中央管线签发的一次性执行许可
      * @return 结构化处理结果
      */
-    ModuleCommandResult handle(ModuleCommand command);
+    ModuleCommandResult execute(ModuleCommand command, ExecutionPermit permit);
 }

@@ -61,7 +61,21 @@
                     <exclude>README.md</exclude>
                 </excludes>
             </resource>
+            <resource>
+                <!-- 固定契约样例同时进入发布包，并供前端独立 Mock 使用。 -->
+                <directory>../contracts</directory>
+                <targetPath>static/contracts</targetPath>
+            </resource>
         </resources>
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+            </testResource>
+            <testResource>
+                <!-- Java 序列化测试与前端使用同一份固定契约，避免样例漂移。 -->
+                <directory>../contracts</directory>
+            </testResource>
+        </testResources>
 
         <plugins>
             <plugin>

@@ -1,6 +1,5 @@
 package com.orderly.platform.api;
 
-import com.orderly.platform.module.ModuleRegistry;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -15,15 +14,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/platform")
 public class PlatformModuleController {
 
-    private final ModuleRegistry registry;
+    private final ModuleCatalogMapper mapper;
 
     /**
-     * 注入只读模块注册表。
+     * 注入公共契约映射器。
      *
-     * @param registry 平台模块目录
+     * @param mapper 内部模型到公共 DTO 的唯一映射器
      */
-    public PlatformModuleController(ModuleRegistry registry) {
-        this.registry = registry;
+    public PlatformModuleController(ModuleCatalogMapper mapper) {
+        this.mapper = mapper;
     }
 
     /**
@@ -33,6 +32,6 @@ public class PlatformModuleController {
      */
     @GetMapping("/modules")
     public ModuleCatalogResponse listModules() {
-        return new ModuleCatalogResponse("modular-skeleton", registry.listDescriptors());
+        return mapper.toResponse();
     }
 }

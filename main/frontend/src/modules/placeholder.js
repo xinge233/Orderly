@@ -1,4 +1,5 @@
 import { icon } from "../components/icons.js";
+import { createStaticView } from "../core/view-contract.js";
 
 /**
  * 通用模块占位视图。
@@ -61,3 +62,6 @@ export function renderPlaceholder(item) {
         </div>
     `;
 }
+
+/** 通用占位视图定义。 */
+export const placeholderView = createStaticView("placeholder", renderPlaceholder);

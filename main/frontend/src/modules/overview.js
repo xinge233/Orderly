@@ -1,4 +1,5 @@
 import { icon } from "../components/icons.js";
+import { createStaticView } from "../core/view-contract.js";
 
 /**
  * 总览视图。
@@ -130,3 +131,6 @@ export function renderOverview() {
         </div>
     `;
 }
+
+/** 总览静态视图定义。 */
+export const overviewView = createStaticView("overview", renderOverview);

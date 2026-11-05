@@ -1,44 +1,38 @@
 package com.orderly.platform.module;
 
+import com.orderly.platform.execution.ExecutionPipeline;
+import com.orderly.platform.execution.ExecutionRequest;
+import com.orderly.platform.execution.ExecutionResult;
 import org.springframework.stereotype.Service;
 
 /**
- * 模块间命令调度的最小骨架。
+ * 模块调度的兼容入口。
  *
- * <p>当前实现只路由没有副作用的测试模块动作。任何未来的文件或系统动作都必须
- * 在进入该服务之前完成计划确认、权限边界检查，并在执行后写入审计与快照。</p>
+ * <p>保留此类是为了避免现有调用方直接依赖执行管线实现。它本身不查找模块、
+ * 不执行模块，只把所有请求委托给 {@link ExecutionPipeline}，因此不构成
+ * 绕过校验、确认和授权的旁路。</p>
  */
 @Service
 public class ModuleDispatchService {
 
-    private final ModuleRegistry registry;
+    private final ExecutionPipeline executionPipeline;
 
     /**
-     * 注入模块注册表。
+     * 注入中央执行管线。
      *
-     * @param registry 平台模块目录
+     * @param executionPipeline 唯一受控执行入口
      */
-    public ModuleDispatchService(ModuleRegistry registry) {
-        this.registry = registry;
+    public ModuleDispatchService(ExecutionPipeline executionPipeline) {
+        this.executionPipeline = executionPipeline;
     }
 
     /**
-     * 将命令路由到显式声明支持该动作的模块。
+     * 将执行请求委托给中央安全管线。
      *
-     * @param command 统一命令
-     * @return 统一结果；找不到模块或动作时返回拒绝结果
+     * @param request 执行请求
+     * @return 带阶段追踪的执行结果
      */
-    public ModuleCommandResult dispatch(ModuleCommand command) {
-        PlatformModule module = registry.find(command.moduleId()).orElse(null);
-        if (module == null) {
-            return ModuleCommandResult.rejected("目标模块未注册：" + command.moduleId());
-        }
-        if (!(module instanceof ModuleHandler handler)) {
-            return ModuleCommandResult.rejected("目标模块未声明命令处理能力");
-        }
-        if (!handler.supports(command.action())) {
-            return ModuleCommandResult.rejected("目标模块不支持动作：" + command.action());
-        }
-        return handler.handle(command);
+    public ExecutionResult dispatch(ExecutionRequest request) {
+        return executionPipeline.execute(request);
     }
 }

@@ -1,4 +1,10 @@
 import { icon } from "../components/icons.js";
+import {
+    moduleCatalogToNavigation,
+    parseModuleCatalogPayload
+} from "../contracts/module-catalog.js";
+import { setText } from "../core/safe-text.js";
+import { defineView } from "../core/view-contract.js";
 
 /**
  * 空功能模块视图。
@@ -22,27 +28,31 @@ export function renderLab() {
 
             <section class="lab-grid">
                 <article class="lab-card lab-card--primary">
-                    <span class="lab-card__number">MODULE / 999</span>
+                    <span class="lab-card__number" data-contract-order>MODULE / pending</span>
                     <div class="lab-card__icon">${icon("route", 30)}</div>
-                    <h2>sample-empty</h2>
-                    <p>只声明一个 <code>ping</code> 测试动作。命令无法命中未知模块或未声明动作。</p>
+                    <h2 data-contract-module-id>正在读取契约</h2>
+                    <p data-contract-module-description>
+                        从固定模块目录样例读取名称、动作和安全元数据。
+                    </p>
                     <div class="lab-card__footer">
                         <span><i></i> 已注册</span>
-                        <span>sideEffects: false</span>
+                        <span data-contract-action>action: pending</span>
                     </div>
                 </article>
 
                 <article class="lab-card">
                     <span class="lab-card__number">DISCOVERY</span>
                     <h2>模块目录</h2>
-                    <p>控制层通过 Spring 自动收集模块 Bean，并在启动时执行 id 唯一性校验。</p>
+                    <p data-contract-status>
+                        控制层通过 Spring 自动收集模块 Bean，并在启动时执行 id 唯一性校验。
+                    </p>
                     <code class="endpoint-code">GET /api/platform/modules</code>
                 </article>
 
                 <article class="lab-card">
                     <span class="lab-card__number">EXTENSION</span>
                     <h2>松耦合扩展</h2>
-                    <p>元数据与命令处理分成两个接口；仅有展示需求的模块无需获得执行能力。</p>
+                    <p>动作定义是唯一可信来源；中央管线负责校验、确认、审计和回滚。</p>
                     <div class="extension-pills">
                         <span>PlatformModule</span>
                         <span>ModuleHandler</span>
@@ -68,3 +78,62 @@ export function renderLab() {
         </div>
     `;
 }
+
+/**
+ * 读取固定契约样例，并用 textContent 安全填充动态模块文本。
+ *
+ * 这里不请求真实后端，仅验证 Java 契约样例可被前端独立解析。
+ *
+ * @param {HTMLElement} container 当前视图容器
+ * @param {{signal: AbortSignal}} context 生命周期上下文
+ */
+async function mountLab(container, context) {
+    try {
+        const contractUrl = new URL("./contracts/module-catalog.sample.json", document.baseURI);
+        const response = await fetch(contractUrl, { signal: context.signal });
+        if (!response.ok) {
+            throw new Error(`契约样例请求失败：${response.status}`);
+        }
+
+        const catalog = parseModuleCatalogPayload(await response.json());
+        const navigationItems = moduleCatalogToNavigation(catalog);
+        const navigation = navigationItems.find((item) => item.view === "lab")
+            ?? navigationItems[0];
+        const module = catalog.modules.find(
+            (candidate) => candidate.id === navigation?.moduleId
+        );
+        if (!module || !navigation) {
+            throw new Error("固定契约中没有可展示的空功能模块");
+        }
+
+        const action = module.actions[0];
+        setText(container, "[data-contract-order]", `MODULE / ${module.order}`);
+        setText(container, "[data-contract-module-id]", module.id);
+        setText(container, "[data-contract-module-description]", module.description);
+        setText(
+            container,
+            "[data-contract-action]",
+            action
+                ? `action: ${action.id} · ${action.riskLevel}`
+                : "action: none"
+        );
+        setText(
+            container,
+            "[data-contract-status]",
+            `契约 v${catalog.contractVersion} 已解析 · 导航目标 ${navigation.view} · `
+            + "Java 与前端共享同一固定样例。"
+        );
+    } catch (error) {
+        // 主动取消视图加载不视为错误；其他失败只在界面内说明，不把内容当 HTML。
+        if (error?.name !== "AbortError") {
+            setText(container, "[data-contract-status]", "固定契约样例加载失败，请检查静态资源。");
+        }
+    }
+}
+
+/** 空功能试验台视图定义。 */
+export const labView = defineView({
+    name: "lab",
+    render: renderLab,
+    mount: mountLab
+});

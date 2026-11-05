@@ -10,13 +10,16 @@ import { icon } from "./icons.js";
 export class Sidebar {
     #container;
     #onSelect;
+    #sections;
+    #items = new Map();
 
     /**
      * @param {{container: HTMLElement, onSelect: (item: object) => void}} options
      */
-    constructor({ container, onSelect }) {
+    constructor({ container, onSelect, sections = navigationSections }) {
         this.#container = container;
         this.#onSelect = onSelect;
+        this.#sections = sections;
         this.#render();
         this.#container.addEventListener("click", (event) => this.#handleClick(event));
     }
@@ -38,33 +41,62 @@ export class Sidebar {
         });
     }
 
-    /** 根据稳定配置生成分组导航；所有标签来自本地静态配置。 */
+    /**
+     * 根据配置建立 DOM 节点。
+     *
+     * 模块名称和说明通过 textContent 写入，因此未来即使导航配置来自后端，
+     * 也不会把外部字符串解释为 HTML。
+     */
     #render() {
-        this.#container.innerHTML = navigationSections.map((section) => `
-            <section class="nav-section" aria-labelledby="nav-section-${section.id}">
-                <h2 class="nav-section__title" id="nav-section-${section.id}">
-                    ${section.label}
-                </h2>
-                <div class="nav-list">
-                    ${section.items.map((item) => `
-                        <button
-                            class="nav-item"
-                            type="button"
-                            data-navigation-id="${item.id}"
-                            data-view="${item.view}"
-                            title="${item.label}"
-                        >
-                            <span class="nav-item__icon">${icon(item.icon, 19)}</span>
-                            <span class="nav-item__copy">
-                                <strong>${item.label}</strong>
-                                <span>${item.caption}</span>
-                            </span>
-                            <span class="nav-item__marker" aria-hidden="true"></span>
-                        </button>
-                    `).join("")}
-                </div>
-            </section>
-        `).join("");
+        this.#container.replaceChildren();
+        this.#items.clear();
+
+        for (const section of this.#sections) {
+            const sectionElement = document.createElement("section");
+            sectionElement.className = "nav-section";
+            sectionElement.setAttribute("aria-labelledby", `nav-section-${section.id}`);
+
+            const title = document.createElement("h2");
+            title.className = "nav-section__title";
+            title.id = `nav-section-${section.id}`;
+            title.textContent = section.label;
+
+            const list = document.createElement("div");
+            list.className = "nav-list";
+
+            for (const item of section.items) {
+                this.#items.set(item.id, item);
+
+                const button = document.createElement("button");
+                button.className = "nav-item";
+                button.type = "button";
+                button.dataset.navigationId = item.id;
+                button.dataset.view = item.view;
+                button.title = item.label;
+
+                const iconElement = document.createElement("span");
+                iconElement.className = "nav-item__icon";
+                // 图标路径来自本地受控图标表，不接受后端文本。
+                iconElement.innerHTML = icon(item.icon, 19);
+
+                const copy = document.createElement("span");
+                copy.className = "nav-item__copy";
+                const label = document.createElement("strong");
+                label.textContent = item.label;
+                const caption = document.createElement("span");
+                caption.textContent = item.caption;
+                copy.append(label, caption);
+
+                const marker = document.createElement("span");
+                marker.className = "nav-item__marker";
+                marker.setAttribute("aria-hidden", "true");
+                button.append(iconElement, copy, marker);
+                list.append(button);
+            }
+
+            sectionElement.append(title, list);
+            this.#container.append(sectionElement);
+        }
     }
 
     /**
@@ -78,9 +110,7 @@ export class Sidebar {
             return;
         }
 
-        const item = navigationSections
-            .flatMap((section) => section.items)
-            .find((candidate) => candidate.id === button.dataset.navigationId);
+        const item = this.#items.get(button.dataset.navigationId);
 
         if (item) {
             this.setActive(item.id);

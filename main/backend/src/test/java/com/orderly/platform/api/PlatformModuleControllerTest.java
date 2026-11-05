@@ -16,7 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 验证模块目录接口在最小上下文中可被发现。
  */
 @WebMvcTest(PlatformModuleController.class)
-@Import({ModuleRegistry.class, SampleTestModule.class})
+@Import({ModuleRegistry.class, SampleTestModule.class, ModuleCatalogMapper.class})
 class PlatformModuleControllerTest {
 
     @Autowired
@@ -26,7 +26,10 @@ class PlatformModuleControllerTest {
     void shouldReturnModuleCatalog() throws Exception {
         mockMvc.perform(get("/api/platform/modules"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.contractVersion").value("1.0"))
                 .andExpect(jsonPath("$.mode").value("modular-skeleton"))
-                .andExpect(jsonPath("$.modules[0].id").value("sample-empty"));
+                .andExpect(jsonPath("$.modules[0].id").value("sample-empty"))
+                .andExpect(jsonPath("$.modules[0].actions[0].id").value("ping"))
+                .andExpect(jsonPath("$.modules[0].capabilities").doesNotExist());
     }
 }

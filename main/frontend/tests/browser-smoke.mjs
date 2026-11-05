@@ -324,6 +324,39 @@ async function main() {
             )) === "空功能试验台",
             "模块试验台导航"
         );
+        await waitUntil(
+            async () => (await evaluate(
+                client,
+                `document.querySelector("[data-contract-module-id]")?.textContent.trim()`
+            )) === "sample-empty",
+            "固定模块目录契约加载"
+        );
+
+        const contractStatus = await evaluate(
+            client,
+            `document.querySelector("[data-contract-status]")?.textContent ?? ""`
+        );
+        if (!contractStatus.includes("契约 v1.0")) {
+            throw new Error("模块试验台未显示版本化契约状态");
+        }
+
+        // 切换到一个静态占位视图，再回到异步视图，验证两种生命周期视图可交替使用。
+        await evaluate(client, `document.querySelector('[data-navigation-id="files"]').click()`);
+        await waitUntil(
+            async () => (await evaluate(
+                client,
+                `document.querySelector(".page-heading h1")?.textContent.trim()`
+            )) === "文件与目录",
+            "静态占位视图切换"
+        );
+        await evaluate(client, `document.querySelector('[data-navigation-id="lab"]').click()`);
+        await waitUntil(
+            async () => (await evaluate(
+                client,
+                `document.querySelector("[data-contract-module-id]")?.textContent.trim()`
+            )) === "sample-empty",
+            "异步视图重新挂载"
+        );
 
         await evaluate(client, `(() => {
             const input = document.querySelector("#chat-input");

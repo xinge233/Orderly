@@ -1,0 +1,30 @@
+{
+  "contractVersion": "1.0",
+  "mode": "modular-skeleton",
+  "modules": [
+    {
+      "id": "sample-empty",
+      "displayName": "空功能试验台",
+      "description": "仅验证模块注册、发现与调度接口，不执行任何真实操作。",
+      "order": 999,
+      "actions": [
+        {
+          "id": "ping",
+          "displayName": "空模块响应测试",
+          "description": "验证中央执行管线与空功能模块，不产生任何副作用。",
+          "parameterSchema": {
+            "type": "object",
+            "properties": [],
+            "required": [],
+            "additionalProperties": false
+          },
+          "riskLevel": "READ_ONLY",
+          "confirmationRequired": false,
+          "idempotent": true,
+          "rollbackSupported": false,
+          "workspaceAccess": "NONE"
+        }
+      ]
+    }
+  ]
+}
