@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>归序 Orderly</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="./css/reset.css">
+    <link rel="stylesheet" href="./css/layout.css">
+    <link rel="stylesheet" href="./css/components.css">
+  </head>
+  <body data-o-motion="full">
+    <a class="o-skip-link" href="#workspace-title">跳到主界面</a>
+
+    <div class="o-app">
+      <aside class="o-sidebar" data-o-anchor="sidebar" aria-labelledby="brand-name">
+        <header class="o-sidebar__brand">
+          <span class="o-brand-mark" aria-hidden="true"></span>
+          <span>
+            <strong id="brand-name" class="o-brand-name">归序</strong>
+            <small class="o-brand-caption">Orderly</small>
+          </span>
+        </header>
+
+        <label class="o-search">
+          <span class="o-icon o-icon--search" aria-hidden="true"></span>
+          <span class="o-visually-hidden">搜索功能</span>
+          <input id="sidebar-search" class="o-search__input" type="search"
+                 placeholder="搜索功能" autocomplete="off">
+        </label>
+
+        <nav class="o-sidebar__nav" aria-label="功能模块">
+          <ul id="sidebar-items" class="o-module-list"
+              data-o-list="modules" data-slot="sidebar.item"></ul>
+          <p id="sidebar-empty" class="o-empty o-empty--compact"
+             data-o-empty-state="sidebar" hidden>
+            还没有可显示的模块
+          </p>
+        </nav>
+
+        <footer class="o-sidebar__footer">
+          <button id="settings-trigger" class="o-nav-button"
+                  type="button" data-o-anchor="settings-trigger">
+            <span class="o-icon o-icon--settings" aria-hidden="true"></span>
+            <span>设置</span>
+          </button>
+        </footer>
+      </aside>
+
+      <main id="workspace-title" class="o-workspace" data-o-anchor="workspace">
+        <header class="o-workspace__header">
+          <div>
+            <p class="o-eyebrow">个人数字事务工作台</p>
+            <h1>今天，从清晰的计划开始</h1>
+          </div>
+          <button id="theme-toggle" class="o-icon-button"
+                  type="button" aria-label="切换主题"
+                  data-o-anchor="theme-toggle">
+            <span class="o-theme-swatch" aria-hidden="true"></span>
+          </button>
+        </header>
+
+        <section class="o-hero-card" aria-labelledby="hero-title">
+          <div class="o-hero-card__copy">
+            <span class="o-pill">框架骨架 · 演示数据</span>
+            <h2 id="hero-title">先看计划，再决定是否执行</h2>
+            <p>
+              能力以模块登记，风险与确认流程由框架统一呈现。
+              当前为 S1 骨架界面，不会读写真实文件。
+            </p>
+          </div>
+          <div class="o-hero-card__metric" aria-label="当前模块数量">
+            <strong id="module-count">0</strong>
+            <span>个演示模块</span>
+          </div>
+        </section>
+
+        <div class="o-content-grid">
+          <section class="o-card o-plan-card" aria-labelledby="plan-title">
+            <header class="o-card__header">
+              <div>
+                <p class="o-eyebrow">计划预览</p>
+                <h2 id="plan-title">待确认的步骤</h2>
+              </div>
+              <span class="o-risk o-risk--write">写入型</span>
+            </header>
+
+            <ol class="o-plan-list" data-slot="plan.row">
+              <li class="o-plan-row">
+                <span class="o-plan-row__index">01</span>
+                <span class="o-plan-row__content">
+                  <strong>整理本周下载内容</strong>
+                  <small>演示参数 · 2 个目录</small>
+                </span>
+                <span class="o-risk o-risk--read-only">只读</span>
+              </li>
+              <li class="o-plan-row">
+                <span class="o-plan-row__index">02</span>
+                <span class="o-plan-row__content">
+                  <strong>归档已完成的项目文件</strong>
+                  <small>演示参数 · 可撤销</small>
+                </span>
+                <span class="o-risk o-risk--write">写入</span>
+              </li>
+              <li class="o-plan-row">
+                <span class="o-plan-row__index">03</span>
+                <span class="o-plan-row__content">
+                  <strong>清理失效的临时副本</strong>
+                  <small>演示参数 · 需影响范围确认</small>
+                </span>
+                <span class="o-risk o-risk--delete">删除</span>
+              </li>
+            </ol>
+          </section>
+
+          <section class="o-card o-result-card" aria-labelledby="result-title">
+            <header class="o-card__header">
+              <div>
+                <p class="o-eyebrow">执行结果</p>
+                <h2 id="result-title">等待下一步</h2>
+              </div>
+              <span class="o-status-dot" aria-label="尚未连接"></span>
+            </header>
+            <div class="o-result-summary" data-slot="result.summary">
+              <div class="o-count">
+                <strong>0</strong>
+                <span>已完成步骤</span>
+              </div>
+              <div class="o-count">
+                <strong>0</strong>
+                <span>待确认步骤</span>
+              </div>
+            </div>
+            <p class="o-muted">
+              当前仅展示框架结构。执行、回滚和时间线将在后续阶段接入。
+            </p>
+          </section>
+        </div>
+
+        <section class="o-card o-recent-card" aria-labelledby="recent-title">
+          <header class="o-card__header">
+            <div>
+              <p class="o-eyebrow">工作区</p>
+              <h2 id="recent-title">模块空位已准备好</h2>
+            </div>
+          </header>
+          <div class="o-slot-preview" data-slot="result.summary">
+            <span class="o-slot-preview__line"></span>
+            <span class="o-slot-preview__line o-slot-preview__line--short"></span>
+            <span class="o-slot-preview__caption">内容区插槽</span>
+          </div>
+        </section>
+      </main>
+
+      <section id="ai-dock" class="o-dock" data-o-anchor="dock"
+               aria-labelledby="dock-label">
+        <div class="o-dock__bubble">
+          <span class="o-icon o-icon--spark" aria-hidden="true"></span>
+          <span id="dock-label">向归序描述你要完成的事</span>
+          <span class="o-dock__status">演示模式</span>
+        </div>
+        <div class="o-dock__panel">
+          <div class="o-dock__context">
+            <span class="o-icon o-icon--spark" aria-hidden="true"></span>
+            <div>
+              <strong>计划从这里开始</strong>
+              <p id="sse-status">本地界面已就绪，未连接事件流</p>
+            </div>
+          </div>
+          <div class="o-dock__composer">
+            <label class="o-visually-hidden" for="dock-input">事务描述</label>
+            <input id="dock-input" class="o-input" type="text"
+                   placeholder="例如：整理本周下载内容" autocomplete="off">
+            <button id="demo-call" class="o-primary-button" type="button">
+              演示调用
+            </button>
+          </div>
+          <p class="o-dock__hint">
+            悬停展开，离开后收起；演示调用只触发红点飞行动效。
+          </p>
+        </div>
+      </section>
+    </div>
+
+    <div id="motion-layer" class="o-motion-layer" aria-hidden="true"></div>
+
+    <dialog id="settings-dialog" class="o-settings"
+            data-o-anchor="settings-dialog" aria-labelledby="settings-title">
+      <header class="o-settings__header">
+        <div>
+          <p class="o-eyebrow">系统与功能</p>
+          <h2 id="settings-title">设置</h2>
+        </div>
+        <button id="settings-close" class="o-icon-button" type="button"
+                data-o-close="settings" aria-label="关闭设置">
+          <span class="o-close-mark" aria-hidden="true"></span>
+        </button>
+      </header>
+
+      <div class="o-settings__body">
+        <nav class="o-settings__nav" aria-label="设置分类">
+          <button class="o-settings-nav-item" type="button"
+                  data-settings-section="system" aria-current="page">
+            系统设置
+          </button>
+          <button class="o-settings-nav-item" type="button"
+                  data-settings-section="features">
+            功能设置
+          </button>
+          <div id="settings-module-nav" class="o-settings__module-nav"></div>
+        </nav>
+
+        <div class="o-settings__content">
+          <section id="settings-system" class="o-settings-panel"
+                   aria-labelledby="system-settings-title">
+            <h3 id="system-settings-title">系统设置</h3>
+            <p class="o-muted">主题与动效由框架统一管理。</p>
+
+            <div class="o-setting-row">
+              <label for="theme-select">主题</label>
+              <select id="theme-select" class="o-select">
+                <option value="default">默认主题</option>
+                <option value="minimal">最小主题</option>
+              </select>
+            </div>
+
+            <div class="o-setting-row">
+              <label for="reduce-motion">减少动效</label>
+              <input id="reduce-motion" class="o-toggle" type="checkbox">
+            </div>
+
+            <div class="o-setting-row">
+              <span>模块管理</span>
+              <span class="o-muted">仅展示演示注册表</span>
+            </div>
+          </section>
+
+          <section id="settings-features" class="o-settings-panel"
+                   aria-labelledby="feature-settings-title" hidden>
+            <h3 id="feature-settings-title">功能设置</h3>
+            <p class="o-muted">
+              以下控件由模块声明的 settings 数组驱动，框架统一渲染。
+            </p>
+            <div id="feature-settings" data-slot="settings.panel"></div>
+          </section>
+        </div>
+      </div>
+    </dialog>
+
+    <script type="module" src="./js/shell.js"></script>
+  </body>
+</html>

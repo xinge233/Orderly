@@ -1,0 +1,79 @@
+{
+  "id": "fs.move.items",
+  "name": "移动项目",
+  "summary": "移动指定的文件或文件夹",
+  "risk": "write",
+  "params": {
+    "type": "object",
+    "properties": {
+      "source": {
+        "type": "string",
+        "description": "要移动的源路径"
+      },
+      "destination": {
+        "type": "string",
+        "description": "目标目录路径"
+      }
+    },
+    "required": [
+      "source",
+      "destination"
+    ],
+    "additionalProperties": false
+  },
+  "result": {
+    "status": "ok",
+    "changed": [
+      {
+        "kind": "move"
+      }
+    ],
+    "counts": {
+      "moved": 2
+    },
+    "errorCode": "OK",
+    "inverse": null
+  },
+  "inverse": {
+    "id": "fs.move.items",
+    "params": {
+      "source": "$result.changed[0].destination",
+      "destination": "$params.source"
+    }
+  },
+  "irreversible": false,
+  "ui": {
+    "icon": "folder",
+    "entry": "sidebar.item",
+    "accent": "accent.primary"
+  },
+  "settings": [
+    {
+      "key": "batch_size",
+      "label": "单批数量",
+      "control": "number",
+      "default": 20,
+      "min": 1,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "key": "keep_metadata",
+      "label": "保留元数据",
+      "control": "toggle",
+      "default": true
+    },
+    {
+      "key": "on_conflict",
+      "label": "冲突处理",
+      "control": "select",
+      "default": "skip",
+      "options": [
+        "skip",
+        "replace",
+        "ask"
+      ]
+    }
+  ],
+  "version": "0.1.0"
+}

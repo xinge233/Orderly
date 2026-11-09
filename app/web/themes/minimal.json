@@ -1,0 +1,10 @@
+{
+  "name": "最小主题",
+  "raw": {
+    "--raw-primary": "#167D68",
+    "--raw-secondary": "#8A5A2B"
+  },
+  "meta": {
+    "description": "只覆盖两个原始色值，其余取值由默认主题补齐。"
+  }
+}

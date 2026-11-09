@@ -1,0 +1,180 @@
+{
+  "_note": "S1 静态演示数据，不会读取用户文件，也不会调用任何模块实现。",
+  "modules": [
+    {
+      "id": "demo.read.notes",
+      "name": "查阅笔记",
+      "summary": "展示笔记读取能力的界面条目",
+      "risk": "read_only",
+      "params": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "演示关键词"
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "status": "ok"
+      },
+      "inverse": null,
+      "irreversible": false,
+      "ui": {
+        "icon": "file",
+        "entry": "sidebar.item",
+        "accent": "accent.primary"
+      },
+      "settings": [],
+      "version": "0.1.0"
+    },
+    {
+      "id": "demo.read.calendar",
+      "name": "查看日程",
+      "summary": "展示日程读取能力的界面条目",
+      "risk": "read_only",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "result": {
+        "status": "ok"
+      },
+      "inverse": null,
+      "irreversible": false,
+      "ui": {
+        "icon": "calendar",
+        "entry": "sidebar.item",
+        "accent": "accent.secondary"
+      },
+      "settings": [],
+      "version": "0.1.0"
+    },
+    {
+      "id": "demo.write.archive",
+      "name": "归档项目",
+      "summary": "展示可撤销归档能力的界面条目",
+      "risk": "write",
+      "params": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "演示归档目标"
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "status": "ok"
+      },
+      "inverse": {
+        "type": "restore_archive"
+      },
+      "irreversible": false,
+      "ui": {
+        "icon": "archive",
+        "entry": "sidebar.item",
+        "accent": "accent.primary"
+      },
+      "settings": [
+        {
+          "key": "archive.retention",
+          "label": "保留天数",
+          "control": "number",
+          "default": 30,
+          "min": 7,
+          "max": 365,
+          "step": 1
+        },
+        {
+          "key": "archive.quiet",
+          "label": "完成后提示",
+          "control": "toggle",
+          "default": true
+        },
+        {
+          "key": "archive.group",
+          "label": "归档方式",
+          "control": "select",
+          "default": "按月",
+          "options": ["按日", "按周", "按月"]
+        }
+      ],
+      "version": "0.1.0"
+    },
+    {
+      "id": "demo.write.todo",
+      "name": "整理待办",
+      "summary": "展示待办整理能力的界面条目",
+      "risk": "write",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "result": {
+        "status": "ok"
+      },
+      "inverse": {
+        "type": "restore_todo_order"
+      },
+      "irreversible": false,
+      "ui": {
+        "icon": "todo",
+        "entry": "sidebar.item",
+        "accent": "accent.secondary"
+      },
+      "settings": [],
+      "version": "0.1.0"
+    },
+    {
+      "id": "demo.delete.cache",
+      "name": "清理缓存",
+      "summary": "展示删除能力风险流程的界面条目",
+      "risk": "delete",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "result": {
+        "status": "ok"
+      },
+      "inverse": null,
+      "irreversible": true,
+      "ui": {
+        "icon": "folder",
+        "entry": "sidebar.item",
+        "accent": "accent.secondary"
+      },
+      "settings": [],
+      "version": "0.1.0"
+    },
+    {
+      "id": "demo.delete.duplicates",
+      "name": "清理重复项",
+      "summary": "展示不可逆删除能力的界面条目",
+      "risk": "delete",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "result": {
+        "status": "ok"
+      },
+      "inverse": null,
+      "irreversible": true,
+      "ui": {
+        "icon": "archive",
+        "entry": "sidebar.item",
+        "accent": "accent.primary"
+      },
+      "settings": [],
+      "version": "0.1.0"
+    }
+  ]
+}

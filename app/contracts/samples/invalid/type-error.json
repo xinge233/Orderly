@@ -1,0 +1,33 @@
+{
+  "id": "fs.list.items",
+  "name": 42,
+  "summary": "列出指定目录中的项目",
+  "risk": "write",
+  "params": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "要读取的目录路径"
+      }
+    },
+    "required": [
+      "path"
+    ],
+    "additionalProperties": false
+  },
+  "result": {
+    "status": "ok"
+  },
+  "inverse": {
+    "id": "fs.list.items"
+  },
+  "irreversible": false,
+  "ui": {
+    "icon": "folder",
+    "entry": "sidebar.item",
+    "accent": "accent.primary"
+  },
+  "settings": [],
+  "version": "0.1.0"
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/registry.schema.json",
+  "title": "Orderly module registry",
+  "description": "Build-time registry. S1 freezes the empty registry shape.",
+  "type": "object",
+  "required": [
+    "modules"
+  ],
+  "properties": {
+    "modules": {
+      "type": "array",
+      "items": {
+        "$ref": "module.schema.json"
+      }
+    }
+  },
+  "additionalProperties": false
+}
