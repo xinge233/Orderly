@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="paper" data-motion="gentle">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="Canvas" id="theme-color-meta">
+    <title>归序 Orderly · 可控本地工作流</title>
+    <link rel="stylesheet" href="./styles/tokens.css">
+    <link rel="stylesheet" href="./styles/app.css">
+</head>
+<body>
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+
+    <div class="app-shell">
+        <aside class="sidebar" aria-label="应用导航">
+            <header class="brand">
+                <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="brand-copy">
+                    <strong>归序</strong>
+                    <small>ORDERLY</small>
+                </span>
+            </header>
+
+            <label class="search-box">
+                <span class="search-box__icon" data-icon="search" aria-hidden="true"></span>
+                <span class="sr-only">搜索功能</span>
+                <input id="nav-search" type="search" placeholder="搜索功能" autocomplete="off">
+                <kbd>/</kbd>
+            </label>
+
+            <div class="sidebar-scroll">
+                <nav class="nav-groups" id="primary-nav" aria-label="主要功能"></nav>
+            </div>
+
+            <footer class="sidebar-footer">
+                <div class="sandbox-status">
+                    <span class="status-dot" id="health-dot" aria-hidden="true"></span>
+                    <span>
+                        <strong id="health-label">正在连接本地服务</strong>
+                        <small id="health-detail">等待健康检查</small>
+                    </span>
+                </div>
+                <button class="settings-trigger" id="open-settings" type="button">
+                    <span data-icon="settings" aria-hidden="true"></span>
+                    <span><strong>设置</strong><small>外观、动效与模块</small></span>
+                    <kbd>Ctrl ,</kbd>
+                </button>
+            </footer>
+        </aside>
+
+        <div class="app-main">
+            <header class="topbar">
+                <div>
+                    <p class="eyebrow">LOCAL-FIRST WORKFLOW</p>
+                    <div class="breadcrumb" id="breadcrumb" aria-live="polite">
+                        <span>工作台</span><span aria-hidden="true">/</span><strong>总览</strong>
+                    </div>
+                </div>
+                <div class="topbar-actions">
+                    <span class="mode-badge"><i aria-hidden="true"></i>本地运行</span>
+                    <span class="planner-badge" id="planner-badge">本地规则计划器</span>
+                    <button class="icon-button mobile-menu" id="mobile-menu" type="button" aria-label="打开导航">
+                        <span data-icon="menu" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </header>
+
+            <main class="main-content" id="main-content" tabindex="-1">
+                <section class="loading-panel" aria-live="polite">
+                    <span class="loading-orbit" aria-hidden="true"></span>
+                    <h1>正在准备本地工作台</h1>
+                    <p>读取沙箱状态与模块契约…</p>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <aside class="command-dock" id="command-dock" aria-label="计划指令入口">
+        <div class="command-dock__glow" aria-hidden="true"></div>
+        <div class="command-intro">
+            <span class="command-spark" data-icon="spark" aria-hidden="true"></span>
+            <span>
+                <strong>告诉归序你想完成什么</strong>
+                <small>先生成计划，确认后才会执行</small>
+            </span>
+            <button class="dock-toggle" id="dock-toggle" type="button" aria-expanded="false">
+                展开
+            </button>
+        </div>
+        <div class="command-examples" id="command-examples" aria-label="示例指令"></div>
+        <form class="command-form" id="command-form">
+            <label class="sr-only" for="command-input">输入工作流目标</label>
+            <textarea
+                id="command-input"
+                rows="1"
+                maxlength="600"
+                placeholder="例如：创建目录 归档，然后移动 收件箱/示例笔记.txt 到 归档"
+            ></textarea>
+            <button class="send-button" id="send-command" type="submit">
+                <span data-icon="arrow-up" aria-hidden="true"></span>
+                <span>生成计划</span>
+            </button>
+        </form>
+        <p class="dock-footnote" id="command-note">未连接外部模型；当前使用可审计的本地规则计划器。</p>
+    </aside>
+
+    <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
+        <div class="settings-frame">
+            <header class="settings-head">
+                <div>
+                    <p class="eyebrow">ORDERLY PREFERENCES</p>
+                    <h2 id="settings-title">设置</h2>
+                </div>
+                <button class="icon-button" id="close-settings" type="button" aria-label="关闭设置">
+                    <span data-icon="close" aria-hidden="true"></span>
+                </button>
+            </header>
+            <div class="settings-body">
+                <nav class="settings-nav" id="settings-nav" aria-label="设置分类"></nav>
+                <section class="settings-panel" id="settings-panel" aria-live="polite"></section>
+            </div>
+            <footer class="settings-footer">
+                <span>偏好仅保存在当前浏览器。</span>
+                <button class="text-button" id="reset-settings" type="button">恢复默认</button>
+            </footer>
+        </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="scrim" id="mobile-scrim" hidden></div>
+
+    <script type="module" src="./src/app.js"></script>
+</body>
+</html>

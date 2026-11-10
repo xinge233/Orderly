@@ -1,0 +1,60 @@
+{
+  "moduleId": "module_fs",
+  "title": "文件与目录",
+  "description": "在应用自管沙箱内浏览、创建、移动和回收文件。",
+  "order": 10,
+  "actions": [
+    {
+      "id": "fs.list",
+      "title": "列出目录",
+      "description": "只读列出工作区目录内容。",
+      "risk": "READ_ONLY",
+      "confirmationRequired": false,
+      "parameters": [
+        { "name": "path", "type": "string", "required": false, "description": "工作区相对路径" }
+      ]
+    },
+    {
+      "id": "fs.mkdir",
+      "title": "创建目录",
+      "description": "在工作区创建目录。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "path", "type": "string", "required": true, "description": "新目录相对路径" }
+      ]
+    },
+    {
+      "id": "fs.move",
+      "title": "移动或重命名",
+      "description": "在工作区内移动或重命名文件。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "source", "type": "string", "required": true, "description": "源相对路径" },
+        { "name": "target", "type": "string", "required": true, "description": "目标相对路径" }
+      ]
+    },
+    {
+      "id": "fs.trash",
+      "title": "移入回收站",
+      "description": "将对象移入项目回收站，不执行物理删除。",
+      "risk": "DELETE",
+      "confirmationRequired": true,
+      "confirmationPhrase": "删除",
+      "parameters": [
+        { "name": "path", "type": "string", "required": true, "description": "待移入回收站的相对路径" }
+      ]
+    },
+    {
+      "id": "fs.restore",
+      "title": "从回收站恢复",
+      "description": "按回收站条目恢复原对象。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "trashId", "type": "string", "required": true, "description": "回收站条目 ID" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/plan.schema.json",
+  "title": "Orderly Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "planId",
+    "goal",
+    "kind",
+    "message",
+    "assumptions",
+    "impact",
+    "confidence",
+    "status",
+    "createdAt",
+    "steps"
+  ],
+  "properties": {
+    "planId": { "type": "string", "minLength": 1 },
+    "goal": { "type": "string", "minLength": 1 },
+    "kind": { "enum": ["PLAN", "QUESTION"] },
+    "message": { "type": "string" },
+    "assumptions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "impact": { "type": "string" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "status": {
+      "enum": [
+        "PREVIEW",
+        "RUNNING",
+        "COMPLETED",
+        "REJECTED",
+        "PARTIALLY_ROLLED_BACK",
+        "ROLLED_BACK"
+      ]
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "completedAt": {
+      "oneOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "moduleId",
+          "actionId",
+          "title",
+          "description",
+          "arguments",
+          "risk",
+          "dependsOn",
+          "status",
+          "message"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "moduleId": { "type": "string", "minLength": 1 },
+          "actionId": { "type": "string", "minLength": 1 },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "arguments": { "type": "object" },
+          "risk": { "enum": ["READ_ONLY", "WRITE", "DELETE"] },
+          "dependsOn": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "status": {
+            "enum": ["WAITING", "RUNNING", "COMPLETED", "FAILED", "ROLLED_BACK"]
+          },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  }
+}

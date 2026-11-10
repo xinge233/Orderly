@@ -1,0 +1,19 @@
+{
+  "moduleId": "module_todo",
+  "title": "待办事项",
+  "description": "创建可审计、可撤销的本地待办。",
+  "order": 20,
+  "actions": [
+    {
+      "id": "todo.create",
+      "title": "创建待办",
+      "description": "新增一条本地待办。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "title", "type": "string", "required": true, "description": "待办标题" },
+        { "name": "dueAt", "type": "string", "required": false, "description": "可选截止时间" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "planId": "plan-invalid-1",
+  "goal": "删除示例",
+  "kind": "PLAN",
+  "message": "非法样例",
+  "assumptions": [],
+  "impact": "未产生变更",
+  "confidence": 0.9,
+  "status": "PREVIEW",
+  "createdAt": "2026-11-10T12:00:00Z",
+  "completedAt": null,
+  "steps": [
+    {
+      "id": "s1",
+      "moduleId": "module_fs",
+      "actionId": "fs.trash",
+      "title": "移入回收站",
+      "description": "非法样例缺少风险",
+      "arguments": { "path": "示例.txt" },
+      "dependsOn": [],
+      "status": "WAITING",
+      "message": ""
+    }
+  ]
+}

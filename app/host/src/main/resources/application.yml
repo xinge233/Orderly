@@ -1,0 +1,16 @@
+server:
+  address: 127.0.0.1
+  port: 8080
+spring:
+  application:
+    name: orderly
+  web:
+    resources:
+      cache:
+        period: 0
+orderly:
+  data-dir: .orderly-data
+logging:
+  level:
+    root: INFO
+    com.orderly: INFO

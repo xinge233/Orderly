@@ -1,0 +1,43 @@
+{
+  "planId": "plan-demo-1",
+  "goal": "创建目录 归档；移动 收件箱/示例笔记.txt 到 归档/示例笔记.txt",
+  "kind": "PLAN",
+  "message": "已生成 2 步计划，请检查后确认执行。",
+  "assumptions": [
+    "所有操作仅发生在应用自管演示工作区。"
+  ],
+  "impact": "共 2 步，其中写入 2 步；确认前不会产生真实变更。",
+  "confidence": 0.96,
+  "status": "PREVIEW",
+  "createdAt": "2026-11-10T12:00:00Z",
+  "completedAt": null,
+  "steps": [
+    {
+      "id": "s1",
+      "moduleId": "module_fs",
+      "actionId": "fs.mkdir",
+      "title": "创建目录",
+      "description": "在工作区创建目录。",
+      "arguments": { "path": "归档" },
+      "risk": "WRITE",
+      "dependsOn": [],
+      "status": "WAITING",
+      "message": ""
+    },
+    {
+      "id": "s2",
+      "moduleId": "module_fs",
+      "actionId": "fs.move",
+      "title": "移动或重命名",
+      "description": "在工作区内移动或重命名文件。",
+      "arguments": {
+        "source": "收件箱/示例笔记.txt",
+        "target": "归档/示例笔记.txt"
+      },
+      "risk": "WRITE",
+      "dependsOn": ["s1"],
+      "status": "WAITING",
+      "message": ""
+    }
+  ]
+}

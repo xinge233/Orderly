@@ -1,0 +1,38 @@
+{
+  "planId": "plan-invalid-2",
+  "goal": "依赖环",
+  "kind": "PLAN",
+  "message": "非法样例",
+  "assumptions": [],
+  "impact": "未产生变更",
+  "confidence": 0.5,
+  "status": "PREVIEW",
+  "createdAt": "2026-11-10T12:00:00Z",
+  "completedAt": null,
+  "steps": [
+    {
+      "id": "s1",
+      "moduleId": "module_todo",
+      "actionId": "todo.create",
+      "title": "创建待办",
+      "description": "依赖 s2",
+      "arguments": { "title": "A" },
+      "risk": "WRITE",
+      "dependsOn": ["s2"],
+      "status": "WAITING",
+      "message": ""
+    },
+    {
+      "id": "s2",
+      "moduleId": "module_todo",
+      "actionId": "todo.create",
+      "title": "创建待办",
+      "description": "依赖 s1",
+      "arguments": { "title": "B" },
+      "risk": "WRITE",
+      "dependsOn": ["s1"],
+      "status": "WAITING",
+      "message": ""
+    }
+  ]
+}

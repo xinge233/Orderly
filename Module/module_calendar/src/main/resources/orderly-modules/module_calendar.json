@@ -1,0 +1,19 @@
+{
+  "moduleId": "module_calendar",
+  "title": "日程安排",
+  "description": "修改本地日程时间并保留可撤销的前后版本。",
+  "order": 30,
+  "actions": [
+    {
+      "id": "calendar.reschedule",
+      "title": "修改日程时间",
+      "description": "按日程标题修改开始时间。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "title", "type": "string", "required": true, "description": "日程标题" },
+        { "name": "newStartAt", "type": "string", "required": true, "description": "新的 ISO-8601 时间" }
+      ]
+    }
+  ]
+}
