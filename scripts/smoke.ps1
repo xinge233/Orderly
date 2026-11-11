@@ -36,43 +36,57 @@ if ($themes.Count -gt 0) {
     }
 }
 
-$files = Invoke-RestMethod -Uri "$BaseUrl/api/files" -Method Get
-if ($null -eq $files.entries) {
-    throw "文件目录响应缺少 entries。"
+$queryCount = 0
+$firstExample = $null
+foreach ($module in $modules) {
+    $moduleId = [uri]::EscapeDataString([string]$module.moduleId)
+    $ui = Invoke-RestMethod -Uri "$BaseUrl/api/modules/$moduleId/ui/module.json" -Method Get
+    if ([string]::IsNullOrWhiteSpace([string]$ui.view.id) -or
+            [string]::IsNullOrWhiteSpace([string]$ui.script) -or
+            [string]::IsNullOrWhiteSpace([string]$ui.style)) {
+        throw "模块 $($module.moduleId) 的 UI 清单不完整。"
+    }
+    Invoke-WebRequest -Uri "$BaseUrl/api/modules/$moduleId/ui/$([uri]::EscapeDataString([string]$ui.script))" -Method Get | Out-Null
+    Invoke-WebRequest -Uri "$BaseUrl/api/modules/$moduleId/ui/$([uri]::EscapeDataString([string]$ui.style))" -Method Get | Out-Null
+
+    if (-not $firstExample -and @($ui.examples).Count -gt 0 -and $ui.examples[0].text) {
+        $firstExample = [string]$ui.examples[0].text
+    }
+    foreach ($query in @($module.queries)) {
+        $required = @($query.parameters | Where-Object { $_.required })
+        if ($required.Count -eq 0) {
+            Invoke-RestMethod -Uri "$BaseUrl/api/modules/$moduleId/query/$([uri]::EscapeDataString([string]$query.id))" -Method Get | Out-Null
+            $queryCount++
+        }
+    }
 }
 
+$goal = if ($firstExample) { $firstExample } else { "当前没有可识别的模块目标" }
 $plan = Invoke-RestMethod -Uri "$BaseUrl/api/plans" -Method Post `
     -ContentType "application/json" `
-    -Body (@{ goal = "创建文件夹 烟测目录" } | ConvertTo-Json)
-if ($plan.kind -ne "PLAN" -or -not $plan.planId) {
+    -Body (@{ goal = $goal } | ConvertTo-Json)
+if ($modules.Count -eq 0 -and $plan.kind -ne "QUESTION") {
+    throw "零模块状态下计划器没有返回 QUESTION。"
+}
+if ($modules.Count -gt 0 -and $plan.kind -notin @("PLAN", "QUESTION")) {
     throw "计划生成响应不符合预期：$($plan | ConvertTo-Json -Compress -Depth 8)"
 }
 
-$unconfirmed = $null
-try {
-    $unconfirmed = Invoke-RestMethod -Uri "$BaseUrl/api/plans/$($plan.planId)/confirm" -Method Post `
-        -ContentType "application/json" `
-        -Body (@{ confirmed = $false; confirmation = "" } | ConvertTo-Json)
-} catch {
-    $unconfirmed = $_.ErrorDetails.Message
-}
-if ($null -eq $unconfirmed) {
-    throw "未确认计划没有被拒绝。"
-}
-
-$confirmed = Invoke-RestMethod -Uri "$BaseUrl/api/plans/$($plan.planId)/confirm" -Method Post `
-    -ContentType "application/json" `
-    -Body (@{ confirmed = $true; confirmation = "" } | ConvertTo-Json)
-if ($confirmed.status -notin @("COMPLETED", "SUCCEEDED")) {
-    throw "确认执行未完成：$($confirmed | ConvertTo-Json -Compress -Depth 8)"
+if ($plan.kind -eq "PLAN") {
+    $unconfirmedStatus = $null
+    try {
+        Invoke-RestMethod -Uri "$BaseUrl/api/plans/$([uri]::EscapeDataString([string]$plan.planId))/confirm" -Method Post `
+            -ContentType "application/json" `
+            -Body (@{ confirmed = $false; confirmation = "" } | ConvertTo-Json) | Out-Null
+    } catch {
+        $unconfirmedStatus = [int]$_.Exception.Response.StatusCode
+    }
+    if ($unconfirmedStatus -ne 409) {
+        throw "未确认计划没有被 409 拒绝，实际状态：$unconfirmedStatus"
+    }
 }
 
-$rolledBack = Invoke-RestMethod -Uri "$BaseUrl/api/plans/$($plan.planId)/rollback" -Method Post `
-    -ContentType "application/json" -Body "{}"
-if ($rolledBack.status -notin @("ROLLED_BACK", "PARTIALLY_ROLLED_BACK")) {
-    throw "回滚响应不符合预期：$($rolledBack | ConvertTo-Json -Compress -Depth 8)"
-}
-
-Write-Host "HTTP 烟测通过：JDK 21 健康、模块与主题目录、文件目录、计划、未确认拒绝、确认执行、回滚。"
+Write-Host "HTTP 烟测通过：JDK 21、动态模块目录、模块 UI、通用查询、主题和未执行计划确认；未产生业务数据变更。"
+Write-Host "已执行无必填参数的通用查询数量：$queryCount"
 
 exit 0

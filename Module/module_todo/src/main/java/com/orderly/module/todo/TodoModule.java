@@ -23,6 +23,33 @@ public final class TodoModule implements OrderlyModule {
     }
 
     @Override
+    public void initialize(ModuleRuntime runtime) {
+        if (runtime.hasItems(COLLECTION)) {
+            return;
+        }
+        runtime.writeItems(COLLECTION, List.of(Map.of(
+                "id", "todo-seed-1",
+                "title", "完成季度复盘",
+                "dueAt", "2026-11-20T18:00:00+08:00",
+                "status", "OPEN",
+                "createdAt", "2026-11-10T09:00:00+08:00"
+        )));
+    }
+
+    @Override
+    public Map<String, Object> query(
+            String queryId,
+            Map<String, String> parameters,
+            ModuleRuntime runtime
+    ) {
+        if (!"todo.list".equals(queryId)) {
+            throw new IllegalArgumentException("待办模块未提供查询：" + queryId);
+        }
+        List<Map<String, Object>> items = runtime.readItems(COLLECTION);
+        return Map.of("items", items, "count", items.size());
+    }
+
+    @Override
     public Map<String, Object> prepareSnapshot(
             ModuleInvocation invocation,
             ModuleRuntime runtime

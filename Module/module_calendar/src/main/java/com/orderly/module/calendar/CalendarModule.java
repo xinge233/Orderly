@@ -23,6 +23,32 @@ public final class CalendarModule implements OrderlyModule {
     }
 
     @Override
+    public void initialize(ModuleRuntime runtime) {
+        if (runtime.hasItems(COLLECTION)) {
+            return;
+        }
+        runtime.writeItems(COLLECTION, List.of(Map.of(
+                "id", "calendar-seed-1",
+                "title", "项目评审",
+                "startAt", "2026-11-18T10:00:00+08:00",
+                "endAt", "2026-11-18T11:00:00+08:00"
+        )));
+    }
+
+    @Override
+    public Map<String, Object> query(
+            String queryId,
+            Map<String, String> parameters,
+            ModuleRuntime runtime
+    ) {
+        if (!"calendar.list".equals(queryId)) {
+            throw new IllegalArgumentException("日程模块未提供查询：" + queryId);
+        }
+        List<Map<String, Object>> items = runtime.readItems(COLLECTION);
+        return Map.of("items", items, "count", items.size());
+    }
+
+    @Override
     public Map<String, Object> prepareSnapshot(
             ModuleInvocation invocation,
             ModuleRuntime runtime

@@ -24,6 +24,9 @@
 | `templates/task-brief.md` | PM 开工任务卡模板 |
 | `templates/pm-review.md` | PM 只读验收模板 |
 | `templates/software-engineer-handoff.md` | 软件工程师交接模板 |
+| `ORDERLY-MODULES-SELF-CONTAINED.md` | 模块自包含与动态扩展总任务卡 |
+| `ORDERLY-MODULES-CONTRACT-SAMPLES.md` | 模块契约与 UI 样例、校验定向返工任务卡 |
+| `ORDERLY-MODULES-SELF-CONTAINED-software-engineer-handoff.md` | 总任务软件工程师交接报告 |
 
 ## 常设角色
 
@@ -33,7 +36,7 @@
 | `project_manager` | 常设 subagent | 只读 | 任务卡、模块化审查、测试报错检查、验收结论 |
 | `software_engineer` | 常设 subagent | 仅任务卡允许路径 | 变更实施、技术自检、交接报告 |
 
-本阶段不增加第三个常设角色。PM 已承担模块化与测试审查，增加角色会造成职责重叠。未来进入真实代码阶段后，如契约、安全或 UI 审查复杂度显著上升，再评估增加独立审查员。
+本阶段不增加第三个常设角色。PM 已承担模块化与测试审查，增加角色会造成职责重叠；后续如契约、安全或 UI 审查复杂度显著上升，再评估增加独立审查员。
 
 ## 调用方式
 

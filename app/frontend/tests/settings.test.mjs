@@ -36,16 +36,17 @@ test("invalid settings fall back to safe defaults", () => {
         theme: "unknown",
         motion: "gentle",
         notifications: true,
-        hiddenModuleIds: []
+        hiddenModuleIds: [],
+        moduleOrderIds: []
     });
 });
 
-test("legacy module booleans migrate once into hiddenModuleIds", () => {
+test("unknown legacy module booleans are ignored", () => {
     assert.deepEqual(normalizeSettings({
         showFileModule: false,
         showTodoModule: true,
         showCalendarModule: false
-    }).hiddenModuleIds, ["module_fs", "module_calendar"]);
+    }).hiddenModuleIds, []);
 });
 
 test("settings store persists dynamic module visibility without fixed module keys", () => {
@@ -85,6 +86,21 @@ test("catalog reconciliation updates stale theme and removes unknown hidden modu
 
     assert.equal(reconciled.theme, "default-theme");
     assert.deepEqual(reconciled.hiddenModuleIds, ["module_kept"]);
+    assert.deepEqual(reconciled.moduleOrderIds, ["module_kept"]);
+});
+
+test("settings persist module card order and reconcile catalog changes", () => {
+    const storage = memoryStorage();
+    const store = new SettingsStore({ storage, storageKey: "order-test" });
+    store.update({ moduleOrderIds: ["module_new", "module_removed"] });
+    assert.deepEqual(store.getSnapshot().moduleOrderIds, ["module_new", "module_removed"]);
+
+    const reconciled = reconcileSettingsForCatalog(store.getSnapshot(), [
+        { moduleId: "module_new", order: 20 },
+        { moduleId: "module_added", order: 10 }
+    ]);
+    assert.deepEqual(reconciled.moduleOrderIds, ["module_new", "module_added"]);
+    assert.match(storage.getItem(), /"moduleOrderIds":\["module_new","module_removed"\]/);
 });
 
 test("theme manager loads detail, applies only token-shaped values, and clears previous injection", async () => {

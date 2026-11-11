@@ -202,6 +202,8 @@ function New-AcceptanceModule {
     $suffix = [guid]::NewGuid().ToString("N")
     $moduleId = "module_acceptance_$suffix"
     $actionId = "acceptance.$suffix"
+    $queryId = "acceptance.query.$suffix"
+    $plannerRuleId = "acceptance.rule.$suffix"
     $javaSuffix = "m$suffix"
     $packageName = "com.orderly.module.acceptance.$javaSuffix"
     $className = "AcceptanceModule"
@@ -248,10 +250,23 @@ public final class $className implements OrderlyModule {
 
     public static final String MODULE_ID = "$moduleId";
     public static final String ACTION_ID = "$actionId";
+    public static final String QUERY_ID = "$queryId";
 
     @Override
     public String moduleId() {
         return MODULE_ID;
+    }
+
+    @Override
+    public Map<String, Object> query(
+            String queryId,
+            Map<String, String> parameters,
+            ModuleRuntime runtime
+    ) {
+        if (!QUERY_ID.equals(queryId)) {
+            throw new IllegalArgumentException("Unknown acceptance query: " + queryId);
+        }
+        return Map.of("count", 1, "label", parameters.getOrDefault("label", "acceptance"));
     }
 
     @Override
@@ -294,18 +309,80 @@ public final class $className implements OrderlyModule {
                 description = "仅用于验证外部模块自动发现。"
                 risk = "READ_ONLY"
                 confirmationRequired = $false
-                parameters = @()
+                parameters = @(
+                    [ordered]@{
+                        name = "label"
+                        type = "string"
+                        required = $false
+                        description = "验收标签"
+                    }
+                )
+            }
+        )
+        queries = @(
+            [ordered]@{
+                id = $queryId
+                title = "验收查询"
+                description = "验证模块自有查询接口。"
+                parameters = @(
+                    [ordered]@{
+                        name = "label"
+                        type = "string"
+                        required = $false
+                        description = "验收标签"
+                    }
+                )
+            }
+        )
+        plannerRules = @(
+            [ordered]@{
+                id = $plannerRuleId
+                actionId = $actionId
+                pattern = "^验收模块动作\s*(.+)$"
+                argumentGroups = [ordered]@{ label = 1 }
+                pathArguments = @()
+                wholeGoal = $false
             }
         )
     } | ConvertTo-Json -Depth 8
 
+    $uiManifest = [ordered]@{
+        version = 1
+        view = [ordered]@{ id = "acceptance-$suffix"; icon = "modules"; caption = "动态验收" }
+        card = [ordered]@{
+            title = "动态验收模块"
+            description = "验证模块自带查询和界面。"
+            badge = "临时模块"
+            icon = "modules"
+            queryId = $queryId
+            countKey = "count"
+            unit = "项"
+        }
+        examples = @([ordered]@{ label = "动态验收"; text = "验收模块动作 动态" })
+        script = "module.js"
+        style = "module.css"
+    } | ConvertTo-Json -Depth 8
+    $uiScript = @"
+export default async function mount(root, context) {
+    const payload = await context.query("$queryId", { label: "ui" });
+    root.textContent = context.module.title + ' / ' + payload.count;
+}
+"@
+    $uiStyle = @"
+.acceptance-ui { color: var(--color-text); }
+"@
+
     $javaPath = Join-Path $source "src\main\java\com\orderly\module\acceptance\$javaSuffix\$className.java"
     $servicePath = Join-Path $source "src\main\resources\META-INF\services\com.orderly.kernel.OrderlyModule"
     $contractPath = Join-Path $source "src\main\resources\orderly-modules\$moduleId.json"
+    $uiRoot = Join-Path $source "src\main\resources\orderly-ui"
     Write-Utf8File (Join-Path $source "pom.xml") ($pom.Trim() + "`n")
     Write-Utf8File $javaPath ($javaSource.Trim() + "`n")
     Write-Utf8File $servicePath ("$packageName.$className`n")
     Write-Utf8File $contractPath ($contract + "`n")
+    Write-Utf8File (Join-Path $uiRoot "module.json") ($uiManifest + "`n")
+    Write-Utf8File (Join-Path $uiRoot "module.js") ($uiScript.Trim() + "`n")
+    Write-Utf8File (Join-Path $uiRoot "module.css") ($uiStyle.Trim() + "`n")
 
     Write-Host "创建临时验收模块：$moduleId"
     return [pscustomobject]@{
@@ -313,6 +390,8 @@ public final class $className implements OrderlyModule {
         Backup = $null
         ModuleId = $moduleId
         ActionId = $actionId
+        QueryId = $queryId
+        PlannerRuleId = $plannerRuleId
     }
 }
 
@@ -322,6 +401,42 @@ function Assert-ModuleIds([string[]]$Expected) {
     $actualSorted = @($actual | Sort-Object)
     if (($expectedSorted -join "|") -ne ($actualSorted -join "|")) {
         throw "模块列表不符合预期。预期=$($expectedSorted -join ',') 实际=$($actualSorted -join ',')"
+    }
+}
+
+function Assert-HttpStatus([string]$Uri, [int]$ExpectedStatus) {
+    $actual = $null
+    try {
+        $response = Invoke-WebRequest -Uri $Uri -Method Get -TimeoutSec 5
+        $actual = [int]$response.StatusCode
+    } catch {
+        if ($_.Exception.Response) {
+            $actual = [int]$_.Exception.Response.StatusCode
+        }
+    }
+    if ($actual -ne $ExpectedStatus) {
+        throw "HTTP 状态不符合预期：$Uri 预期=$ExpectedStatus 实际=$actual"
+    }
+}
+
+function Assert-ModuleSurface([string[]]$ExpectedIds) {
+    $catalogResponse = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/modules" -TimeoutSec 5
+    $catalog = @($catalogResponse | ForEach-Object { $_ })
+    foreach ($module in $catalog) {
+        $encodedId = [uri]::EscapeDataString([string]$module.moduleId)
+        $ui = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/modules/$encodedId/ui/module.json" -TimeoutSec 5
+        if ([string]::IsNullOrWhiteSpace([string]$ui.view.id)) {
+            throw "模块 $($module.moduleId) 的 UI 清单缺少 view.id。"
+        }
+        foreach ($asset in @([string]$ui.script, [string]$ui.style)) {
+            Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/$encodedId/ui/$([uri]::EscapeDataString($asset))" 200
+        }
+        foreach ($query in @($module.queries)) {
+            $required = @($query.parameters | Where-Object { $_.required })
+            if ($required.Count -eq 0) {
+                Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/$encodedId/query/$([uri]::EscapeDataString([string]$query.id))" 200
+            }
+        }
     }
 }
 
@@ -338,21 +453,28 @@ try {
     Invoke-Build
     Start-Orderly $javaExe
     Assert-ModuleIds -Expected $baselineIds
+    Assert-ModuleSurface -ExpectedIds $baselineIds
+    $baselineResponse = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/modules" -TimeoutSec 5
+    $baselineCatalog = @($baselineResponse | ForEach-Object { $_ })
+    $removedOne = $baselineModules[-1]
+    $removedUi = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/modules/$($removedOne.Name)/ui/module.json" -TimeoutSec 5
     Stop-Orderly
 
     Write-Host "[2/6] 移出一个模块"
-    $removedOne = $baselineModules[-1]
+    $removedContract = @($baselineCatalog | Where-Object { $_.moduleId -eq $removedOne.Name })
+    if ($removedContract.Count -ne 1) { throw "全模块目录中未找到待移除契约：$($removedOne.Name)" }
     Move-ModuleToBackup $removedOne
     Invoke-Build
     Start-Orderly $javaExe
     $remainingIds = @($baselineIds | Where-Object { $_ -ne $removedOne.Name })
     Assert-ModuleIds -Expected $remainingIds
-    $removedGoal = switch ($removedOne.Name) {
-        "module_fs" { "创建目录 被移除模块目录" }
-        "module_todo" { "创建待办 被移除模块事项" }
-        "module_calendar" { "把日程 项目评审 改到 2026-12-01 10:00" }
-        default { throw "缺少 $($removedOne.Name) 的验收目标映射。" }
+    foreach ($query in @($removedContract[0].queries)) {
+        Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/$($removedOne.Name)/query/$([uri]::EscapeDataString([string]$query.id))" 404
     }
+    foreach ($asset in @("module.json", "module.js", "module.css")) {
+        Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/$($removedOne.Name)/ui/$asset" 404
+    }
+    $removedGoal = if (@($removedUi.examples).Count -gt 0) { [string]$removedUi.examples[0].text } else { "无法识别的验收目标" }
     $questionBody = @{ goal = $removedGoal } | ConvertTo-Json -Compress
     $question = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/plans" -Method Post -ContentType "application/json" -Body $questionBody -TimeoutSec 5
     if ($question.kind -ne "QUESTION") { throw "缺少模块时计划未安全转为 QUESTION。" }
@@ -364,6 +486,9 @@ try {
     Invoke-Build
     Start-Orderly $javaExe
     Assert-ModuleIds -Expected @()
+    $baselineQuery = @($baselineCatalog[0].queries)[0]
+    Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/$($baselineCatalog[0].moduleId)/query/$([uri]::EscapeDataString([string]$baselineQuery.id))" 404
+    Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/$($baselineCatalog[0].moduleId)/ui/module.json" 404
     $zeroQuestion = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/plans" -Method Post -ContentType "application/json" -Body '{"goal":"创建目录 无模块目录"}' -TimeoutSec 5
     if ($zeroQuestion.kind -ne "QUESTION") { throw "零模块计划未安全转为 QUESTION。" }
     Stop-Orderly
@@ -373,6 +498,7 @@ try {
     Invoke-Build
     Start-Orderly $javaExe
     Assert-ModuleIds -Expected $baselineIds
+    Assert-ModuleSurface -ExpectedIds $baselineIds
     Stop-Orderly
 
     Write-Host "[5/6] 增加唯一有效模块并验证自动发现"
@@ -399,6 +525,23 @@ try {
     if ($acceptanceActions -notcontains $script:generatedModule.ActionId) {
         throw "临时验收模块动作未出现在 /api/modules。"
     }
+    $acceptanceQueries = @($acceptanceEntry[0].queries | ForEach-Object { $_.id })
+    if ($acceptanceQueries -notcontains $script:generatedModule.QueryId) {
+        throw "临时验收模块查询未出现在 /api/modules。"
+    }
+    $encodedAcceptanceId = [uri]::EscapeDataString($script:generatedModule.ModuleId)
+    Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/$encodedAcceptanceId/query/$([uri]::EscapeDataString($script:generatedModule.QueryId))" 200
+    $acceptanceUi = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/modules/$encodedAcceptanceId/ui/module.json" -TimeoutSec 5
+    if ($acceptanceUi.view.id -ne "acceptance-$($script:generatedModule.ModuleId.Substring($script:generatedModule.ModuleId.LastIndexOf('_') + 1))") {
+        throw "临时验收模块 UI 清单未从模块 JAR 正确读取。"
+    }
+    Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/$encodedAcceptanceId/ui/module.js" 200
+    Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/$encodedAcceptanceId/ui/module.css" 200
+    $acceptancePlan = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/plans" -Method Post -ContentType "application/json" `
+        -Body (@{ goal = "验收模块动作 动态" } | ConvertTo-Json -Compress) -TimeoutSec 5
+    if ($acceptancePlan.kind -ne "PLAN" -or @($acceptancePlan.steps)[0].actionId -ne $script:generatedModule.ActionId) {
+        throw "临时验收模块的计划规则未由模块契约驱动。"
+    }
     foreach ($entry in $protectedFiles.GetEnumerator()) {
         $after = Get-Sha256 $entry.Value
         if ($protectedHashesBefore[$entry.Key] -ne $after) {
@@ -411,6 +554,8 @@ try {
     Invoke-Build
     Start-Orderly $javaExe
     Assert-ModuleIds -Expected $baselineIds
+    Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/$encodedAcceptanceId/ui/module.json" 404
+    Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/$encodedAcceptanceId/query/$([uri]::EscapeDataString($script:generatedModule.QueryId))" 404
     Stop-Orderly
     Restore-GeneratedModule
     Move-GeneratedModuleToBackup
@@ -467,10 +612,8 @@ finally {
         Remove-GeneratedTheme
         Remove-GeneratedModule
         if (Test-Path -LiteralPath (Join-Path $repoRoot "Module")) { Invoke-Build }
-        if ($script:succeeded) {
-            Remove-ModularityTargetArtifacts
-            Write-Host "模块化验收临时路径已清理。"
-        }
+        Remove-ModularityTargetArtifacts
+        Write-Host "模块化验收临时路径已清理。"
     } finally {
         Pop-Location
     }

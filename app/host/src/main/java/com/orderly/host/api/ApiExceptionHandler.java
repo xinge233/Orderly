@@ -6,6 +6,7 @@ import org.springframework.web.context.request.async.AsyncRequestNotUsableExcept
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.nio.file.InvalidPathException;
 
@@ -29,6 +30,12 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException exception) {
         return ResponseEntity.badRequest()
                 .body(ApiError.of("INVALID_REQUEST", "请求字段校验失败"));
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiError> handleMissingResource(NoResourceFoundException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiError.of("NOT_FOUND", "请求的资源不存在"));
     }
 
     /**

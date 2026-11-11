@@ -39,6 +39,33 @@ function Assert-Jdk21 {
     }
 }
 
+function Remove-TestArtifacts {
+    $testRoots = @(
+        $targetRoot,
+        [System.IO.Path]::GetFullPath((Join-Path $repoRoot "app\host\target"))
+    )
+    foreach ($testRoot in $testRoots) {
+        if (-not (Test-Path -LiteralPath $testRoot -PathType Container)) {
+            continue
+        }
+        Get-ChildItem -LiteralPath $testRoot -Directory -Force -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name -like "test-data-*" -or
+                $_.Name -like "zero-module-data-*" -or
+                $_.Name -like "zero-modules-*" -or
+                $_.Name -like "module-init-data-*"
+            } |
+            ForEach-Object {
+                $fullPath = [System.IO.Path]::GetFullPath($_.FullName)
+                $fullRoot = $testRoot.TrimEnd('\') + '\'
+                if (-not $fullPath.StartsWith($fullRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    throw "拒绝清理测试目录之外的路径：$fullPath"
+                }
+                Remove-Item -LiteralPath $fullPath -Recurse -Force
+            }
+    }
+}
+
 function Reset-OrderlyStaging {
     $targetPrefix = $targetRoot.TrimEnd('\') + '\'
     if (-not $stagingRoot.StartsWith($targetPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -71,6 +98,7 @@ try {
         "-DskipTests"
     )
 
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
     foreach ($moduleDirectory in $moduleDirectories) {
         $pom = Join-Path $moduleDirectory.FullName "pom.xml"
         if (-not (Test-Path -LiteralPath $pom -PathType Leaf)) {
@@ -92,6 +120,17 @@ try {
         if ($moduleJars.Count -ne 1) {
             throw "模块 $($moduleDirectory.Name) 应产出一个可运行 JAR，实际 $($moduleJars.Count) 个。"
         }
+        $moduleArchive = [System.IO.Compression.ZipFile]::OpenRead($moduleJars[0].FullName)
+        try {
+            $assetNames = @($moduleArchive.Entries | ForEach-Object { $_.FullName })
+        } finally {
+            $moduleArchive.Dispose()
+        }
+        foreach ($requiredAsset in @("orderly-ui/module.json", "orderly-ui/module.js", "orderly-ui/module.css")) {
+            if ($assetNames -notcontains $requiredAsset) {
+                throw "模块 $($moduleDirectory.Name) 缺少自包含 UI 资源：$requiredAsset"
+            }
+        }
         Copy-Item -LiteralPath $moduleJars[0].FullName `
             -Destination (Join-Path $stagingRoot "$($moduleDirectory.Name).jar") -Force
     }
@@ -112,12 +151,12 @@ try {
     if ($hostJars.Count -ne 1) {
         throw "宿主构建应产出一个 fat JAR，实际 $($hostJars.Count) 个。"
     }
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [System.IO.Compression.ZipFile]::OpenRead($hostJars[0].FullName)
     try {
         $bundledModules = @($archive.Entries | Where-Object {
             $_.FullName -match '^BOOT-INF/lib/module[-_].+\.jar$' -or
-            $_.FullName -match '^BOOT-INF/classes/orderly-modules/.+\.json$'
+            $_.FullName -match '^BOOT-INF/classes/orderly-modules/.+\.json$' -or
+            $_.FullName -match '(^|/)orderly-ui/'
         })
     } finally {
         $archive.Dispose()
@@ -129,5 +168,6 @@ try {
     Write-Host "构建完成。运行时模块目录：$stagingRoot"
 }
 finally {
+    Remove-TestArtifacts
     Pop-Location
 }

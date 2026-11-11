@@ -1,0 +1,85 @@
+.calendar-ui-panel {
+    display: grid;
+    gap: var(--space-5);
+    padding: var(--space-6);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+}
+
+.calendar-ui-header,
+.calendar-ui-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+}
+
+.calendar-ui-header {
+    justify-content: space-between;
+}
+
+.calendar-ui-header h1,
+.calendar-ui-eyebrow,
+.calendar-ui-muted,
+.calendar-ui-copy small {
+    margin: 0;
+}
+
+.calendar-ui-eyebrow {
+    color: var(--color-secondary);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+}
+
+.calendar-ui-muted,
+.calendar-ui-copy small,
+.calendar-ui-empty {
+    color: var(--color-text-soft);
+}
+
+.calendar-ui-button {
+    border: 1px solid var(--color-secondary);
+    border-radius: var(--radius-sm);
+    background: var(--color-secondary-soft);
+    color: var(--color-secondary);
+    padding: var(--space-2) var(--space-4);
+    cursor: pointer;
+}
+
+.calendar-ui-list {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.calendar-ui-item {
+    padding: var(--space-4);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+}
+
+.calendar-ui-time {
+    min-width: 8rem;
+    color: var(--color-secondary);
+    font-family: var(--font-mono);
+    font-weight: 700;
+}
+
+.calendar-ui-copy {
+    display: grid;
+    gap: var(--space-1);
+}
+
+.calendar-ui-error {
+    color: var(--color-danger);
+}
+
+@media (max-width: 640px) {
+    .calendar-ui-header,
+    .calendar-ui-item {
+        align-items: stretch;
+        flex-direction: column;
+    }
+}

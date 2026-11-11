@@ -1,0 +1,114 @@
+.fs-ui-panel {
+    display: grid;
+    gap: var(--space-5);
+    padding: var(--space-6);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+}
+
+.fs-ui-header,
+.fs-ui-toolbar,
+.fs-ui-entry {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+}
+
+.fs-ui-header h1,
+.fs-ui-eyebrow,
+.fs-ui-muted,
+.fs-ui-entry p {
+    margin: 0;
+}
+
+.fs-ui-eyebrow {
+    color: var(--color-accent-strong);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+}
+
+.fs-ui-muted,
+.fs-ui-entry small,
+.fs-ui-entry__meta,
+.fs-ui-empty {
+    color: var(--color-text-soft);
+}
+
+.fs-ui-actions,
+.fs-ui-tabs {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.fs-ui-button,
+.fs-ui-tab {
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    color: var(--color-text);
+    padding: var(--space-2) var(--space-4);
+    cursor: pointer;
+}
+
+.fs-ui-button--accent,
+.fs-ui-tab.is-active {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+    color: var(--color-accent-strong);
+}
+
+.fs-ui-location {
+    color: var(--color-text-soft);
+    font-family: var(--font-mono);
+    font-weight: 600;
+}
+
+.fs-ui-list {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.fs-ui-entry {
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+}
+
+.fs-ui-entry:hover,
+.fs-ui-entry:focus-visible {
+    border-color: var(--color-focus);
+    outline: none;
+}
+
+.fs-ui-entry__icon {
+    display: inline-grid;
+    place-items: center;
+    color: var(--color-accent-strong);
+}
+
+.fs-ui-entry__copy {
+    display: grid;
+    flex: 1;
+    gap: var(--space-1);
+}
+
+.fs-ui-entry__meta {
+    font-size: 0.8rem;
+}
+
+.fs-ui-error {
+    color: var(--color-danger);
+}
+
+@media (max-width: 720px) {
+    .fs-ui-header,
+    .fs-ui-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+}

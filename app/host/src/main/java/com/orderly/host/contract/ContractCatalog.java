@@ -2,6 +2,7 @@ package com.orderly.host.contract;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.orderly.kernel.ModuleRuntime;
 import com.orderly.kernel.OrderlyModule;
 import com.orderly.kernel.RiskLevel;
 import jakarta.annotation.PreDestroy;
@@ -24,6 +25,8 @@ import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 import java.util.stream.Stream;
 
 /**
@@ -37,11 +40,20 @@ public class ContractCatalog implements AutoCloseable {
 
     private static final Set<String> SUPPORTED_TYPES = Set.of("string", "boolean", "integer");
     private static final String CONTRACT_PREFIX = "orderly-modules/";
+    private static final String UI_PREFIX = "orderly-ui/";
+    private static final Map<String, String> UI_ASSETS = Map.of(
+            "module.json", "application/json",
+            "module.js", "application/javascript",
+            "module.css", "text/css"
+    );
+    private static final long MAX_UI_ASSET_BYTES = 2L * 1024L * 1024L;
 
     private final List<ModuleContract> modules;
     private final Map<String, ModuleContract> modulesById;
     private final Map<String, ActionContract> actionsById;
+    private final List<PlannerRuleContract> plannerRules;
     private final Map<String, OrderlyModule> executors;
+    private final Map<String, Path> moduleJars;
     private final URLClassLoader moduleClassLoader;
     private final Path moduleDirectory;
 
@@ -54,8 +66,11 @@ public class ContractCatalog implements AutoCloseable {
 
         Map<String, ModuleContract> loaded = new LinkedHashMap<>();
         Map<String, ActionContract> actions = new LinkedHashMap<>();
+        Map<String, QueryContract> queries = new LinkedHashMap<>();
+        Map<String, PlannerRuleContract> rules = new LinkedHashMap<>();
+        Map<String, Path> jarsByModule = new LinkedHashMap<>();
         for (Path jar : jars) {
-            loadContracts(jar, objectMapper, loaded, actions);
+            loadContracts(jar, objectMapper, loaded, actions, queries, rules, jarsByModule);
         }
 
         URLClassLoader candidate = null;
@@ -95,7 +110,9 @@ public class ContractCatalog implements AutoCloseable {
                 .toList();
         this.modulesById = Map.copyOf(loaded);
         this.actionsById = Map.copyOf(actions);
+        this.plannerRules = List.copyOf(rules.values());
         this.executors = Map.copyOf(loadedExecutors);
+        this.moduleJars = Map.copyOf(jarsByModule);
     }
 
     public List<ModuleContract> modules() {
@@ -104,6 +121,63 @@ public class ContractCatalog implements AutoCloseable {
 
     public Path moduleDirectory() {
         return moduleDirectory;
+    }
+
+    public Optional<ModuleContract> findModule(String moduleId) {
+        return Optional.ofNullable(modulesById.get(moduleId));
+    }
+
+    public ModuleContract requireModule(String moduleId) {
+        return findModule(moduleId).orElseThrow(
+                () -> new IllegalArgumentException("模块未注册：" + moduleId)
+        );
+    }
+
+    public List<PlannerRuleContract> plannerRules() {
+        return plannerRules;
+    }
+
+    /** 由宿主启动阶段统一调用各模块的幂等初始化。 */
+    public void initializeModules(ModuleRuntime runtime) {
+        for (ModuleContract module : modules) {
+            requireExecutor(module.moduleId()).initialize(runtime);
+        }
+    }
+
+    /**
+     * 从模块 JAR 读取严格白名单内的 UI 资源。
+     *
+     * @return 资源不存在或不属于模块时为 empty
+     */
+    public Optional<ModuleUiAsset> readUiAsset(String moduleId, String assetName) {
+        if (!modulesById.containsKey(moduleId) || !UI_ASSETS.containsKey(assetName)) {
+            return Optional.empty();
+        }
+        Path jarPath = moduleJars.get(moduleId);
+        if (jarPath == null) {
+            return Optional.empty();
+        }
+        try (JarFile jar = new JarFile(jarPath.toFile(), false)) {
+            JarEntry entry = jar.getJarEntry(UI_PREFIX + assetName);
+            if (entry == null || entry.isDirectory()) {
+                return Optional.empty();
+            }
+            if (entry.getSize() > MAX_UI_ASSET_BYTES) {
+                throw new IllegalStateException("模块 UI 资源超过大小上限：" + moduleId + "/" + assetName);
+            }
+            try (var stream = jar.getInputStream(entry)) {
+                byte[] content = stream.readNBytes((int) MAX_UI_ASSET_BYTES + 1);
+                if (content.length > MAX_UI_ASSET_BYTES) {
+                    throw new IllegalStateException("模块 UI 资源超过大小上限：" + moduleId + "/" + assetName);
+                }
+                return Optional.of(new ModuleUiAsset(
+                        UI_ASSETS.get(assetName),
+                        content
+                ));
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("读取模块 UI 资源失败：" + moduleId + "/" + assetName, exception);
+        }
     }
 
     public Optional<ActionContract> findAction(String actionId) {
@@ -170,7 +244,10 @@ public class ContractCatalog implements AutoCloseable {
             Path jarPath,
             ObjectMapper objectMapper,
             Map<String, ModuleContract> loaded,
-            Map<String, ActionContract> actions
+            Map<String, ActionContract> actions,
+            Map<String, QueryContract> queries,
+            Map<String, PlannerRuleContract> plannerRules,
+            Map<String, Path> jarsByModule
     ) {
         try (JarFile jar = new JarFile(jarPath.toFile(), false)) {
             List<JarEntry> contractEntries = jar.stream()
@@ -183,15 +260,25 @@ public class ContractCatalog implements AutoCloseable {
             for (JarEntry entry : contractEntries) {
                 ModuleContract module;
                 try (var stream = jar.getInputStream(entry)) {
-                    module = parseModule(objectMapper.readTree(stream));
+                    module = parseAndValidateModule(objectMapper.readTree(stream));
                 }
                 if (loaded.putIfAbsent(module.moduleId(), module) != null) {
                     throw new IllegalStateException("检测到重复模块契约：" + module.moduleId());
                 }
-                validateModule(module);
+                jarsByModule.put(module.moduleId(), jarPath);
                 for (ActionContract action : module.actions()) {
                     if (actions.putIfAbsent(action.id(), action) != null) {
                         throw new IllegalStateException("检测到重复动作契约：" + action.id());
+                    }
+                }
+                for (QueryContract query : module.queries()) {
+                    if (queries.putIfAbsent(query.id(), query) != null) {
+                        throw new IllegalStateException("检测到重复查询契约：" + query.id());
+                    }
+                }
+                for (PlannerRuleContract rule : module.plannerRules()) {
+                    if (plannerRules.putIfAbsent(rule.id(), rule) != null) {
+                        throw new IllegalStateException("检测到重复计划规则：" + rule.id());
                     }
                 }
             }
@@ -208,6 +295,23 @@ public class ContractCatalog implements AutoCloseable {
         }
     }
 
+    /**
+     * 解析并校验一个模块的完整契约。
+     *
+     * <p>测试用固定样例复用与启动阶段完全相同的校验逻辑。</p>
+     */
+    ModuleContract parseAndValidateModule(JsonNode root) {
+        ModuleContract module = parseModule(root);
+        validateModule(module);
+        for (QueryContract query : module.queries()) {
+            validateQuery(module, query);
+        }
+        for (PlannerRuleContract rule : module.plannerRules()) {
+            validatePlannerRule(module, rule);
+        }
+        return module;
+    }
+
     private ModuleContract parseModule(JsonNode root) {
         requireText(root, "moduleId");
         requireText(root, "title");
@@ -216,19 +320,37 @@ public class ContractCatalog implements AutoCloseable {
             throw new IllegalStateException("模块契约缺少整数 order");
         }
         JsonNode rawActions = root.path("actions");
-        if (!rawActions.isArray() || rawActions.isEmpty()) {
-            throw new IllegalStateException("模块 actions 必须是非空数组");
+        if (!rawActions.isArray()) {
+            throw new IllegalStateException("模块 actions 必须是数组");
         }
         List<ActionContract> actions = new ArrayList<>();
         for (JsonNode node : rawActions) {
             actions.add(parseAction(node));
+        }
+        JsonNode rawQueries = root.path("queries");
+        if (!rawQueries.isArray()) {
+            throw new IllegalStateException("模块 queries 必须是数组");
+        }
+        List<QueryContract> queries = new ArrayList<>();
+        for (JsonNode node : rawQueries) {
+            queries.add(parseQuery(node));
+        }
+        JsonNode rawPlannerRules = root.path("plannerRules");
+        if (!rawPlannerRules.isArray()) {
+            throw new IllegalStateException("模块 plannerRules 必须是数组");
+        }
+        List<PlannerRuleContract> plannerRules = new ArrayList<>();
+        for (JsonNode node : rawPlannerRules) {
+            plannerRules.add(parsePlannerRule(node));
         }
         return new ModuleContract(
                 root.path("moduleId").asText(),
                 root.path("title").asText(),
                 root.path("description").asText(),
                 root.path("order").asInt(),
-                actions
+                actions,
+                queries,
+                plannerRules
         );
     }
 
@@ -243,11 +365,71 @@ public class ContractCatalog implements AutoCloseable {
         } catch (IllegalArgumentException exception) {
             throw new IllegalStateException("动作风险等级非法：" + node.path("id").asText());
         }
-        List<ParameterContract> parameters = new ArrayList<>();
-        JsonNode rawParameters = node.path("parameters");
-        if (!rawParameters.isArray()) {
-            throw new IllegalStateException("动作 parameters 必须是数组");
+        List<ParameterContract> parameters = parseParameters(node.path("parameters"), "动作");
+        return new ActionContract(
+                node.path("id").asText(),
+                node.path("title").asText(),
+                node.path("description").asText(),
+                risk,
+                node.path("confirmationRequired").asBoolean(false),
+                node.path("confirmationPhrase").asText(""),
+                List.copyOf(parameters)
+        );
+    }
+
+    private QueryContract parseQuery(JsonNode node) {
+        requireText(node, "id");
+        requireText(node, "title");
+        requireText(node, "description");
+        return new QueryContract(
+                node.path("id").asText(),
+                node.path("title").asText(),
+                node.path("description").asText(),
+                parseParameters(node.path("parameters"), "查询")
+        );
+    }
+
+    private PlannerRuleContract parsePlannerRule(JsonNode node) {
+        requireText(node, "id");
+        requireText(node, "actionId");
+        requireText(node, "pattern");
+        JsonNode rawArguments = node.path("argumentGroups");
+        if (!rawArguments.isObject() || rawArguments.isEmpty()) {
+            throw new IllegalStateException("计划规则 argumentGroups 必须是非空对象：" + node.path("id").asText());
         }
+        Map<String, Integer> argumentGroups = new LinkedHashMap<>();
+        rawArguments.fields().forEachRemaining(entry -> {
+            if (!entry.getValue().canConvertToInt() || entry.getValue().asInt() < 1) {
+                throw new IllegalStateException("计划规则捕获组必须是正整数：" + entry.getKey());
+            }
+            argumentGroups.put(entry.getKey(), entry.getValue().asInt());
+        });
+        Set<String> pathArguments = new java.util.LinkedHashSet<>();
+        JsonNode rawPaths = node.path("pathArguments");
+        if (!rawPaths.isArray()) {
+            throw new IllegalStateException("计划规则 pathArguments 必须是数组：" + node.path("id").asText());
+        }
+        rawPaths.forEach(path -> {
+            if (!path.isTextual() || path.asText().isBlank()) {
+                throw new IllegalStateException("计划规则 pathArguments 只能包含非空文本");
+            }
+            pathArguments.add(path.asText());
+        });
+        return new PlannerRuleContract(
+                node.path("id").asText(),
+                node.path("actionId").asText(),
+                node.path("pattern").asText(),
+                argumentGroups,
+                pathArguments,
+                node.path("wholeGoal").asBoolean(false)
+        );
+    }
+
+    private List<ParameterContract> parseParameters(JsonNode rawParameters, String owner) {
+        if (!rawParameters.isArray()) {
+            throw new IllegalStateException(owner + " parameters 必须是数组");
+        }
+        List<ParameterContract> parameters = new ArrayList<>();
         for (JsonNode parameter : rawParameters) {
             requireText(parameter, "name");
             requireText(parameter, "type");
@@ -261,15 +443,7 @@ public class ContractCatalog implements AutoCloseable {
                     parameter.path("description").asText("")
             ));
         }
-        return new ActionContract(
-                node.path("id").asText(),
-                node.path("title").asText(),
-                node.path("description").asText(),
-                risk,
-                node.path("confirmationRequired").asBoolean(false),
-                node.path("confirmationPhrase").asText(""),
-                List.copyOf(parameters)
-        );
+        return parameters;
     }
 
     private void validateModule(ModuleContract module) {
@@ -294,6 +468,64 @@ public class ContractCatalog implements AutoCloseable {
                         }
                     });
         }
+    }
+
+    private void validateQuery(ModuleContract module, QueryContract query) {
+        if (!query.id().contains(".")) {
+            throw new IllegalStateException("查询 ID 应包含模块命名空间：" + query.id());
+        }
+        requireUniqueParameters(query.id(), query.parameters());
+    }
+
+    private void validatePlannerRule(ModuleContract module, PlannerRuleContract rule) {
+        if (!rule.id().contains(".")) {
+            throw new IllegalStateException("计划规则 ID 应包含模块命名空间：" + rule.id());
+        }
+        ActionContract action = module.actions().stream()
+                .filter(candidate -> candidate.id().equals(rule.actionId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "计划规则引用了本模块不存在的动作：" + rule.id() + " -> " + rule.actionId()
+                ));
+        Set<String> actionParameters = action.parameters().stream()
+                .map(ParameterContract::name)
+                .collect(java.util.stream.Collectors.toSet());
+        Pattern pattern;
+        try {
+            pattern = Pattern.compile(rule.pattern());
+        } catch (PatternSyntaxException exception) {
+            throw new IllegalStateException("计划规则正则有误：" + rule.id(), exception);
+        }
+        int groupCount = pattern.matcher("").groupCount();
+        for (Map.Entry<String, Integer> entry : rule.argumentGroups().entrySet()) {
+            if (!actionParameters.contains(entry.getKey())) {
+                throw new IllegalStateException("计划规则映射了动作外参数：" + rule.id() + "/" + entry.getKey());
+            }
+            if (entry.getValue() > groupCount) {
+                throw new IllegalStateException("计划规则捕获组越界：" + rule.id() + "/" + entry.getKey());
+            }
+        }
+        for (String pathArgument : rule.pathArguments()) {
+            boolean declared = action.parameters().stream().anyMatch(parameter ->
+                    parameter.name().equals(pathArgument) && parameter.type().equals("string")
+            );
+            if (!declared || !rule.argumentGroups().containsKey(pathArgument)) {
+                throw new IllegalStateException("计划规则路径参数未声明为字符串动作参数：" + rule.id() + "/" + pathArgument);
+            }
+        }
+    }
+
+    private void requireUniqueParameters(String ownerId, List<ParameterContract> parameters) {
+        parameters.stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        ParameterContract::name,
+                        java.util.stream.Collectors.counting()
+                ))
+                .forEach((name, count) -> {
+                    if (count > 1) {
+                        throw new IllegalStateException("参数重复：" + ownerId + "/" + name);
+                    }
+                });
     }
 
     private void requireText(JsonNode node, String field) {

@@ -1,0 +1,43 @@
+{
+  "moduleId": "module_demo",
+  "title": "演示模块",
+  "description": "用于契约校验的通用演示模块。",
+  "order": 10,
+  "actions": [
+    {
+      "id": "demo.read",
+      "title": "读取演示值",
+      "description": "读取一个演示参数。",
+      "risk": "READ_ONLY",
+      "confirmationRequired": false,
+      "parameters": [
+        {
+          "name": "value",
+          "type": "string",
+          "required": true,
+          "description": "演示值"
+        }
+      ]
+    }
+  ],
+  "queries": [
+    {
+      "id": "demo.list",
+      "title": "列出演示项",
+      "description": "返回演示项集合。",
+      "parameters": []
+    }
+  ],
+  "plannerRules": [
+    {
+      "id": "demo.read",
+      "actionId": "demo.read",
+      "pattern": "^读取演示 (.+)$",
+      "argumentGroups": {
+        "value": 1
+      },
+      "pathArguments": [],
+      "wholeGoal": true
+    }
+  ]
+}

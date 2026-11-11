@@ -60,6 +60,30 @@ class ContractCatalogTest {
     }
 
     @Test
+    void duplicateQueriesFailAtStartup() throws Exception {
+        Path directory = testDirectory("duplicate-query");
+        rewriteStagedJar(directory.resolve("module_todo.jar"), "module_todo.json", root -> {
+            ArrayNode queries = (ArrayNode) root.path("queries");
+            queries.add(queries.get(0).deepCopy());
+        });
+
+        assertThatThrownBy(() -> new ContractCatalog(objectMapper, directory.toString()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("重复查询契约");
+    }
+
+    @Test
+    void plannerRuleMustReferenceOwnedAction() throws Exception {
+        Path directory = testDirectory("planner-rule");
+        rewriteStagedJar(directory.resolve("module_todo.jar"), "module_todo.json", root ->
+                ((ObjectNode) root.path("plannerRules").get(0)).put("actionId", "fs.mkdir"));
+
+        assertThatThrownBy(() -> new ContractCatalog(objectMapper, directory.toString()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("本模块不存在的动作");
+    }
+
+    @Test
     void contractWithoutMatchingExecutorFailsAtStartup() throws Exception {
         Path directory = testDirectory("contract-mismatch");
         rewriteStagedJar(directory.resolve("module_todo.jar"), "module_todo.json", root ->

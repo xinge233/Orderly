@@ -85,3 +85,24 @@ test("API client reads dynamic module and theme catalogs", async () => {
 
     assert.deepEqual(urls, ["/api/modules", "/api/themes", "/api/themes/theme%2Fa"]);
 });
+
+test("API client addresses module UI and generic queries", async () => {
+    const urls = [];
+    const api = new OrderlyApi({
+        fetchImpl: async (url) => {
+            urls.push(url);
+            return new Response("{}", { status: 200 });
+        }
+    });
+
+    await api.getModuleUi("module demo");
+    await api.queryModule("module demo", "demo.list", { path: "归档" });
+    assert.deepEqual(urls, [
+        "/api/modules/module%20demo/ui/module.json",
+        "/api/modules/module%20demo/query/demo.list?path=%E5%BD%92%E6%A1%A3"
+    ]);
+    assert.equal(
+        api.moduleAssetUrl("module demo", "module.js"),
+        "/api/modules/module%20demo/ui/module.js"
+    );
+});

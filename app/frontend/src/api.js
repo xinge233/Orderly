@@ -95,17 +95,26 @@ export class OrderlyApi {
         return this.request(`/api/themes/${encodeURIComponent(id)}`, options);
     }
 
-    getFiles(path = "", options) {
-        const query = path ? `?path=${encodeURIComponent(path)}` : "";
-        return this.request(`/api/files${query}`, options);
+    getModuleUi(moduleId, options) {
+        return this.request(`/api/modules/${encodeURIComponent(moduleId)}/ui/module.json`, options);
     }
 
-    getTodos(options) {
-        return this.request("/api/todos", options);
+    moduleAssetUrl(moduleId, asset) {
+        return `${this.#baseUrl}/api/modules/${encodeURIComponent(moduleId)}/ui/${encodeURIComponent(asset)}`;
     }
 
-    getCalendar(options) {
-        return this.request("/api/calendar", options);
+    queryModule(moduleId, queryId, parameters = {}, options) {
+        const search = new URLSearchParams();
+        Object.entries(parameters).forEach(([key, value]) => {
+            if (value != null && String(value) !== "") {
+                search.set(key, String(value));
+            }
+        });
+        const query = search.size ? `?${search.toString()}` : "";
+        return this.request(
+            `/api/modules/${encodeURIComponent(moduleId)}/query/${encodeURIComponent(queryId)}${query}`,
+            options
+        );
     }
 
     getRuns(options) {

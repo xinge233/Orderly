@@ -15,5 +15,23 @@
         { "name": "newStartAt", "type": "string", "required": true, "description": "新的 ISO-8601 时间" }
       ]
     }
+  ],
+  "queries": [
+    {
+      "id": "calendar.list",
+      "title": "日程列表",
+      "description": "只读读取模块自有日程集合。",
+      "parameters": []
+    }
+  ],
+  "plannerRules": [
+    {
+      "id": "calendar.rule.reschedule",
+      "actionId": "calendar.reschedule",
+      "pattern": "^(?:修改|调整|把|将)?\\s*日程\\s+(.+?)\\s+(?:改到|改为|调整到)\\s+(.+)$",
+      "argumentGroups": { "title": 1, "newStartAt": 2 },
+      "pathArguments": [],
+      "wholeGoal": false
+    }
   ]
 }

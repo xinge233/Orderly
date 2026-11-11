@@ -15,5 +15,39 @@
         { "name": "dueAt", "type": "string", "required": false, "description": "可选截止时间" }
       ]
     }
+  ],
+  "queries": [
+    {
+      "id": "todo.list",
+      "title": "待办列表",
+      "description": "只读读取模块自有待办集合。",
+      "parameters": []
+    }
+  ],
+  "plannerRules": [
+    {
+      "id": "todo.rule.createDueLabel",
+      "actionId": "todo.create",
+      "pattern": "^创建待办\\s*[：:]\\s*(.+?)\\s*[；;]\\s*截止\\s*[：:]?\\s*(.+)$",
+      "argumentGroups": { "title": 1, "dueAt": 2 },
+      "pathArguments": [],
+      "wholeGoal": true
+    },
+    {
+      "id": "todo.rule.createDue",
+      "actionId": "todo.create",
+      "pattern": "^创建待办\\s+(.+?)\\s+截止\\s+(.+)$",
+      "argumentGroups": { "title": 1, "dueAt": 2 },
+      "pathArguments": [],
+      "wholeGoal": false
+    },
+    {
+      "id": "todo.rule.create",
+      "actionId": "todo.create",
+      "pattern": "^创建待办\\s*[：:]?\\s*(.+)$",
+      "argumentGroups": { "title": 1 },
+      "pathArguments": [],
+      "wholeGoal": false
+    }
   ]
 }

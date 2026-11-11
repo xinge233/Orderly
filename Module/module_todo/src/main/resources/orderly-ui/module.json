@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "view": {
+    "id": "todos",
+    "icon": "check",
+    "caption": "可撤销待办"
+  },
+  "card": {
+    "title": "待办事项",
+    "description": "查看模块自有待办集合，创建动作仍先进入计划确认。",
+    "badge": "模块自有数据",
+    "icon": "check",
+    "queryId": "todo.list",
+    "countKey": "count",
+    "unit": "条待办"
+  },
+  "examples": [
+    { "label": "创建待办", "text": "创建待办：提交周报；截止：2026-11-20" }
+  ],
+  "script": "module.js",
+  "style": "module.css"
+}

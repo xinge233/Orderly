@@ -58,30 +58,14 @@ public class WorkspaceRuntime implements ModuleRuntime {
         this.objectMapper = objectMapper;
     }
 
-    /** 创建数据目录并写入首次运行的演示数据。 */
+    /** 创建应用数据目录；具体业务初始状态由已安装模块自行声明。 */
     @PostConstruct
     public synchronized void initialize() {
         try {
-            Files.createDirectories(workspaceRoot.resolve("收件箱"));
-            Files.createDirectories(workspaceRoot.resolve("待整理"));
+            Files.createDirectories(workspaceRoot);
             Files.createDirectories(trashRoot);
             Files.createDirectories(stateRoot);
             this.workspaceReal = workspaceRoot.toRealPath();
-            seedFile("收件箱/示例笔记.txt", "这是归序本地演示工作区。\n可以安全地移动或删除后再回滚。\n");
-            seedFile("待整理/草案.txt", "待整理草案\n");
-            seedItems("todos", List.of(Map.of(
-                    "id", "todo-seed-1",
-                    "title", "完成季度复盘",
-                    "dueAt", "2026-11-20T18:00:00+08:00",
-                    "status", "OPEN",
-                    "createdAt", "2026-11-10T09:00:00+08:00"
-            )));
-            seedItems("calendar", List.of(Map.of(
-                    "id", "calendar-seed-1",
-                    "title", "项目评审",
-                    "startAt", "2026-11-18T10:00:00+08:00",
-                    "endAt", "2026-11-18T11:00:00+08:00"
-            )));
         } catch (IOException exception) {
             throw new IllegalStateException("初始化本地数据目录失败", exception);
         }
@@ -155,6 +139,21 @@ public class WorkspaceRuntime implements ModuleRuntime {
             return Files.createDirectories(directory);
         } catch (IOException exception) {
             throw new IllegalStateException("创建目录失败", exception);
+        }
+    }
+
+    @Override
+    public Path createTextFile(Path file, String content) {
+        requireInsideWorkspace(file);
+        ensureExistingAncestorIsSafe(file);
+        if (Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalArgumentException("目标已存在，拒绝覆盖");
+        }
+        try {
+            Files.createDirectories(file.getParent());
+            return Files.writeString(file, Objects.requireNonNullElse(content, ""), StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new IllegalStateException("创建文本文件失败", exception);
         }
     }
 
@@ -261,6 +260,11 @@ public class WorkspaceRuntime implements ModuleRuntime {
     }
 
     @Override
+    public synchronized boolean hasItems(String collection) {
+        return Files.exists(stateFile(collection), LinkOption.NOFOLLOW_LINKS);
+    }
+
+    @Override
     public synchronized void writeItems(String collection, List<Map<String, Object>> items) {
         Path file = stateFile(collection);
         Path temporary = file.resolveSibling(file.getFileName() + ".tmp");
@@ -353,20 +357,6 @@ public class WorkspaceRuntime implements ModuleRuntime {
             throw new IllegalArgumentException("集合名称非法");
         }
         return stateRoot.resolve(collection + ".json");
-    }
-
-    private void seedFile(String relativePath, String content) throws IOException {
-        Path path = resolveWorkspacePath(relativePath);
-        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
-            Files.createDirectories(path.getParent());
-            Files.writeString(path, content, StandardCharsets.UTF_8);
-        }
-    }
-
-    private void seedItems(String collection, List<Map<String, Object>> seed) throws IOException {
-        if (!Files.exists(stateFile(collection))) {
-            writeItems(collection, seed);
-        }
     }
 
     private List<TrashEntry> readTrashManifest() {

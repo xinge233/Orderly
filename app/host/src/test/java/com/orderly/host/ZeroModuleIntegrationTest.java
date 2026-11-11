@@ -1,6 +1,7 @@
 package com.orderly.host;
 
 import com.orderly.host.contract.ContractCatalog;
+import com.orderly.host.runtime.WorkspaceRuntime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -39,12 +40,22 @@ class ZeroModuleIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private WorkspaceRuntime runtime;
+
     @Test
     void startsWithZeroModulesAndReturnsEmptyArray() throws Exception {
         assertThat(catalog.modules()).isEmpty();
         mockMvc.perform(get("/api/modules"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
+        assertThat(runtime.listDirectory(runtime.workspaceRoot())).isEmpty();
+        mockMvc.perform(get("/api/modules/module_fs/query/fs.list"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("MODULE_NOT_FOUND"));
+        mockMvc.perform(get("/api/modules/module_fs/ui/module.json"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("MODULE_UI_NOT_FOUND"));
     }
 
     @Test

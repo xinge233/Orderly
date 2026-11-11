@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -26,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** 首版端到端核心链路测试。 */
@@ -88,6 +90,61 @@ class OrderlyIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.kind").value("PLAN"))
                 .andExpect(jsonPath("$.steps[0].actionId").value("fs.mkdir"));
+    }
+
+    @Test
+    void exposesOnlyContractDeclaredModuleQueriesAndUiAssets() throws Exception {
+        mockMvc.perform(get("/api/modules/module_fs/query/fs.summary"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(2))
+                .andExpect(jsonPath("$.entries.length()").value(2));
+        mockMvc.perform(get("/api/modules/module_todo/query/todo.list"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(1));
+        mockMvc.perform(get("/api/modules/module_calendar/query/calendar.list"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].title").value("项目评审"));
+
+        mockMvc.perform(get("/api/modules/module_fs/query/fs.list")
+                        .param("path", "收件箱"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.path").value("收件箱"))
+                .andExpect(jsonPath("$.entries[0].name").value("示例笔记.txt"));
+
+        mockMvc.perform(get("/api/modules/module_fs/query/todo.list"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("MODULE_QUERY_NOT_FOUND"));
+        mockMvc.perform(get("/api/modules/not_installed/query/not.query"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("MODULE_NOT_FOUND"));
+        mockMvc.perform(get("/api/modules/module_fs/query/fs.list")
+                        .param("outside", "../escape"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_QUERY_PARAMETERS"));
+
+        mockMvc.perform(get("/api/modules/module_fs/ui/module.json"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.view.id").value("files"));
+        mockMvc.perform(get("/api/modules/module_fs/ui/module.js"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.parseMediaType("application/javascript")));
+        mockMvc.perform(get("/api/modules/module_fs/ui/module.css"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.parseMediaType("text/css")));
+        mockMvc.perform(get("/api/modules/module_fs/ui/../module.json"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/modules/module_fs/ui/unknown.js"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("MODULE_UI_NOT_FOUND"));
+    }
+
+    @Test
+    void fixedBusinessReadEndpointsAreRemoved() throws Exception {
+        mockMvc.perform(get("/api/files")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/todos")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/calendar")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/trash")).andExpect(status().isNotFound());
     }
 
     @Test

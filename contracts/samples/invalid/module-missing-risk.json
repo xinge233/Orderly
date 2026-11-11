@@ -1,0 +1,17 @@
+{
+  "moduleId": "module_demo",
+  "title": "缺少风险等级的演示模块",
+  "description": "用于验证非法模块契约会被拒绝。",
+  "order": 10,
+  "actions": [
+    {
+      "id": "demo.read",
+      "title": "读取演示值",
+      "description": "该动作故意缺少 risk。",
+      "confirmationRequired": false,
+      "parameters": []
+    }
+  ],
+  "queries": [],
+  "plannerRules": []
+}

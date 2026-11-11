@@ -1,7 +1,10 @@
 package com.orderly.host.api;
 
 import com.orderly.host.contract.ContractCatalog;
+import com.orderly.host.contract.ModuleUiAsset;
 import com.orderly.host.contract.ModuleContract;
+import com.orderly.host.contract.ParameterContract;
+import com.orderly.host.contract.QueryContract;
 import com.orderly.host.event.ExecutionEvent;
 import com.orderly.host.event.ExecutionJournal;
 import com.orderly.host.execution.ExecutionRunResult;
@@ -12,10 +15,9 @@ import com.orderly.host.runtime.WorkspaceRuntime;
 import com.orderly.host.theme.ThemeCatalog;
 import com.orderly.host.theme.ThemeDefinition;
 import com.orderly.host.theme.ThemeSummary;
-import com.orderly.kernel.FileEntry;
-import com.orderly.kernel.TrashEntry;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,6 +29,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /** 本地前端使用的受控 HTTP 接口。 */
 @RestController
@@ -85,25 +88,43 @@ public class OrderlyController {
         }
     }
 
-    @GetMapping("/files")
-    public Map<String, Object> files(@RequestParam(defaultValue = "") String path) {
-        List<FileEntry> entries = runtime.listDirectory(runtime.resolveWorkspacePath(path));
-        return Map.of("path", path, "entries", entries);
+    @GetMapping("/modules/{moduleId}/query/{queryId}")
+    public Map<String, Object> queryModule(
+            @PathVariable String moduleId,
+            @PathVariable String queryId,
+            @RequestParam Map<String, String> parameters
+    ) {
+        ModuleContract module = catalog.findModule(moduleId).orElseThrow(
+                () -> new ApiException(HttpStatus.NOT_FOUND, "MODULE_NOT_FOUND", "模块不存在：" + moduleId)
+        );
+        QueryContract query = module.queries().stream()
+                .filter(candidate -> candidate.id().equals(queryId))
+                .findFirst()
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND,
+                        "MODULE_QUERY_NOT_FOUND",
+                        "模块未声明查询：" + moduleId + "/" + queryId
+                ));
+        Map<String, String> validated = validateQueryParameters(query, parameters);
+        return catalog.requireExecutor(moduleId).query(queryId, validated, runtime);
     }
 
-    @GetMapping("/todos")
-    public List<Map<String, Object>> todos() {
-        return runtime.readItems("todos");
-    }
-
-    @GetMapping("/calendar")
-    public List<Map<String, Object>> calendar() {
-        return runtime.readItems("calendar");
-    }
-
-    @GetMapping("/trash")
-    public List<TrashEntry> trash() {
-        return runtime.listTrash();
+    @GetMapping("/modules/{moduleId}/ui/{asset}")
+    public ResponseEntity<byte[]> moduleUi(
+            @PathVariable String moduleId,
+            @PathVariable String asset
+    ) {
+        ModuleUiAsset resource = catalog.readUiAsset(moduleId, asset).orElseThrow(
+                () -> new ApiException(
+                        HttpStatus.NOT_FOUND,
+                        "MODULE_UI_NOT_FOUND",
+                        "模块 UI 资源不存在：" + moduleId + "/" + asset
+                )
+        );
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(resource.contentType()))
+                .header("Cache-Control", "no-cache")
+                .body(resource.content());
     }
 
     @PostMapping("/plans")
@@ -147,6 +168,65 @@ public class OrderlyController {
     public record ConfirmRequest(boolean confirmed, String confirmation) {
         public ConfirmRequest {
             confirmation = confirmation == null ? "" : confirmation;
+        }
+    }
+
+    private Map<String, String> validateQueryParameters(
+            QueryContract query,
+            Map<String, String> supplied
+    ) {
+        Map<String, String> validated = new java.util.LinkedHashMap<>();
+        for (ParameterContract parameter : query.parameters()) {
+            String value = supplied.get(parameter.name());
+            if (parameter.required() && (value == null || value.isBlank())) {
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        "INVALID_QUERY_PARAMETERS",
+                        "查询 " + query.id() + " 缺少必填参数：" + parameter.name()
+                );
+            }
+            if (value != null) {
+                validateQueryParameterType(query.id(), parameter, value);
+                validated.put(parameter.name(), value);
+            }
+        }
+        Optional<String> unknown = supplied.keySet().stream()
+                .filter(name -> query.parameters().stream().noneMatch(parameter -> parameter.name().equals(name)))
+                .findFirst();
+        if (unknown.isPresent()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_QUERY_PARAMETERS",
+                    "查询 " + query.id() + " 包含契约外参数：" + unknown.orElseThrow()
+            );
+        }
+        return Map.copyOf(validated);
+    }
+
+    private void validateQueryParameterType(
+            String queryId,
+            ParameterContract parameter,
+            String value
+    ) {
+        boolean valid = switch (parameter.type()) {
+            case "string" -> true;
+            case "boolean" -> value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false");
+            case "integer" -> {
+                try {
+                    Integer.parseInt(value);
+                    yield true;
+                } catch (NumberFormatException exception) {
+                    yield false;
+                }
+            }
+            default -> false;
+        };
+        if (!valid) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_QUERY_PARAMETERS",
+                    "查询 " + queryId + " 参数 " + parameter.name() + " 类型应为 " + parameter.type()
+            );
         }
     }
 }

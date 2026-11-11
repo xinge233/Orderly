@@ -27,6 +27,9 @@ public interface ModuleRuntime {
     /** 创建一个目录；已存在的文件或目录不会被覆盖。 */
     Path createDirectory(Path directory);
 
+    /** 创建一个 UTF-8 文本文件；已存在的对象不会被覆盖。 */
+    Path createTextFile(Path file, String content);
+
     /** 在工作区内部移动文件或目录，不覆盖目标。 */
     void move(Path source, Path target);
 
@@ -41,6 +44,9 @@ public interface ModuleRuntime {
 
     /** 读取共享集合状态；不存在的集合返回空列表。 */
     List<Map<String, Object>> readItems(String collection);
+
+    /** 判断集合状态文件是否已经创建，即使内容为空。 */
+    boolean hasItems(String collection);
 
     /** 原子替换共享集合状态。 */
     void writeItems(String collection, List<Map<String, Object>> items);

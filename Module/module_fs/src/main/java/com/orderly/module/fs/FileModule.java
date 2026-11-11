@@ -22,10 +22,50 @@ import java.util.Objects;
 public final class FileModule implements OrderlyModule {
 
     public static final String MODULE_ID = "module_fs";
+    private static final String INITIALIZATION_STATE = "module_fs_initialized";
 
     @Override
     public String moduleId() {
         return MODULE_ID;
+    }
+
+    @Override
+    public void initialize(ModuleRuntime runtime) {
+        if (runtime.hasItems(INITIALIZATION_STATE)) {
+            return;
+        }
+        if (runtime.listDirectory(runtime.resolveWorkspacePath("")).isEmpty()) {
+            seedSamples(runtime);
+        }
+        runtime.writeItems(INITIALIZATION_STATE, List.of());
+    }
+
+    private void seedSamples(ModuleRuntime runtime) {
+        seedDirectory(runtime, "收件箱");
+        seedDirectory(runtime, "待整理");
+        seedFile(
+                runtime,
+                "收件箱/示例笔记.txt",
+                "这是归序本地演示工作区。\n可以安全地移动或删除后再回滚。\n"
+        );
+        seedFile(runtime, "待整理/草案.txt", "待整理草案\n");
+    }
+
+    @Override
+    public Map<String, Object> query(
+            String queryId,
+            Map<String, String> parameters,
+            ModuleRuntime runtime
+    ) {
+        return switch (queryId) {
+            case "fs.list" -> listQuery(parameters.getOrDefault("path", ""), runtime);
+            case "fs.summary" -> listQuery("", runtime);
+            case "fs.trash" -> {
+                List<TrashEntry> entries = runtime.listTrash();
+                yield Map.of("entries", entries, "count", entries.size());
+            }
+            default -> throw new IllegalArgumentException("文件模块未提供查询：" + queryId);
+        };
     }
 
     @Override
@@ -93,6 +133,12 @@ public final class FileModule implements OrderlyModule {
         String path = optionalStringArgument(invocation, "path", "");
         List<FileEntry> entries = runtime.listDirectory(runtime.resolveWorkspacePath(path));
         return new ModuleResult("已列出 " + entries.size() + " 个项目", Map.of("path", path, "entries", entries));
+    }
+
+    private Map<String, Object> listQuery(String rawPath, ModuleRuntime runtime) {
+        String path = Objects.requireNonNullElse(rawPath, "").trim();
+        List<FileEntry> entries = runtime.listDirectory(runtime.resolveWorkspacePath(path));
+        return Map.of("path", path, "entries", entries, "count", entries.size());
     }
 
     private ModuleResult mkdir(ModuleInvocation invocation, ModuleRuntime runtime) {
@@ -222,5 +268,19 @@ public final class FileModule implements OrderlyModule {
     private String optionalStringArgument(ModuleInvocation invocation, String key, String fallback) {
         Object value = invocation.arguments().get(key);
         return value == null ? fallback : value.toString().trim();
+    }
+
+    private void seedDirectory(ModuleRuntime runtime, String path) {
+        Path directory = runtime.resolveWorkspacePath(path);
+        if (!runtime.exists(directory)) {
+            runtime.createDirectory(directory);
+        }
+    }
+
+    private void seedFile(ModuleRuntime runtime, String path, String content) {
+        Path file = runtime.resolveWorkspacePath(path);
+        if (!runtime.exists(file)) {
+            runtime.createTextFile(file, content);
+        }
     }
 }

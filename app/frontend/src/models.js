@@ -22,10 +22,7 @@ export const STATUS_LABEL = Object.freeze({
 const LIST_KEYS = [
     "items",
     "entries",
-    "files",
-    "todos",
     "events",
-    "calendar",
     "runs",
     "data"
 ];

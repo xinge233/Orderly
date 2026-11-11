@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "view": {
+    "id": "calendar",
+    "icon": "calendar",
+    "caption": "当前日程"
+  },
+  "card": {
+    "title": "日程安排",
+    "description": "查看模块自有日程，并通过可回滚计划调整时间。",
+    "badge": "可撤销改期",
+    "icon": "calendar",
+    "queryId": "calendar.list",
+    "countKey": "count",
+    "unit": "项日程"
+  },
+  "examples": [
+    { "label": "调整项目评审", "text": "把日程 项目评审 改到 2026-11-20 15:00" }
+  ],
+  "script": "module.js",
+  "style": "module.css"
+}

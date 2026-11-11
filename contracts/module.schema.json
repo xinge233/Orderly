@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/module.schema.json",
+  "title": "Orderly module contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "moduleId",
+    "title",
+    "description",
+    "order",
+    "actions",
+    "queries",
+    "plannerRules"
+  ],
+  "properties": {
+    "moduleId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1 },
+    "order": { "type": "integer" },
+    "actions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/action" }
+    },
+    "queries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/query" }
+    },
+    "plannerRules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/plannerRule" }
+    }
+  },
+  "$defs": {
+    "parameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "required", "description"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["string", "boolean", "integer"] },
+        "required": { "type": "boolean" },
+        "description": { "type": "string" }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "description",
+        "risk",
+        "confirmationRequired",
+        "parameters"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "risk": { "enum": ["READ_ONLY", "WRITE", "DELETE"] },
+        "confirmationRequired": { "type": "boolean" },
+        "confirmationPhrase": { "type": "string" },
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/parameter" }
+        }
+      }
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "description", "parameters"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_.-]+$" },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/parameter" }
+        }
+      }
+    },
+    "plannerRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "actionId",
+        "pattern",
+        "argumentGroups",
+        "pathArguments",
+        "wholeGoal"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_.-]+$" },
+        "actionId": { "type": "string", "minLength": 1 },
+        "pattern": { "type": "string", "minLength": 1 },
+        "argumentGroups": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 1 }
+        },
+        "pathArguments": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "wholeGoal": { "type": "boolean" }
+      }
+    }
+  }
+}

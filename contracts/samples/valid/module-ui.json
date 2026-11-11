@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "view": {
+    "id": "demo",
+    "caption": "演示模块",
+    "icon": "demo"
+  },
+  "card": {
+    "title": "演示模块",
+    "description": "展示模块自带的卡片摘要。",
+    "badge": "通用样例",
+    "icon": "demo",
+    "queryId": "demo.list",
+    "countKey": "count",
+    "unit": "项"
+  },
+  "examples": [
+    {
+      "label": "读取演示值",
+      "text": "读取演示 alpha"
+    }
+  ],
+  "script": "module.js",
+  "style": "module.css"
+}

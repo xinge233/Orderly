@@ -56,5 +56,53 @@
         { "name": "trashId", "type": "string", "required": true, "description": "回收站条目 ID" }
       ]
     }
+  ],
+  "queries": [
+    {
+      "id": "fs.list",
+      "title": "列出目录",
+      "description": "只读列出工作区目录内容。",
+      "parameters": [
+        { "name": "path", "type": "string", "required": false, "description": "工作区相对路径" }
+      ]
+    },
+    {
+      "id": "fs.summary",
+      "title": "文件摘要",
+      "description": "读取工作区根目录的条目数量和摘要。",
+      "parameters": []
+    },
+    {
+      "id": "fs.trash",
+      "title": "回收站",
+      "description": "只读列出项目回收站条目。",
+      "parameters": []
+    }
+  ],
+  "plannerRules": [
+    {
+      "id": "fs.rule.mkdir",
+      "actionId": "fs.mkdir",
+      "pattern": "^(?:创建|新建)(?:目录|文件夹)\\s*[：:]?\\s*(.+)$",
+      "argumentGroups": { "path": 1 },
+      "pathArguments": [ "path" ],
+      "wholeGoal": false
+    },
+    {
+      "id": "fs.rule.move",
+      "actionId": "fs.move",
+      "pattern": "^移动\\s+(.+?)\\s+到\\s+(.+)$",
+      "argumentGroups": { "source": 1, "target": 2 },
+      "pathArguments": [ "source", "target" ],
+      "wholeGoal": false
+    },
+    {
+      "id": "fs.rule.trash",
+      "actionId": "fs.trash",
+      "pattern": "^(?:删除|移入回收站)\\s*[：:]?\\s*(.+)$",
+      "argumentGroups": { "path": 1 },
+      "pathArguments": [ "path" ],
+      "wholeGoal": false
+    }
   ]
 }

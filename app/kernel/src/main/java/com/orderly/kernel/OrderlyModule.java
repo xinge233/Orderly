@@ -14,6 +14,24 @@ public interface OrderlyModule {
     String moduleId();
 
     /**
+     * 在宿主就绪后初始化模块自有状态。实现必须幂等，且只能通过受控运行时写入。
+     */
+    default void initialize(ModuleRuntime runtime) {
+        // 无需初始化状态的模块可以保留默认实现。
+    }
+
+    /**
+     * 返回模块自有只读查询数据。查询 ID 和参数必须先由模块契约声明。
+     */
+    default Map<String, Object> query(
+            String queryId,
+            Map<String, String> parameters,
+            ModuleRuntime runtime
+    ) {
+        throw new IllegalArgumentException("模块未提供查询：" + queryId);
+    }
+
+    /**
      * 在执行前收集模块自有快照。该方法只能读，不得产生副作用。
      *
      * @return 可 JSON 化的快照

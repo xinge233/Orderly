@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "view": {
+    "id": "demo",
+    "caption": "演示模块",
+    "icon": "demo"
+  },
+  "examples": [],
+  "script": "../escape.js",
+  "style": "module.css"
+}

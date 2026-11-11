@@ -3,19 +3,22 @@ import { hydrateIcons, icon } from "./icons.js";
 import {
     RISK_LABEL,
     flattenText,
-    formatBytes,
     formatDate,
-    isDirectoryEntry,
-    joinPath,
     mergeEvents,
     normalizeEvent,
     normalizePlan,
-    parentPath,
     requiresDeletePhrase,
     statusLabel,
     unwrapList,
     validateConfirmation
 } from "./models.js";
+import {
+    moveModuleOrder,
+    normalizeModuleUi,
+    readCount,
+    reorderBefore,
+    sortModules
+} from "./modules.js";
 import {
     isModuleHidden,
     MOTION_OPTIONS,
@@ -46,32 +49,6 @@ const NAV_SECTIONS = Object.freeze([
     }
 ]);
 
-// 专用视图只适配展示，不参与模块注册；未列出的新模块使用契约通用详情页。
-const MODULE_VIEW_ADAPTERS = Object.freeze({
-    module_fs: { view: "files", icon: "folder", caption: "浏览与整理" },
-    module_todo: { view: "todos", icon: "check", caption: "任务收束" },
-    module_calendar: { view: "calendar", icon: "calendar", caption: "时间视图" }
-});
-
-const EXAMPLES = Object.freeze([
-    {
-        label: "归档示例",
-        text: "创建目录 归档，然后移动 收件箱/示例笔记.txt 到 归档"
-    },
-    {
-        label: "待办示例",
-        text: "创建待办：提交周报；截止：2026-11-20"
-    },
-    {
-        label: "日程示例",
-        text: "把日程 项目评审 改到 2026-11-20 15:00"
-    },
-    {
-        label: "删除示例",
-        text: "删除 待整理/草案.txt"
-    }
-]);
-
 const state = {
     activeView: "overview",
     health: null,
@@ -84,13 +61,12 @@ const state = {
     deletePhrase: "",
     currentRun: null,
     events: [],
-    filePath: "",
     settingsSection: "appearance",
-    overviewData: {
-        files: [],
-        todos: [],
-        calendar: []
-    }
+    moduleUi: {},
+    moduleErrors: {},
+    moduleCounts: {},
+    dragModuleId: null,
+    moduleAssetVersion: String(Date.now())
 };
 
 let eventStream = null;
@@ -169,7 +145,6 @@ async function bootstrap() {
     hydrateIcons();
     bindGlobalControls();
     bindSettingsDialog();
-    renderCommandExamples();
 
     const [moduleResult, themeResult] = await Promise.allSettled([
         api.getModules(),
@@ -186,15 +161,18 @@ async function bootstrap() {
             .filter((theme) => theme && typeof theme.id === "string")
         : [];
 
-    const beforeReconcile = settingsStore.getSnapshot();
-    const reconciled = reconcileSettingsForCatalog(beforeReconcile, state.modules, state.themes);
-    if (reconciled.theme !== beforeReconcile.theme
-            || reconciled.hiddenModuleIds.join("|") !== beforeReconcile.hiddenModuleIds.join("|")) {
-        settingsStore.update(reconciled);
-    }
+    await loadModuleUis();
+    const reconciled = reconcileSettingsForCatalog(
+        settingsStore.getSnapshot(),
+        state.modules,
+        state.themes
+    );
+    settingsStore.update(reconciled);
+    state.modules = sortModules(state.modules, reconciled.moduleOrderIds);
     settingsStore.subscribe(applySettings);
     applySettings(settingsStore.getSnapshot());
     renderSettings();
+    renderCommandExamples();
 
     connectEventStream();
     try {
@@ -218,6 +196,39 @@ async function bootstrap() {
     }
 
     void navigate("overview");
+}
+
+/** 并行读取模块自带 UI 清单；单个模块失败不阻断框架启动。 */
+async function loadModuleUis() {
+    const results = await Promise.allSettled(state.modules.map(async (module) => {
+        const payload = await api.getModuleUi(module.moduleId);
+        return [module.moduleId, normalizeModuleUi(module.moduleId, payload)];
+    }));
+    state.moduleUi = {};
+    state.moduleErrors = {};
+    const viewOwners = new Map();
+    results.forEach((result, index) => {
+        const moduleId = state.modules[index]?.moduleId;
+        if (!moduleId) {
+            return;
+        }
+        if (result.status === "fulfilled") {
+            const ui = result.value[1];
+            if (["overview", "history"].includes(ui.view.id)) {
+                state.moduleErrors[moduleId] = `模块视图 ID 与框架视图冲突：${ui.view.id}`;
+                return;
+            }
+            const owner = viewOwners.get(ui.view.id);
+            if (owner) {
+                state.moduleErrors[moduleId] = `模块视图 ID 与 ${owner} 冲突：${ui.view.id}`;
+                return;
+            }
+            viewOwners.set(ui.view.id, moduleId);
+            state.moduleUi[moduleId] = ui;
+        } else {
+            state.moduleErrors[moduleId] = errorMessage(result.reason);
+        }
+    });
 }
 
 /**
@@ -287,6 +298,9 @@ function applySettings(settings) {
     }
     renderNavigation(document.querySelector("#nav-search")?.value ?? "");
     renderSettings();
+    if (state.activeView === "overview" && document.querySelector("#module-card-grid")) {
+        renderModuleCards();
+    }
 }
 
 /**
@@ -398,12 +412,12 @@ function renderNavigation(query = "") {
  * @returns {object} 导航项
  */
 function moduleNavigationItem(module) {
-    const adapter = MODULE_VIEW_ADAPTERS[module.moduleId];
+    const ui = state.moduleUi[module.moduleId];
     return {
-        id: adapter?.view ?? `module:${module.moduleId}`,
+        id: ui?.view.id ?? `module:${module.moduleId}`,
         label: module.title || module.moduleId,
-        caption: adapter?.caption ?? module.description ?? "扩展模块",
-        icon: adapter?.icon ?? "modules",
+        caption: ui?.view.caption ?? module.description ?? "扩展模块",
+        icon: ui?.view.icon ?? "modules",
         moduleId: module.moduleId
     };
 }
@@ -415,10 +429,6 @@ function moduleForView(view) {
     return state.modules.find((module) => moduleNavigationItem(module).id === view) ?? null;
 }
 
-function moduleInstalled(moduleId) {
-    return state.modules.some((module) => module.moduleId === moduleId);
-}
-
 /**
  * 获取导航计数。
  *
@@ -426,16 +436,8 @@ function moduleInstalled(moduleId) {
  * @returns {number | null} 数量
  */
 function navigationCount(view) {
-    if (view === "files") {
-        return state.overviewData.files.length || null;
-    }
-    if (view === "todos") {
-        return state.overviewData.todos.length || null;
-    }
-    if (view === "calendar") {
-        return state.overviewData.calendar.length || null;
-    }
-    return null;
+    const module = state.modules.find((item) => moduleNavigationItem(item).id === view);
+    return module ? state.moduleCounts[module.moduleId] ?? null : null;
 }
 
 /**
@@ -450,9 +452,6 @@ async function navigate(view) {
     const selectedModule = moduleForView(view);
     const labels = {
         overview: "总览",
-        files: "文件与目录",
-        todos: "待办事项",
-        calendar: "日程安排",
         history: "执行记录"
     };
     const breadcrumb = document.querySelector("#breadcrumb");
@@ -477,16 +476,10 @@ async function navigate(view) {
     `;
 
     try {
-        if (view === "files" && selectedModule) {
-            await loadFiles(state.filePath, false);
-        } else if (view === "todos" && selectedModule) {
-            await loadTodos();
-        } else if (view === "calendar" && selectedModule) {
-            await loadCalendar();
-        } else if (view === "history") {
+        if (view === "history") {
             await loadHistory();
         } else if (selectedModule) {
-            renderGenericModule(selectedModule);
+            await mountModule(selectedModule);
         } else {
             await loadOverview();
         }
@@ -517,11 +510,97 @@ function renderLoadError(error) {
 }
 
 /**
- * 根据模块契约渲染通用详情页，未注册专用界面时无需新增前端分支。
+ * 从模块 JAR 加载自有视图。样式和脚本只属于当前模块，失败时局部降级。
  *
  * @param {object} module 模块契约
  */
-function renderGenericModule(module) {
+async function mountModule(module) {
+    const ui = state.moduleUi[module.moduleId];
+    if (!ui) {
+        renderGenericModule(module, state.moduleErrors[module.moduleId] || "模块未提供 UI 清单");
+        return;
+    }
+    const main = document.querySelector("#main-content");
+    if (!main) return;
+
+    const view = element("div", "view-stack module-view");
+    view.dataset.moduleView = module.moduleId;
+    const root = element("div", "module-view__root");
+    root.id = `module-view-${module.moduleId}`;
+    view.append(root);
+    main.replaceChildren(view);
+
+    try {
+        const styleUrl = `${api.moduleAssetUrl(module.moduleId, ui.style)}?v=${state.moduleAssetVersion}`;
+        await loadModuleStyle(module, styleUrl);
+        const scriptUrl = `${api.moduleAssetUrl(module.moduleId, ui.script)}?v=${state.moduleAssetVersion}`;
+        const moduleScript = await import(scriptUrl);
+        if (typeof moduleScript.default !== "function") {
+            throw new TypeError("模块 UI 必须默认导出 mount 函数");
+        }
+        await moduleScript.default(root, {
+            module,
+            ui,
+            query: (queryId, parameters = {}) => api.queryModule(
+                module.moduleId,
+                queryId,
+                parameters
+            ),
+            element,
+            icon,
+            toast,
+            fillCommand,
+            formatDate
+        });
+    } catch (error) {
+        renderModuleFailure(module, root, error);
+    }
+}
+
+/**
+ * 加载模块样式；样式加载失败也只影响当前模块。
+ *
+ * @param {object} module 模块契约
+ * @param {string} url 样式地址
+ */
+function loadModuleStyle(module, url) {
+    const loaded = [...document.querySelectorAll("link[data-orderly-module-style]")]
+        .find((node) => node.dataset.orderlyModuleStyle === module.moduleId);
+    if (loaded) {
+        return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+        const style = document.createElement("link");
+        style.rel = "stylesheet";
+        style.href = url;
+        style.dataset.orderlyModuleStyle = module.moduleId;
+        style.addEventListener("load", () => resolve(), { once: true });
+        style.addEventListener("error", () => {
+            style.remove();
+            reject(new TypeError(`模块样式加载失败：${url}`));
+        }, { once: true });
+        document.head.append(style);
+    });
+}
+
+function renderModuleFailure(module, container, error) {
+    const panel = element("section", "panel module-local-error");
+    panel.append(
+        element("p", "eyebrow", "MODULE UI ERROR"),
+        element("h1", "", `${module.title || module.moduleId} 界面加载失败`),
+        element("p", "", errorMessage(error)),
+        element("p", "muted", "此错误只影响当前模块；其他模块与计划执行仍可使用。")
+    );
+    container.replaceChildren(panel);
+}
+
+/**
+ * 根据模块契约渲染通用详情页；模块 UI 缺失时使用此安全降级页。
+ *
+ * @param {object} module 模块契约
+ * @param {string} localError 局部错误
+ */
+function renderGenericModule(module, localError = "") {
     const main = document.querySelector("#main-content");
     if (!main) {
         return;
@@ -534,6 +613,9 @@ function renderGenericModule(module) {
         element("p", "", module.description || "该模块未提供说明。"),
         element("p", "muted", `模块 ID：${module.moduleId} · ${actions.length} 个动作`)
     );
+    if (localError) {
+        panel.append(element("p", "module-local-error", `模块界面不可用：${localError}`));
+    }
 
     const list = element("div", "data-list");
     if (actions.length === 0) {
@@ -566,24 +648,9 @@ function renderGenericModule(module) {
     main.replaceChildren(panel);
 }
 
-/**
- * 加载总览与三类数量。
- */
+/** 加载总览和模块声明的摘要查询。 */
 async function loadOverview() {
-    const results = await Promise.allSettled([
-        moduleInstalled("module_fs") ? api.getFiles() : Promise.resolve([]),
-        moduleInstalled("module_todo") ? api.getTodos() : Promise.resolve([]),
-        moduleInstalled("module_calendar") ? api.getCalendar() : Promise.resolve([])
-    ]);
-    state.overviewData.files = results[0].status === "fulfilled"
-        ? unwrapList(results[0].value, ["entries", "files"])
-        : [];
-    state.overviewData.todos = results[1].status === "fulfilled"
-        ? unwrapList(results[1].value, ["todos"])
-        : [];
-    state.overviewData.calendar = results[2].status === "fulfilled"
-        ? unwrapList(results[2].value, ["calendar", "events"])
-        : [];
+    await loadOverviewCounts();
     renderNavigation(document.querySelector("#nav-search")?.value ?? "");
     renderOverview();
 }
@@ -603,7 +670,7 @@ function renderOverview() {
                     <p class="eyebrow">CONTROLLED AGENT WORKFLOW</p>
                     <h1>让 AI 把事做完，<br><em>也让你随时踩刹车。</em></h1>
                     <p>
-                        文件、待办与日程在一条可审查的流程中协作。
+                        已安装模块通过统一契约接入，并在一条可审查的流程中协作。
                         本版本只操作应用自管沙箱，先生成计划，确认之后才会写入。
                     </p>
                     <div class="hero-tags">
@@ -612,53 +679,15 @@ function renderOverview() {
                         <span>${icon("history")} 回收站与回滚</span>
                     </div>
                 </div>
-                <div class="hero-diagram" aria-label="文件、待办与日程汇聚到归序">
+                <div class="hero-diagram" aria-label="已安装模块汇聚到归序">
                     <span class="orbit-ring"></span>
                     <span class="orbit-core"><strong>归序</strong><small>工作流中枢</small></span>
-                    <span class="orbit-node orbit-node--files">${icon("folder", 22)}</span>
-                    <span class="orbit-node orbit-node--todos">${icon("check", 22)}</span>
-                    <span class="orbit-node orbit-node--calendar">${icon("calendar", 22)}</span>
+                    <span class="orbit-module-nodes" id="orbit-module-nodes"></span>
                 </div>
             </section>
 
-            <section class="surface-grid" aria-label="本地模块摘要">
-                <article class="surface-card">
-                    <div class="surface-card__top">
-                        <span class="surface-card__icon">${icon("folder", 21)}</span>
-                        <span class="status-chip">真实本地文件</span>
-                    </div>
-                    <div>
-                        <div class="surface-card__metric">
-                            <strong data-count="files">—</strong><small>个顶层条目</small>
-                        </div>
-                        <p>浏览沙箱目录；移动、删除等动作必须经过计划确认。</p>
-                    </div>
-                </article>
-                <article class="surface-card">
-                    <div class="surface-card__top">
-                        <span class="surface-card__icon">${icon("check", 21)}</span>
-                        <span class="status-chip">可回滚</span>
-                    </div>
-                    <div>
-                        <div class="surface-card__metric">
-                            <strong data-count="todos">—</strong><small>项待办</small>
-                        </div>
-                        <p>待办创建由框架统一记录事件，并保留创建前状态。</p>
-                    </div>
-                </article>
-                <article class="surface-card">
-                    <div class="surface-card__top">
-                        <span class="surface-card__icon">${icon("calendar", 21)}</span>
-                        <span class="status-chip">本地存储</span>
-                    </div>
-                    <div>
-                        <div class="surface-card__metric">
-                            <strong data-count="calendar">—</strong><small>项日程</small>
-                        </div>
-                        <p>改期前后版本都会写入审计事件，可整单撤销。</p>
-                    </div>
-                </article>
-            </section>
+            <section class="surface-grid" id="module-card-grid" aria-label="已安装模块摘要"></section>
+            <p class="sr-only" id="module-order-status" aria-live="polite"></p>
 
             <div class="workflow-grid">
                 <section class="panel">
@@ -714,18 +743,139 @@ function renderOverview() {
         </div>
     `;
 
-    const counts = {
-        files: state.overviewData.files.length,
-        todos: state.overviewData.todos.length,
-        calendar: state.overviewData.calendar.length
-    };
-    Object.entries(counts).forEach(([key, value]) => {
-        setText(main, `[data-count="${key}"]`, String(value));
-    });
     hydrateIcons(main);
+    renderModuleCards();
     renderPlan();
     renderTimeline();
     renderRunSummary();
+}
+
+async function loadOverviewCounts() {
+    const jobs = state.modules.map(async (module) => {
+        const ui = state.moduleUi[module.moduleId];
+        if (!ui?.card?.queryId) return [module.moduleId, null];
+        try {
+            const payload = await api.queryModule(module.moduleId, ui.card.queryId);
+            return [module.moduleId, readCount(payload, ui.card.countKey)];
+        } catch {
+            return [module.moduleId, "—"];
+        }
+    });
+    state.moduleCounts = Object.fromEntries(await Promise.all(jobs));
+    if (state.activeView === "overview" && document.querySelector("#module-card-grid")) {
+        renderModuleCards();
+        renderNavigation(document.querySelector("#nav-search")?.value ?? "");
+    }
+}
+
+function renderModuleCards() {
+    const grid = document.querySelector("#module-card-grid");
+    const orbit = document.querySelector("#orbit-module-nodes");
+    if (!grid) return;
+    const settings = settingsStore.getSnapshot();
+    const ordered = sortModules(state.modules, settings.moduleOrderIds);
+    const visible = ordered.filter((module) => !isModuleHidden(settings, module.moduleId));
+    grid.replaceChildren();
+    if (orbit) {
+        orbit.replaceChildren();
+        ordered.slice(0, 3).forEach((module, index) => {
+            const ui = state.moduleUi[module.moduleId];
+            const node = element("span", `orbit-node orbit-node--slot-${index + 1}`, "");
+            node.innerHTML = icon(ui?.view.icon ?? "modules", 22);
+            orbit.append(node);
+        });
+    }
+    if (!visible.length) {
+        grid.append(element(
+            "div",
+            "panel empty-state module-empty-state",
+            state.modules.length ? "所有模块已在设置中隐藏。" : "尚未安装功能模块；添加 Module/module_* 并重新构建后会显示在这里。"
+        ));
+        return;
+    }
+
+    visible.forEach((module, index) => {
+        const ui = state.moduleUi[module.moduleId];
+        const card = ui?.card ?? {
+            title: module.title || module.moduleId,
+            description: state.moduleErrors[module.moduleId] || module.description || "模块摘要不可用。",
+            badge: "模块界面异常",
+            icon: ui?.view.icon ?? "modules",
+            unit: "项"
+        };
+        const article = element("article", "surface-card module-card");
+        article.draggable = true;
+        article.dataset.moduleId = module.moduleId;
+        article.tabIndex = 0;
+        article.setAttribute("aria-label", `${card.title}，可拖动或使用按钮调整顺序`);
+        const top = element("div", "surface-card__top");
+        const cardIcon = element("span", "surface-card__icon");
+        cardIcon.innerHTML = icon(card.icon, 21);
+        top.append(cardIcon, element("span", "status-chip", card.badge));
+        const body = element("div");
+        const metric = element("div", "surface-card__metric");
+        const value = state.moduleCounts[module.moduleId];
+        metric.append(
+            element("strong", "", value == null ? "—" : String(value)),
+            element("small", "", card.unit)
+        );
+        body.append(metric, element("h2", "", card.title), element("p", "", card.description));
+        const controls = element("div", "module-order-controls");
+        const up = element("button", "icon-button", "↑");
+        up.type = "button";
+        up.disabled = index === 0;
+        up.setAttribute("aria-label", `上移 ${card.title}`);
+        up.addEventListener("click", () => changeModuleOrder(module.moduleId, -1));
+        const down = element("button", "icon-button", "↓");
+        down.type = "button";
+        down.disabled = index === visible.length - 1;
+        down.setAttribute("aria-label", `下移 ${card.title}`);
+        down.addEventListener("click", () => changeModuleOrder(module.moduleId, 1));
+        controls.append(up, down);
+        article.append(top, body, controls);
+        article.addEventListener("dragstart", (event) => {
+            state.dragModuleId = module.moduleId;
+            article.classList.add("is-dragging");
+            event.dataTransfer?.setData("text/plain", module.moduleId);
+            if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+        });
+        article.addEventListener("dragover", (event) => {
+            if (state.dragModuleId && state.dragModuleId !== module.moduleId) {
+                event.preventDefault();
+                article.classList.add("is-drop-target");
+            }
+        });
+        article.addEventListener("dragleave", () => article.classList.remove("is-drop-target"));
+        article.addEventListener("drop", (event) => {
+            event.preventDefault();
+            const movingId = event.dataTransfer?.getData("text/plain") || state.dragModuleId;
+            article.classList.remove("is-drop-target");
+            if (!movingId) return;
+            const ids = reorderBefore(settingsStore.getSnapshot().moduleOrderIds, movingId, module.moduleId);
+            persistModuleOrder(ids, "模块卡片顺序已更新。");
+        });
+        article.addEventListener("dragend", () => {
+            state.dragModuleId = null;
+            document.querySelectorAll(".module-card").forEach((node) => {
+                node.classList.remove("is-dragging", "is-drop-target");
+            });
+        });
+        grid.append(article);
+    });
+}
+
+function changeModuleOrder(moduleId, offset) {
+    const ids = moveModuleOrder(settingsStore.getSnapshot().moduleOrderIds, moduleId, offset);
+    persistModuleOrder(ids, offset < 0 ? "模块已上移。" : "模块已下移。");
+}
+
+function persistModuleOrder(moduleOrderIds, message) {
+    settingsStore.update({ moduleOrderIds });
+    state.modules = sortModules(state.modules, moduleOrderIds);
+    const status = document.querySelector("#module-order-status");
+    if (status) status.textContent = message;
+    renderNavigation(document.querySelector("#nav-search")?.value ?? "");
+    if (state.activeView === "overview") renderModuleCards();
 }
 
 /**
@@ -746,14 +896,17 @@ function renderPlan() {
         const empty = element("div", "plan-empty");
         const signal = element("span", "plan-empty__signal");
         signal.innerHTML = icon("route", 24);
+        const examples = state.modules
+            .flatMap((module) => state.moduleUi[module.moduleId]?.examples ?? []);
         empty.append(
             signal,
             element("h3", "", "从右下角告诉归序你想完成什么"),
             element(
                 "p",
                 "",
-                "尝试创建目录、移动文件、创建待办、修改日程或删除文件。"
-                + "宿主会先返回步骤与风险，不会立即执行。"
+                examples.length
+                    ? "输入已安装模块提供的示例指令。宿主会先返回步骤与风险，不会立即执行。"
+                    : "当前没有已安装模块提供可用指令；添加 Module/module_* 并重新构建后再试。"
             )
         );
         slot.append(empty);
@@ -1031,34 +1184,6 @@ function applyRunPayload(payload) {
 }
 
 /**
- * 只刷新总览计数，不替换正在阅读的计划卡。
- */
-async function loadOverviewCounts() {
-    const results = await Promise.allSettled([
-        moduleInstalled("module_fs") ? api.getFiles() : Promise.resolve([]),
-        moduleInstalled("module_todo") ? api.getTodos() : Promise.resolve([]),
-        moduleInstalled("module_calendar") ? api.getCalendar() : Promise.resolve([])
-    ]);
-    if (results[0].status === "fulfilled") {
-        state.overviewData.files = unwrapList(results[0].value, ["entries", "files"]);
-    }
-    if (results[1].status === "fulfilled") {
-        state.overviewData.todos = unwrapList(results[1].value, ["todos"]);
-    }
-    if (results[2].status === "fulfilled") {
-        state.overviewData.calendar = unwrapList(results[2].value, ["calendar", "events"]);
-    }
-    Object.entries({
-        files: state.overviewData.files.length,
-        todos: state.overviewData.todos.length,
-        calendar: state.overviewData.calendar.length
-    }).forEach(([key, value]) => {
-        setText(document, `[data-count="${key}"]`, String(value));
-    });
-    renderNavigation(document.querySelector("#nav-search")?.value ?? "");
-}
-
-/**
  * 将事件状态同步回计划步骤。
  */
 function applyEventStatuses() {
@@ -1129,12 +1254,11 @@ function renderTimeline() {
             element("p", "", event.message || event.title)
         );
         item.append(copy);
-        const time = element(
+        item.append(element(
             "span",
             "timeline-time",
             event.timestamp ? formatDate(event.timestamp) : "实时"
-        );
-        item.append(time);
+        ));
         timeline.append(item);
     });
 }
@@ -1230,291 +1354,6 @@ function pulsePlanModules() {
     });
 }
 
-/**
- * 加载文件视图。
- *
- * @param {string} path 相对路径
- * @param {boolean} updateHistory 是否更新当前路径
- */
-async function loadFiles(path = "", updateHistory = true) {
-    if (updateHistory) {
-        state.filePath = path;
-    }
-    const payload = await api.getFiles(path);
-    const entries = unwrapList(payload, ["entries", "files"]).sort((left, right) => {
-        const directoryOrder = Number(isDirectoryEntry(right)) - Number(isDirectoryEntry(left));
-        return directoryOrder || String(left?.name ?? "").localeCompare(
-            String(right?.name ?? ""),
-            "zh-CN"
-        );
-    });
-    const responsePath = String(
-        payload && typeof payload === "object" && payload.path != null
-            ? payload.path
-            : path
-    );
-    state.filePath = responsePath;
-    renderFiles(entries, payload);
-}
-
-/**
- * 渲染文件列表。
- *
- * @param {Array<object>} entries 条目
- * @param {unknown} payload 原始响应
- */
-function renderFiles(entries, payload) {
-    const main = document.querySelector("#main-content");
-    if (!main) {
-        return;
-    }
-    main.innerHTML = `
-        <div class="view-stack">
-            <header class="page-heading">
-                <span class="page-heading__icon">${icon("folder", 25)}</span>
-                <div>
-                    <p class="eyebrow">FILE MODULE</p>
-                    <h1>文件与目录</h1>
-                    <p>仅访问应用自管沙箱。目录浏览是只读；整理动作先进入计划预览。</p>
-                </div>
-                <span class="status-chip">本地沙箱</span>
-            </header>
-            <div class="data-toolbar">
-                <div class="path-trail">
-                    <span>workspace /</span>
-                    <strong id="file-path"></strong>
-                </div>
-                <div class="entity-actions">
-                    <button class="secondary-button" id="file-root" type="button">工作区根目录</button>
-                    <button class="secondary-button" id="file-refresh" type="button">${icon("refresh", 16)}刷新</button>
-                </div>
-            </div>
-            <section class="data-card">
-                <header class="panel__header">
-                    <div>
-                        <h2>目录条目</h2>
-                        <p id="file-summary">正在读取…</p>
-                    </div>
-                </header>
-                <div id="file-list"></div>
-            </section>
-        </div>
-    `;
-    hydrateIcons(main);
-    setText(main, "#file-path", state.filePath || "根目录");
-    setText(main, "#file-summary", `${entries.length} 个条目 · 实际读取自 /api/files`);
-    const list = main.querySelector("#file-list");
-    if (!entries.length) {
-        list.append(
-            emptyState(
-                "目录为空",
-                "可以通过右下角生成“创建目录”计划，或把文件放入应用沙箱。"
-            )
-        );
-    } else {
-        const rows = element("div", "entity-list");
-        entries.forEach((entry) => renderFileRow(rows, entry));
-        list.append(rows);
-    }
-
-    main.querySelector("#file-root")?.addEventListener("click", () => {
-        void loadFiles("").catch((error) => toast(errorMessage(error), { error: true }));
-    });
-    main.querySelector("#file-refresh")?.addEventListener("click", () => {
-        void loadFiles(state.filePath).catch((error) => toast(errorMessage(error), { error: true }));
-    });
-
-    const parent = payload && typeof payload === "object" ? payload.parentPath : null;
-    if (state.filePath) {
-        const up = element("button", "secondary-button", `返回 ${parent || "上一级" || "根目录"}`);
-        up.type = "button";
-        up.addEventListener("click", () => {
-            void loadFiles(String(parent ?? parentPath(state.filePath))).catch((error) => {
-                toast(errorMessage(error), { error: true });
-            });
-        });
-        main.querySelector(".entity-actions")?.prepend(up);
-    }
-}
-
-/**
- * 渲染文件行。
- *
- * @param {HTMLElement} container 容器
- * @param {object} entry 条目
- */
-function renderFileRow(container, entry) {
-    const directory = isDirectoryEntry(entry);
-    const name = String(entry?.name ?? entry?.path ?? "未命名条目");
-    const fullPath = String(entry?.path ?? joinPath(state.filePath, name));
-    const row = element("div", "entity-row");
-    const entityIcon = element("span", "entity-icon");
-    entityIcon.innerHTML = icon(directory ? "folder" : "file", 20);
-    const copy = element("span", "entity-copy");
-    copy.append(
-        element("strong", "", name),
-        element(
-            "small",
-            "",
-            directory
-                ? `目录 · ${fullPath || "根目录"}`
-                : `${formatBytes(entry?.size)} · ${entry?.modifiedAt ? formatDate(entry.modifiedAt) : fullPath}`
-        )
-    );
-    row.append(entityIcon, copy);
-
-    const actions = element("span", "entity-actions");
-    if (directory) {
-        const open = element("button", "secondary-button", "打开");
-        open.type = "button";
-        open.addEventListener("click", () => {
-            void loadFiles(fullPath).catch((error) => toast(errorMessage(error), { error: true }));
-        });
-        actions.append(open);
-    } else {
-        const reference = element("button", "secondary-button", "引用到移动示例");
-        reference.type = "button";
-        reference.addEventListener("click", () => fillCommand(`移动 ${fullPath} 到 归档`));
-        const trash = element("button", "text-button", "移入回收站");
-        trash.type = "button";
-        trash.addEventListener("click", () => fillCommand(`删除 ${fullPath}`));
-        actions.append(reference, trash);
-    }
-    row.append(actions);
-    container.append(row);
-}
-
-/**
- * 加载待办。
- */
-async function loadTodos() {
-    const payload = await api.getTodos();
-    const todos = unwrapList(payload, ["todos"]).filter((item) => item && typeof item === "object");
-    const main = document.querySelector("#main-content");
-    if (!main) {
-        return;
-    }
-    main.innerHTML = `
-        <div class="view-stack">
-            <header class="page-heading">
-                <span class="page-heading__icon">${icon("check", 25)}</span>
-                <div>
-                    <p class="eyebrow">TODO MODULE</p>
-                    <h1>待办事项</h1>
-                    <p>待办由本地模块保存；新增动作需要先生成计划并确认。</p>
-                </div>
-                <span class="status-chip">可逆写入</span>
-            </header>
-            <section class="data-card">
-                <header class="panel__header">
-                    <div>
-                        <h2>当前待办</h2>
-                        <p id="todo-summary"></p>
-                    </div>
-                    <button class="secondary-button" id="todo-example" type="button">填入创建示例</button>
-                </header>
-                <div id="todo-list"></div>
-            </section>
-        </div>
-    `;
-    hydrateIcons(main);
-    setText(main, "#todo-summary", `${todos.length} 项 · 实际读取自 /api/todos`);
-    const list = main.querySelector("#todo-list");
-    if (!todos.length) {
-        list.append(emptyState("暂无待办", "使用“创建待办：提交周报；截止：2026-11-20”生成第一项。"));
-    } else {
-        const rows = element("div", "entity-list");
-        todos.forEach((todo) => {
-            const row = element("div", "entity-row");
-            const todoIcon = element("span", "entity-icon");
-            todoIcon.innerHTML = icon("check", 20);
-            const copy = element("span", "entity-copy");
-            copy.append(
-                element("strong", "", String(todo.title ?? todo.name ?? "未命名待办")),
-                element(
-                    "small",
-                    "",
-                    `${statusLabel(todo.status ?? "OPEN")} · 截止 ${formatDate(todo.dueAt ?? todo.due ?? todo.deadline)}`
-                )
-            );
-            row.append(todoIcon, copy, element("span", "entity-time", todo.id ? `#${todo.id}` : ""));
-            rows.append(row);
-        });
-        list.append(rows);
-    }
-    main.querySelector("#todo-example")?.addEventListener("click", () => {
-        fillCommand("创建待办：提交周报；截止：2026-11-20");
-    });
-}
-
-/**
- * 加载日程。
- */
-async function loadCalendar() {
-    const payload = await api.getCalendar();
-    const events = unwrapList(payload, ["calendar", "events"])
-        .filter((item) => item && typeof item === "object");
-    const main = document.querySelector("#main-content");
-    if (!main) {
-        return;
-    }
-    main.innerHTML = `
-        <div class="view-stack">
-            <header class="page-heading">
-                <span class="page-heading__icon">${icon("calendar", 25)}</span>
-                <div>
-                    <p class="eyebrow">CALENDAR MODULE</p>
-                    <h1>日程安排</h1>
-                    <p>查看本地日程；修改时间会受到计划确认和事件审计保护。</p>
-                </div>
-                <span class="status-chip">本地存储</span>
-            </header>
-            <section class="data-card">
-                <header class="panel__header">
-                    <div>
-                        <h2>日程列表</h2>
-                        <p id="calendar-summary"></p>
-                    </div>
-                    <button class="secondary-button" id="calendar-example" type="button">填入改期示例</button>
-                </header>
-                <div id="calendar-list"></div>
-            </section>
-        </div>
-    `;
-    hydrateIcons(main);
-    setText(main, "#calendar-summary", `${events.length} 项 · 实际读取自 /api/calendar`);
-    const list = main.querySelector("#calendar-list");
-    if (!events.length) {
-        list.append(emptyState("暂无日程", "使用“把日程 项目评审 改到 2026-11-20 15:00”修改种子日程。"));
-    } else {
-        const rows = element("div", "entity-list");
-        events.forEach((event) => {
-            const row = element("div", "entity-row");
-            const eventIcon = element("span", "entity-icon");
-            eventIcon.innerHTML = icon("calendar", 20);
-            const copy = element("span", "entity-copy");
-            copy.append(
-                element("strong", "", String(event.title ?? event.name ?? "未命名日程")),
-                element(
-                    "small",
-                    "",
-                    `${formatDate(event.startAt ?? event.start ?? event.time)}`
-                    + `${event.endAt || event.end ? ` → ${formatDate(event.endAt ?? event.end)}` : ""}`
-                )
-            );
-            row.append(eventIcon, copy, element(
-                "span",
-                "entity-time",
-                event.location ? String(event.location) : "本地日程"
-            ));
-            rows.append(row);
-        });
-        list.append(rows);
-    }
-    main.querySelector("#calendar-example")?.addEventListener("click", () => {
-        fillCommand("把日程 项目评审 改到 2026-11-20 15:00");
-    });
-}
 
 /**
  * 加载运行记录和审计事件。
@@ -1683,10 +1522,25 @@ function fillCommand(command) {
  */
 function renderCommandExamples() {
     const container = document.querySelector("#command-examples");
+    const examples = state.modules
+        .flatMap((module) => state.moduleUi[module.moduleId]?.examples ?? [])
+        .slice(0, 4);
+    const input = document.querySelector("#command-input");
+    if (input) {
+        input.placeholder = examples.length
+            ? `例如：${examples[0].text}`
+            : "请输入已安装模块提供的示例指令";
+    }
     if (!container) {
         return;
     }
-    EXAMPLES.forEach((example) => {
+    container.replaceChildren();
+    if (!examples.length) {
+        container.hidden = true;
+        return;
+    }
+    container.hidden = false;
+    examples.forEach((example) => {
         const button = element("button", "example-chip", example.label);
         button.type = "button";
         button.title = example.text;

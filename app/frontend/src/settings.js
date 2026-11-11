@@ -1,3 +1,5 @@
+import { reconcileModuleOrder } from "./modules.js";
+
 export const MOTION_OPTIONS = Object.freeze([
     { value: "gentle", label: "灵动" },
     { value: "minimal", label: "克制" },
@@ -8,7 +10,8 @@ const DEFAULTS = Object.freeze({
     theme: "",
     motion: "gentle",
     notifications: true,
-    hiddenModuleIds: []
+    hiddenModuleIds: [],
+    moduleOrderIds: []
 });
 
 const MOTIONS = new Set(MOTION_OPTIONS.map((item) => item.value));
@@ -20,19 +23,16 @@ function normalizeHiddenModules(source) {
             .filter((id) => typeof id === "string" && id.trim())
             .map((id) => id.trim()))];
     }
+    return [];
+}
 
-    // 迁移首版三个布尔设置；注册和渲染不再依赖这些键。
-    const migrated = [];
-    if (source.showFileModule === false) {
-        migrated.push("module_fs");
+function normalizeModuleOrder(source) {
+    if (!Array.isArray(source.moduleOrderIds)) {
+        return [];
     }
-    if (source.showTodoModule === false) {
-        migrated.push("module_todo");
-    }
-    if (source.showCalendarModule === false) {
-        migrated.push("module_calendar");
-    }
-    return migrated;
+    return [...new Set(source.moduleOrderIds
+        .filter((id) => typeof id === "string" && id.trim())
+        .map((id) => id.trim()))];
 }
 
 /**
@@ -49,7 +49,8 @@ export function normalizeSettings(input) {
         notifications: typeof source.notifications === "boolean"
             ? source.notifications
             : DEFAULTS.notifications,
-        hiddenModuleIds: normalizeHiddenModules(source)
+        hiddenModuleIds: normalizeHiddenModules(source),
+        moduleOrderIds: normalizeModuleOrder(source)
     };
 }
 
@@ -69,7 +70,8 @@ export function reconcileSettingsForCatalog(input, modules = [], themes = []) {
     return {
         ...settings,
         theme: resolveThemeSelection(settings.theme, themes),
-        hiddenModuleIds: settings.hiddenModuleIds.filter((id) => moduleIds.has(id))
+        hiddenModuleIds: settings.hiddenModuleIds.filter((id) => moduleIds.has(id)),
+        moduleOrderIds: reconcileModuleOrder(modules, settings.moduleOrderIds)
     };
 }
 
@@ -142,7 +144,8 @@ export class SettingsStore {
     getSnapshot() {
         return Object.freeze({
             ...this.#value,
-            hiddenModuleIds: Object.freeze([...this.#value.hiddenModuleIds])
+            hiddenModuleIds: Object.freeze([...this.#value.hiddenModuleIds]),
+            moduleOrderIds: Object.freeze([...this.#value.moduleOrderIds])
         });
     }
 
