@@ -20,9 +20,6 @@
 
     <modules>
         <module>app/kernel</module>
-        <module>Module/module_fs</module>
-        <module>Module/module_todo</module>
-        <module>Module/module_calendar</module>
         <module>app/host</module>
     </modules>
 

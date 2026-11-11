@@ -9,6 +9,32 @@ $health = Invoke-RestMethod -Uri "$BaseUrl/api/health" -Method Get
 if ($health.status -ne "UP") {
     throw "健康检查失败：$($health | ConvertTo-Json -Compress)"
 }
+if ([int]$health.javaVersion -ne 21) {
+    throw "宿主未运行在 JDK 21：$($health.javaVersion)"
+}
+
+$modulesResponse = Invoke-RestMethod -Uri "$BaseUrl/api/modules" -Method Get
+$modules = @($modulesResponse | ForEach-Object { $_ })
+$moduleIds = @($modules | ForEach-Object { $_.moduleId })
+if ($moduleIds | Where-Object { [string]::IsNullOrWhiteSpace($_) }) {
+    throw "模块目录返回了缺少 moduleId 的条目。"
+}
+if (($moduleIds | Sort-Object -Unique).Count -ne $moduleIds.Count) {
+    throw "模块目录返回了重复 moduleId。"
+}
+
+$themesResponse = Invoke-RestMethod -Uri "$BaseUrl/api/themes" -Method Get
+$themes = @($themesResponse | ForEach-Object { $_ })
+$themeIds = @($themes | ForEach-Object { $_.id })
+if (($themeIds | Sort-Object -Unique).Count -ne $themeIds.Count) {
+    throw "主题目录返回了重复 id。"
+}
+if ($themes.Count -gt 0) {
+    $firstTheme = Invoke-RestMethod -Uri "$BaseUrl/api/themes/$([uri]::EscapeDataString($themes[0].id))" -Method Get
+    if ($null -eq $firstTheme.tokens) {
+        throw "主题详情缺少 tokens。"
+    }
+}
 
 $files = Invoke-RestMethod -Uri "$BaseUrl/api/files" -Method Get
 if ($null -eq $files.entries) {
@@ -47,4 +73,6 @@ if ($rolledBack.status -notin @("ROLLED_BACK", "PARTIALLY_ROLLED_BACK")) {
     throw "回滚响应不符合预期：$($rolledBack | ConvertTo-Json -Compress -Depth 8)"
 }
 
-Write-Host "HTTP 烟测通过：健康、目录、计划、未确认拒绝、确认执行、回滚。"
+Write-Host "HTTP 烟测通过：JDK 21 健康、模块与主题目录、文件目录、计划、未确认拒绝、确认执行、回滚。"
+
+exit 0

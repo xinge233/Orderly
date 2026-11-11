@@ -87,6 +87,14 @@ export class OrderlyApi {
         return this.request("/api/modules", options);
     }
 
+    getThemes(options) {
+        return this.request("/api/themes", options);
+    }
+
+    getTheme(id, options) {
+        return this.request(`/api/themes/${encodeURIComponent(id)}`, options);
+    }
+
     getFiles(path = "", options) {
         const query = path ? `?path=${encodeURIComponent(path)}` : "";
         return this.request(`/api/files${query}`, options);

@@ -4,11 +4,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderly.kernel.OrderlyModule;
 import com.orderly.kernel.RiskLevel;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -17,61 +22,73 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Set;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+import java.util.stream.Stream;
 
 /**
- * 从模块 JAR 聚合工具契约并绑定模块执行器。
+ * 从外部模块目录聚合工具契约并绑定模块执行器。
  *
- * <p>契约是动作元数据的唯一真相源；Java 中只保存具体执行行为，不复制一份
- * 风险、参数或确认策略。</p>
+ * <p>宿主不编译期依赖任何具体模块。模块 JAR 是本地受信任的可执行文件，
+ * 由构建脚本放入运行时目录；启动时只扫描一次，不提供热加载或远程下载。</p>
  */
 @Component
-public class ContractCatalog {
+public class ContractCatalog implements AutoCloseable {
 
     private static final Set<String> SUPPORTED_TYPES = Set.of("string", "boolean", "integer");
+    private static final String CONTRACT_PREFIX = "orderly-modules/";
 
     private final List<ModuleContract> modules;
     private final Map<String, ModuleContract> modulesById;
     private final Map<String, ActionContract> actionsById;
     private final Map<String, OrderlyModule> executors;
+    private final URLClassLoader moduleClassLoader;
+    private final Path moduleDirectory;
 
-    public ContractCatalog(ObjectMapper objectMapper) {
+    public ContractCatalog(
+            ObjectMapper objectMapper,
+            @Value("${orderly.modules-dir:target/orderly-modules}") String modulesDirectory
+    ) {
+        this.moduleDirectory = Path.of(modulesDirectory).toAbsolutePath().normalize();
+        List<Path> jars = findModuleJars(moduleDirectory);
+
         Map<String, ModuleContract> loaded = new LinkedHashMap<>();
         Map<String, ActionContract> actions = new LinkedHashMap<>();
+        for (Path jar : jars) {
+            loadContracts(jar, objectMapper, loaded, actions);
+        }
 
+        URLClassLoader candidate = null;
+        Map<String, OrderlyModule> loadedExecutors = new LinkedHashMap<>();
         try {
-            Resource[] resources = new PathMatchingResourcePatternResolver()
-                    .getResources("classpath*:orderly-modules/*.json");
-            if (resources.length == 0) {
-                throw new IllegalStateException("没有发现任何 orderly-modules/*.json 契约");
-            }
-            for (Resource resource : resources) {
-                ModuleContract module = parseModule(objectMapper.readTree(resource.getInputStream()));
-                if (loaded.putIfAbsent(module.moduleId(), module) != null) {
-                    throw new IllegalStateException("检测到重复模块契约：" + module.moduleId());
-                }
-                validateModule(module);
-                for (ActionContract action : module.actions()) {
-                    if (actions.putIfAbsent(action.id(), action) != null) {
-                        throw new IllegalStateException("检测到重复动作契约：" + action.id());
+            if (!jars.isEmpty()) {
+                URL[] urls = jars.stream().map(this::toUrl).toArray(URL[]::new);
+                candidate = new URLClassLoader(urls, OrderlyModule.class.getClassLoader());
+                for (OrderlyModule module : ServiceLoader.load(OrderlyModule.class, candidate)) {
+                    String moduleId = module.moduleId();
+                    if (moduleId == null || moduleId.isBlank()) {
+                        throw new IllegalStateException("模块执行器未声明 moduleId");
+                    }
+                    if (loadedExecutors.putIfAbsent(moduleId, module) != null) {
+                        throw new IllegalStateException("检测到重复模块执行器：" + moduleId);
                     }
                 }
             }
-        } catch (IOException exception) {
-            throw new IllegalStateException("读取模块契约失败", exception);
+        } catch (RuntimeException | Error exception) {
+            closeQuietly(candidate);
+            throw exception instanceof IllegalStateException illegal
+                    ? illegal
+                    : new IllegalStateException("加载外部模块执行器失败", exception);
         }
 
-        Map<String, OrderlyModule> loadedExecutors = new LinkedHashMap<>();
-        for (OrderlyModule module : ServiceLoader.load(OrderlyModule.class)) {
-            if (loadedExecutors.putIfAbsent(module.moduleId(), module) != null) {
-                throw new IllegalStateException("检测到重复模块执行器：" + module.moduleId());
-            }
-        }
         if (!loaded.keySet().equals(loadedExecutors.keySet())) {
+            closeQuietly(candidate);
             throw new IllegalStateException(
                     "模块契约与执行器不一致，契约=" + loaded.keySet() + "，执行器=" + loadedExecutors.keySet()
             );
         }
 
+        this.moduleClassLoader = candidate;
         this.modules = loaded.values().stream()
                 .sorted(Comparator.comparingInt(ModuleContract::order)
                         .thenComparing(ModuleContract::moduleId))
@@ -83,6 +100,10 @@ public class ContractCatalog {
 
     public List<ModuleContract> modules() {
         return modules;
+    }
+
+    public Path moduleDirectory() {
+        return moduleDirectory;
     }
 
     public Optional<ActionContract> findAction(String actionId) {
@@ -112,6 +133,81 @@ public class ContractCatalog {
         throw new IllegalArgumentException("动作没有归属模块：" + actionId);
     }
 
+    @Override
+    @PreDestroy
+    public void close() throws IOException {
+        if (moduleClassLoader != null) {
+            moduleClassLoader.close();
+        }
+    }
+
+    private List<Path> findModuleJars(Path directory) {
+        if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) {
+            return List.of();
+        }
+        if (Files.isSymbolicLink(directory) || !Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalStateException("模块目录必须是普通本地目录：" + directory);
+        }
+        try (Stream<Path> entries = Files.list(directory)) {
+            return entries
+                    .filter(path -> path.getFileName().toString().toLowerCase().endsWith(".jar"))
+                    .sorted(Comparator.comparing(path -> path.getFileName().toString()))
+                    .map(this::requireRegularJar)
+                    .toList();
+        } catch (IOException exception) {
+            throw new IllegalStateException("扫描模块目录失败：" + directory, exception);
+        }
+    }
+
+    private Path requireRegularJar(Path path) {
+        if (Files.isSymbolicLink(path) || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalStateException("模块 JAR 必须位于模块目录内且不能是符号链接：" + path);
+        }
+        return path.toAbsolutePath().normalize();
+    }
+
+    private void loadContracts(
+            Path jarPath,
+            ObjectMapper objectMapper,
+            Map<String, ModuleContract> loaded,
+            Map<String, ActionContract> actions
+    ) {
+        try (JarFile jar = new JarFile(jarPath.toFile(), false)) {
+            List<JarEntry> contractEntries = jar.stream()
+                    .filter(entry -> !entry.isDirectory())
+                    .filter(entry -> entry.getName().startsWith(CONTRACT_PREFIX))
+                    .filter(entry -> entry.getName().endsWith(".json"))
+                    .filter(entry -> entry.getName().indexOf('/', CONTRACT_PREFIX.length()) < 0)
+                    .sorted(Comparator.comparing(JarEntry::getName))
+                    .toList();
+            for (JarEntry entry : contractEntries) {
+                ModuleContract module;
+                try (var stream = jar.getInputStream(entry)) {
+                    module = parseModule(objectMapper.readTree(stream));
+                }
+                if (loaded.putIfAbsent(module.moduleId(), module) != null) {
+                    throw new IllegalStateException("检测到重复模块契约：" + module.moduleId());
+                }
+                validateModule(module);
+                for (ActionContract action : module.actions()) {
+                    if (actions.putIfAbsent(action.id(), action) != null) {
+                        throw new IllegalStateException("检测到重复动作契约：" + action.id());
+                    }
+                }
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("读取模块 JAR 契约失败：" + jarPath.getFileName(), exception);
+        }
+    }
+
+    private URL toUrl(Path path) {
+        try {
+            return path.toUri().toURL();
+        } catch (IOException exception) {
+            throw new IllegalStateException("模块 JAR 路径非法：" + path.getFileName(), exception);
+        }
+    }
+
     private ModuleContract parseModule(JsonNode root) {
         requireText(root, "moduleId");
         requireText(root, "title");
@@ -121,11 +217,11 @@ public class ContractCatalog {
         }
         JsonNode rawActions = root.path("actions");
         if (!rawActions.isArray() || rawActions.isEmpty()) {
-            throw new IllegalStateException("模块契约必须至少声明一个动作");
+            throw new IllegalStateException("模块 actions 必须是非空数组");
         }
         List<ActionContract> actions = new ArrayList<>();
-        for (JsonNode action : rawActions) {
-            actions.add(parseAction(action));
+        for (JsonNode node : rawActions) {
+            actions.add(parseAction(node));
         }
         return new ModuleContract(
                 root.path("moduleId").asText(),
@@ -203,6 +299,17 @@ public class ContractCatalog {
     private void requireText(JsonNode node, String field) {
         if (node.path(field).asText("").isBlank()) {
             throw new IllegalStateException("契约缺少文本字段：" + field);
+        }
+    }
+
+    private void closeQuietly(URLClassLoader loader) {
+        if (loader == null) {
+            return;
+        }
+        try {
+            loader.close();
+        } catch (IOException ignored) {
+            // 初始化失败时保留原始异常，关闭失败不覆盖根因。
         }
     }
 }

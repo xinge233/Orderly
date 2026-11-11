@@ -1,6 +1,9 @@
 {
   "id": "night",
   "label": "夜航",
+  "note": "沉稳深色",
+  "order": 30,
+  "default": false,
   "colorScheme": "dark",
   "browserColor": "#161b23",
   "tokens": {

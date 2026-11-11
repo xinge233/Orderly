@@ -13,10 +13,17 @@
 
 ## 启动
 
-环境要求：JDK 21、Maven 3.9+。
+环境要求：JDK 21、Maven 3.9+。脚本显式使用 `JAVA_HOME\bin\java.exe`，因此必须把 `JAVA_HOME` 指向 JDK 21；即使 PATH 中还有另一个 Java 版本，也不会用于构建或启动。
 
 ```powershell
 .\scripts\start.ps1
+```
+
+首次启动前，`start.ps1` 会调用 `scripts/build.ps1`：自动扫描 `Module/module_*`，逐个构建模块 JAR 到 `target/orderly-modules/`，重建 `Module/modules.index`，再构建宿主 fat JAR。可用以下命令单独构建并以已有产物启动：
+
+```powershell
+.\scripts\build.ps1
+.\scripts\start.ps1 -SkipBuild
 ```
 
 应用只监听 `127.0.0.1:8080`，打开 <http://127.0.0.1:8080/>。
@@ -51,22 +58,31 @@
 
 ```powershell
 .\scripts\gate.ps1
+.\scripts\modularity.ps1
 ```
 
-该脚本执行 Maven 测试与打包、前端 Node 测试，并检查源码中不存在物理删除调用或业务样式硬编码色值。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
+`gate.ps1` 执行模块化 Maven 测试与打包、前端语法和 Node 测试，并检查源码中不存在物理删除调用或业务样式硬编码色值。`modularity.ps1` 通过移动源码和重启宿主，验证全模块、移除单模块、零模块、恢复、临时模块自动发现与可逆移出、动态新增主题与已选主题失效回退；结束后恢复原生模块源码，并将临时模块和主题移入 `target` 验收备份后安全清理。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
 
 ## 架构
 
 - `app/kernel/`：模块 SPI 与跨端数据契约。
 - `app/host/`：授权、校验、调度、快照、回滚、事件和 HTTP/SSE 外壳，不实现具体业务。
 - `app/frontend/`：静态本地界面。
-- `Module/module_fs/`、`module_todo/`、`module_calendar/`：各自携带工具契约、执行器与逆操作。
+- `Module/module_fs/`、`module_todo/`、`module_calendar/`：各自携带工具契约、执行器与逆操作；构建脚本会自动发现新的 `Module/module_*`。
 - `contracts/`：计划、接口和样例的唯一真相源。
 - `themes/`：主题取值，不包含界面结构。
 - `scripts/`：构建、启动、门禁与烟测。
+
+### 模块运行时边界
+
+宿主不在编译期依赖任何具体业务模块，也不把模块打进自己的 fat JAR。启动时，宿主按文件名稳定排序扫描外部模块目录，用 `URLClassLoader`（父加载器共享 kernel SPI）读取每个 JAR 的 `orderly-modules/*.json`，再通过 `ServiceLoader` 绑定执行器；契约与执行器集合不一致、重复模块或重复动作都会阻止启动。模块只在启动时加载一次，不支持热加载。
+
+模块 JAR 是应用有权执行的本地文件，属于**本地受信任可执行代码**，不是安全沙箱。当前不提供远程插件下载、签名校验或权限隔离；只应放入自己信任的模块。模块目录不存在时应用仍可启动，`/api/modules` 返回空数组。
+
+主题从配置的 `themes/` 源目录加载，源目录优先于宿主 classpath 回退；存储主题 id、标签、说明、顺序、默认标记和 CSS 令牌。`/api/themes` 返回稳定摘要，`/api/themes/{id}` 返回完整令牌，前端按动态目录加载主题，不保留静态主题列表。
 
 ## 首版边界
 
 这是可运行的受控工作流切片，不是 V7 的最终发行版。尚未接入真实大模型、任意个人目录选择、重复文件哈希清理、提醒调度、云备份、安装包和自动更新。计划与快照目前保存在进程内存中，重启后不能继续操作旧计划；审计事件会持久化。目录边界、离线行为和功能完成度必须在界面中如实展示，不能把演示数据或规则匹配描述为完整 AI 能力。
 
-`Module/modules.index` 当前是模块清单与治理校验依据，不会自动生成 Maven reactor 依赖；新增独立模块仍需同步登记根 `pom.xml` 和 host 运行时依赖。这是首版已知的扩展性返工项。
+`Module/modules.index` 是构建脚本生成的运行模块清单，不要求人工同步，也不会把模块变成 Maven reactor 成员。当前扩展性风险转移到模块 JAR 的本地信任模型：仓库不校验来源或签名，且不提供远程分发和热加载。

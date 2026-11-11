@@ -1,6 +1,9 @@
 {
   "id": "moss",
   "label": "苔原",
+  "note": "自然低饱和",
+  "order": 20,
+  "default": false,
   "colorScheme": "light",
   "browserColor": "#e7eadf",
   "tokens": {

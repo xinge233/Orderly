@@ -17,9 +17,11 @@ import {
     validateConfirmation
 } from "./models.js";
 import {
+    isModuleHidden,
     MOTION_OPTIONS,
+    reconcileSettingsForCatalog,
+    setModuleHidden,
     SettingsStore,
-    THEME_OPTIONS,
     ThemeManager
 } from "./settings.js";
 
@@ -32,10 +34,7 @@ const NAV_SECTIONS = Object.freeze([
         id: "workspace",
         label: "工作空间",
         items: [
-            { id: "overview", label: "总览", caption: "计划与执行", icon: "home" },
-            { id: "files", label: "文件与目录", caption: "浏览与整理", icon: "folder", module: "files" },
-            { id: "todos", label: "待办事项", caption: "任务收束", icon: "check", module: "todos" },
-            { id: "calendar", label: "日程安排", caption: "时间视图", icon: "calendar", module: "calendar" }
+            { id: "overview", label: "总览", caption: "计划与执行", icon: "home" }
         ]
     },
     {
@@ -46,6 +45,13 @@ const NAV_SECTIONS = Object.freeze([
         ]
     }
 ]);
+
+// 专用视图只适配展示，不参与模块注册；未列出的新模块使用契约通用详情页。
+const MODULE_VIEW_ADAPTERS = Object.freeze({
+    module_fs: { view: "files", icon: "folder", caption: "浏览与整理" },
+    module_todo: { view: "todos", icon: "check", caption: "任务收束" },
+    module_calendar: { view: "calendar", icon: "calendar", caption: "时间视图" }
+});
 
 const EXAMPLES = Object.freeze([
     {
@@ -69,6 +75,8 @@ const EXAMPLES = Object.freeze([
 const state = {
     activeView: "overview",
     health: null,
+    modules: [],
+    themes: [],
     plan: null,
     planBusy: false,
     executing: false,
@@ -162,8 +170,30 @@ async function bootstrap() {
     bindGlobalControls();
     bindSettingsDialog();
     renderCommandExamples();
-    applySettings(settingsStore.getSnapshot());
+
+    const [moduleResult, themeResult] = await Promise.allSettled([
+        api.getModules(),
+        api.getThemes()
+    ]);
+    state.modules = moduleResult.status === "fulfilled"
+        ? unwrapList(moduleResult.value, ["modules"])
+            .filter((module) => module && typeof module.moduleId === "string")
+            .sort((left, right) => Number(left.order ?? 0) - Number(right.order ?? 0)
+                || left.moduleId.localeCompare(right.moduleId))
+        : [];
+    state.themes = themeResult.status === "fulfilled"
+        ? unwrapList(themeResult.value, ["themes"])
+            .filter((theme) => theme && typeof theme.id === "string")
+        : [];
+
+    const beforeReconcile = settingsStore.getSnapshot();
+    const reconciled = reconcileSettingsForCatalog(beforeReconcile, state.modules, state.themes);
+    if (reconciled.theme !== beforeReconcile.theme
+            || reconciled.hiddenModuleIds.join("|") !== beforeReconcile.hiddenModuleIds.join("|")) {
+        settingsStore.update(reconciled);
+    }
     settingsStore.subscribe(applySettings);
+    applySettings(settingsStore.getSnapshot());
     renderSettings();
 
     connectEventStream();
@@ -178,6 +208,13 @@ async function bootstrap() {
     } catch (error) {
         updateHealth(error);
         toast(errorMessage(error), { error: true });
+    }
+
+    if (moduleResult.status === "rejected") {
+        toast(`模块目录读取失败：${errorMessage(moduleResult.reason)}`, { error: true });
+    }
+    if (themeResult.status === "rejected") {
+        toast(`主题目录读取失败：${errorMessage(themeResult.reason)}`, { error: true });
     }
 
     void navigate("overview");
@@ -243,7 +280,11 @@ function bindGlobalControls() {
  */
 function applySettings(settings) {
     document.documentElement.dataset.motion = settings.motion;
-    void themeManager.apply(settings.theme);
+    if (settings.theme) {
+        void themeManager.apply(settings.theme);
+    } else {
+        themeManager.clear();
+    }
     renderNavigation(document.querySelector("#nav-search")?.value ?? "");
     renderSettings();
 }
@@ -289,18 +330,17 @@ function renderNavigation(query = "") {
     }
     const normalizedQuery = String(query).trim().toLocaleLowerCase("zh-CN");
     const settings = settingsStore.getSnapshot();
-    const moduleVisibility = {
-        files: settings.showFileModule,
-        todos: settings.showTodoModule,
-        calendar: settings.showCalendarModule
-    };
+    const moduleItems = state.modules
+        .filter((module) => !isModuleHidden(settings, module.moduleId))
+        .map((module) => moduleNavigationItem(module));
+    const sections = [
+        { ...NAV_SECTIONS[0], items: [...NAV_SECTIONS[0].items, ...moduleItems] },
+        NAV_SECTIONS[1]
+    ];
     container.replaceChildren();
 
-    NAV_SECTIONS.forEach((section) => {
+    sections.forEach((section) => {
         const visibleItems = section.items.filter((item) => {
-            if (item.module && !moduleVisibility[item.module]) {
-                return false;
-            }
             const haystack = `${item.label} ${item.caption}`.toLocaleLowerCase("zh-CN");
             return !normalizedQuery || haystack.includes(normalizedQuery);
         });
@@ -318,6 +358,9 @@ function renderNavigation(query = "") {
             );
             button.type = "button";
             button.dataset.view = item.id;
+            if (item.moduleId) {
+                button.dataset.moduleId = item.moduleId;
+            }
             button.innerHTML = `<span class="nav-icon">${icon(item.icon)}</span>`;
             const copy = element("span", "nav-copy");
             copy.append(
@@ -337,12 +380,43 @@ function renderNavigation(query = "") {
             list.append(button);
         });
         group.append(list);
+        if (section.id === "workspace" && state.modules.length === 0) {
+            group.append(element("p", "empty-state empty-state--nav", "尚未安装功能模块"));
+        }
         container.append(group);
     });
 
     if (!container.childElementCount) {
         container.append(element("p", "empty-state", "没有匹配的功能"));
     }
+}
+
+/**
+ * 把模块契约转换为导航项。未知模块不需要新增前端分支。
+ *
+ * @param {object} module 模块契约
+ * @returns {object} 导航项
+ */
+function moduleNavigationItem(module) {
+    const adapter = MODULE_VIEW_ADAPTERS[module.moduleId];
+    return {
+        id: adapter?.view ?? `module:${module.moduleId}`,
+        label: module.title || module.moduleId,
+        caption: adapter?.caption ?? module.description ?? "扩展模块",
+        icon: adapter?.icon ?? "modules",
+        moduleId: module.moduleId
+    };
+}
+
+function moduleForView(view) {
+    if (view === "overview" || view === "history") {
+        return null;
+    }
+    return state.modules.find((module) => moduleNavigationItem(module).id === view) ?? null;
+}
+
+function moduleInstalled(moduleId) {
+    return state.modules.some((module) => module.moduleId === moduleId);
 }
 
 /**
@@ -373,6 +447,7 @@ async function navigate(view) {
     state.activeView = view;
     closeMobileNav();
     renderNavigation(document.querySelector("#nav-search")?.value ?? "");
+    const selectedModule = moduleForView(view);
     const labels = {
         overview: "总览",
         files: "文件与目录",
@@ -385,7 +460,7 @@ async function navigate(view) {
         breadcrumb.replaceChildren(
             element("span", "", "工作台"),
             element("span", "", "/"),
-            element("strong", "", labels[view] ?? "总览")
+            element("strong", "", selectedModule?.title ?? labels[view] ?? "模块")
         );
     }
 
@@ -397,19 +472,21 @@ async function navigate(view) {
         <section class="loading-panel" aria-live="polite">
             <span class="loading-orbit" aria-hidden="true"></span>
             <h1>正在读取本地状态</h1>
-            <p>加载 ${labels[view] ?? "工作台"}…</p>
+            <p>加载 ${selectedModule?.title ?? labels[view] ?? "工作台"}…</p>
         </section>
     `;
 
     try {
-        if (view === "files") {
+        if (view === "files" && selectedModule) {
             await loadFiles(state.filePath, false);
-        } else if (view === "todos") {
+        } else if (view === "todos" && selectedModule) {
             await loadTodos();
-        } else if (view === "calendar") {
+        } else if (view === "calendar" && selectedModule) {
             await loadCalendar();
         } else if (view === "history") {
             await loadHistory();
+        } else if (selectedModule) {
+            renderGenericModule(selectedModule);
         } else {
             await loadOverview();
         }
@@ -440,13 +517,63 @@ function renderLoadError(error) {
 }
 
 /**
+ * 根据模块契约渲染通用详情页，未注册专用界面时无需新增前端分支。
+ *
+ * @param {object} module 模块契约
+ */
+function renderGenericModule(module) {
+    const main = document.querySelector("#main-content");
+    if (!main) {
+        return;
+    }
+    const panel = element("section", "panel");
+    const actions = Array.isArray(module.actions) ? module.actions : [];
+    panel.append(
+        element("p", "eyebrow", "MODULE CONTRACT"),
+        element("h1", "", module.title || module.moduleId),
+        element("p", "", module.description || "该模块未提供说明。"),
+        element("p", "muted", `模块 ID：${module.moduleId} · ${actions.length} 个动作`)
+    );
+
+    const list = element("div", "data-list");
+    if (actions.length === 0) {
+        list.append(element("p", "empty-state", "模块契约没有声明动作。"));
+    }
+    actions.forEach((action) => {
+        const card = element("article", "data-card");
+        const header = element("header", "data-card__header");
+        const copy = element("div");
+        copy.append(
+            element("strong", "", action.title || action.id || "未命名动作"),
+            element("p", "muted", action.description || "未提供动作说明。")
+        );
+        header.append(copy, element("span", "status-chip", RISK_LABEL[action.risk] ?? action.risk ?? "未知"));
+        card.append(header);
+
+        const parameters = Array.isArray(action.parameters) ? action.parameters : [];
+        const parameterText = parameters.length
+            ? parameters.map((parameter) => `${parameter.name}:${parameter.type}${parameter.required ? "（必填）" : ""}`).join(" · ")
+            : "无参数";
+        card.append(
+            element("p", "muted", `动作 ID：${action.id || "未声明"} · ${parameterText}`),
+            element("p", "muted", action.confirmationRequired
+                ? `执行前需要计划确认${action.confirmationPhrase ? `，确认词：${action.confirmationPhrase}` : ""}。`
+                : "只读动作。")
+        );
+        list.append(card);
+    });
+    panel.append(list);
+    main.replaceChildren(panel);
+}
+
+/**
  * 加载总览与三类数量。
  */
 async function loadOverview() {
     const results = await Promise.allSettled([
-        api.getFiles(),
-        api.getTodos(),
-        api.getCalendar()
+        moduleInstalled("module_fs") ? api.getFiles() : Promise.resolve([]),
+        moduleInstalled("module_todo") ? api.getTodos() : Promise.resolve([]),
+        moduleInstalled("module_calendar") ? api.getCalendar() : Promise.resolve([])
     ]);
     state.overviewData.files = results[0].status === "fulfilled"
         ? unwrapList(results[0].value, ["entries", "files"])
@@ -908,9 +1035,9 @@ function applyRunPayload(payload) {
  */
 async function loadOverviewCounts() {
     const results = await Promise.allSettled([
-        api.getFiles(),
-        api.getTodos(),
-        api.getCalendar()
+        moduleInstalled("module_fs") ? api.getFiles() : Promise.resolve([]),
+        moduleInstalled("module_todo") ? api.getTodos() : Promise.resolve([]),
+        moduleInstalled("module_calendar") ? api.getCalendar() : Promise.resolve([])
     ]);
     if (results[0].status === "fulfilled") {
         state.overviewData.files = unwrapList(results[0].value, ["entries", "files"]);
@@ -1095,15 +1222,7 @@ async function rollbackCurrent() {
 function pulsePlanModules() {
     const modules = new Set(state.plan?.steps.map((step) => step.moduleId) ?? []);
     document.querySelectorAll("[data-view]").forEach((button) => {
-        const mapping = {
-            module_fs: "files",
-            fs: "files",
-            module_todo: "todos",
-            todo: "todos",
-            module_calendar: "calendar",
-            calendar: "calendar"
-        };
-        const target = [...modules].some((moduleId) => mapping[moduleId] === button.dataset.view);
+        const target = Boolean(button.dataset.moduleId && modules.has(button.dataset.moduleId));
         button.classList.toggle("is-plan-target", target);
         if (target) {
             window.setTimeout(() => button.classList.remove("is-plan-target"), 2600);
@@ -1723,16 +1842,22 @@ function renderAppearanceSettings(panel) {
     const themeField = element("fieldset", "setting-field");
     themeField.append(
         element("legend", "", "界面主题"),
-        element("p", "", "颜色来自 themes/*.json，组件不保存具体色值。")
+        element("p", "", "主题由 /api/themes 动态提供，组件不保存静态主题列表。")
     );
     const themeGrid = element("div", "theme-grid");
-    THEME_OPTIONS.forEach((option) => {
+    const themes = [...state.themes].sort((left, right) =>
+        Number(left.order ?? 0) - Number(right.order ?? 0)
+            || String(left.id).localeCompare(String(right.id)));
+    if (themes.length === 0) {
+        themeGrid.append(element("p", "empty-state", "未发现可用主题，界面保留基础 CSS 变量。"));
+    }
+    themes.forEach((option) => {
         const label = element("label", "theme-option");
         const input = document.createElement("input");
         input.type = "radio";
         input.name = "theme";
-        input.value = option.value;
-        input.checked = settings.theme === option.value;
+        input.value = option.id;
+        input.checked = settings.theme === option.id;
         const card = element("span", "theme-option__card");
         const swatch = element("span", "theme-swatch");
         const first = document.createElement("i");
@@ -1744,13 +1869,13 @@ function renderAppearanceSettings(panel) {
         swatch.append(first, second, third);
         card.append(
             swatch,
-            element("strong", "", option.label),
-            element("small", "muted", option.note)
+            element("strong", "", option.label || option.id),
+            element("small", "muted", option.note || (option.default ? "默认主题" : "本地主题"))
         );
         label.append(input, card);
         input.addEventListener("change", () => {
             if (input.checked) {
-                settingsStore.update({ theme: option.value });
+                settingsStore.update({ theme: option.id });
             }
         });
         themeGrid.append(label);
@@ -1810,13 +1935,27 @@ function renderModuleSettings(panel) {
         element("p", "", "这里只控制导航可见性；模块执行器仍由宿主契约统一注册与担保。")
     );
     panel.append(header);
-    const fields = element("div", "settings-fields");
-    [
-        ["showFileModule", "文件与目录", "列目录、建目录、移动与回收站。"],
-        ["showTodoModule", "待办事项", "创建可回滚的本地待办。"],
-        ["showCalendarModule", "日程安排", "查看并修改本地日程时间。"]
-    ].forEach(([key, title, description]) => {
-        fields.append(settingRow(key, title, description, settings[key]));
+    const fields = element("div", "settings-fields settings-fields--modules");
+    if (state.modules.length === 0) {
+        fields.append(element("p", "empty-state", "当前没有已安装模块。安装本地模块并重启宿主后会显示在这里。"));
+    }
+    state.modules.forEach((module) => {
+        const hidden = isModuleHidden(settings, module.moduleId);
+        const row = element("div", "setting-field setting-field--row");
+        const copy = element("div");
+        copy.append(
+            element("label", "", module.title || module.moduleId),
+            element("p", "", module.description || "由模块契约声明的功能。")
+        );
+        row.append(copy, switchControl(
+            module.moduleId,
+            !hidden,
+            (visible) => {
+                const next = setModuleHidden(settingsStore.getSnapshot(), module.moduleId, !visible);
+                settingsStore.update({ hiddenModuleIds: next.hiddenModuleIds });
+            }
+        ));
+        fields.append(row);
     });
     panel.append(fields);
 }
@@ -1878,14 +2017,18 @@ function settingRow(key, title, description, checked) {
  * @param {boolean} checked 当前值
  * @returns {HTMLElement} 控件
  */
-function switchControl(key, checked) {
+function switchControl(key, checked, onChange = null) {
     const label = element("label", "switch");
     const input = document.createElement("input");
     input.type = "checkbox";
     input.checked = checked;
     input.setAttribute("aria-label", key);
     input.addEventListener("change", () => {
-        settingsStore.update({ [key]: input.checked });
+        if (onChange) {
+            onChange(input.checked);
+        } else {
+            settingsStore.update({ [key]: input.checked });
+        }
     });
     label.append(input, element("span"));
     return label;

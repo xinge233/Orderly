@@ -4,13 +4,20 @@ param()
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $frontendRoot = Join-Path $repoRoot "app\frontend"
-$localRepository = Join-Path $repoRoot ".m2-repository"
 
 Push-Location $repoRoot
 try {
-    & mvn "-Dmaven.repo.local=$localRepository" test
+    & (Join-Path $PSScriptRoot "build.ps1")
     if ($LASTEXITCODE -ne 0) {
-        throw "Maven 测试失败，退出码：$LASTEXITCODE"
+        throw "模块化构建失败，退出码：$LASTEXITCODE"
+    }
+
+    $sourceFiles = @("app.js", "api.js", "models.js", "settings.js")
+    foreach ($sourceFile in $sourceFiles) {
+        & node --check (Join-Path $frontendRoot "src\$sourceFile")
+        if ($LASTEXITCODE -ne 0) {
+            throw "前端语法检查失败：$sourceFile，退出码：$LASTEXITCODE"
+        }
     }
 
     & node --test (Join-Path $frontendRoot "tests\*.test.mjs")
@@ -34,8 +41,18 @@ try {
         throw "样式色值扫描异常，rg 退出码：$LASTEXITCODE"
     }
 
-    Write-Host "门禁通过：Maven 测试、前端测试、物理删除扫描、样式变量扫描均成功。"
+    $staticThemes = & rg -n 'THEME_OPTIONS' app/frontend/src
+    if ($LASTEXITCODE -eq 0) {
+        throw "前端仍保留静态主题列表：`n$staticThemes"
+    }
+    if ($LASTEXITCODE -ne 1) {
+        throw "静态主题扫描异常，rg 退出码：$LASTEXITCODE"
+    }
+
+    Write-Host "门禁通过：模块化 Maven 测试、前端语法与测试、物理删除扫描、样式变量扫描、动态主题扫描均成功。"
 }
 finally {
     Pop-Location
 }
+
+exit 0

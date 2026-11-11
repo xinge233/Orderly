@@ -10,6 +10,8 @@ spring:
         period: 0
 orderly:
   data-dir: .orderly-data
+  modules-dir: target/orderly-modules
+  themes-dir: themes
 logging:
   level:
     root: INFO

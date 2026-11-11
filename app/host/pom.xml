@@ -18,24 +18,6 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.orderly</groupId>
-            <artifactId>module-fs</artifactId>
-            <version>${project.version}</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.orderly</groupId>
-            <artifactId>module-todo</artifactId>
-            <version>${project.version}</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.orderly</groupId>
-            <artifactId>module-calendar</artifactId>
-            <version>${project.version}</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
@@ -61,13 +43,22 @@
             </resource>
             <resource>
                 <directory>../../themes</directory>
-                <targetPath>static/themes</targetPath>
+                <targetPath>themes</targetPath>
             </resource>
         </resources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <orderly.modules-dir>${project.basedir}/../../target/orderly-modules</orderly.modules-dir>
+                    </systemPropertyVariables>
+                </configuration>
             </plugin>
         </plugins>
     </build>

@@ -18,6 +18,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -41,7 +42,15 @@ public class PlanService {
         String previous = null;
         for (int index = 0; index < result.steps().size(); index++) {
             PlannerStep raw = result.steps().get(index);
-            ActionContract action = catalog.requireAction(raw.actionId());
+            Optional<ActionContract> registered = catalog.findAction(raw.actionId());
+            if (registered.isEmpty()) {
+                return saveQuestion(
+                        goal,
+                        "当前没有已安装模块提供动作“" + raw.actionId()
+                                + "”。请安装对应本地模块后重试；未生成可执行计划。"
+                );
+            }
+            ActionContract action = registered.orElseThrow();
             validateArguments(action, raw.arguments());
             String id = "s" + (index + 1);
             steps.add(new ExecutionStep(
@@ -69,6 +78,23 @@ public class PlanService {
                 result.impact(),
                 result.confidence(),
                 steps,
+                Instant.now()
+        );
+        plans.put(id, plan);
+        return PlanView.from(plan);
+    }
+
+    private PlanView saveQuestion(String goal, String message) {
+        String id = java.util.UUID.randomUUID().toString();
+        ExecutionPlan plan = new ExecutionPlan(
+                id,
+                goal == null ? "" : goal.trim(),
+                "QUESTION",
+                message,
+                List.of("本地规则计划器未连接外部模型。", "未安装的模块不会被推断或执行。"),
+                "未产生任何变更。",
+                0.2,
+                List.of(),
                 Instant.now()
         );
         plans.put(id, plan);

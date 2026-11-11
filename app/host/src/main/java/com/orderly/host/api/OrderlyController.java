@@ -9,8 +9,12 @@ import com.orderly.host.execution.ExecutionService;
 import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanView;
 import com.orderly.host.runtime.WorkspaceRuntime;
+import com.orderly.host.theme.ThemeCatalog;
+import com.orderly.host.theme.ThemeDefinition;
+import com.orderly.host.theme.ThemeSummary;
 import com.orderly.kernel.FileEntry;
 import com.orderly.kernel.TrashEntry;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -34,19 +38,22 @@ public class OrderlyController {
     private final ExecutionService execution;
     private final ExecutionJournal journal;
     private final WorkspaceRuntime runtime;
+    private final ThemeCatalog themes;
 
     public OrderlyController(
             ContractCatalog catalog,
             PlanService plans,
             ExecutionService execution,
             ExecutionJournal journal,
-            WorkspaceRuntime runtime
+            WorkspaceRuntime runtime,
+            ThemeCatalog themes
     ) {
         this.catalog = catalog;
         this.plans = plans;
         this.execution = execution;
         this.journal = journal;
         this.runtime = runtime;
+        this.themes = themes;
     }
 
     @GetMapping("/health")
@@ -62,6 +69,20 @@ public class OrderlyController {
     @GetMapping("/modules")
     public List<ModuleContract> modules() {
         return catalog.modules();
+    }
+
+    @GetMapping("/themes")
+    public List<ThemeSummary> themes() {
+        return themes.summaries();
+    }
+
+    @GetMapping("/themes/{id}")
+    public ThemeDefinition theme(@PathVariable String id) {
+        try {
+            return themes.require(id);
+        } catch (IllegalArgumentException exception) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "THEME_NOT_FOUND", exception.getMessage());
+        }
     }
 
     @GetMapping("/files")

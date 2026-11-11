@@ -69,3 +69,19 @@ test("API client percent-encodes plan ids", async () => {
     await api.rollbackPlan("plan/a?b");
     assert.equal(requestedUrl, "/api/plans/plan%2Fa%3Fb/rollback");
 });
+
+test("API client reads dynamic module and theme catalogs", async () => {
+    const urls = [];
+    const api = new OrderlyApi({
+        fetchImpl: async (url) => {
+            urls.push(url);
+            return new Response("[]", { status: 200 });
+        }
+    });
+
+    await api.getModules();
+    await api.getThemes();
+    await api.getTheme("theme/a");
+
+    assert.deepEqual(urls, ["/api/modules", "/api/themes", "/api/themes/theme%2Fa"]);
+});

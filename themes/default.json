@@ -1,6 +1,9 @@
 {
   "id": "paper",
   "label": "纸页",
+  "note": "温暖明亮",
+  "order": 10,
+  "default": true,
   "colorScheme": "light",
   "browserColor": "#f3efe7",
   "tokens": {

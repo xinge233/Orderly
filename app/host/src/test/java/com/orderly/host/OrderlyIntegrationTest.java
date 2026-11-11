@@ -68,6 +68,20 @@ class OrderlyIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"))
                 .andExpect(jsonPath("$.planner").value("LOCAL_RULES"));
+        mockMvc.perform(get("/api/themes"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value("paper"))
+                .andExpect(jsonPath("$[0].default").value(true))
+                .andExpect(jsonPath("$[0].label").value("纸页"))
+                .andExpect(jsonPath("$[0].note").value("温暖明亮"))
+                .andExpect(jsonPath("$[0].order").value(10));
+        mockMvc.perform(get("/api/themes/paper"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("paper"))
+                .andExpect(jsonPath("$.tokens['--color-canvas']").value("#f3efe7"));
+        mockMvc.perform(get("/api/themes/not-present"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("THEME_NOT_FOUND"));
         mockMvc.perform(post("/api/plans")
                         .contentType("application/json")
                         .content("{\"goal\":\"创建目录 演示归档\"}"))
