@@ -53,7 +53,7 @@
 |---|---|---|
 | 完整门禁 | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\gate.ps1` | 退出码 `0`；Host `26/26`，前端 `26/26`，UI 契约样例 `2/2`，全部无失败/错误/跳过 |
 | 模块化 | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\modularity.ps1` | 退出码 `0`；全模块、单模块移除、零模块、恢复、临时模块发现/query/planner/可逆移出、主题回退六阶段通过 |
-| README 启动脚本 | `start.ps1 -Port 18082 -SkipBuild` | 启动成功，JDK 21，仅监听 `127.0.0.1:18082` |
+| README 启动脚本 | `start.ps1 -Port 18082 -SkipBuild` | 应用启动成功，JDK 21，仅监听 `127.0.0.1:18082`；长驻进程在烟测后被验收流程受控终止，外层脚本记录 `-1` |
 | HTTP 烟测 | `smoke.ps1 -BaseUrl http://127.0.0.1:18082` | 退出码 `0`；模块目录/UI、5 个通用查询、主题和未执行计划 409 通过 |
 | JAR 资源归属 | `jar tf` 审计 | 三个模块 JAR 均含各自 UI、契约和 ServiceLoader；Host 对应条目均为 `0` |
 | Git 差异格式 | `git diff --check` | 通过 |
@@ -62,8 +62,16 @@
 原始报错或异常：
 
 ```text
-无未解决报错。Mockito/Java agent 输出为 JDK 21 警告，不影响测试结果。
+start.err.log 记录：“应用退出码：-1”。
+该记录发生于服务健康检查成功、监听 127.0.0.1:18082 且 HTTP 烟测通过之后，由验收流程主动停止 Java 子进程产生。start.ps1 是长驻命令，不自行以 0 退出；原始非零结果保留，不视为应用启动失败。
+Mockito/Java agent 输出为 JDK 21 警告，不影响测试结果。
 ```
+
+## 主代理补充验收说明
+
+- 最新提交与远端已经核对为同一 SHA，工作树 clean。
+- `gate.out.log`、`modularity.out.log`、`smoke.out.log` 均为当前提交上的实际证据。
+- 受控终止后的 `-1` 已在任务卡中明确为长驻启动命令的测试终止语义；短生命周期构建、门禁、模块化和烟测命令仍必须真实返回 `0`。
 
 ## 风险与未决事项
 

@@ -70,7 +70,9 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1 -BaseUrl http:
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\modularity.ps1
 ```
 
-- 预期证据：退出码均为 `0`；Host、前端和 UI 契约测试无失败/跳过；模块化六阶段完成；HTTP 烟测使用隔离数据并清理残留。
+- 短生命周期验证 `gate.ps1`、`smoke.ps1`、`modularity.ps1` 必须以退出码 `0` 完成；Host、前端和 UI 契约测试不得失败/跳过；模块化六阶段必须完成。
+- `start.ps1` 是长驻服务命令，不以自行退出 `0` 作为启动成功条件。验收标准为：JDK 21 启动、只监听 `127.0.0.1`、健康检查和 HTTP 烟测通过；随后由验收流程受控终止服务。受控终止导致 `start.ps1` 外层观察非零退出码时，必须保留原始日志并明确标注为测试终止，不得伪装为应用正常退出。
+- HTTP 烟测必须使用隔离数据并清理测试残留。
 
 ## 风险与阻塞
 
