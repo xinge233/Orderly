@@ -2,7 +2,7 @@
 
 ## 状态
 
-- 状态：`DONE_WITH_CONCERNS`
+- 状态：`DONE`
 - 任务编号：`ORDERLY-MODULES-SELF-CONTAINED` 与定向返工 `ORDERLY-MODULES-CONTRACT-SAMPLES`
 - 当前阶段：首版实现阶段
 
@@ -83,4 +83,4 @@ Mockito/Java agent 输出为 JDK 21 警告，不影响测试结果。
 
 ## 验收状态
 
-尚未获得 `project_manager` 对提交后版本的最终验收。本报告只代表软件工程师与主代理技术自检结果。
+`project_manager` 已于 2026-11-12 对提交 `656a5ab` 的代码与证据快照给出最终 `PASS`，无返工项。本报告及此后的最小状态记录不改变已验收的运行代码。
