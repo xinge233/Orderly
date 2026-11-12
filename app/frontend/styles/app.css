@@ -261,7 +261,62 @@ kbd {
     transition:
         color var(--duration-fast) var(--ease-out),
         background var(--duration-fast) var(--ease-out),
+        opacity var(--duration-fast) var(--ease-out),
         transform var(--duration-fast) var(--ease-out);
+}
+
+.nav-item--module {
+    grid-template-columns: 12px 34px minmax(0, 1fr) auto;
+    touch-action: pan-y;
+    user-select: none;
+}
+
+.nav-drag-handle {
+    display: grid;
+    place-items: center;
+    width: 12px;
+    color: var(--color-text-faint);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: grab;
+    touch-action: none;
+}
+
+.nav-item--module:hover .nav-drag-handle {
+    color: var(--color-text-soft);
+}
+
+.nav-item.is-nav-dragging {
+    opacity: 0.48;
+    cursor: grabbing;
+    transform: translateX(4px);
+}
+
+.nav-item.is-drop-before::before,
+.nav-item.is-drop-after::before {
+    position: absolute;
+    right: var(--space-2);
+    left: var(--space-2);
+    height: 2px;
+    border-radius: 999px;
+    background: var(--color-accent);
+    box-shadow: 0 0 0 3px var(--color-accent-soft);
+    content: "";
+    pointer-events: none;
+}
+
+.nav-item.is-drop-before::before {
+    top: -3px;
+}
+
+.nav-item.is-drop-after::before {
+    bottom: -3px;
+}
+
+body.is-navigation-dragging,
+body.is-navigation-dragging * {
+    cursor: grabbing !important;
+    user-select: none;
 }
 
 .nav-item:hover {

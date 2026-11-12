@@ -37,7 +37,8 @@ test("invalid settings fall back to safe defaults", () => {
         motion: "gentle",
         notifications: true,
         hiddenModuleIds: [],
-        moduleOrderIds: []
+        moduleOrderIds: [],
+        sidebarModuleOrderIds: []
     });
 });
 
@@ -101,6 +102,27 @@ test("settings persist module card order and reconcile catalog changes", () => {
     ]);
     assert.deepEqual(reconciled.moduleOrderIds, ["module_new", "module_added"]);
     assert.match(storage.getItem(), /"moduleOrderIds":\["module_new","module_removed"\]/);
+});
+
+test("card and sidebar module orders stay independent", () => {
+    const storage = memoryStorage();
+    const store = new SettingsStore({ storage, storageKey: "independent-order-test" });
+    const modules = [
+        { moduleId: "module_a", order: 10 },
+        { moduleId: "module_b", order: 20 }
+    ];
+    store.update({
+        moduleOrderIds: ["module_b", "module_a"],
+        sidebarModuleOrderIds: ["module_a", "module_b"]
+    });
+    const settings = reconcileSettingsForCatalog({
+        ...store.getSnapshot()
+    }, modules);
+
+    assert.deepEqual(settings.moduleOrderIds, ["module_b", "module_a"]);
+    assert.deepEqual(settings.sidebarModuleOrderIds, ["module_a", "module_b"]);
+    assert.match(storage.getItem(), /"moduleOrderIds":\["module_b","module_a"\]/);
+    assert.match(storage.getItem(), /"sidebarModuleOrderIds":\["module_a","module_b"\]/);
 });
 
 test("theme manager loads detail, applies only token-shaped values, and clears previous injection", async () => {

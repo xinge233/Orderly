@@ -11,7 +11,8 @@ const DEFAULTS = Object.freeze({
     motion: "gentle",
     notifications: true,
     hiddenModuleIds: [],
-    moduleOrderIds: []
+    moduleOrderIds: [],
+    sidebarModuleOrderIds: []
 });
 
 const MOTIONS = new Set(MOTION_OPTIONS.map((item) => item.value));
@@ -26,11 +27,11 @@ function normalizeHiddenModules(source) {
     return [];
 }
 
-function normalizeModuleOrder(source) {
-    if (!Array.isArray(source.moduleOrderIds)) {
+function normalizeModuleOrder(source, key) {
+    if (!Array.isArray(source[key])) {
         return [];
     }
-    return [...new Set(source.moduleOrderIds
+    return [...new Set(source[key]
         .filter((id) => typeof id === "string" && id.trim())
         .map((id) => id.trim()))];
 }
@@ -50,7 +51,8 @@ export function normalizeSettings(input) {
             ? source.notifications
             : DEFAULTS.notifications,
         hiddenModuleIds: normalizeHiddenModules(source),
-        moduleOrderIds: normalizeModuleOrder(source)
+        moduleOrderIds: normalizeModuleOrder(source, "moduleOrderIds"),
+        sidebarModuleOrderIds: normalizeModuleOrder(source, "sidebarModuleOrderIds")
     };
 }
 
@@ -71,7 +73,8 @@ export function reconcileSettingsForCatalog(input, modules = [], themes = []) {
         ...settings,
         theme: resolveThemeSelection(settings.theme, themes),
         hiddenModuleIds: settings.hiddenModuleIds.filter((id) => moduleIds.has(id)),
-        moduleOrderIds: reconcileModuleOrder(modules, settings.moduleOrderIds)
+        moduleOrderIds: reconcileModuleOrder(modules, settings.moduleOrderIds),
+        sidebarModuleOrderIds: reconcileModuleOrder(modules, settings.sidebarModuleOrderIds)
     };
 }
 
@@ -145,7 +148,8 @@ export class SettingsStore {
         return Object.freeze({
             ...this.#value,
             hiddenModuleIds: Object.freeze([...this.#value.hiddenModuleIds]),
-            moduleOrderIds: Object.freeze([...this.#value.moduleOrderIds])
+            moduleOrderIds: Object.freeze([...this.#value.moduleOrderIds]),
+            sidebarModuleOrderIds: Object.freeze([...this.#value.sidebarModuleOrderIds])
         });
     }
 

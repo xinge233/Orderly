@@ -14,9 +14,11 @@ import {
 } from "./models.js";
 import {
     moveModuleOrder,
+    moveVisibleModuleOrder,
     normalizeModuleUi,
     readCount,
     reorderBefore,
+    reorderRelative,
     sortModules
 } from "./modules.js";
 import {
@@ -31,6 +33,8 @@ import {
 const api = new OrderlyApi();
 const settingsStore = new SettingsStore();
 const themeManager = new ThemeManager();
+const NAV_DRAG_HOLD_MS = 320;
+const NAV_DRAG_MOVE_TOLERANCE = 7;
 
 const NAV_SECTIONS = Object.freeze([
     {
@@ -71,6 +75,9 @@ const state = {
 
 let eventStream = null;
 let eventRenderQueued = false;
+let navigationDrag = null;
+let navigationHoldTimer = null;
+let suppressNavigationClickUntil = 0;
 
 /**
  * 创建简单元素。
@@ -168,7 +175,6 @@ async function bootstrap() {
         state.themes
     );
     settingsStore.update(reconciled);
-    state.modules = sortModules(state.modules, reconciled.moduleOrderIds);
     settingsStore.subscribe(applySettings);
     applySettings(settingsStore.getSnapshot());
     renderSettings();
@@ -279,7 +285,12 @@ function bindGlobalControls() {
         }
     });
 
+    document.addEventListener("pointermove", moveNavigationDrag, { passive: false });
+    document.addEventListener("pointerup", finishNavigationDrag);
+    document.addEventListener("pointercancel", cancelNavigationDrag);
+
     window.addEventListener("pagehide", () => {
+        cancelNavigationDrag();
         eventStream?.close();
     }, { once: true });
 }
@@ -338,13 +349,14 @@ function updateHealth(error = null) {
  * @param {string} query 搜索词
  */
 function renderNavigation(query = "") {
+    cancelNavigationDrag();
     const container = document.querySelector("#primary-nav");
     if (!container) {
         return;
     }
     const normalizedQuery = String(query).trim().toLocaleLowerCase("zh-CN");
     const settings = settingsStore.getSnapshot();
-    const moduleItems = state.modules
+    const moduleItems = sortModules(state.modules, settings.sidebarModuleOrderIds)
         .filter((module) => !isModuleHidden(settings, module.moduleId))
         .map((module) => moduleNavigationItem(module));
     const sections = [
@@ -373,9 +385,17 @@ function renderNavigation(query = "") {
             button.type = "button";
             button.dataset.view = item.id;
             if (item.moduleId) {
+                button.classList.add("nav-item--module");
                 button.dataset.moduleId = item.moduleId;
+                button.title = "长按拖动调整顺序；Alt+↑/↓ 也可排序";
+                button.setAttribute("aria-keyshortcuts", "Alt+ArrowUp Alt+ArrowDown");
             }
             button.innerHTML = `<span class="nav-icon">${icon(item.icon)}</span>`;
+            if (item.moduleId) {
+                const handle = element("span", "nav-drag-handle", "⋮");
+                handle.setAttribute("aria-hidden", "true");
+                button.prepend(handle);
+            }
             const copy = element("span", "nav-copy");
             copy.append(
                 element("strong", "", item.label),
@@ -388,9 +408,23 @@ function renderNavigation(query = "") {
             } else {
                 button.append(element("span", "nav-count", "·"));
             }
-            button.addEventListener("click", () => {
+            button.addEventListener("click", (event) => {
+                if (performance.now() < suppressNavigationClickUntil) {
+                    event.preventDefault();
+                    return;
+                }
                 void navigate(item.id);
             });
+            if (item.moduleId) {
+                button.addEventListener("pointerdown", (event) => {
+                    beginNavigationDrag(event, button, item.moduleId);
+                });
+                button.addEventListener("keydown", (event) => {
+                    if (!event.altKey || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
+                    event.preventDefault();
+                    changeSidebarModuleOrder(item.moduleId, event.key === "ArrowUp" ? -1 : 1);
+                });
+            }
             list.append(button);
         });
         group.append(list);
@@ -403,6 +437,148 @@ function renderNavigation(query = "") {
     if (!container.childElementCount) {
         container.append(element("p", "empty-state", "没有匹配的功能"));
     }
+}
+
+function beginNavigationDrag(event, button, moduleId) {
+    if (event.button !== 0 || event.isPrimary === false || button.disabled) return;
+    cancelNavigationDrag();
+    suppressNavigationClickUntil = 0;
+    navigationDrag = {
+        active: false,
+        after: false,
+        element: button,
+        moduleId,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        targetId: null
+    };
+    navigationHoldTimer = window.setTimeout(activateNavigationDrag, NAV_DRAG_HOLD_MS);
+}
+
+function activateNavigationDrag() {
+    navigationHoldTimer = null;
+    if (!navigationDrag) return;
+    navigationDrag.active = true;
+    navigationDrag.element.classList.add("is-nav-dragging");
+    document.body.classList.add("is-navigation-dragging");
+    try {
+        navigationDrag.element.setPointerCapture(navigationDrag.pointerId);
+    } catch {
+        // 某些浏览器不支持指针捕获时仍可通过文档级 pointermove 完成排序。
+    }
+    const status = document.querySelector("#navigation-order-status");
+    if (status) status.textContent = "正在调整模块顺序。";
+}
+
+function moveNavigationDrag(event) {
+    if (!navigationDrag || event.pointerId !== navigationDrag.pointerId) return;
+    const distance = Math.hypot(
+        event.clientX - navigationDrag.startX,
+        event.clientY - navigationDrag.startY
+    );
+    if (!navigationDrag.active) {
+        if (distance > NAV_DRAG_MOVE_TOLERANCE) cancelNavigationDrag();
+        return;
+    }
+
+    event.preventDefault();
+    autoScrollNavigation(event.clientY);
+    clearNavigationDropTargets();
+    const target = document.elementFromPoint(event.clientX, event.clientY)
+        ?.closest(".nav-item--module[data-module-id]");
+    if (!target || target.dataset.moduleId === navigationDrag.moduleId) {
+        navigationDrag.targetId = null;
+        return;
+    }
+    const rect = target.getBoundingClientRect();
+    navigationDrag.targetId = target.dataset.moduleId;
+    navigationDrag.after = event.clientY > rect.top + (rect.height / 2);
+    target.classList.add(navigationDrag.after ? "is-drop-after" : "is-drop-before");
+}
+
+function finishNavigationDrag(event) {
+    if (!navigationDrag || event.pointerId !== navigationDrag.pointerId) return;
+    if (!navigationDrag.active) {
+        cancelNavigationDrag();
+        return;
+    }
+
+    event.preventDefault();
+    const { after, moduleId, targetId } = navigationDrag;
+    const ids = settingsStore.getSnapshot().sidebarModuleOrderIds;
+    clearNavigationDrag();
+    suppressNavigationClickUntil = performance.now() + 400;
+    if (!targetId || targetId === moduleId) return;
+    const reordered = reorderRelative(ids, moduleId, targetId, after);
+    persistSidebarModuleOrder(reordered, "侧边栏模块顺序已更新。");
+}
+
+function cancelNavigationDrag(event) {
+    if (event?.pointerId != null
+        && navigationDrag
+        && event.pointerId !== navigationDrag.pointerId) {
+        return;
+    }
+    clearNavigationDrag();
+}
+
+function clearNavigationDrag() {
+    if (navigationHoldTimer != null) {
+        window.clearTimeout(navigationHoldTimer);
+        navigationHoldTimer = null;
+    }
+    clearNavigationDropTargets();
+    if (navigationDrag) {
+        navigationDrag.element.classList.remove("is-nav-dragging");
+        try {
+            navigationDrag.element.releasePointerCapture(navigationDrag.pointerId);
+        } catch {
+            // 指针已释放或浏览器不支持捕获时无后续处理。
+        }
+    }
+    document.body.classList.remove("is-navigation-dragging");
+    navigationDrag = null;
+}
+
+function clearNavigationDropTargets() {
+    document.querySelectorAll(".nav-item.is-drop-before, .nav-item.is-drop-after")
+        .forEach((node) => node.classList.remove("is-drop-before", "is-drop-after"));
+}
+
+function autoScrollNavigation(clientY) {
+    const scroller = document.querySelector(".sidebar-scroll");
+    if (!scroller) return;
+    const rect = scroller.getBoundingClientRect();
+    const edge = 36;
+    if (clientY < rect.top + edge) {
+        scroller.scrollTop = Math.max(0, scroller.scrollTop - 14);
+    } else if (clientY > rect.bottom - edge) {
+        scroller.scrollTop += 14;
+    }
+}
+
+function changeSidebarModuleOrder(moduleId, offset) {
+    const orderIds = settingsStore.getSnapshot().sidebarModuleOrderIds;
+    const visibleIds = [...document.querySelectorAll(".nav-item--module[data-module-id]")]
+        .map((node) => node.dataset.moduleId)
+        .filter(Boolean);
+    const ids = moveVisibleModuleOrder(
+        orderIds,
+        visibleIds,
+        moduleId,
+        offset
+    );
+    if (ids.length === orderIds.length && ids.every((id, index) => id === orderIds[index])) {
+        return;
+    }
+    persistSidebarModuleOrder(ids, offset < 0 ? "模块已上移。" : "模块已下移。");
+}
+
+function persistSidebarModuleOrder(sidebarModuleOrderIds, message) {
+    settingsStore.update({ sidebarModuleOrderIds });
+    const status = document.querySelector("#navigation-order-status");
+    if (status) status.textContent = message;
 }
 
 /**
@@ -871,11 +1047,8 @@ function changeModuleOrder(moduleId, offset) {
 
 function persistModuleOrder(moduleOrderIds, message) {
     settingsStore.update({ moduleOrderIds });
-    state.modules = sortModules(state.modules, moduleOrderIds);
     const status = document.querySelector("#module-order-status");
     if (status) status.textContent = message;
-    renderNavigation(document.querySelector("#nav-search")?.value ?? "");
-    if (state.activeView === "overview") renderModuleCards();
 }
 
 /**

@@ -117,11 +117,34 @@ export function moveModuleOrder(orderIds = [], moduleId, offset) {
 }
 
 export function reorderBefore(orderIds = [], movingId, targetId) {
+    return reorderRelative(orderIds, movingId, targetId, false);
+}
+
+export function reorderRelative(orderIds = [], movingId, targetId, after = false) {
     if (!movingId || movingId === targetId) return [...orderIds];
     const ids = orderIds.filter((id) => id !== movingId);
     const targetIndex = ids.indexOf(targetId);
-    ids.splice(targetIndex < 0 ? ids.length : targetIndex, 0, movingId);
+    const insertIndex = targetIndex < 0 ? ids.length : targetIndex + (after ? 1 : 0);
+    ids.splice(insertIndex, 0, movingId);
     return ids;
+}
+
+/**
+ * 按当前可见模块移动到相邻项，同时保留被过滤模块的相对位置。
+ *
+ * @param {Array<string>} orderIds 完整模块顺序
+ * @param {Array<string>} visibleIds 当前可见模块顺序
+ * @param {string} moduleId 移动模块
+ * @param {number} offset -1 上移，1 下移
+ * @returns {Array<string>} 新完整顺序
+ */
+export function moveVisibleModuleOrder(orderIds = [], visibleIds = [], moduleId, offset) {
+    const visible = [...new Set(visibleIds)];
+    const currentIndex = visible.indexOf(moduleId);
+    if (currentIndex < 0) return [...orderIds];
+    const targetIndex = currentIndex + Math.sign(Number(offset) || 0);
+    if (targetIndex < 0 || targetIndex >= visible.length) return [...orderIds];
+    return reorderRelative(orderIds, moduleId, visible[targetIndex], offset > 0);
 }
 
 export function readCount(payload, key = "count") {

@@ -3,10 +3,12 @@ import test from "node:test";
 
 import {
     moveModuleOrder,
+    moveVisibleModuleOrder,
     normalizeModuleUi,
     readCount,
     reconcileModuleOrder,
     reorderBefore,
+    reorderRelative,
     sortModules
 } from "../src/modules.js";
 
@@ -43,6 +45,20 @@ test("drag and keyboard ordering operations are deterministic", () => {
     assert.deepEqual(moveModuleOrder(ids, "a", 1), ["b", "a", "c"]);
     assert.deepEqual(moveModuleOrder(ids, "c", -1), ["a", "c", "b"]);
     assert.deepEqual(moveModuleOrder(ids, "missing", 1), ids);
+    assert.deepEqual(reorderRelative(ids, "a", "c", true), ["b", "c", "a"]);
+    assert.deepEqual(reorderRelative(ids, "c", "a", false), ["c", "a", "b"]);
+    assert.deepEqual(
+        moveVisibleModuleOrder(["a", "hidden", "b", "c"], ["a", "b", "c"], "a", 1),
+        ["hidden", "b", "a", "c"]
+    );
+    assert.deepEqual(
+        moveVisibleModuleOrder(["a", "hidden", "b", "c"], ["a", "b", "c"], "b", -1),
+        ["b", "a", "hidden", "c"]
+    );
+    assert.deepEqual(
+        moveVisibleModuleOrder(["a", "hidden", "b"], ["a", "b"], "b", 1),
+        ["a", "hidden", "b"]
+    );
 });
 
 test("card count supports arrays, scalar counts and nested keys", () => {
