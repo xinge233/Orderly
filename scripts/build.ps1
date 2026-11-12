@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [switch]$SkipTests
 )
@@ -10,11 +10,40 @@ $targetRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "target"))
 $stagingRoot = [System.IO.Path]::GetFullPath((Join-Path $targetRoot "orderly-modules"))
 $indexPath = Join-Path $repoRoot "Module\modules.index"
 
+function Invoke-NativeCapture {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [string[]]$Arguments = @()
+    )
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = (& $FilePath @Arguments 2>&1) | Out-String
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    return [pscustomobject]@{
+        Output = $output
+        ExitCode = $exitCode
+    }
+}
+
 function Invoke-Maven {
     param([string[]]$MavenArguments)
-    & mvn @MavenArguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "Maven 执行失败，退出码：$LASTEXITCODE；参数：$($MavenArguments -join ' ')"
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & mvn @MavenArguments
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($exitCode -ne 0) {
+        throw "Maven 执行失败，退出码：$exitCode；参数：$($MavenArguments -join ' ')"
     }
 }
 
@@ -26,16 +55,16 @@ function Assert-Jdk21 {
     if (-not (Test-Path -LiteralPath $javaExe -PathType Leaf)) {
         throw "JAVA_HOME 下未找到 java.exe：$javaExe"
     }
-    $versionLines = (& $javaExe -version 2>&1) | Out-String
-    if ($LASTEXITCODE -ne 0 -or $versionLines -notmatch 'version "(?<major>\d+)') {
+    $javaVersion = Invoke-NativeCapture -FilePath $javaExe -Arguments @("-version")
+    if ($javaVersion.ExitCode -ne 0 -or $javaVersion.Output -notmatch 'version "(?<major>\d+)') {
         throw "无法读取 JAVA_HOME 指定的 Java 版本：$javaExe"
     }
     if ([int]$Matches.major -ne 21) {
         throw "构建需要 JDK 21，当前 JAVA_HOME Java 主版本为 $($Matches.major)：$javaExe"
     }
-    $mavenVersion = (& mvn -version 2>&1) | Out-String
-    if ($LASTEXITCODE -ne 0 -or $mavenVersion -notmatch 'Java version:\s+21(?:\.|\s|,)') {
-        throw "Maven 未使用 JDK 21。mvn -version 输出：`n$mavenVersion"
+    $mavenVersion = Invoke-NativeCapture -FilePath "mvn" -Arguments @("-version")
+    if ($mavenVersion.ExitCode -ne 0 -or $mavenVersion.Output -notmatch 'Java version:\s+21(?:\.|\s|,)') {
+        throw "Maven 未使用 JDK 21。mvn -version 输出：`n$($mavenVersion.Output)"
     }
 }
 

@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$BaseUrl = "http://127.0.0.1:8080"
 )
@@ -46,8 +46,8 @@ foreach ($module in $modules) {
             [string]::IsNullOrWhiteSpace([string]$ui.style)) {
         throw "模块 $($module.moduleId) 的 UI 清单不完整。"
     }
-    Invoke-WebRequest -Uri "$BaseUrl/api/modules/$moduleId/ui/$([uri]::EscapeDataString([string]$ui.script))" -Method Get | Out-Null
-    Invoke-WebRequest -Uri "$BaseUrl/api/modules/$moduleId/ui/$([uri]::EscapeDataString([string]$ui.style))" -Method Get | Out-Null
+    Invoke-WebRequest -Uri "$BaseUrl/api/modules/$moduleId/ui/$([uri]::EscapeDataString([string]$ui.script))" -Method Get -UseBasicParsing | Out-Null
+    Invoke-WebRequest -Uri "$BaseUrl/api/modules/$moduleId/ui/$([uri]::EscapeDataString([string]$ui.style))" -Method Get -UseBasicParsing | Out-Null
 
     if (-not $firstExample -and @($ui.examples).Count -gt 0 -and $ui.examples[0].text) {
         $firstExample = [string]$ui.examples[0].text

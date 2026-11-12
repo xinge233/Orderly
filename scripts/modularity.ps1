@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([int]$Port = 18081)
 
 $ErrorActionPreference = "Stop"
@@ -407,7 +407,7 @@ function Assert-ModuleIds([string[]]$Expected) {
 function Assert-HttpStatus([string]$Uri, [int]$ExpectedStatus) {
     $actual = $null
     try {
-        $response = Invoke-WebRequest -Uri $Uri -Method Get -TimeoutSec 5
+        $response = Invoke-WebRequest -Uri $Uri -Method Get -TimeoutSec 5 -UseBasicParsing
         $actual = [int]$response.StatusCode
     } catch {
         if ($_.Exception.Response) {
