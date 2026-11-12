@@ -118,12 +118,14 @@ docs/         产品资料与协作文档
 | `project_manager` | `.codex/agents/project-manager.toml` | 只读项目经理；定义任务边界与验收标准，检查模块化程度、依赖边界、测试报错、范围和证据 |
 | `software_engineer` | `.codex/agents/software-engineer.toml` | 软件工程师；在 PM 确认范围内实施首版代码、测试和文档，完成技术自检并提交交接报告 |
 | `ui_design_lead` | `.codex/agents/ui-design-lead/agent.toml` | 界面外观设计负责人；在授权范围内优化外观、布局、动画和视觉状态，守住主题、模块与可访问性边界；默认先做只读设计审查 |
+| `module_design_lead` | `.codex/agents/module-design-lead/AGENTS.md` | 程序模组设计师；默认只读设计自包含模块、契约、查询、可回滚动作、模块 UI 与验收矩阵；仅在 PM 批准后修改授权模块文件 |
 
 角色规则：
 
 - PM 不直接修改文件，不代替工程师实现，不批准自己的产出。
 - 软件工程师不得修改 PM 的验收标准，不得自行宣布最终通过。
 - 界面设计角色默认只读审查并输出设计与验收建议；仅在 PM 任务卡明确批准时修改授权 UI 文件，不自行扩大接口、契约或业务能力。
+- 程序模组设计师默认只读，负责模块自包含和依赖边界设计；涉及宿主 API、全局契约、授权、快照、回滚或前端框架的改动必须拆成单独任务，不得以“模块新增”为理由顺带修改。
 - subagent 与角色卡包执行者都不自行派生子代理；由主代理统一调度。
 - 当前模块化检查同时覆盖提示词文件职责，以及框架、契约、模块和前端之间的真实依赖边界。
 - 测试检查必须基于实际命令、退出码和报错；未运行项不得表述为通过。
@@ -158,6 +160,7 @@ docs/         产品资料与协作文档
 | `.codex/agents/software-engineer.toml` | 软件工程师 subagent 的身份、实施边界、技术原则和交接格式 |
 | `.codex/agents/ui-design-lead/agent.toml` | 界面外观设计角色卡的身份、可访问路径、设计原则、写入边界和视觉验收方法 |
 | `.codex/agents/ui-design-lead/README.md` | 界面外观设计角色卡包的使用方式、权限摘要和维护规则 |
+| `.codex/agents/module-design-lead/AGENTS.md` | 程序模组设计师角色的身份、模块设计与依赖边界、可访问路径、验证矩阵和交接格式 |
 | `docs/agents/README.md` | 协作文件索引、调用方式和当前阶段摘要 |
 | `docs/agents/architecture-baseline.md` | 产品事实、当前/未来范围、未来目录边界与最低界面基线 |
 | `docs/agents/collaboration-workflow.md` | 主代理、PM、软件工程师之间的完整协作与质量门禁 |
