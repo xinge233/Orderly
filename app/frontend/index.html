@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" content="Canvas" id="theme-color-meta">
+    <link rel="icon" href="data:,">
     <title>归序 Orderly · 可控本地工作流</title>
     <link rel="stylesheet" href="./styles/tokens.css">
     <link rel="stylesheet" href="./styles/app.css">
@@ -12,8 +13,8 @@
 <body>
     <a class="skip-link" href="#main-content">跳到主要内容</a>
 
-    <div class="app-shell">
-        <aside class="sidebar" aria-label="应用导航">
+    <div class="app-shell" data-motion-scope="app-shell" data-motion-state="ready" data-motion-phase="active">
+        <aside class="sidebar" aria-label="应用导航" data-motion-scope="sidebar" data-motion-state="expanded" data-motion-phase="active">
             <header class="brand">
                 <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
                 <span class="brand-copy">
@@ -51,7 +52,7 @@
         </aside>
 
         <div class="app-main">
-            <header class="topbar">
+            <header class="topbar" data-motion-scope="topbar" data-motion-state="ready" data-motion-phase="active">
                 <div>
                     <p class="eyebrow">LOCAL-FIRST WORKFLOW</p>
                     <div class="breadcrumb" id="breadcrumb" aria-live="polite">
@@ -67,7 +68,7 @@
                 </div>
             </header>
 
-            <main class="main-content" id="main-content" tabindex="-1">
+            <main class="main-content" id="main-content" tabindex="-1" data-motion-scope="main" data-motion-state="loading" data-motion-phase="active">
                 <section class="loading-panel" aria-live="polite">
                     <span class="loading-orbit" aria-hidden="true"></span>
                     <h1>正在准备本地工作台</h1>
@@ -77,7 +78,7 @@
         </div>
     </div>
 
-    <aside class="command-dock" id="command-dock" aria-label="计划指令入口">
+    <aside class="command-dock" id="command-dock" aria-label="计划指令入口" data-motion-scope="command-panel" data-motion-state="collapsed" data-motion-phase="active">
         <div class="command-dock__glow" aria-hidden="true"></div>
         <div class="command-intro">
             <span class="command-spark" data-icon="spark" aria-hidden="true"></span>
@@ -106,7 +107,7 @@
         <p class="dock-footnote" id="command-note">未连接外部模型；当前使用可审计的本地规则计划器。</p>
     </aside>
 
-    <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
+    <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title" data-motion-scope="settings-dialog" data-motion-state="closed" data-motion-phase="idle">
         <div class="settings-frame">
             <header class="settings-head">
                 <div>
@@ -119,16 +120,16 @@
             </header>
             <div class="settings-body">
                 <nav class="settings-nav" id="settings-nav" aria-label="设置分类"></nav>
-                <section class="settings-panel" id="settings-panel" aria-live="polite"></section>
+                <section class="settings-panel" id="settings-panel"></section>
             </div>
             <footer class="settings-footer">
-                <span>偏好仅保存在当前浏览器。</span>
+                <span id="settings-status" role="status" aria-live="polite">偏好仅保存在当前浏览器。</span>
                 <button class="text-button" id="reset-settings" type="button">恢复默认</button>
             </footer>
         </div>
     </dialog>
 
-    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite" data-motion-scope="feedback" data-motion-state="idle" data-motion-phase="idle"></div>
     <div class="scrim" id="mobile-scrim" hidden></div>
 
     <script type="module" src="./src/app.js"></script>

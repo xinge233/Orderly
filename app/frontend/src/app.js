@@ -24,6 +24,8 @@ import {
 import {
     isModuleHidden,
     MOTION_OPTIONS,
+    normalizeThemeCatalog,
+    reconcileAppliedTheme,
     reconcileSettingsForCatalog,
     setModuleHidden,
     SettingsStore,
@@ -58,6 +60,8 @@ const state = {
     health: null,
     modules: [],
     themes: [],
+    themeIssues: [],
+    builtInFallbackActive: true,
     plan: null,
     planBusy: false,
     executing: false,
@@ -123,12 +127,17 @@ function toast(message, { error = false } = {}) {
     if (!node) {
         return;
     }
+    node.dataset.motionScope = "feedback";
+    node.dataset.motionState = error ? "error" : "success";
+    node.dataset.motionPhase = "active";
     node.textContent = message;
     node.classList.toggle("is-error", error);
     node.classList.add("is-visible");
     window.clearTimeout(toast.timer);
     toast.timer = window.setTimeout(() => {
         node.classList.remove("is-visible");
+        node.dataset.motionState = "idle";
+        node.dataset.motionPhase = "idle";
     }, 3200);
 }
 
@@ -163,10 +172,13 @@ async function bootstrap() {
             .sort((left, right) => Number(left.order ?? 0) - Number(right.order ?? 0)
                 || left.moduleId.localeCompare(right.moduleId))
         : [];
-    state.themes = themeResult.status === "fulfilled"
-        ? unwrapList(themeResult.value, ["themes"])
-            .filter((theme) => theme && typeof theme.id === "string")
-        : [];
+    const themeCatalog = normalizeThemeCatalog(
+        themeResult.status === "fulfilled" ? themeResult.value : {}
+    );
+    state.themes = themeCatalog.items;
+    state.themeIssues = themeCatalog.issues;
+    state.builtInFallbackActive = themeCatalog.builtInFallbackActive;
+    themeManager.setCatalog(themeCatalog);
 
     await loadModuleUis();
     const reconciled = reconcileSettingsForCatalog(
@@ -247,6 +259,10 @@ function bindGlobalControls() {
     document.querySelector("#dock-toggle")?.addEventListener("click", () => {
         const dock = document.querySelector("#command-dock");
         const expanded = dock?.classList.toggle("is-expanded") ?? false;
+        if (dock) {
+            dock.dataset.motionState = expanded ? "expanded" : "collapsed";
+            dock.dataset.motionPhase = "active";
+        }
         document.querySelector("#dock-toggle")?.setAttribute("aria-expanded", String(expanded));
         if (expanded) {
             document.querySelector("#command-input")?.focus();
@@ -296,22 +312,122 @@ function bindGlobalControls() {
 }
 
 /**
- * 只在第一次打开时加载主题文件，并立即应用设置。
+ * 应用设置，但不重建设置面板或改变当前焦点。
  *
  * @param {object} settings 设置快照
  */
 function applySettings(settings) {
     document.documentElement.dataset.motion = settings.motion;
-    if (settings.theme) {
-        void themeManager.apply(settings.theme);
-    } else {
-        themeManager.clear();
-    }
+    syncSettingControls(settings);
+    void applyThemeSelection(settings.theme);
     renderNavigation(document.querySelector("#nav-search")?.value ?? "");
-    renderSettings();
     if (state.activeView === "overview" && document.querySelector("#module-card-grid")) {
         renderModuleCards();
     }
+}
+
+/**
+ * 应用目录主题；请求代次由 ThemeManager 保证旧响应不会覆盖新选择。
+ *
+ * @param {string} themeId 目标主题
+ */
+async function applyThemeSelection(themeId) {
+    const requested = String(themeId ?? "");
+    updateSettingsStatus(requested ? "正在应用主题样式…" : "当前使用内置安全外观。");
+    const theme = await themeManager.apply(requested);
+    if (settingsStore.getSnapshot().theme !== requested) {
+        return;
+    }
+    const patch = reconcileAppliedTheme(requested, theme);
+    if (patch) {
+        const actualId = patch.theme;
+        const actualLabel = state.themes.find((item) => item.id === actualId)?.label || actualId;
+        const message = actualId
+            ? `请求的主题不可用，已应用“${actualLabel}”。`
+            : "请求的主题不可用，已回退内置安全外观。";
+        updateSettingsStatus(message);
+        if (requested) {
+            showThemeSwitchAlert(message);
+        }
+        settingsStore.update(patch);
+        return;
+    }
+    if (theme && typeof theme.id === "string") {
+        const label = state.themes.find((item) => item.id === theme.id)?.label || theme.id;
+        updateSettingsStatus(`主题“${label}”已应用；目录变更需重启宿主后生效。`);
+    } else if (!requested) {
+        updateSettingsStatus("没有可用目录主题，当前使用内置安全外观。");
+    } else if (state.themes.length > 0) {
+        updateSettingsStatus("主题样式加载失败，已保留当前有效外观。");
+    } else {
+        updateSettingsStatus("没有可用目录主题，当前使用内置安全外观。");
+    }
+}
+
+/**
+ * 更新设置弹窗专用状态文本。
+ *
+ * @param {string} message 消息
+ */
+function updateSettingsStatus(message) {
+    const status = document.querySelector("#settings-status");
+    if (status) {
+        status.textContent = message;
+    }
+}
+
+/**
+ * 仅在实际主题切换失败时创建局部告警。
+ *
+ * @param {string} message 消息
+ */
+function showThemeSwitchAlert(message) {
+    const panel = document.querySelector("#settings-panel");
+    if (!panel || state.settingsSection !== "appearance") {
+        return;
+    }
+    let alert = document.querySelector("#theme-switch-alert");
+    if (!alert || alert.parentElement !== panel) {
+        alert = element("div", "theme-switch-alert");
+        alert.id = "theme-switch-alert";
+        alert.setAttribute("role", "alert");
+        const header = panel.querySelector(".settings-panel__header");
+        if (header) {
+            header.after(alert);
+        } else {
+            panel.prepend(alert);
+        }
+    }
+    alert.replaceChildren(
+        element("strong", "", "主题切换未完成"),
+        element("p", "", message)
+    );
+}
+
+function clearThemeSwitchAlert() {
+    document.querySelector("#theme-switch-alert")?.remove();
+}
+
+/**
+ * 原地同步设置控件，避免表单重建导致焦点丢失。
+ *
+ * @param {object} settings 设置快照
+ */
+function syncSettingControls(settings) {
+    document.querySelectorAll('#settings-panel input[name="theme"]').forEach((input) => {
+        input.checked = input.value === settings.theme;
+    });
+    document.querySelectorAll('#settings-panel input[name="motion"]').forEach((input) => {
+        input.checked = input.value === settings.motion;
+    });
+    document.querySelectorAll("#settings-panel input[data-setting-key]").forEach((input) => {
+        const key = input.dataset.settingKey;
+        if (key === "notifications") {
+            input.checked = settings.notifications;
+        } else if (key) {
+            input.checked = !isModuleHidden(settings, key);
+        }
+    });
 }
 
 /**
@@ -643,6 +759,8 @@ async function navigate(view) {
     if (!main) {
         return;
     }
+    main.dataset.motionState = "loading";
+    main.dataset.motionPhase = "active";
     main.innerHTML = `
         <section class="loading-panel" aria-live="polite">
             <span class="loading-orbit" aria-hidden="true"></span>
@@ -662,6 +780,8 @@ async function navigate(view) {
     } catch (error) {
         renderLoadError(error);
     }
+    main.dataset.motionState = "view-change";
+    main.dataset.motionPhase = "active";
     main.focus({ preventScroll: true });
 }
 
@@ -675,6 +795,8 @@ function renderLoadError(error) {
     if (!main) {
         return;
     }
+    main.dataset.motionState = "error";
+    main.dataset.motionPhase = "active";
     const panel = element("section", "panel");
     panel.append(
         element("p", "eyebrow", "LOCAL SERVICE"),
@@ -840,7 +962,7 @@ function renderOverview() {
         return;
     }
     main.innerHTML = `
-        <div class="view-stack">
+        <div class="view-stack" data-motion-scope="overview" data-motion-state="entering" data-motion-phase="active">
             <section class="hero-panel">
                 <div class="hero-content">
                     <p class="eyebrow">CONTROLLED AGENT WORKFLOW</p>
@@ -980,6 +1102,9 @@ function renderModuleCards() {
             unit: "项"
         };
         const article = element("article", "surface-card module-card");
+        article.dataset.motionScope = "module-card";
+        article.dataset.motionState = "entering";
+        article.dataset.motionPhase = "active";
         article.draggable = true;
         article.dataset.moduleId = module.moduleId;
         article.tabIndex = 0;
@@ -1011,6 +1136,7 @@ function renderModuleCards() {
         article.append(top, body, controls);
         article.addEventListener("dragstart", (event) => {
             state.dragModuleId = module.moduleId;
+            article.dataset.motionState = "reordering";
             article.classList.add("is-dragging");
             event.dataTransfer?.setData("text/plain", module.moduleId);
             if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
@@ -1033,6 +1159,7 @@ function renderModuleCards() {
         article.addEventListener("dragend", () => {
             state.dragModuleId = null;
             document.querySelectorAll(".module-card").forEach((node) => {
+                node.dataset.motionState = "entering";
                 node.classList.remove("is-dragging", "is-drop-target");
             });
         });
@@ -1246,6 +1373,7 @@ async function draftGoal(goal) {
     }
 
     state.planBusy = true;
+    document.querySelector(".app-shell")?.setAttribute("data-motion-state", "busy");
     const send = document.querySelector("#send-command");
     const note = document.querySelector("#command-note");
     if (send) {
@@ -1270,6 +1398,7 @@ async function draftGoal(goal) {
         toast(errorMessage(error), { error: true });
     } finally {
         state.planBusy = false;
+        document.querySelector(".app-shell")?.setAttribute("data-motion-state", "ready");
         if (send) {
             send.disabled = false;
         }
@@ -1296,6 +1425,8 @@ async function executePlan() {
     }
 
     state.executing = true;
+    const shell = document.querySelector(".app-shell");
+    shell?.setAttribute("data-motion-state", "busy");
     state.currentRun = {
         planId: state.plan.planId,
         status: "RUNNING",
@@ -1326,6 +1457,7 @@ async function executePlan() {
         toast(errorMessage(error), { error: true });
     } finally {
         state.executing = false;
+        shell?.setAttribute("data-motion-state", "ready");
         renderPlan();
         renderTimeline();
         renderRunSummary();
@@ -1390,6 +1522,29 @@ function planScopedEvents() {
 }
 
 /**
+ * 把执行事件状态映射为稳定的反馈语义状态。
+ *
+ * @param {unknown} status 事件状态
+ * @returns {string} 语义状态
+ */
+function motionStateForStatus(status) {
+    const normalized = String(status ?? "").toUpperCase();
+    if (["RUNNING", "PENDING", "WAITING", "EXECUTING"].includes(normalized)) {
+        return "running";
+    }
+    if (["COMPLETED", "SUCCESS"].includes(normalized)) {
+        return "success";
+    }
+    if (["FAILED", "REJECTED"].includes(normalized)) {
+        return "error";
+    }
+    if (["ROLLED_BACK", "ROLLBACK"].includes(normalized)) {
+        return "warning";
+    }
+    return "info";
+}
+
+/**
  * 渲染真实执行时间线。
  */
 function renderTimeline() {
@@ -1416,6 +1571,9 @@ function renderTimeline() {
     events.forEach((event, index) => {
         const item = element("li", "timeline-item");
         item.dataset.status = event.status;
+        item.dataset.motionScope = "feedback";
+        item.dataset.motionState = motionStateForStatus(event.status);
+        item.dataset.motionPhase = "active";
         item.append(element(
             "span",
             "timeline-marker",
@@ -1518,6 +1676,8 @@ async function rollbackCurrent() {
  */
 function pulsePlanModules() {
     const modules = new Set(state.plan?.steps.map((step) => step.moduleId) ?? []);
+    const sidebar = document.querySelector(".sidebar");
+    sidebar?.setAttribute("data-motion-state", "attention");
     document.querySelectorAll("[data-view]").forEach((button) => {
         const target = Boolean(button.dataset.moduleId && modules.has(button.dataset.moduleId));
         button.classList.toggle("is-plan-target", target);
@@ -1525,6 +1685,11 @@ function pulsePlanModules() {
             window.setTimeout(() => button.classList.remove("is-plan-target"), 2600);
         }
     });
+    window.setTimeout(() => {
+        if (!navigationDrag?.active) {
+            sidebar?.setAttribute("data-motion-state", "expanded");
+        }
+    }, 2600);
 }
 
 
@@ -1645,6 +1810,9 @@ function renderHistoryEvents() {
     events.forEach((event, index) => {
         const item = element("li", "timeline-item");
         item.dataset.status = event.status;
+        item.dataset.motionScope = "feedback";
+        item.dataset.motionState = motionStateForStatus(event.status);
+        item.dataset.motionPhase = "active";
         item.append(element("span", "timeline-marker", String(event.sequence ?? index + 1).slice(-3)));
         const copy = element("span", "timeline-copy");
         copy.append(
@@ -1687,6 +1855,10 @@ function fillCommand(command) {
         input.setSelectionRange(command.length, command.length);
     }
     dock?.classList.add("is-expanded");
+    if (dock) {
+        dock.dataset.motionState = "expanded";
+        dock.dataset.motionPhase = "active";
+    }
     document.querySelector("#dock-toggle")?.setAttribute("aria-expanded", "true");
 }
 
@@ -1753,7 +1925,10 @@ function connectEventStream() {
  * 打开移动端侧边栏。
  */
 function openMobileNav() {
-    document.querySelector(".sidebar")?.classList.add("is-open");
+    const sidebar = document.querySelector(".sidebar");
+    sidebar?.classList.add("is-open");
+    sidebar?.setAttribute("data-motion-state", "open");
+    sidebar?.setAttribute("data-motion-phase", "active");
     const scrim = document.querySelector("#mobile-scrim");
     if (scrim) {
         scrim.hidden = false;
@@ -1764,7 +1939,13 @@ function openMobileNav() {
  * 关闭移动端侧边栏。
  */
 function closeMobileNav() {
-    document.querySelector(".sidebar")?.classList.remove("is-open");
+    const sidebar = document.querySelector(".sidebar");
+    const wasOpen = sidebar?.classList.contains("is-open") ?? false;
+    sidebar?.classList.remove("is-open");
+    if (wasOpen) {
+        sidebar?.setAttribute("data-motion-state", "collapsed");
+        sidebar?.setAttribute("data-motion-phase", "active");
+    }
     const scrim = document.querySelector("#mobile-scrim");
     if (scrim) {
         scrim.hidden = true;
@@ -1778,6 +1959,8 @@ function openSettings() {
     const dialog = document.querySelector("#settings-dialog");
     if (dialog && !dialog.open) {
         renderSettings();
+        dialog.dataset.motionState = "open";
+        dialog.dataset.motionPhase = "active";
         dialog.showModal();
     }
 }
@@ -1787,15 +1970,28 @@ function openSettings() {
  */
 function bindSettingsDialog() {
     const dialog = document.querySelector("#settings-dialog");
-    document.querySelector("#close-settings")?.addEventListener("click", () => dialog?.close());
+    const closeDialog = () => {
+        if (!dialog) {
+            return;
+        }
+        dialog.dataset.motionState = "closing";
+        dialog.dataset.motionPhase = "idle";
+        dialog.close();
+    };
+    document.querySelector("#close-settings")?.addEventListener("click", closeDialog);
     document.querySelector("#reset-settings")?.addEventListener("click", () => {
+        clearThemeSwitchAlert();
         settingsStore.reset();
         toast("设置已恢复默认。");
     });
     dialog?.addEventListener("click", (event) => {
         if (event.target === dialog) {
-            dialog.close();
+            closeDialog();
         }
+    });
+    dialog?.addEventListener("close", () => {
+        dialog.dataset.motionState = "closed";
+        dialog.dataset.motionPhase = "idle";
     });
     document.addEventListener("keydown", (event) => {
         if ((event.ctrlKey || event.metaKey) && event.key === ",") {
@@ -1808,7 +2004,7 @@ function bindSettingsDialog() {
 /**
  * 渲染设置弹窗。
  */
-function renderSettings() {
+function renderSettings({ focusPanel = false } = {}) {
     const nav = document.querySelector("#settings-nav");
     const panel = document.querySelector("#settings-panel");
     if (!nav || !panel) {
@@ -1826,6 +2022,10 @@ function renderSettings() {
             `settings-nav__item${state.settingsSection === section.id ? " is-active" : ""}`
         );
         button.type = "button";
+        button.setAttribute("aria-controls", "settings-panel");
+        if (state.settingsSection === section.id) {
+            button.setAttribute("aria-current", "page");
+        }
         button.innerHTML = `<i>${icon(section.icon, 18)}</i>`;
         const copy = element("span");
         copy.append(
@@ -1835,7 +2035,7 @@ function renderSettings() {
         button.append(copy);
         button.addEventListener("click", () => {
             state.settingsSection = section.id;
-            renderSettings();
+            renderSettings({ focusPanel: true });
         });
         nav.append(button);
     });
@@ -1847,6 +2047,16 @@ function renderSettings() {
         renderModuleSettings(panel);
     } else {
         renderSystemSettings(panel);
+    }
+    const heading = panel.querySelector(".settings-panel__header h3");
+    if (heading) {
+        heading.id = "settings-panel-title";
+        heading.tabIndex = -1;
+        panel.setAttribute("aria-labelledby", heading.id);
+    }
+    if (focusPanel) {
+        const target = heading ?? panel.querySelector("button, input, select, textarea, [tabindex]");
+        target?.focus({ preventScroll: true });
     }
 }
 
@@ -1861,22 +2071,49 @@ function renderAppearanceSettings(panel) {
     header.append(
         element("p", "eyebrow", "APPEARANCE"),
         element("h3", "", "外观"),
-        element("p", "", "主题只替换语义变量；动效关闭后，状态与内容仍然完整可见。")
+        element("p", "", "主题以目录包提供 CSS 与动效；增删主题后重启宿主生效，不支持主题 JavaScript。")
     );
     panel.append(header);
+
+    if (state.themeIssues.length > 0) {
+        const issues = element("section", "theme-issues");
+        issues.setAttribute("aria-labelledby", "theme-issues-title");
+        issues.append(element("h4", "", "部分主题未加载"));
+        issues.firstElementChild.id = "theme-issues-title";
+        const list = element("ul", "");
+        state.themeIssues.forEach((issue) => {
+            list.append(element(
+                "li",
+                "",
+                `${issue.id || "themes"} · ${issue.code || "THEME_ISSUE"} · ${issue.message || "主题不可用"}`
+            ));
+        });
+        issues.append(list);
+        panel.append(issues);
+    }
+    if (state.builtInFallbackActive) {
+        const notice = element("section", "theme-catalog-note");
+        notice.setAttribute("aria-labelledby", "theme-catalog-note-title");
+        notice.append(
+            element("h4", "", "未配置可用默认主题"),
+            element("p", "", "自动回退不会选择排序第一项；自定义主题仍可在列表中明确选择。")
+        );
+        notice.firstElementChild.id = "theme-catalog-note-title";
+        panel.append(notice);
+    }
 
     const fields = element("div", "settings-fields");
     const themeField = element("fieldset", "setting-field");
     themeField.append(
         element("legend", "", "界面主题"),
-        element("p", "", "主题由 /api/themes 动态提供，组件不保存静态主题列表。")
+        element("p", "", "列表由 /api/themes 提供；目录变更需重启，前端不保存第二套主题清单。")
     );
     const themeGrid = element("div", "theme-grid");
     const themes = [...state.themes].sort((left, right) =>
         Number(left.order ?? 0) - Number(right.order ?? 0)
             || String(left.id).localeCompare(String(right.id)));
     if (themes.length === 0) {
-        themeGrid.append(element("p", "empty-state", "未发现可用主题，界面保留基础 CSS 变量。"));
+        themeGrid.append(element("p", "empty-state", "未发现可用主题，界面使用内置安全外观。"));
     }
     themes.forEach((option) => {
         const label = element("label", "theme-option");
@@ -1886,22 +2123,14 @@ function renderAppearanceSettings(panel) {
         input.value = option.id;
         input.checked = settings.theme === option.id;
         const card = element("span", "theme-option__card");
-        const swatch = element("span", "theme-swatch");
-        const first = document.createElement("i");
-        const second = document.createElement("i");
-        const third = document.createElement("i");
-        first.style.background = "var(--color-canvas-deep)";
-        second.style.background = "var(--color-accent)";
-        third.style.background = "var(--color-secondary)";
-        swatch.append(first, second, third);
         card.append(
-            swatch,
             element("strong", "", option.label || option.id),
             element("small", "muted", option.note || (option.default ? "默认主题" : "本地主题"))
         );
         label.append(input, card);
         input.addEventListener("change", () => {
             if (input.checked) {
+                clearThemeSwitchAlert();
                 settingsStore.update({ theme: option.id });
             }
         });
@@ -2049,6 +2278,7 @@ function switchControl(key, checked, onChange = null) {
     const input = document.createElement("input");
     input.type = "checkbox";
     input.checked = checked;
+    input.dataset.settingKey = key;
     input.setAttribute("aria-label", key);
     input.addEventListener("change", () => {
         if (onChange) {

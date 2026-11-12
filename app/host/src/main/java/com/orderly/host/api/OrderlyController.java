@@ -12,9 +12,10 @@ import com.orderly.host.execution.ExecutionService;
 import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanView;
 import com.orderly.host.runtime.WorkspaceRuntime;
+import com.orderly.host.theme.ThemeAsset;
 import com.orderly.host.theme.ThemeCatalog;
+import com.orderly.host.theme.ThemeCatalogSnapshot;
 import com.orderly.host.theme.ThemeDefinition;
-import com.orderly.host.theme.ThemeSummary;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -75,8 +76,8 @@ public class OrderlyController {
     }
 
     @GetMapping("/themes")
-    public List<ThemeSummary> themes() {
-        return themes.summaries();
+    public ThemeCatalogSnapshot themes() {
+        return themes.snapshot();
     }
 
     @GetMapping("/themes/{id}")
@@ -86,6 +87,25 @@ public class OrderlyController {
         } catch (IllegalArgumentException exception) {
             throw new ApiException(HttpStatus.NOT_FOUND, "THEME_NOT_FOUND", exception.getMessage());
         }
+    }
+
+    @GetMapping("/themes/{id}/assets/{*asset}")
+    public ResponseEntity<byte[]> themeAsset(
+            @PathVariable String id,
+            @PathVariable("asset") String asset
+    ) {
+        ThemeAsset resource = themes.readAsset(id, asset).orElseThrow(
+                () -> new ApiException(
+                        HttpStatus.NOT_FOUND,
+                        "THEME_ASSET_NOT_FOUND",
+                        "主题资源不存在或未登记：" + id + "/" + asset
+                )
+        );
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(resource.contentType()))
+                .header("Cache-Control", "no-cache")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(resource.content());
     }
 
     @GetMapping("/modules/{moduleId}/query/{queryId}")

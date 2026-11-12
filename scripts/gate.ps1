@@ -74,7 +74,44 @@ try {
         throw "静态主题扫描异常，rg 退出码：$LASTEXITCODE"
     }
 
-    Write-Host "门禁通过：模块化 Maven 测试、模块契约样例校验、模块 UI 契约样例校验、框架与模块 UI 语法、前端测试、物理删除扫描、样式变量扫描、固定模块扫描和动态主题扫描均成功。"
+    $classpathThemes = & rg -n 'classpath\*?:themes|PathMatchingResourcePatternResolver' app/host/src/main/java app/host/pom.xml
+    if ($LASTEXITCODE -eq 0) {
+        throw "宿主仍保留 classpath 主题回退：`n$classpathThemes"
+    }
+    if ($LASTEXITCODE -ne 1) {
+        throw "classpath 主题扫描异常，rg 退出码：$LASTEXITCODE"
+    }
+
+    $baseMotion = & rg -n '@keyframes\b|(^|[\s;])animation\s*:|(^|[\s;])transition\s*:' app/frontend/styles/app.css
+    if ($LASTEXITCODE -eq 0) {
+        throw "基础组件 CSS 仍包含硬编码动画或过渡：`n$baseMotion"
+    }
+    if ($LASTEXITCODE -ne 1) {
+        throw "基础动画扫描异常，rg 退出码：$LASTEXITCODE"
+    }
+
+    $globalPanelLive = & rg -n 'id="settings-panel"[^>]*aria-live' app/frontend/index.html
+    if ($LASTEXITCODE -eq 0) {
+        throw "设置面板仍使用整体 aria-live：`n$globalPanelLive"
+    }
+    if ($LASTEXITCODE -ne 1) {
+        throw "设置面板 live region 扫描异常，rg 退出码：$LASTEXITCODE"
+    }
+
+    $themeScripts = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "themes") -Recurse -File -Filter "*.js")
+    if ($themeScripts.Count -ne 0) {
+        throw "主题包不得包含 JavaScript：$($themeScripts.FullName -join ', ')"
+    }
+
+    $themeImportant = & rg -n '!important' themes --glob '*.css'
+    if ($LASTEXITCODE -eq 0) {
+        throw "仓库示例主题不得用 !important 绕过动效安全层：`n$themeImportant"
+    }
+    if ($LASTEXITCODE -ne 1) {
+        throw "主题 important 扫描异常，rg 退出码：$LASTEXITCODE"
+    }
+
+    Write-Host "门禁通过：模块化 Maven 测试、契约样例、语法、前端测试、目录主题边界、classpath 回退、基础动画、设置 live region 和样式变量检查均成功。"
 }
 finally {
     Pop-Location

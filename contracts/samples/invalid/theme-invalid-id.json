@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "Invalid Theme",
+  "label": "非法 ID",
+  "order": 20,
+  "styles": [
+    "tokens.css",
+    "motion.css"
+  ]
+}

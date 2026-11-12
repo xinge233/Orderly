@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "active-svg",
+  "label": "主动内容资源",
+  "order": 20,
+  "styles": [
+    "tokens.css",
+    "motion.css"
+  ],
+  "assets": [
+    "assets/unsafe.svg"
+  ]
+}

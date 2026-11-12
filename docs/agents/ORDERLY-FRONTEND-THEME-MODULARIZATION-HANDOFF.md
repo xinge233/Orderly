@@ -4,16 +4,46 @@
 
 | 项目 | 内容 |
 |---|---|
-| 状态 | 设计交接完成，尚未实施 |
-| 生成日期 | 2026-11-12 |
+| 状态 | 实现完成，自动化验证通过，等待 PM 最终验收 |
+| 更新日期 | 2026-11-13 |
 | 仓库 | `D:\code\Orderly_framework-v3` |
 | 分支 | `framework-v3` |
-| 交接前基线提交 | `5d3b3cb docs: refine module design role guidance` |
-| 当前实现 | 扁平 `themes/*.json`，动态颜色令牌，硬编码框架动画 |
+| 交接前基线提交 | `e60e9ec docs: add frontend theme modularization handoff` |
+| 当前实现 | 目录主题包、事务化多 CSS 装载、局部问题与两级回退 |
 | 目标 | 可拆装目录主题包，支持框架语义动画，重启后生效 |
 | 主要负责人 | 主代理最终负责；PM 只读审查；软件工程师按任务卡实施 |
 
-本文件是下一会话的专用交接文档。它描述目标、已拍板决策、实现边界和验收矩阵，不表示相关代码已经完成。
+### 0.1 实施结果
+
+2026-11-13 已完成目录主题包实现：
+
+- `themes/paper`、`themes/moss`、`themes/night` 已迁移为 `theme.json + tokens.css + motion.css` 目录包；旧扁平 JSON 保留在 `themes/_legacy-flat-json/`。
+- 宿主只扫描 `orderly.themes-dir` 的直接目录，不使用 classpath 回退，不再把 `themes/` 打入 fat JAR。
+- `/api/themes` 返回 `{items, issues, builtInFallbackActive}`；新增 `/api/themes/{id}/assets/{asset}` 白名单资源接口。
+- 前端按候选 CSS 全量成功后再提交切换，并覆盖失败保留、并发请求代次、当前主题 -> 默认主题 -> 内置安全外观三级顺序。实际主题与请求不同时会把 `settingsStore.theme` 校正为实际 id，不重建设置面板。
+- 框架公开语义挂点仅覆盖壳层；动画迁入主题 `motion.css`，`orderly.safety` cascade layer 强制处理 `motion: none` 与 `prefers-reduced-motion`。
+- 设置面板改为专用 `role=status` / 显式切换失败局部 `role=alert`；静态目录问题使用普通 section/heading/list。设置导航提供 `aria-controls`、`aria-current`，切换分区后焦点进入新面板标题。
+- 基础 `scroll-behavior` 为 `auto`，平滑滚动仅由主题 `motion.css` 声明；SVG 已从主题资源白名单移除，失效纹理与旧 SVG 移入 `_legacy-flat-json`，主题卡不再用当前主题令牌生成重复色块。
+
+已实际通过：
+
+```text
+node --test app/frontend/tests/*.test.mjs                 39/39 pass
+.\scripts\gate.ps1                                        exit 0
+.\scripts\modularity.ps1                                  exit 0
+真实启动 + .\scripts\smoke.ps1                             exit 0
+fat JAR 用户主题条目检查                                  0
+git diff --check                                           exit 0
+```
+
+最终验证证据：
+
+- `gate.ps1`：Maven 32 项，0 失败、0 错误、1 项跳过；Node 39 项通过；模块 UI 契约 2 项通过。
+- Edge：13/13 通过，覆盖桌面与窄屏、失败切换、焦点保持、`motion: none`、`prefers-reduced-motion`，以及无默认主题时完整卸载 active theme 并回退内置安全外观；无 console/HTTP error。
+- 最终同版本真实启动 + `smoke.ps1`：退出码 `0`。
+- 唯一未完全验证项：当前 Windows 权限无法创建符号链接，因此符号链接创建用例跳过；路径和链接拒绝实现仍在。
+
+本文件记录目标、已拍板决策、实现边界、实施结果和验收矩阵。
 
 下一会话仍必须先阅读：
 
@@ -76,7 +106,7 @@
    - 当前选中主题不受支持时，回退到可用默认主题。
    - 如果没有可用默认主题，则回退到框架内置安全外观，程序仍可启动。
 
-## 3. 当前实现证据
+## 3. 交接前实现证据（历史）
 
 交接前已核验工作区干净，并与 `origin/framework-v3` 同步。相关现状如下。
 

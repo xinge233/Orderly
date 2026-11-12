@@ -47,7 +47,7 @@ Module/
   module_fs/                文件能力、契约与逆操作
   module_todo/              待办能力、契约与逆操作
   module_calendar/          日程能力、契约与逆操作
-themes/                     主题取值
+themes/                     目录主题包与登记的主题资源
 contracts/                  计划、接口、工具目录、样例与校验
 scripts/                    构建、启动、契约校验
 docs/                       产品与协作文档
@@ -115,7 +115,11 @@ docs/                       产品与协作文档
 - 运行提示词与模型参数放在 `ai/` 的未来目录中，凭据不得进入仓库。
 - 首版可使用隔离的本地规则计划器生成结构化计划，但必须明确标注“未连接外部模型”；该类适配器不得持有文件、回收站或状态写入权限。
 
-主题由宿主动态发现：优先扫描配置的 `themes/*.json` 源目录，源目录不存在时才回退 classpath。`/api/themes` 只返回稳定摘要，`/api/themes/{id}` 返回完整令牌；前端不得保存第二套静态主题列表。主题 id 非法、重复或声明多个默认项时必须失败。
+主题由宿主在启动时扫描 `orderly.themes-dir` 的直接子目录，不使用 classpath 回退，也不把用户主题打入 fat JAR。每个主题包必须包含 `theme.json`、清单登记的 `tokens.css` 与 `motion.css`，目录名必须与清单 `id` 一致；可选 `assets/` 只提供清单登记的 CSS 与安全静态资源。
+
+`GET /api/themes` 返回 `{items, issues, builtInFallbackActive}`，`GET /api/themes/{id}` 返回完整清单元数据，`GET /api/themes/{id}/assets/{asset}` 提供白名单资源。版本不支持、清单损坏、资源缺失或路径非法只隔离对应主题；重复 id 和多个默认主题仍阻止启动。前端不得保存第二套静态主题列表，回退顺序固定为当前可用主题、可用默认主题、内置安全外观。
+
+主题只支持语义变量、目录内 CSS、关键帧和复杂动效；不得携带 JavaScript，不得侵入模块内部 DOM，也不支持运行中热加载。`motion: none` 与 `prefers-reduced-motion` 由框架安全 cascade layer 强制关闭动画、过渡和滚动行为。
 
 ## 6. 最低可用界面基线
 

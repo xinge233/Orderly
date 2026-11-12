@@ -71,7 +71,7 @@
 - `app/frontend/`：静态本地界面。
 - `Module/module_fs/`、`module_todo/`、`module_calendar/`：各自携带契约、查询、计划规则、执行器、逆操作和 `orderly-ui/` 资源；构建脚本会自动发现新的 `Module/module_*`。
 - `contracts/`：计划、接口和样例的唯一真相源。
-- `themes/`：主题取值，不包含界面结构。
+- `themes/`：目录主题包，只包含清单、语义变量、动效 CSS 与登记资源，不包含界面结构或 JavaScript。
 - `scripts/`：构建、启动、门禁与烟测。
 
 ### 模块运行时边界
@@ -82,7 +82,9 @@
 
 模块 JAR 是应用有权执行的本地文件，属于**本地受信任可执行代码**，不是安全沙箱。当前不提供远程插件下载、签名校验或权限隔离；只应放入自己信任的模块。模块目录不存在时应用仍可启动，`/api/modules` 返回空数组，侧栏与总览保持空状态。
 
-主题从配置的 `themes/` 源目录加载，源目录优先于宿主 classpath 回退；存储主题 id、标签、说明、顺序、默认标记和 CSS 令牌。`/api/themes` 返回稳定摘要，`/api/themes/{id}` 返回完整令牌，前端按动态目录加载主题，不保留静态主题列表。
+主题从配置的 `themes/` 目录按直接子目录加载，不使用 classpath 回退，也不进入宿主 fat JAR。每个包包含 `theme.json`、清单登记的 `tokens.css` 与 `motion.css`，可选 `assets/`；添加或移除目录后重启宿主生效，不需要重新构建，首版不支持热加载或主题 JavaScript。
+
+`GET /api/themes` 返回 `{items, issues, builtInFallbackActive}`。单个主题版本不支持、资源缺失或路径非法只产生局部问题；重复 id 和多个默认主题仍阻止启动。`GET /api/themes/{id}` 返回完整清单元数据，`GET /api/themes/{id}/assets/{asset}` 只提供登记白名单内的 CSS 和安全静态资源。前端回退顺序固定为当前可用主题、可用默认主题、内置安全外观，不会选择排序第一项兜底。主题制作说明见 `themes/README.md`。
 
 ## 首版边界
 

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 2,
+  "id": "future",
+  "label": "未来主题",
+  "order": 20,
+  "styles": [
+    "tokens.css",
+    "motion.css"
+  ]
+}

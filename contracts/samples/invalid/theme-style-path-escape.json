@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "escape",
+  "label": "越界样式",
+  "order": 20,
+  "styles": [
+    "tokens.css",
+    "motion.css",
+    "../outside.css"
+  ]
+}

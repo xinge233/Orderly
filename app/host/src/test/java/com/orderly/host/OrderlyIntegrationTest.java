@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -40,6 +41,7 @@ class OrderlyIntegrationTest {
     @DynamicPropertySource
     static void dataDirectory(DynamicPropertyRegistry registry) {
         registry.add("orderly.data-dir", () -> TEST_DATA);
+        registry.add("orderly.themes-dir", () -> System.getProperty("orderly.themes-dir"));
     }
 
     @Autowired
@@ -72,15 +74,37 @@ class OrderlyIntegrationTest {
                 .andExpect(jsonPath("$.planner").value("LOCAL_RULES"));
         mockMvc.perform(get("/api/themes"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value("paper"))
-                .andExpect(jsonPath("$[0].default").value(true))
-                .andExpect(jsonPath("$[0].label").value("纸页"))
-                .andExpect(jsonPath("$[0].note").value("温暖明亮"))
-                .andExpect(jsonPath("$[0].order").value(10));
+                .andExpect(jsonPath("$.items[0].id").value("paper"))
+                .andExpect(jsonPath("$.items[0].schemaVersion").value(1))
+                .andExpect(jsonPath("$.items[0].default").value(true))
+                .andExpect(jsonPath("$.items[0].label").value("纸页"))
+                .andExpect(jsonPath("$.items[0].note").value("温暖明亮"))
+                .andExpect(jsonPath("$.items[0].order").value(10))
+                .andExpect(jsonPath("$.issues").isArray())
+                .andExpect(jsonPath("$.builtInFallbackActive").value(false));
         mockMvc.perform(get("/api/themes/paper"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value("paper"))
-                .andExpect(jsonPath("$.tokens['--color-canvas']").value("#f3efe7"));
+                .andExpect(jsonPath("$.schemaVersion").value(1))
+                .andExpect(jsonPath("$.styles[0]").value("tokens.css"))
+                .andExpect(jsonPath("$.styles[1]").value("motion.css"))
+                .andExpect(jsonPath("$.assets").isEmpty())
+                .andExpect(jsonPath("$.rootPath").doesNotExist());
+        mockMvc.perform(get("/api/themes/paper/assets/tokens.css"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.parseMediaType("text/css")))
+                .andExpect(content().string(containsString("@layer orderly.theme")))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .header().string("Cache-Control", "no-cache"));
+        mockMvc.perform(get("/api/themes/paper/assets/assets/paper-grain.svg"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/themes/paper/assets/theme.json"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("THEME_ASSET_NOT_FOUND"));
+        mockMvc.perform(get("/api/themes/paper/assets/theme.js"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/themes/paper/assets/%2e%2e/theme.json"))
+                .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/themes/not-present"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("THEME_NOT_FOUND"));

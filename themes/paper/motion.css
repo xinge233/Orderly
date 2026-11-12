@@ -1,0 +1,81 @@
+@layer orderly.theme {
+    html[data-theme="paper"] {
+        scroll-behavior: smooth;
+    }
+
+    html[data-theme="paper"] [data-motion-scope="overview"][data-motion-state="entering"],
+    html[data-theme="paper"] [data-motion-scope="module-card"][data-motion-state="entering"] {
+        animation: orderly-view-enter var(--duration-normal) var(--ease-out) both;
+    }
+
+    html[data-theme="paper"] [data-motion-scope="main"][data-motion-state="loading"] .loading-orbit {
+        animation: orderly-spin var(--duration-slow) linear infinite;
+    }
+
+    html[data-theme="paper"] [data-motion-scope="main"][data-motion-state="view-change"] {
+        animation: orderly-view-enter var(--duration-normal) var(--ease-out) both;
+    }
+
+    html[data-theme="paper"] [data-motion-scope="sidebar"][data-motion-state="attention"]::after {
+        position: absolute;
+        top: 72px;
+        right: 18px;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--color-danger);
+        box-shadow: 0 0 0 5px var(--color-danger-soft);
+        content: "";
+        animation: orderly-target-pulse var(--duration-slow) var(--ease-spring) 3;
+    }
+
+    html[data-theme="paper"] [data-motion-scope="feedback"][data-motion-state="running"] {
+        animation: orderly-target-pulse var(--duration-slow) var(--ease-spring) infinite;
+    }
+
+    html[data-theme="paper"] [data-motion-scope="sidebar"] {
+        transition: transform var(--duration-normal) var(--ease-out);
+    }
+
+    html[data-theme="paper"] [data-motion-scope="module-card"] {
+        transition:
+            transform var(--duration-fast) var(--ease-out),
+            border-color var(--duration-fast) var(--ease-out),
+            opacity var(--duration-fast) var(--ease-out);
+    }
+
+    html[data-theme="paper"] [data-motion-scope="command-panel"] {
+        transition:
+            width var(--duration-normal) var(--ease-out),
+            transform var(--duration-normal) var(--ease-out);
+    }
+
+    html[data-theme="paper"] [data-motion-scope="feedback"] {
+        transition:
+            opacity var(--duration-fast) var(--ease-out),
+            transform var(--duration-fast) var(--ease-out);
+    }
+
+    @keyframes orderly-view-enter {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @keyframes orderly-target-pulse {
+        50% {
+            transform: scale(1.28);
+        }
+    }
+
+    @keyframes orderly-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+}

@@ -81,7 +81,8 @@ function Remove-TestArtifacts {
                 $_.Name -like "test-data-*" -or
                 $_.Name -like "zero-module-data-*" -or
                 $_.Name -like "zero-modules-*" -or
-                $_.Name -like "module-init-data-*"
+            $_.Name -like "module-init-data-*" -or
+            $_.Name -like "theme-catalog-*"
             } |
             ForEach-Object {
                 $fullPath = [System.IO.Path]::GetFullPath($_.FullName)
@@ -184,11 +185,18 @@ try {
             $_.FullName -match '^BOOT-INF/classes/orderly-modules/.+\.json$' -or
             $_.FullName -match '(^|/)orderly-ui/'
         })
+        $bundledThemes = @($archive.Entries | Where-Object {
+            $_.FullName -match '^BOOT-INF/classes/themes(?:/|$)' -or
+            $_.FullName -match '(^|/)themes/[^/]+/theme\.json$'
+        })
     } finally {
         $archive.Dispose()
     }
     if ($bundledModules.Count -ne 0) {
         throw "宿主 fat JAR 不得包含具体模块：$($bundledModules.FullName -join ', ')"
+    }
+    if ($bundledThemes.Count -ne 0) {
+        throw "宿主 fat JAR 不得包含用户主题：$($bundledThemes.FullName -join ', ')"
     }
 
     Write-Host "构建完成。运行时模块目录：$stagingRoot"

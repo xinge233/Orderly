@@ -33,11 +33,7 @@ function Invoke-Build {
 }
 
 function Start-Orderly([string]$javaExe) {
-    $jar = Get-ChildItem -LiteralPath (Join-Path $repoRoot "app\host\target") -Filter "*.jar" -File |
-        Where-Object { $_.Name -notlike "*.original" } |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
-    if (-not $jar) { throw "未找到宿主 fat JAR。" }
+    $jar = Get-HostJar
     $stdout = Join-Path $backupRoot "server-out.log"
     $stderr = Join-Path $backupRoot "server-err.log"
     $script:process = Start-Process -FilePath $javaExe -ArgumentList @(
@@ -137,8 +133,8 @@ function Remove-GeneratedTheme {
     if (-not $script:generatedTheme) {
         return
     }
-    $source = Assert-PathWithin $script:generatedTheme.Source $themesRoot "临时主题源文件"
-    if (Test-Path -LiteralPath $source -PathType Leaf) {
+    $source = Assert-PathWithin $script:generatedTheme.Source $themesRoot "临时主题源目录"
+    if (Test-Path -LiteralPath $source -PathType Container) {
         $destination = Assert-PathWithin (Join-Path $backupRoot $script:generatedTheme.Name) $targetRoot "临时主题备份"
         if (Test-Path -LiteralPath $destination) {
             throw "临时主题备份路径已存在：$destination"
@@ -151,6 +147,15 @@ function Remove-GeneratedTheme {
     }
     $script:movedTheme = $null
     $script:generatedTheme = $null
+}
+
+function Get-HostJar {
+    $jar = Get-ChildItem -LiteralPath (Join-Path $repoRoot "app\host\target") -Filter "*.jar" -File |
+        Where-Object { $_.Name -notlike "*.original" } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if (-not $jar) { throw "未找到宿主 fat JAR。" }
+    return $jar
 }
 
 function Move-GeneratedModuleToBackup {
@@ -561,10 +566,13 @@ try {
     Move-GeneratedModuleToBackup
     Write-Host "临时模块已验证可逆移出，最终位于 target 验收备份中等待安全清理。"
 
-    Write-Host "[6/6] 增加主题并验证删除已选主题后的回退"
+    Write-Host "[6/6] 增加目录主题并验证重启生效、无重构建和删除已选主题后的回退"
     $themeId = "modularity-temp-" + [guid]::NewGuid().ToString("N")
-    $themeSource = Join-Path $themesRoot "$themeId.json"
+    $themeSource = Join-Path $themesRoot $themeId
+    $hostJarBeforeTheme = Get-HostJar
+    $hostHashBeforeTheme = Get-Sha256 $hostJarBeforeTheme.FullName
     $themeObject = [ordered]@{
+        schemaVersion = 1
         id = $themeId
         label = "模块化验收主题"
         note = "仅用于安全可逆验收"
@@ -572,37 +580,75 @@ try {
         default = $false
         colorScheme = "light"
         browserColor = "Canvas"
-        tokens = [ordered]@{ "--color-accent" = "LinkText" }
+        styles = @("tokens.css", "motion.css")
+        assets = @()
     }
     $themeJson = $themeObject | ConvertTo-Json -Depth 6
-    [System.IO.File]::WriteAllText($themeSource, $themeJson, [System.Text.UTF8Encoding]::new($false))
+    Write-Utf8File (Join-Path $themeSource "theme.json") ($themeJson + "`n")
+    Write-Utf8File (Join-Path $themeSource "tokens.css") @"
+@layer orderly.theme {
+    html[data-theme="$themeId"] {
+        --color-accent: LinkText;
+    }
+}
+"@
+    Write-Utf8File (Join-Path $themeSource "motion.css") @"
+@layer orderly.theme {
+    html[data-theme="$themeId"] [data-motion-scope="overview"][data-motion-state="entering"] {
+        animation: modularity-view var(--duration-normal) var(--ease-out) both;
+    }
+    @keyframes modularity-view {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+}
+"@
     $script:generatedTheme = [pscustomobject]@{
-        Source = (Assert-PathWithin $themeSource $themesRoot "临时主题源文件")
-        Name = "$themeId.json"
+        Source = (Assert-PathWithin $themeSource $themesRoot "临时主题源目录")
+        Name = $themeId
         Backup = $null
     }
     Start-Orderly $javaExe
     $themesBeforeResponse = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/themes" -TimeoutSec 5
-    $themesBefore = @($themesBeforeResponse | ForEach-Object { $_ })
+    $themesBefore = @($themesBeforeResponse.items | ForEach-Object { $_ })
     $beforeMatch = @($themesBefore | Where-Object { $_.id -eq $themeId })
     if ($beforeMatch.Count -ne 1) { throw "新增主题未出现在 /api/themes。" }
+    if ([int]$beforeMatch[0].schemaVersion -ne 1) { throw "新增主题缺少 schemaVersion 1。" }
+    $encodedThemeId = [uri]::EscapeDataString($themeId)
+    $themeDetail = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/themes/$encodedThemeId" -TimeoutSec 5
+    if ($themeDetail.id -ne $themeId -or @($themeDetail.styles).Count -ne 2) {
+        throw "新增主题详情不完整。"
+    }
+    Assert-HttpStatus "http://127.0.0.1:$Port/api/themes/$encodedThemeId/assets/tokens.css" 200
+    Assert-HttpStatus "http://127.0.0.1:$Port/api/themes/$encodedThemeId/assets/motion.css" 200
     Stop-Orderly
+    if ((Get-Sha256 $hostJarBeforeTheme.FullName) -ne $hostHashBeforeTheme) {
+        throw "新增主题不应重新构建宿主 fat JAR。"
+    }
 
     $themeBackup = Assert-PathWithin (Join-Path $backupRoot $script:generatedTheme.Name) $targetRoot "临时主题备份"
     Move-Item -LiteralPath $themeSource -Destination $themeBackup
     $script:movedTheme = [pscustomobject]@{ Source = $themeSource; Backup = $themeBackup }
     Start-Orderly $javaExe
     $themesAfterResponse = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/themes" -TimeoutSec 5
-    $themesAfter = @($themesAfterResponse | ForEach-Object { $_ })
+    $themesAfter = @($themesAfterResponse.items | ForEach-Object { $_ })
     $afterMatch = @($themesAfter | Where-Object { $_.id -eq $themeId })
     if ($afterMatch.Count -ne 0) { throw "删除源主题后仍返回旧主题，可能回退到了陈旧 classpath 产物。" }
+    if ($themesAfterResponse.builtInFallbackActive -ne $false) {
+        throw "仍有可用默认主题时不应启用内置安全外观。"
+    }
+    Assert-HttpStatus "http://127.0.0.1:$Port/api/themes/$encodedThemeId" 404
+    Assert-HttpStatus "http://127.0.0.1:$Port/api/themes/$encodedThemeId/assets/tokens.css" 404
     $themeJsonArg = $themesAfter | ConvertTo-Json -Compress -Depth 6
     $nodeCode = "import { resolveThemeSelection } from './app/frontend/src/settings.js';`nconst themes = " + $themeJsonArg + ";`nconst fallback = resolveThemeSelection('" + $themeId + "', themes);`nif (fallback !== 'paper') throw new Error('已选主题删除后回退错误：' + fallback);"
     & node --input-type=module --eval $nodeCode
     if ($LASTEXITCODE -ne 0) { throw "前端主题失效回退检查失败，退出码：$LASTEXITCODE" }
     Stop-Orderly
+    if ((Get-Sha256 $hostJarBeforeTheme.FullName) -ne $hostHashBeforeTheme) {
+        throw "删除主题不应重新构建宿主 fat JAR。"
+    }
 
-    Write-Host "模块化验收通过：全模块、单模块移除、零模块、恢复、临时模块自动发现与可逆移出、主题新增与已选主题失效回退。"
+    Write-Host "模块化验收通过：全模块、单模块移除、零模块、恢复、临时模块自动发现与可逆移出、目录主题增删重启生效、无重构建和已选主题失效回退。"
     $script:succeeded = $true
 }
 finally {

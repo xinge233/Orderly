@@ -28,7 +28,7 @@
 | `templates/pm-review.md` | PM 只读验收模板 |
 | `templates/software-engineer-handoff.md` | 软件工程师交接模板 |
 | `ORDERLY-MODULES-SELF-CONTAINED.md` | 模块自包含与动态扩展总任务卡 |
-| `ORDERLY-FRONTEND-THEME-MODULARIZATION-HANDOFF.md` | 前端外观与动画主题包模块化交接，包含已拍板决策、架构边界和验收矩阵 |
+| `ORDERLY-FRONTEND-THEME-MODULARIZATION-HANDOFF.md` | 前端目录主题包实施记录，包含已拍板决策、架构边界、验证证据和后续验收矩阵 |
 | `ORDERLY-MODULES-CONTRACT-SAMPLES.md` | 模块契约与 UI 样例、校验定向返工任务卡 |
 | `ORDERLY-MODULES-SELF-CONTAINED-software-engineer-handoff.md` | 总任务软件工程师交接报告 |
 

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "script-style",
+  "label": "非 CSS 样式",
+  "order": 20,
+  "styles": [
+    "tokens.css",
+    "motion.css",
+    "theme.js"
+  ]
+}

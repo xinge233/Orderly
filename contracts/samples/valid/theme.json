@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "sample",
+  "label": "样例主题",
+  "note": "仅用于契约校验",
+  "order": 10,
+  "default": true,
+  "colorScheme": "light",
+  "browserColor": "#f3efe7",
+  "styles": [
+    "tokens.css",
+    "motion.css"
+  ],
+  "assets": [
+    "assets/sample-grain.webp"
+  ]
+}

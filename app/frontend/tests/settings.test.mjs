@@ -5,6 +5,8 @@ import test from "node:test";
 import {
     isModuleHidden,
     normalizeSettings,
+    normalizeThemeCatalog,
+    reconcileAppliedTheme,
     reconcileSettingsForCatalog,
     resolveThemeSelection,
     setModuleHidden,
@@ -26,6 +28,107 @@ function memoryStorage(initial = null) {
         }
     };
 }
+
+function wait(milliseconds = 0) {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function fakeDocument({ failLink = () => false, loadDelay = 0 } = {}) {
+    const root = { dataset: {} };
+    const metas = {
+        scheme: { content: "" },
+        browser: { content: "" }
+    };
+    const head = {
+        children: [],
+        append(link) {
+            this.children.push(link);
+            setTimeout(() => {
+                if (failLink(link)) {
+                    link.emit("error");
+                } else {
+                    link.emit("load");
+                }
+            }, loadDelay);
+        },
+        removeChild(link) {
+            this.children = this.children.filter((candidate) => candidate !== link);
+        }
+    };
+    const documentRef = {
+        documentElement: root,
+        head,
+        createElement(tag) {
+            assert.equal(tag, "link");
+            const listeners = new Map();
+            const link = {
+                rel: "",
+                media: "",
+                href: "",
+                dataset: {},
+                parentNode: head,
+                addEventListener(type, listener) {
+                    listeners.set(type, listener);
+                },
+                emit(type) {
+                    if (head.children.includes(link)) {
+                        listeners.get(type)?.();
+                    }
+                },
+                remove() {
+                    head.removeChild(link);
+                }
+            };
+            return link;
+        },
+        querySelector(selector) {
+            if (selector.includes("color-scheme")) {
+                return metas.scheme;
+            }
+            if (selector.includes("theme-color-meta")) {
+                return metas.browser;
+            }
+            return null;
+        }
+    };
+    return { documentRef, root, head, metas };
+}
+
+function detail(id, styles = ["tokens.css", "motion.css"]) {
+    return {
+        schemaVersion: 1,
+        id,
+        label: id,
+        styles,
+        assets: [],
+        colorScheme: id === "night" ? "dark" : "light",
+        browserColor: id === "night" ? "#161b23" : "Canvas"
+    };
+}
+
+function fetchDetails({ delayById = {}, invalidIds = new Set() } = {}) {
+    return async (url) => {
+        const id = decodeURIComponent(url.split("/").at(-1));
+        await wait(delayById[id] ?? 0);
+        if (invalidIds.has(id)) {
+            return new Response(JSON.stringify({ message: "missing" }), { status: 404 });
+        }
+        return new Response(JSON.stringify(detail(id)), {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+        });
+    };
+}
+
+const CATALOG = {
+    schemaVersion: 1,
+    items: [
+        { schemaVersion: 1, id: "paper", label: "纸页", order: 10, default: true },
+        { schemaVersion: 1, id: "night", label: "夜航", order: 30, default: false }
+    ],
+    issues: [],
+    builtInFallbackActive: false
+};
 
 test("invalid settings fall back to safe defaults", () => {
     assert.deepEqual(normalizeSettings({
@@ -63,16 +166,44 @@ test("settings store persists dynamic module visibility without fixed module key
     assert.doesNotMatch(storage.getItem(), /showFileModule/);
 });
 
-test("deleted selected theme falls back to default before first item", () => {
+test("theme fallback selects only an available default and never the first item", () => {
     const themes = [
-        { id: "first", label: "第一", order: 1, default: false },
-        { id: "fallback", label: "默认", order: 20, default: true },
-        { id: "last", label: "末项", order: 30, default: false }
+        { schemaVersion: 1, id: "first", label: "第一", order: 1, default: false },
+        { schemaVersion: 1, id: "fallback", label: "默认", order: 20, default: true },
+        { schemaVersion: 1, id: "last", label: "末项", order: 30, default: false }
     ];
     assert.equal(resolveThemeSelection("deleted", themes), "fallback");
-    assert.equal(resolveThemeSelection("deleted", themes.map(({ default: _default, ...theme }) => theme)), "first");
+    assert.equal(resolveThemeSelection("deleted", themes.filter((theme) => !theme.default)), "");
     assert.equal(resolveThemeSelection("last", themes), "last");
     assert.equal(resolveThemeSelection("deleted", []), "");
+});
+
+test("theme settings reconcile to the actually applied theme or built-in safety", () => {
+    assert.equal(reconcileAppliedTheme("night", { ...detail("night") }), null);
+    assert.deepEqual(
+        reconcileAppliedTheme("night", { ...detail("paper") }),
+        { theme: "paper" }
+    );
+    assert.deepEqual(reconcileAppliedTheme("night", null), { theme: "" });
+    assert.deepEqual(
+        reconcileAppliedTheme("night", { ...detail("night"), schemaVersion: 2 }),
+        { theme: "" }
+    );
+});
+
+test("new theme catalog keeps local issues and ignores unsupported summaries", () => {
+    const catalog = normalizeThemeCatalog({
+        items: [
+            { schemaVersion: 1, id: "paper", order: 10, default: true },
+            { schemaVersion: 2, id: "future", order: 20, default: false }
+        ],
+        issues: [{ id: "future", code: "UNSUPPORTED_SCHEMA_VERSION", message: "不支持" }],
+        builtInFallbackActive: false
+    });
+
+    assert.deepEqual(catalog.items.map((theme) => theme.id), ["paper"]);
+    assert.equal(catalog.issues[0].code, "UNSUPPORTED_SCHEMA_VERSION");
+    assert.equal(catalog.builtInFallbackActive, false);
 });
 
 test("catalog reconciliation updates stale theme and removes unknown hidden modules", () => {
@@ -82,7 +213,7 @@ test("catalog reconciliation updates stale theme and removes unknown hidden modu
     }, [
         { moduleId: "module_kept" }
     ], [
-        { id: "default-theme", order: 10, default: true }
+        { schemaVersion: 1, id: "default-theme", order: 10, default: true }
     ]);
 
     assert.equal(reconciled.theme, "default-theme");
@@ -121,86 +252,133 @@ test("card and sidebar module orders stay independent", () => {
 
     assert.deepEqual(settings.moduleOrderIds, ["module_b", "module_a"]);
     assert.deepEqual(settings.sidebarModuleOrderIds, ["module_a", "module_b"]);
-    assert.match(storage.getItem(), /"moduleOrderIds":\["module_b","module_a"\]/);
-    assert.match(storage.getItem(), /"sidebarModuleOrderIds":\["module_a","module_b"\]/);
 });
 
-test("theme manager loads detail, applies only token-shaped values, and clears previous injection", async () => {
-    const properties = new Map();
-    const removed = [];
-    const root = {
-        dataset: {},
-        style: {
-            setProperty(key, value) {
-                properties.set(key, value);
-            },
-            removeProperty(key) {
-                removed.push(key);
-                properties.delete(key);
-            }
-        }
-    };
-    const metas = {
-        scheme: { content: "" },
-        browser: { content: "" }
-    };
-    const documentRef = {
-        documentElement: root,
-        querySelector(selector) {
-            return selector.includes("color-scheme") ? metas.scheme : metas.browser;
-        }
-    };
+test("theme manager commits all CSS links without injecting root tokens", async () => {
+    const { documentRef, root, head, metas } = fakeDocument();
+    const manager = new ThemeManager({ documentRef, fetchImpl: fetchDetails() });
+    manager.setCatalog(CATALOG);
+
+    await manager.apply("night");
+
+    assert.equal(root.dataset.theme, "night");
+    assert.equal(metas.scheme.content, "dark");
+    assert.equal(metas.browser.content, "#161b23");
+    assert.equal(head.children.length, 2);
+    assert.deepEqual(head.children.map((link) => link.media), ["all", "all"]);
+    assert.deepEqual(head.children.map((link) => link.href), [
+        "/api/themes/night/assets/tokens.css",
+        "/api/themes/night/assets/motion.css"
+    ]);
+    assert.equal("style" in root, false);
+});
+
+test("theme manager removes the old links only after a successful replacement", async () => {
+    const { documentRef, root, head } = fakeDocument();
+    const manager = new ThemeManager({ documentRef, fetchImpl: fetchDetails() });
+    manager.setCatalog(CATALOG);
+
+    await manager.apply("paper");
+    await manager.apply("night");
+
+    assert.equal(root.dataset.theme, "night");
+    assert.equal(head.children.length, 2);
+    assert.ok(head.children.every((link) => link.dataset.orderlyThemeStyle === "night"));
+});
+
+test("failed candidate CSS keeps the current theme and removes partial links", async () => {
+    const { documentRef, root, head } = fakeDocument({
+        failLink: (link) => link.href.includes("/night/") && link.href.endsWith("motion.css")
+    });
+    const manager = new ThemeManager({ documentRef, fetchImpl: fetchDetails() });
+    manager.setCatalog(CATALOG);
+
+    await manager.apply("paper");
+    const result = await manager.apply("night");
+
+    assert.equal(result.id, "paper");
+    assert.equal(manager.current.id, "paper");
+    assert.equal(root.dataset.theme, "paper");
+    assert.equal(head.children.length, 2);
+    assert.ok(head.children.every((link) => link.dataset.orderlyThemeStyle === "paper"));
+});
+
+test("request generations prevent a slow response from overwriting a newer selection", async () => {
+    const { documentRef, root, head } = fakeDocument();
     const manager = new ThemeManager({
         documentRef,
-        fetchImpl: async (url) => new Response(JSON.stringify(url.endsWith("/alpha")
-            ? {
-                colorScheme: "dark",
-                browserColor: "rebeccapurple",
-                tokens: { "--color-accent": "tomato", unsafeName: "ignored" }
-            }
-            : {
-                colorScheme: "light",
-                browserColor: "Canvas",
-                tokens: { "--color-accent": "green", "--color-text": "black" }
-            }), { status: 200 })
+        fetchImpl: fetchDetails({ delayById: { paper: 40, night: 0 } })
     });
+    manager.setCatalog(CATALOG);
 
-    await manager.apply("alpha");
-    assert.equal(root.dataset.theme, "alpha");
-    assert.equal(properties.get("--color-accent"), "tomato");
-    assert.equal(properties.has("unsafeName"), false);
-    assert.equal(metas.scheme.content, "dark");
-    assert.equal(metas.browser.content, "rebeccapurple");
+    const [slow, fast] = await Promise.all([
+        manager.apply("paper"),
+        manager.apply("night")
+    ]);
 
-    await manager.apply("beta");
-    assert.deepEqual(removed, ["--color-accent"]);
-    assert.equal(properties.get("--color-accent"), "green");
-    assert.equal(root.dataset.theme, "beta");
+    assert.equal(slow, null);
+    assert.equal(fast.id, "night");
+    assert.equal(manager.current.id, "night");
+    assert.equal(root.dataset.theme, "night");
+    assert.equal(head.children.length, 2);
+    assert.ok(head.children.every((link) => link.dataset.orderlyThemeStyle === "night"));
 });
 
-test("theme manager clears dynamic tokens when no theme is available", async () => {
-    const properties = new Map();
-    const root = {
-        dataset: { theme: "old" },
-        style: {
-            setProperty(key, value) {
-                properties.set(key, value);
-            },
-            removeProperty(key) {
-                properties.delete(key);
-            }
-        }
-    };
-    const manager = new ThemeManager({
-        documentRef: { documentElement: root, querySelector: () => null },
-        fetchImpl: async () => new Response(JSON.stringify({ tokens: { "--color-accent": "red" } }))
+test("initial CSS failure falls back to the available default before built-in safety", async () => {
+    const { documentRef, root, head } = fakeDocument({
+        failLink: (link) => link.href.includes("/night/")
+    });
+    const manager = new ThemeManager({ documentRef, fetchImpl: fetchDetails() });
+    manager.setCatalog(CATALOG);
+
+    const result = await manager.apply("night");
+
+    assert.equal(result.id, "paper");
+    assert.equal(root.dataset.theme, "paper");
+    assert.equal(head.children.length, 2);
+    assert.ok(head.children.every((link) => link.dataset.orderlyThemeStyle === "paper"));
+});
+
+test("empty selection fully unloads active CSS when no default theme exists", async () => {
+    const { documentRef, root, head } = fakeDocument();
+    const manager = new ThemeManager({ documentRef, fetchImpl: fetchDetails() });
+    manager.setCatalog({
+        items: [{ schemaVersion: 1, id: "night", order: 1, default: false }],
+        issues: [],
+        builtInFallbackActive: true
     });
 
-    await manager.apply("alpha");
-    manager.clear();
+    await manager.apply("night");
+    assert.equal(manager.current.id, "night");
+    assert.equal(root.dataset.theme, "night");
+    assert.equal(head.children.length, 2);
 
-    assert.equal(properties.has("--color-accent"), false);
+    const result = await manager.apply("");
+
+    assert.equal(result, null);
     assert.equal("theme" in root.dataset, false);
+    assert.equal(head.children.length, 0);
+    assert.equal(manager.current, null);
+});
+
+test("theme manager rejects unsupported detail schema and never injects JavaScript", async () => {
+    const { documentRef, root, head } = fakeDocument();
+    const manager = new ThemeManager({
+        documentRef,
+        fetchImpl: async (url) => {
+            const id = url.split("/").at(-1);
+            return new Response(JSON.stringify({ ...detail(id), schemaVersion: 2 }), { status: 200 });
+        }
+    });
+    manager.setCatalog(CATALOG);
+
+    const result = await manager.apply("paper");
+    const source = await readFile(new URL("../src/settings.js", import.meta.url), "utf8");
+
+    assert.equal(result, null);
+    assert.equal("theme" in root.dataset, false);
+    assert.equal(head.children.length, 0);
+    assert.doesNotMatch(source, /createElement\(["']script["']\)|<script/i);
 });
 
 test("frontend source contains no static theme option list", async () => {

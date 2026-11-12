@@ -24,15 +24,51 @@ if (($moduleIds | Sort-Object -Unique).Count -ne $moduleIds.Count) {
 }
 
 $themesResponse = Invoke-RestMethod -Uri "$BaseUrl/api/themes" -Method Get
-$themes = @($themesResponse | ForEach-Object { $_ })
+$themes = @($themesResponse.items | ForEach-Object { $_ })
 $themeIds = @($themes | ForEach-Object { $_.id })
 if (($themeIds | Sort-Object -Unique).Count -ne $themeIds.Count) {
     throw "主题目录返回了重复 id。"
 }
-if ($themes.Count -gt 0) {
-    $firstTheme = Invoke-RestMethod -Uri "$BaseUrl/api/themes/$([uri]::EscapeDataString($themes[0].id))" -Method Get
-    if ($null -eq $firstTheme.tokens) {
-        throw "主题详情缺少 tokens。"
+if ($null -eq $themesResponse.issues) {
+    throw "主题目录响应缺少 issues。"
+}
+if ($null -eq $themesResponse.builtInFallbackActive) {
+    throw "主题目录响应缺少 builtInFallbackActive。"
+}
+foreach ($themeSummary in $themes) {
+    if ([int]$themeSummary.schemaVersion -ne 1) {
+        throw "主题摘要 schemaVersion 不是 1：$($themeSummary.id)"
+    }
+    $encodedThemeId = [uri]::EscapeDataString([string]$themeSummary.id)
+    $themeDetail = Invoke-RestMethod -Uri "$BaseUrl/api/themes/$encodedThemeId" -Method Get
+    if ([int]$themeDetail.schemaVersion -ne 1 -or $themeDetail.id -ne $themeSummary.id) {
+        throw "主题详情与摘要不一致：$($themeSummary.id)"
+    }
+    if (@($themeDetail.styles).Count -lt 2 -or
+            @($themeDetail.styles) -notcontains "tokens.css" -or
+            @($themeDetail.styles) -notcontains "motion.css") {
+        throw "主题详情缺少清单登记的 tokens.css 或 motion.css：$($themeSummary.id)"
+    }
+    if ($null -ne $themeDetail.rootPath) {
+        throw "主题详情不得暴露宿主 rootPath：$($themeSummary.id)"
+    }
+    foreach ($style in @($themeDetail.styles)) {
+        $encodedStyle = (($style -split '/') | ForEach-Object { [uri]::EscapeDataString($_) }) -join '/'
+        $styleResponse = Invoke-WebRequest -Uri "$BaseUrl/api/themes/$encodedThemeId/assets/$encodedStyle" `
+            -Method Get -UseBasicParsing
+        $contentType = [string]($styleResponse.Headers["Content-Type"] -join ";")
+        $cacheControl = [string]($styleResponse.Headers["Cache-Control"] -join ";")
+        if ($contentType -notmatch '^text/css(?:;|$)') {
+            throw "主题 CSS Content-Type 错误：$($themeSummary.id)/$style => $contentType"
+        }
+        if ($cacheControl -notmatch 'no-cache') {
+            throw "主题 CSS 缺少 Cache-Control: no-cache：$($themeSummary.id)/$style"
+        }
+    }
+    foreach ($asset in @($themeDetail.assets)) {
+        $encodedAsset = (($asset -split '/') | ForEach-Object { [uri]::EscapeDataString($_) }) -join '/'
+        Invoke-WebRequest -Uri "$BaseUrl/api/themes/$encodedThemeId/assets/$encodedAsset" `
+            -Method Get -UseBasicParsing | Out-Null
     }
 }
 
@@ -86,7 +122,7 @@ if ($plan.kind -eq "PLAN") {
     }
 }
 
-Write-Host "HTTP 烟测通过：JDK 21、动态模块目录、模块 UI、通用查询、主题和未执行计划确认；未产生业务数据变更。"
+Write-Host "HTTP 烟测通过：JDK 21、动态模块目录、模块 UI、通用查询、目录主题 schemaVersion/详情/CSS 资源、安全回退字段和未执行计划确认；未产生业务数据变更。"
 Write-Host "已执行无必填参数的通用查询数量：$queryCount"
 
 exit 0

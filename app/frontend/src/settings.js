@@ -17,6 +17,9 @@ const DEFAULTS = Object.freeze({
 
 const MOTIONS = new Set(MOTION_OPTIONS.map((item) => item.value));
 const THEME_ID = /^[a-z][a-z0-9-]{0,63}$/;
+const THEME_STYLE_PATH = /^(?:[a-z0-9][a-z0-9.-]*\/)*[a-z0-9][a-z0-9.-]*\.css$/;
+const SUPPORTED_THEME_SCHEMA_VERSION = 1;
+const REQUIRED_THEME_STYLES = Object.freeze(["tokens.css", "motion.css"]);
 
 function normalizeHiddenModules(source) {
     if (Array.isArray(source.hiddenModuleIds)) {
@@ -57,7 +60,7 @@ export function normalizeSettings(input) {
 }
 
 /**
- * 用服务端目录校正当前设置。主题被删除时优先回退 default，再回退第一项。
+ * 用服务端目录校正当前设置。主题被删除时只回退可用默认主题。
  *
  * @param {unknown} input 原始设置
  * @param {Array<object>} modules 模块契约
@@ -86,14 +89,63 @@ export function reconcileSettingsForCatalog(input, modules = [], themes = []) {
  * @returns {string} 主题 id 或空字符串
  */
 export function resolveThemeSelection(selected, themes = []) {
-    const ordered = [...themes]
-        .filter((theme) => typeof theme?.id === "string" && THEME_ID.test(theme.id))
-        .sort((left, right) => Number(left.order ?? 0) - Number(right.order ?? 0)
-            || left.id.localeCompare(right.id));
+    const ordered = availableThemes(themes);
     if (ordered.some((theme) => theme.id === selected)) {
         return selected;
     }
-    return ordered.find((theme) => theme.default === true)?.id ?? ordered[0]?.id ?? "";
+    return resolveDefaultTheme(ordered);
+}
+
+/**
+ * 解析唯一可用默认主题；不选择排序后的第一项。
+ *
+ * @param {Array<object>} themes 主题摘要
+ * @returns {string} 默认主题 id 或空字符串
+ */
+export function resolveDefaultTheme(themes = []) {
+    return availableThemes(themes).find((theme) => theme.default === true)?.id ?? "";
+}
+
+/**
+ * 将主题管理器最终应用结果校正为设置值。
+ *
+ * @param {unknown} requested 请求的主题 id
+ * @param {unknown} appliedTheme 实际应用的主题详情
+ * @returns {{theme: string} | null} 需要持久化的局部设置
+ */
+export function reconcileAppliedTheme(requested, appliedTheme) {
+    const requestedId = typeof requested === "string" ? requested : "";
+    const appliedId = appliedTheme
+        && typeof appliedTheme === "object"
+        && typeof appliedTheme.id === "string"
+        && THEME_ID.test(appliedTheme.id)
+        && appliedTheme.schemaVersion === SUPPORTED_THEME_SCHEMA_VERSION
+        ? appliedTheme.id
+        : "";
+    return requestedId === appliedId ? null : { theme: appliedId };
+}
+
+/**
+ * 规范化 /api/themes 启动快照。
+ *
+ * @param {unknown} payload API 响应
+ * @returns {{items: Array<object>, issues: Array<object>, builtInFallbackActive: boolean}} 目录快照
+ */
+export function normalizeThemeCatalog(payload) {
+    const source = payload && typeof payload === "object" && !Array.isArray(payload)
+        ? payload
+        : {};
+    const items = availableThemes(Array.isArray(source.items) ? source.items : []);
+    const issues = Array.isArray(source.issues)
+        ? source.issues.filter((issue) => issue && typeof issue === "object").map((issue) => ({ ...issue }))
+        : [];
+    return {
+        items,
+        issues,
+        builtInFallbackActive: typeof source.builtInFallbackActive === "boolean"
+            ? source.builtInFallbackActive
+            : !items.some((theme) => theme.default === true)
+    };
 }
 
 /**
@@ -203,7 +255,9 @@ export class ThemeManager {
     #fetch;
     #baseUrl;
     #cache = new Map();
-    #appliedTokens = new Set();
+    #catalog = normalizeThemeCatalog({});
+    #generation = 0;
+    #active = null;
     #current = null;
 
     /**
@@ -220,77 +274,192 @@ export class ThemeManager {
     }
 
     /**
-     * 加载主题令牌并应用到根元素。
+     * 更新当前启动目录快照。
+     *
+     * @param {unknown} payload /api/themes 响应
+     */
+    setCatalog(payload) {
+        this.#catalog = normalizeThemeCatalog(payload);
+        return this.#catalog;
+    }
+
+    /**
+     * 事务化加载目录主题，成功后原子替换当前样式表。
      *
      * @param {string} name 主题 id
      * @returns {Promise<object | null>} 主题定义
      */
     async apply(name) {
+        const generation = ++this.#generation;
         const safeName = typeof name === "string" && THEME_ID.test(name) ? name : "";
-        this.#clearAppliedTokens();
-        if (!safeName) {
-            this.#clearDocumentTheme();
-            this.#current = null;
+        const requestedAvailable = this.#catalog.items.some((theme) => theme.id === safeName);
+        const defaultId = resolveDefaultTheme(this.#catalog.items);
+        const candidateId = requestedAvailable ? safeName : defaultId;
+        if (!candidateId) {
+            if (generation === this.#generation) {
+                this.#removeLinks(this.#active?.links);
+                this.#active = null;
+                this.#current = null;
+                this.#clearDocumentTheme();
+            }
             return null;
         }
 
-        let theme = this.#cache.get(safeName);
-        if (!theme) {
-            try {
-                const response = await this.#fetch(`${this.#baseUrl}/${encodeURIComponent(safeName)}`);
-                if (!response.ok) {
-                    throw new Error(`主题加载失败：${response.status}`);
-                }
-                theme = await response.json();
-                this.#cache.set(safeName, theme);
-            } catch {
-                this.#clearDocumentTheme();
-                this.#current = null;
+        const applied = await this.#tryApplyCandidate(candidateId, generation);
+        if (applied === STALE_REQUEST) {
+            return null;
+        }
+        if (applied) {
+            return applied;
+        }
+        if (generation !== this.#generation) {
+            return null;
+        }
+        if (this.#active?.theme) {
+            return this.#current;
+        }
+
+        if (defaultId && defaultId !== candidateId) {
+            const fallback = await this.#tryApplyCandidate(defaultId, generation);
+            if (fallback === STALE_REQUEST) {
                 return null;
             }
-        }
-
-        const root = this.#document?.documentElement;
-        if (!root) {
-            this.#current = theme;
-            return theme;
-        }
-
-        const applied = new Set();
-        Object.entries(theme?.tokens ?? {}).forEach(([key, value]) => {
-            if (/^--[a-z0-9-]+$/.test(key) && typeof value === "string") {
-                root.style.setProperty(key, value);
-                applied.add(key);
+            if (fallback) {
+                return fallback;
             }
-        });
-        this.#appliedTokens = applied;
-        root.dataset.theme = safeName;
-        const meta = this.#document.querySelector?.('meta[name="color-scheme"]');
-        if (meta && theme?.colorScheme) {
-            meta.content = theme.colorScheme;
         }
-        const browserMeta = this.#document.querySelector?.('meta[id="theme-color-meta"]');
-        if (browserMeta && theme?.browserColor) {
-            browserMeta.content = theme.browserColor;
+
+        if (generation === this.#generation) {
+            this.#clearDocumentTheme();
+            this.#current = null;
         }
-        this.#current = theme;
-        return theme;
+        return null;
     }
 
     clear() {
-        this.#clearAppliedTokens();
+        this.#generation += 1;
+        this.#removeLinks(this.#active?.links);
+        this.#active = null;
         this.#clearDocumentTheme();
         this.#current = null;
     }
 
-    #clearAppliedTokens() {
-        const root = this.#document?.documentElement;
-        if (!root) {
-            this.#appliedTokens.clear();
-            return;
+    get current() {
+        return this.#current;
+    }
+
+    async #tryApplyCandidate(id, generation) {
+        let theme = this.#cache.get(id);
+        try {
+            if (!theme) {
+                const response = await this.#fetch(`${this.#baseUrl}/${encodeURIComponent(id)}`);
+                if (!response.ok) {
+                    throw new Error(`主题加载失败：${response.status}`);
+                }
+                theme = await response.json();
+                this.#cache.set(id, theme);
+            }
+            this.#validateTheme(id, theme);
+            const links = await this.#loadStyles(id, theme.styles, generation);
+            if (links === STALE_REQUEST || generation !== this.#generation) {
+                this.#removeLinks(links);
+                return STALE_REQUEST;
+            }
+
+            const root = this.#document?.documentElement;
+            if (root) {
+                root.dataset.theme = id;
+            }
+            this.#applyDocumentMeta(theme);
+            links.forEach((link) => {
+                link.media = "all";
+            });
+            this.#removeLinks(this.#active?.links);
+            this.#active = { theme, links };
+            this.#current = theme;
+            return theme;
+        } catch {
+            this.#cache.delete(id);
+            return null;
         }
-        this.#appliedTokens.forEach((key) => root.style.removeProperty(key));
-        this.#appliedTokens.clear();
+    }
+
+    #validateTheme(id, theme) {
+        if (!theme || typeof theme !== "object"
+            || theme.schemaVersion !== SUPPORTED_THEME_SCHEMA_VERSION
+            || theme.id !== id
+            || !Array.isArray(theme.styles)) {
+            throw new TypeError("主题详情不符合 schemaVersion 1");
+        }
+        const styles = theme.styles.filter((style) =>
+            typeof style === "string" && THEME_STYLE_PATH.test(style));
+        if (styles.length !== theme.styles.length
+            || REQUIRED_THEME_STYLES.some((required) => !styles.includes(required))) {
+            throw new TypeError("主题样式清单非法");
+        }
+    }
+
+    async #loadStyles(id, styles, generation) {
+        const head = this.#document?.head;
+        if (!head || typeof this.#document?.createElement !== "function") {
+            throw new TypeError("当前文档无法加载主题样式");
+        }
+        const links = [];
+        try {
+            const waits = styles.map((style) => {
+                const link = this.#document.createElement("link");
+                link.rel = "stylesheet";
+                link.media = "not all";
+                link.href = `${this.#baseUrl}/${encodeURIComponent(id)}/assets/${style
+                    .split("/")
+                    .map((segment) => encodeURIComponent(segment))
+                    .join("/")}`;
+                link.dataset.orderlyThemeStyle = id;
+                links.push(link);
+                const loaded = new Promise((resolve, reject) => {
+                    link.addEventListener("load", resolve, { once: true });
+                    link.addEventListener("error", () => reject(
+                        new Error(`主题样式加载失败：${link.href}`)
+                    ), { once: true });
+                });
+                head.append(link);
+                return loaded;
+            });
+            await Promise.all(waits);
+            if (generation !== this.#generation) {
+                this.#removeLinks(links);
+                return STALE_REQUEST;
+            }
+            return links;
+        } catch (error) {
+            this.#removeLinks(links);
+            throw error;
+        }
+    }
+
+    #removeLinks(links = []) {
+        for (const link of Array.isArray(links) ? links : []) {
+            if (typeof link.remove === "function") {
+                link.remove();
+            } else {
+                link.parentNode?.removeChild?.(link);
+            }
+        }
+    }
+
+    #applyDocumentMeta(theme) {
+        const schemeMeta = this.#document?.querySelector?.('meta[name="color-scheme"]');
+        if (schemeMeta) {
+            schemeMeta.content = typeof theme.colorScheme === "string" && theme.colorScheme
+                ? theme.colorScheme
+                : "light dark";
+        }
+        const browserMeta = this.#document?.querySelector?.('meta[id="theme-color-meta"]');
+        if (browserMeta) {
+            browserMeta.content = typeof theme.browserColor === "string" && theme.browserColor
+                ? theme.browserColor
+                : "Canvas";
+        }
     }
 
     #clearDocumentTheme() {
@@ -307,4 +476,20 @@ export class ThemeManager {
             browserMeta.content = "Canvas";
         }
     }
+}
+
+const STALE_REQUEST = Symbol("stale-theme-request");
+
+function availableThemes(themes) {
+    return [...themes]
+        .filter((theme) => theme
+            && typeof theme.id === "string"
+            && THEME_ID.test(theme.id)
+            && theme.schemaVersion === SUPPORTED_THEME_SCHEMA_VERSION)
+        .map((theme) => ({
+            ...theme,
+            order: Number.isFinite(Number(theme.order)) ? Number(theme.order) : 0,
+            default: theme.default === true
+        }))
+        .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
 }

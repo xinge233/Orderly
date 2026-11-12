@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 /** 主题列表使用的稳定摘要。 */
 public record ThemeSummary(
+        int schemaVersion,
         String id,
         String label,
         String note,
