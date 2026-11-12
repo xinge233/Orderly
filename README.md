@@ -20,7 +20,7 @@
 .\scripts\start.ps1
 ```
 
-首次启动前，`start.ps1` 会调用 `scripts/build.ps1`：自动扫描 `Module/module_*`，逐个构建模块 JAR 到 `target/orderly-modules/`，重建 `Module/modules.index`，再构建宿主 fat JAR。构建会先清空运行模块暂存目录，因此删除模块源码后不会继续加载陈旧 JAR。可用以下命令单独构建并以已有产物启动：
+首次启动前，`start.ps1` 会调用 `scripts/build.ps1`：自动扫描 `Module/module_*`，逐个构建模块 JAR 到 `target/orderly-modules/`，再构建宿主 fat JAR。构建会先清空运行模块暂存目录，因此删除模块源码后不会继续加载陈旧 JAR。可用以下命令单独构建并以已有产物启动：
 
 ```powershell
 .\scripts\build.ps1
@@ -88,4 +88,4 @@
 
 这是可运行的受控工作流切片，不是 V7 的最终发行版。尚未接入真实大模型、任意个人目录选择、重复文件哈希清理、提醒调度、云备份、安装包和自动更新。计划与快照目前保存在进程内存中，重启后不能继续操作旧计划；审计事件会持久化。目录边界、离线行为和功能完成度必须在界面中如实展示，不能把演示数据或规则匹配描述为完整 AI 能力。
 
-`Module/modules.index` 是构建脚本生成的运行模块清单，不要求人工同步，也不会把模块变成 Maven reactor 成员。当前扩展性风险转移到模块 JAR 的本地信任模型：仓库不校验来源或签名，且不提供远程分发和热加载。
+模块注册完全由 `Module/module_*` 源码扫描和 `target/orderly-modules/` 中的 JAR 发现完成，不维护单独的模块索引文件，也不会把模块变成 Maven reactor 成员。当前扩展性风险位于模块 JAR 的本地信任模型：仓库不校验来源或签名，且不提供远程分发和热加载。

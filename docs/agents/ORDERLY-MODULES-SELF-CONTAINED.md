@@ -16,7 +16,7 @@
 ## 范围
 
 - 允许读取：整个仓库及用户指定的产品资料。
-- 允许修改：`AGENTS.md`、`.codex/agents/*.toml`、`docs/agents/**/*.md`、`app/kernel/**`、`app/host/**`、`app/frontend/**`、`Module/module_fs/**`、`Module/module_todo/**`、`Module/module_calendar/**`、`Module/modules.index`、`contracts/**`、`themes/**`、`scripts/**`、根目录构建与启动文件。
+- 允许修改：`AGENTS.md`、`.codex/agents/*.toml`、`docs/agents/**/*.md`、`app/kernel/**`、`app/host/**`、`app/frontend/**`、`Module/module_fs/**`、`Module/module_todo/**`、`Module/module_calendar/**`、同级自包含模块目录、`contracts/**`、`themes/**`、`scripts/**`、根目录构建与启动文件。
 - 允许创建：上述范围内的模块资源、通用契约、样例、测试和必要文档。
 
 ## 非目标

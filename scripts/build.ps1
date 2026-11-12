@@ -8,7 +8,6 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $localRepository = Join-Path $repoRoot ".m2-repository"
 $targetRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "target"))
 $stagingRoot = [System.IO.Path]::GetFullPath((Join-Path $targetRoot "orderly-modules"))
-$indexPath = Join-Path $repoRoot "Module\modules.index"
 
 function Invoke-NativeCapture {
     param(
@@ -113,8 +112,6 @@ try {
     $moduleDirectories = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "Module") -Directory -Filter "module_*" |
         Sort-Object Name)
     $moduleNames = @($moduleDirectories | ForEach-Object { $_.Name })
-    $indexText = if ($moduleNames.Count -gt 0) { ($moduleNames -join "`n") + "`n" } else { "" }
-    [System.IO.File]::WriteAllText($indexPath, $indexText, [System.Text.UTF8Encoding]::new($false))
     Write-Host "扫描到 $($moduleNames.Count) 个模块：$($moduleNames -join ', ')"
 
     Reset-OrderlyStaging

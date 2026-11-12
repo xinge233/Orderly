@@ -27,7 +27,7 @@
 
 - `AGENTS.md`、`.codex/agents/*.toml`、`docs/agents/**/*.md`
 - `app/kernel/**`、`app/host/**`、`app/frontend/**`
-- `Module/module_fs/**`、`Module/module_todo/**`、`Module/module_calendar/**` 与 `Module/modules.index`
+- `Module/module_fs/**`、`Module/module_todo/**`、`Module/module_calendar/**` 及其同级自包含模块目录
 - `contracts/**`、`themes/**`、`scripts/**`
 - 根目录构建文件、启动说明和用户明确要求的基础仓库配置
 
