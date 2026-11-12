@@ -111,18 +111,20 @@ docs/         产品资料与协作文档
 
 ## 6. Subagent 协作模式
 
-主代理是唯一编排者和最终交付负责人。非简单、跨文件或需要独立审查的任务，优先采用以下两个常设 subagent：
+主代理是唯一编排者和最终交付负责人。非简单、跨文件或需要独立审查的任务，优先采用以下常设 subagent 与角色卡包：
 
 | Subagent | 配置文件 | 核心职责 |
 |---|---|---|
 | `project_manager` | `.codex/agents/project-manager.toml` | 只读项目经理；定义任务边界与验收标准，检查模块化程度、依赖边界、测试报错、范围和证据 |
 | `software_engineer` | `.codex/agents/software-engineer.toml` | 软件工程师；在 PM 确认范围内实施首版代码、测试和文档，完成技术自检并提交交接报告 |
+| `ui_design_lead` | `.codex/agents/ui-design-lead/agent.toml` | 界面外观设计负责人；在授权范围内优化外观、布局、动画和视觉状态，守住主题、模块与可访问性边界；默认先做只读设计审查 |
 
 角色规则：
 
 - PM 不直接修改文件，不代替工程师实现，不批准自己的产出。
 - 软件工程师不得修改 PM 的验收标准，不得自行宣布最终通过。
-- 两个 subagent 都不自行派生子代理；由主代理统一调度。
+- 界面设计角色默认只读审查并输出设计与验收建议；仅在 PM 任务卡明确批准时修改授权 UI 文件，不自行扩大接口、契约或业务能力。
+- subagent 与角色卡包执行者都不自行派生子代理；由主代理统一调度。
 - 当前模块化检查同时覆盖提示词文件职责，以及框架、契约、模块和前端之间的真实依赖边界。
 - 测试检查必须基于实际命令、退出码和报错；未运行项不得表述为通过。
 - 主代理最终核对实际文件与 subagent 结论，不能仅凭报告宣称完成。
@@ -154,6 +156,8 @@ docs/         产品资料与协作文档
 | `AGENTS.md` | 仓库级常驻规则、阶段边界、角色路由和完成定义 |
 | `.codex/agents/project-manager.toml` | PM subagent 的身份、只读权限约束、审查方法与输出格式 |
 | `.codex/agents/software-engineer.toml` | 软件工程师 subagent 的身份、实施边界、技术原则和交接格式 |
+| `.codex/agents/ui-design-lead/agent.toml` | 界面外观设计角色卡的身份、可访问路径、设计原则、写入边界和视觉验收方法 |
+| `.codex/agents/ui-design-lead/README.md` | 界面外观设计角色卡包的使用方式、权限摘要和维护规则 |
 | `docs/agents/README.md` | 协作文件索引、调用方式和当前阶段摘要 |
 | `docs/agents/architecture-baseline.md` | 产品事实、当前/未来范围、未来目录边界与最低界面基线 |
 | `docs/agents/collaboration-workflow.md` | 主代理、PM、软件工程师之间的完整协作与质量门禁 |
