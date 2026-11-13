@@ -14,7 +14,7 @@
     <a class="skip-link" href="#main-content">跳到主要内容</a>
 
     <div class="app-shell" data-motion-scope="app-shell" data-motion-state="ready" data-motion-phase="active">
-        <aside class="sidebar" aria-label="应用导航" data-motion-scope="sidebar" data-motion-state="expanded" data-motion-phase="active">
+        <aside class="sidebar" id="sidebar" aria-label="应用导航" data-motion-scope="sidebar" data-motion-state="expanded" data-motion-phase="active">
             <header class="brand">
                 <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
                 <span class="brand-copy">
@@ -52,20 +52,18 @@
         </aside>
 
         <div class="app-main">
-            <header class="topbar" data-motion-scope="topbar" data-motion-state="ready" data-motion-phase="active">
-                <div>
-                    <p class="eyebrow">LOCAL-FIRST WORKFLOW</p>
-                    <div class="breadcrumb" id="breadcrumb" aria-live="polite">
-                        <span>工作台</span><span aria-hidden="true">/</span><strong>总览</strong>
-                    </div>
-                </div>
-                <div class="topbar-actions">
-                    <span class="mode-badge"><i aria-hidden="true"></i>本地运行</span>
-                    <span class="planner-badge" id="planner-badge">本地规则计划器</span>
-                    <button class="icon-button mobile-menu" id="mobile-menu" type="button" aria-label="打开导航">
-                        <span data-icon="menu" aria-hidden="true"></span>
-                    </button>
-                </div>
+            <header class="mobile-toolbar">
+                <button
+                    class="icon-button mobile-menu"
+                    id="mobile-menu"
+                    type="button"
+                    aria-label="打开导航"
+                    aria-controls="sidebar"
+                    aria-expanded="false"
+                >
+                    <span data-icon="menu" aria-hidden="true"></span>
+                </button>
+                <strong id="mobile-view-title">总览</strong>
             </header>
 
             <main class="main-content" id="main-content" tabindex="-1" data-motion-scope="main" data-motion-state="loading" data-motion-phase="active">
@@ -84,7 +82,7 @@
             <span class="command-spark" data-icon="spark" aria-hidden="true"></span>
             <span>
                 <strong>告诉归序你想完成什么</strong>
-                <small>先生成计划，确认后才会执行</small>
+                <small class="planner-disclosure" id="planner-badge">本地规则计划器 · 未连接外部模型</small>
             </span>
             <button class="dock-toggle" id="dock-toggle" type="button" aria-expanded="false">
                 展开

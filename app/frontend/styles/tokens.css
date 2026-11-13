@@ -35,8 +35,8 @@
         --shadow-soft: none;
         --shadow-card: none;
         --grid-line: GrayText;
-        --sidebar-width: 264px;
-        --topbar-height: 82px;
+        --sidebar-width: 240px;
+        --mobile-toolbar-height: 54px;
         --content-max: 1380px;
         --space-1: 4px;
         --space-2: 8px;
@@ -69,6 +69,12 @@
         --duration-fast: 0ms;
         --duration-normal: 0ms;
         --duration-slow: 0ms;
+    }
+
+    @media (max-width: 620px) {
+        :root {
+            --mobile-toolbar-height: 48px;
+        }
     }
 
     @media (prefers-reduced-motion: reduce) {

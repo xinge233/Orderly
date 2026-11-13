@@ -270,7 +270,6 @@ themes/
 |---|---|---|
 | 应用外壳 | `app-shell` | `ready`、`busy` |
 | 侧边栏 | `sidebar` | `entering`、`expanded`、`collapsed`、`reordering` |
-| 顶栏 | `topbar` | `entering`、`busy` |
 | 主内容区 | `main` | `entering`、`view-change` |
 | 总览 | `overview` | `entering`、`reordering` |
 | 模块卡片容器 | `module-card` | `entering`、`reordering`、`attention` |

@@ -40,12 +40,29 @@ test("base component CSS contains no hardcoded keyframes, animations or transiti
     assert.doesNotMatch(appCss, /(^|[\s;])transition\s*:/m);
 });
 
-test("compact view ports keep the collapsed command dock out of page content", async () => {
+test("collapsed compact command dock hides controls but keeps planner disclosure visible", async () => {
     const appCss = await read("../styles/app.css");
+    const html = await read("../index.html");
+    const intro = html.slice(
+        html.indexOf('<div class="command-intro">'),
+        html.indexOf('<div class="command-examples"')
+    );
 
     assert.match(
         appCss,
         /\.command-dock:not\(\.is-expanded\) \.command-form,[\s\S]*\.command-dock:not\(\.is-expanded\) \.command-examples,[\s\S]*\.command-dock:not\(\.is-expanded\) \.dock-footnote\s*\{\s*display:\s*none;/
+    );
+    assert.match(
+        intro,
+        /id="planner-badge">本地规则计划器 · 未连接外部模型<\/small>/
+    );
+    assert.doesNotMatch(
+        appCss,
+        /\.command-intro small\s*\{[^}]*display:\s*none;/s
+    );
+    assert.doesNotMatch(
+        appCss,
+        /\.planner-disclosure\s*\{[^}]*display:\s*none;/s
     );
 });
 
@@ -110,7 +127,6 @@ test("framework motion scopes cover only the public shell contract", async () =>
     const required = [
         "app-shell",
         "sidebar",
-        "topbar",
         "main",
         "overview",
         "module-card",

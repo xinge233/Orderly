@@ -47,7 +47,7 @@ themes/
 - `motion.css` 负责框架公开语义挂点对应的关键帧、过渡和组合动画。
 - 主题 CSS 必须写入 `@layer orderly.theme { ... }`。
 - 主题不得携带 JavaScript，也不得选择具体业务模块内部 DOM。
-- 框架公开挂点只包括 `app-shell`、`sidebar`、`topbar`、`main`、`overview`、`module-card`、`settings-dialog`、`command-panel` 和 `feedback`。
+- 框架公开挂点只包括 `app-shell`、`sidebar`、`main`、`overview`、`module-card`、`settings-dialog`、`command-panel` 和 `feedback`。
 - 根代码保留 `orderly.safety` 层，优先关闭 `motion: none` 与 `prefers-reduced-motion` 下的动画、过渡和滚动行为。
 
 主题 CSS 可以直接引用已登记的相对资源。由于样式表通过 `/api/themes/{id}/assets/tokens.css` 提供，`tokens.css` 内的 `url("assets/paper-grain.webp")` 会解析为 `/api/themes/{id}/assets/assets/paper-grain.webp`：
