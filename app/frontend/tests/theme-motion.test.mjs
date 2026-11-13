@@ -40,6 +40,15 @@ test("base component CSS contains no hardcoded keyframes, animations or transiti
     assert.doesNotMatch(appCss, /(^|[\s;])transition\s*:/m);
 });
 
+test("compact view ports keep the collapsed command dock out of page content", async () => {
+    const appCss = await read("../styles/app.css");
+
+    assert.match(
+        appCss,
+        /\.command-dock:not\(\.is-expanded\) \.command-form,[\s\S]*\.command-dock:not\(\.is-expanded\) \.command-examples,[\s\S]*\.command-dock:not\(\.is-expanded\) \.dock-footnote\s*\{\s*display:\s*none;/
+    );
+});
+
 test("each directory theme owns layered tokens and motion CSS", async () => {
     for (const id of ["paper", "moss", "night"]) {
         const tokens = await read(`../../../themes/${id}/tokens.css`);
@@ -83,6 +92,8 @@ test("settings uses dedicated live regions and keeps the panel mounted on change
     assert.match(app, /settingsStore\.update\(patch\)/);
     assert.match(app, /alert\.setAttribute\("role", "alert"\)/);
     assert.equal((app.match(/setAttribute\("role", "alert"\)/g) ?? []).length, 1);
+    assert.doesNotMatch(app, /id:\s*"modules",\s*label:\s*"模块管理"/);
+    assert.match(app, /getState\(\)\s*\{\s*return systemAdminSnapshot\(\)/s);
     assert.match(app, /const issues = element\("section", "theme-issues"\)/);
     assert.match(app, /未配置可用默认主题/);
     assert.doesNotMatch(app, /内置安全外观已启用/);

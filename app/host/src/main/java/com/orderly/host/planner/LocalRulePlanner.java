@@ -3,6 +3,8 @@ package com.orderly.host.planner;
 import com.orderly.host.contract.ActionContract;
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.contract.PlannerRuleContract;
+import com.orderly.host.modulecontrol.ModuleControlCoordinator;
+import com.orderly.host.modulecontrol.ModuleControlService;
 import com.orderly.kernel.RiskLevel;
 import org.springframework.stereotype.Component;
 
@@ -24,17 +26,34 @@ import java.util.regex.Pattern;
 public class LocalRulePlanner {
 
     private final ContractCatalog catalog;
+    private final ModuleControlService moduleControl;
+    private final ModuleControlCoordinator coordinator;
 
-    public LocalRulePlanner(ContractCatalog catalog) {
+    public LocalRulePlanner(
+            ContractCatalog catalog,
+            ModuleControlService moduleControl,
+            ModuleControlCoordinator coordinator
+    ) {
         this.catalog = catalog;
+        this.moduleControl = moduleControl;
+        this.coordinator = coordinator;
     }
 
     public PlannerResult draft(String goal) {
+        return coordinator.read(() -> draftEnabled(goal));
+    }
+
+    private PlannerResult draftEnabled(String goal) {
         String normalized = goal == null ? "" : goal.trim();
         if (normalized.isBlank()) {
             return question("请描述要完成的受控操作。", "未产生任何变更。");
         }
-        List<PlannerRuleContract> rules = catalog.plannerRules();
+        List<PlannerRuleContract> rules = catalog.plannerRules().stream()
+                .filter(rule -> {
+                    String moduleId = catalog.moduleIdForAction(rule.actionId());
+                    return !catalog.isSystemModule(moduleId) && moduleControl.isEnabled(moduleId);
+                })
+                .toList();
         if (rules.isEmpty()) {
             return question(
                     "当前没有已安装模块提供本地计划规则。请安装对应模块后重试。",

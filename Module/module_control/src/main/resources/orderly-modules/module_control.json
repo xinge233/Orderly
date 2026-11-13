@@ -1,0 +1,13 @@
+{
+  "moduleId": "module_control",
+  "title": "模组设置",
+  "description": "统一管理本机业务模块的启停、排序与模块设置。",
+  "order": 10000,
+  "actions": [],
+  "queries": [],
+  "plannerRules": [],
+  "system": {
+    "role": "MODULE_CONTROL",
+    "protected": true
+  }
+}

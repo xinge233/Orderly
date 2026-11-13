@@ -18,6 +18,7 @@ public class ModuleBootstrap {
 
     @PostConstruct
     public void initializeModules() {
+        catalog.validateSystemModules();
         catalog.initializeModules(runtime);
     }
 }

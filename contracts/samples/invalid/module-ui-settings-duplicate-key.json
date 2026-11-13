@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "view": {
+    "id": "settings-demo",
+    "caption": "设置示例",
+    "icon": "settings"
+  },
+  "examples": [],
+  "settings": {
+    "fields": [
+      {
+        "key": "pageSize",
+        "type": "integer",
+        "label": "每页条数",
+        "default": 20
+      },
+      {
+        "key": "pageSize",
+        "type": "text",
+        "label": "重复键",
+        "default": ""
+      }
+    ]
+  },
+  "script": "module.js",
+  "style": "module.css"
+}

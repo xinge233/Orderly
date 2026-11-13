@@ -45,4 +45,32 @@ class ModuleContractSampleTest {
                     .hasMessageContaining("risk");
         }
     }
+
+    @Test
+    void controlModuleSampleCarriesProtectedSystemMetadata() throws Exception {
+        Path missingModules = Path.of("target", "sample-contract-" + UUID.randomUUID())
+                .toAbsolutePath();
+        try (ContractCatalog catalog = new ContractCatalog(objectMapper, missingModules.toString())) {
+            ModuleContract module = catalog.parseAndValidateModule(
+                    objectMapper.readTree(samples.resolve("valid/module-control.json").toFile())
+            );
+            assertThat(module.moduleId()).isEqualTo("module_control");
+            assertThat(module.system()).isNotNull();
+            assertThat(module.system().role()).isEqualTo("MODULE_CONTROL");
+            assertThat(module.system().protectedModule()).isTrue();
+        }
+    }
+
+    @Test
+    void invalidSystemRoleFailsRuntimeValidation() throws Exception {
+        Path missingModules = Path.of("target", "sample-contract-" + UUID.randomUUID())
+                .toAbsolutePath();
+        try (ContractCatalog catalog = new ContractCatalog(objectMapper, missingModules.toString())) {
+            assertThatThrownBy(() -> catalog.parseAndValidateModule(
+                    objectMapper.readTree(samples.resolve("invalid/module-system-invalid-role.json").toFile())
+            ))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("系统模块角色");
+        }
+    }
 }

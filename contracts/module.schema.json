@@ -21,6 +21,7 @@
     "title": { "type": "string", "minLength": 1 },
     "description": { "type": "string", "minLength": 1 },
     "order": { "type": "integer" },
+    "system": { "$ref": "#/$defs/systemMetadata" },
     "actions": {
       "type": "array",
       "items": { "$ref": "#/$defs/action" }
@@ -35,6 +36,15 @@
     }
   },
   "$defs": {
+    "systemMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "protected"],
+      "properties": {
+        "role": { "const": "MODULE_CONTROL" },
+        "protected": { "const": true }
+      }
+    },
     "parameter": {
       "type": "object",
       "additionalProperties": false,

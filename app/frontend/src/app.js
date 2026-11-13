@@ -13,21 +13,27 @@ import {
     validateConfirmation
 } from "./models.js";
 import {
+    createModuleMountContext,
+    hasSystemAdminPrivilege,
+    isBusinessModule,
+    isModuleVisible,
     moveModuleOrder,
     moveVisibleModuleOrder,
+    normalizeModuleCatalogs,
+    normalizeModulePreferences,
     normalizeModuleUi,
     readCount,
+    reconcileModulePreferences,
     reorderBefore,
     reorderRelative,
+    resolveModuleUiCatalog,
     sortModules
 } from "./modules.js";
 import {
-    isModuleHidden,
     MOTION_OPTIONS,
     normalizeThemeCatalog,
     reconcileAppliedTheme,
     reconcileSettingsForCatalog,
-    setModuleHidden,
     SettingsStore,
     ThemeManager
 } from "./settings.js";
@@ -59,6 +65,9 @@ const state = {
     activeView: "overview",
     health: null,
     modules: [],
+    modulePreferences: normalizeModulePreferences({}),
+    moduleCatalogIssues: [],
+    moduleRefreshIssues: [],
     themes: [],
     themeIssues: [],
     builtInFallbackActive: true,
@@ -77,11 +86,13 @@ const state = {
     moduleAssetVersion: String(Date.now())
 };
 
+const systemAdminApi = createSystemAdminApi();
 let eventStream = null;
 let eventRenderQueued = false;
 let navigationDrag = null;
 let navigationHoldTimer = null;
 let suppressNavigationClickUntil = 0;
+let sidebarOrderRequestGeneration = 0;
 
 /**
  * 创建简单元素。
@@ -162,16 +173,25 @@ async function bootstrap() {
     bindGlobalControls();
     bindSettingsDialog();
 
-    const [moduleResult, themeResult] = await Promise.allSettled([
+    const [moduleResult, systemModuleResult, preferenceResult, themeResult] = await Promise.allSettled([
         api.getModules(),
+        api.getSystemModules(),
+        api.getModulePreferences(),
         api.getThemes()
     ]);
-    state.modules = moduleResult.status === "fulfilled"
-        ? unwrapList(moduleResult.value, ["modules"])
-            .filter((module) => module && typeof module.moduleId === "string")
-            .sort((left, right) => Number(left.order ?? 0) - Number(right.order ?? 0)
-                || left.moduleId.localeCompare(right.moduleId))
-        : [];
+    const catalogs = normalizeModuleCatalogs(
+        moduleResult.status === "fulfilled" ? moduleResult.value : [],
+        systemModuleResult.status === "fulfilled" ? systemModuleResult.value : []
+    );
+    state.modules = catalogs.modules;
+    state.moduleCatalogIssues = [
+        ...catalogIssues(moduleResult.status === "fulfilled" ? moduleResult.value : {}),
+        ...catalogIssues(systemModuleResult.status === "fulfilled" ? systemModuleResult.value : {})
+    ];
+    state.modulePreferences = reconcileModulePreferences(
+        state.modules,
+        preferenceResult.status === "fulfilled" ? preferenceResult.value : {}
+    );
     const themeCatalog = normalizeThemeCatalog(
         themeResult.status === "fulfilled" ? themeResult.value : {}
     );
@@ -183,7 +203,7 @@ async function bootstrap() {
     await loadModuleUis();
     const reconciled = reconcileSettingsForCatalog(
         settingsStore.getSnapshot(),
-        state.modules,
+        state.modules.filter(isBusinessModule),
         state.themes
     );
     settingsStore.update(reconciled);
@@ -209,6 +229,12 @@ async function bootstrap() {
     if (moduleResult.status === "rejected") {
         toast(`模块目录读取失败：${errorMessage(moduleResult.reason)}`, { error: true });
     }
+    if (systemModuleResult.status === "rejected") {
+        toast(`系统模块读取失败：${errorMessage(systemModuleResult.reason)}`, { error: true });
+    }
+    if (preferenceResult.status === "rejected") {
+        toast(`模块偏好读取失败：${errorMessage(preferenceResult.reason)}`, { error: true });
+    }
     if (themeResult.status === "rejected") {
         toast(`主题目录读取失败：${errorMessage(themeResult.reason)}`, { error: true });
     }
@@ -222,29 +248,337 @@ async function loadModuleUis() {
         const payload = await api.getModuleUi(module.moduleId);
         return [module.moduleId, normalizeModuleUi(module.moduleId, payload)];
     }));
-    state.moduleUi = {};
-    state.moduleErrors = {};
-    const viewOwners = new Map();
+    const loaded = [];
     results.forEach((result, index) => {
         const moduleId = state.modules[index]?.moduleId;
         if (!moduleId) {
             return;
         }
         if (result.status === "fulfilled") {
-            const ui = result.value[1];
-            if (["overview", "history"].includes(ui.view.id)) {
-                state.moduleErrors[moduleId] = `模块视图 ID 与框架视图冲突：${ui.view.id}`;
-                return;
-            }
-            const owner = viewOwners.get(ui.view.id);
-            if (owner) {
-                state.moduleErrors[moduleId] = `模块视图 ID 与 ${owner} 冲突：${ui.view.id}`;
-                return;
-            }
-            viewOwners.set(ui.view.id, moduleId);
-            state.moduleUi[moduleId] = ui;
+            loaded.push({ moduleId, ui: result.value[1] });
         } else {
-            state.moduleErrors[moduleId] = errorMessage(result.reason);
+            loaded.push({ moduleId, error: errorMessage(result.reason) });
+        }
+    });
+    const resolved = resolveModuleUiCatalog(state.modules, loaded);
+    state.moduleUi = resolved.moduleUi;
+    state.moduleErrors = resolved.moduleErrors;
+}
+
+function catalogIssues(payload) {
+    if (!payload || typeof payload !== "object" || !Array.isArray(payload.issues)) {
+        return [];
+    }
+    return payload.issues
+        .filter((issue) => issue && typeof issue === "object")
+        .map((issue) => ({ ...issue }));
+}
+
+function issuesForModule(moduleId) {
+    return state.moduleCatalogIssues.filter((issue) =>
+        String(issue.id ?? issue.moduleId ?? "") === moduleId);
+}
+
+function moduleSettings(moduleId) {
+    return { ...(state.modulePreferences.moduleSettings[moduleId] ?? {}) };
+}
+
+function managementModules() {
+    return sortModules(
+        state.modules,
+        state.modulePreferences.managementOrder
+    );
+}
+
+function managementModuleEntries() {
+    return managementModules().map((module, managementOrder) => {
+        const ui = state.moduleUi[module.moduleId] ?? null;
+        const settings = moduleSettings(module.moduleId);
+        const issues = [
+            ...issuesForModule(module.moduleId),
+            ...(state.moduleErrors[module.moduleId]
+                ? [{
+                    id: module.moduleId,
+                    code: "MODULE_UI_LOAD_FAILED",
+                    message: state.moduleErrors[module.moduleId]
+                }]
+                : [])
+        ];
+        const issue = issues.map((item) => item.message || item.code).filter(Boolean).join("；");
+        return {
+            moduleId: module.moduleId,
+            title: module.title,
+            description: module.description,
+            order: module.order,
+            managementOrder,
+            enabled: module.enabled !== false,
+            system: module.system ?? null,
+            module: { ...module, ui },
+            ui,
+            settings,
+            moduleSettings: settings,
+            issue,
+            issues
+        };
+    });
+}
+
+function systemAdminSnapshot(extra = {}) {
+    return {
+        modules: managementModuleEntries(),
+        settingValues: { ...state.modulePreferences.moduleSettings },
+        issues: [
+            ...state.moduleCatalogIssues,
+            ...state.moduleRefreshIssues,
+            ...moduleUiIssues()
+        ],
+        ...extra
+    };
+}
+
+function moduleUiIssues() {
+    return state.modules
+        .filter(isBusinessModule)
+        .filter((module) => state.moduleErrors[module.moduleId])
+        .map((module) => ({
+            id: module.moduleId,
+            code: "MODULE_UI_LOAD_FAILED",
+            message: state.moduleErrors[module.moduleId]
+        }));
+}
+
+function businessModuleOrThrow(moduleId) {
+    const id = String(moduleId ?? "").trim();
+    const module = state.modules.find((item) =>
+        isBusinessModule(item) && item.moduleId === id);
+    if (!module) {
+        throw new TypeError(`未找到业务模块：${id || "(empty)"}`);
+    }
+    return module;
+}
+
+function requirePlainObject(value, label) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new TypeError(`${label}必须是对象`);
+    }
+    return value;
+}
+
+function replaceModule(moduleId, patch) {
+    state.modules = state.modules.map((module) =>
+        module.moduleId === moduleId ? { ...module, ...patch } : module);
+}
+
+function applyCatalogState(catalogs, preferences) {
+    state.modules = catalogs.modules;
+    state.modulePreferences = reconcileModulePreferences(catalogs.modules, preferences);
+}
+
+function activeViewBecameUnavailable() {
+    return state.activeView !== "overview"
+        && state.activeView !== "history"
+        && !moduleForView(state.activeView);
+}
+
+function refreshVisibleFrameworkViews() {
+    renderNavigation(document.querySelector("#nav-search")?.value ?? "");
+    renderCommandExamples();
+    if (state.activeView === "overview" && document.querySelector("#module-card-grid")) {
+        void loadOverviewCounts();
+        renderModuleCards();
+    }
+    if (document.querySelector("#settings-dialog")?.open) {
+        renderSettings();
+    }
+}
+
+async function reloadModuleCatalogAfterRefresh(refreshPayload) {
+    const [moduleResult, systemModuleResult, preferenceResult] = await Promise.allSettled([
+        api.getModules(),
+        api.getSystemModules(),
+        api.getModulePreferences()
+    ]);
+    if (moduleResult.status === "rejected" || systemModuleResult.status === "rejected") {
+        const failure = moduleResult.status === "rejected"
+            ? moduleResult.reason
+            : systemModuleResult.reason;
+        throw new Error(`模块目录重新读取失败：${errorMessage(failure)}`);
+    }
+    const catalogs = normalizeModuleCatalogs(moduleResult.value, systemModuleResult.value);
+    state.moduleCatalogIssues = [
+        ...catalogIssues(moduleResult.value),
+        ...catalogIssues(systemModuleResult.value)
+    ];
+    state.moduleRefreshIssues = Array.isArray(refreshPayload?.issues)
+        ? refreshPayload.issues.filter((issue) => issue && typeof issue === "object")
+        : [];
+    const fetchedPreferences = preferenceResult.status === "fulfilled"
+        ? normalizeModulePreferences(preferenceResult.value)
+        : normalizeModulePreferences({});
+    const preservedPreferences = {
+        sidebarOrder: state.modulePreferences.sidebarOrder.length
+            ? state.modulePreferences.sidebarOrder
+            : fetchedPreferences.sidebarOrder,
+        managementOrder: state.modulePreferences.managementOrder.length
+            ? state.modulePreferences.managementOrder
+            : fetchedPreferences.managementOrder,
+        moduleSettings: preferenceResult.status === "fulfilled"
+            ? fetchedPreferences.moduleSettings
+            : state.modulePreferences.moduleSettings
+    };
+    applyCatalogState(catalogs, preservedPreferences);
+    await loadModuleUis();
+    state.moduleAssetVersion = String(Date.now());
+
+    const persistIssues = [];
+    if (preferenceResult.status === "rejected") {
+        persistIssues.push({
+            code: "MODULE_PREFERENCES_LOAD_FAILED",
+            message: errorMessage(preferenceResult.reason)
+        });
+    }
+    const orderJobs = [];
+    if (!sameStringArray(
+        state.modulePreferences.sidebarOrder,
+        fetchedPreferences.sidebarOrder
+    )) {
+        orderJobs.push(api.saveSidebarModuleOrder(state.modulePreferences.sidebarOrder));
+    }
+    if (!sameStringArray(
+        state.modulePreferences.managementOrder,
+        fetchedPreferences.managementOrder
+    )) {
+        orderJobs.push(api.saveManagementModuleOrder(state.modulePreferences.managementOrder));
+    }
+    const orderResults = await Promise.allSettled(orderJobs);
+    orderResults.forEach((result) => {
+        if (result.status === "rejected") {
+            persistIssues.push({
+                code: "MODULE_ORDER_SAVE_FAILED",
+                message: errorMessage(result.reason)
+            });
+        }
+    });
+
+    if (activeViewBecameUnavailable()) {
+        await navigate("overview");
+    } else {
+        refreshVisibleFrameworkViews();
+    }
+    const source = refreshPayload && typeof refreshPayload === "object"
+        ? refreshPayload
+        : {};
+    const issues = [
+        ...state.moduleCatalogIssues,
+        ...state.moduleRefreshIssues,
+        ...moduleUiIssues(),
+        ...persistIssues
+    ];
+    return {
+        ...systemAdminSnapshot(),
+        added: Array.isArray(source.added) ? source.added : [],
+        issues,
+        revision: source.revision ?? null,
+        needsBuild: issues.some((issue) => String(issue?.code ?? "").includes("NOT_BUILT"))
+    };
+}
+
+function sameStringArray(left, right) {
+    return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function createSystemAdminApi() {
+    return Object.freeze({
+        getState() {
+            return systemAdminSnapshot();
+        },
+
+        listManagementModules() {
+            return managementModuleEntries();
+        },
+
+        listModules() {
+            return managementModuleEntries();
+        },
+
+        async setModuleEnabled(moduleId, enabled) {
+            const module = businessModuleOrThrow(moduleId);
+            const payload = await api.setModuleEnabled(module.moduleId, enabled === true);
+            const applied = payload && typeof payload === "object"
+                && typeof payload.enabled === "boolean"
+                ? payload.enabled
+                : enabled === true;
+            replaceModule(module.moduleId, { enabled: applied });
+            if (activeViewBecameUnavailable()) {
+                await navigate("overview");
+            } else {
+                refreshVisibleFrameworkViews();
+            }
+            return {
+                ...systemAdminSnapshot(),
+                moduleId: module.moduleId,
+                enabled: applied
+            };
+        },
+
+        refreshModules() {
+            return api.refreshSystemModules()
+                .then((payload) => reloadModuleCatalogAfterRefresh(payload));
+        },
+
+        openModuleFolder() {
+            return api.openModuleFolder();
+        },
+
+        async saveManagementOrder(moduleIds) {
+            const ids = Array.isArray(moduleIds) ? moduleIds : [];
+            const next = reconcileModulePreferences(state.modules, {
+                ...state.modulePreferences,
+                managementOrder: ids
+            });
+            await api.saveManagementModuleOrder(next.managementOrder);
+            state.modulePreferences = {
+                ...state.modulePreferences,
+                managementOrder: next.managementOrder
+            };
+            return systemAdminSnapshot();
+        },
+
+        async saveModuleSettings(moduleId, values) {
+            const module = businessModuleOrThrow(moduleId);
+            const nextValues = requirePlainObject(values, "模块设置值");
+            const payload = await api.saveModuleSettings(module.moduleId, nextValues);
+            const saved = payload && typeof payload === "object" && !Array.isArray(payload)
+                ? { ...payload }
+                : { ...nextValues };
+            state.modulePreferences = {
+                ...state.modulePreferences,
+                moduleSettings: {
+                    ...state.modulePreferences.moduleSettings,
+                    [module.moduleId]: saved
+                }
+            };
+            return { ...saved };
+        },
+
+        async resetModuleSettings(moduleId) {
+            const module = businessModuleOrThrow(moduleId);
+            const payload = await api.resetModuleSettings(module.moduleId);
+            const reset = payload && typeof payload === "object" && !Array.isArray(payload)
+                ? { ...payload }
+                : {};
+            state.modulePreferences = {
+                ...state.modulePreferences,
+                moduleSettings: {
+                    ...state.modulePreferences.moduleSettings,
+                    [module.moduleId]: reset
+                }
+            };
+            return { ...reset };
+        },
+
+        getManagementOrder() {
+            return [...state.modulePreferences.managementOrder];
         }
     });
 }
@@ -424,8 +758,6 @@ function syncSettingControls(settings) {
         const key = input.dataset.settingKey;
         if (key === "notifications") {
             input.checked = settings.notifications;
-        } else if (key) {
-            input.checked = !isModuleHidden(settings, key);
         }
     });
 }
@@ -471,9 +803,8 @@ function renderNavigation(query = "") {
         return;
     }
     const normalizedQuery = String(query).trim().toLocaleLowerCase("zh-CN");
-    const settings = settingsStore.getSnapshot();
-    const moduleItems = sortModules(state.modules, settings.sidebarModuleOrderIds)
-        .filter((module) => !isModuleHidden(settings, module.moduleId))
+    const moduleItems = sortModules(state.modules, state.modulePreferences.sidebarOrder)
+        .filter(isModuleVisible)
         .map((module) => moduleNavigationItem(module));
     const sections = [
         { ...NAV_SECTIONS[0], items: [...NAV_SECTIONS[0].items, ...moduleItems] },
@@ -622,7 +953,7 @@ function finishNavigationDrag(event) {
 
     event.preventDefault();
     const { after, moduleId, targetId } = navigationDrag;
-    const ids = settingsStore.getSnapshot().sidebarModuleOrderIds;
+    const ids = state.modulePreferences.sidebarOrder;
     clearNavigationDrag();
     suppressNavigationClickUntil = performance.now() + 400;
     if (!targetId || targetId === moduleId) return;
@@ -675,7 +1006,7 @@ function autoScrollNavigation(clientY) {
 }
 
 function changeSidebarModuleOrder(moduleId, offset) {
-    const orderIds = settingsStore.getSnapshot().sidebarModuleOrderIds;
+    const orderIds = state.modulePreferences.sidebarOrder;
     const visibleIds = [...document.querySelectorAll(".nav-item--module[data-module-id]")]
         .map((node) => node.dataset.moduleId)
         .filter(Boolean);
@@ -692,9 +1023,24 @@ function changeSidebarModuleOrder(moduleId, offset) {
 }
 
 function persistSidebarModuleOrder(sidebarModuleOrderIds, message) {
-    settingsStore.update({ sidebarModuleOrderIds });
+    const previous = state.modulePreferences;
+    const next = reconcileModulePreferences(state.modules, {
+        ...previous,
+        sidebarOrder: sidebarModuleOrderIds
+    });
+    state.modulePreferences = next;
+    renderNavigation(document.querySelector("#nav-search")?.value ?? "");
     const status = document.querySelector("#navigation-order-status");
     if (status) status.textContent = message;
+    const generation = ++sidebarOrderRequestGeneration;
+    void api.saveSidebarModuleOrder(next.sidebarOrder).catch((error) => {
+        if (generation !== sidebarOrderRequestGeneration) {
+            return;
+        }
+        state.modulePreferences = previous;
+        renderNavigation(document.querySelector("#nav-search")?.value ?? "");
+        toast(`侧边栏顺序保存失败：${errorMessage(error)}`, { error: true });
+    });
 }
 
 /**
@@ -718,7 +1064,8 @@ function moduleForView(view) {
     if (view === "overview" || view === "history") {
         return null;
     }
-    return state.modules.find((module) => moduleNavigationItem(module).id === view) ?? null;
+    return state.modules.find((module) =>
+        isModuleVisible(module) && moduleNavigationItem(module).id === view) ?? null;
 }
 
 /**
@@ -836,7 +1183,7 @@ async function mountModule(module) {
         if (typeof moduleScript.default !== "function") {
             throw new TypeError("模块 UI 必须默认导出 mount 函数");
         }
-        await moduleScript.default(root, {
+        const baseContext = {
             module,
             ui,
             query: (queryId, parameters = {}) => api.queryModule(
@@ -849,7 +1196,13 @@ async function mountModule(module) {
             toast,
             fillCommand,
             formatDate
-        });
+        };
+        await moduleScript.default(root, createModuleMountContext({
+            module,
+            context: baseContext,
+            settings: moduleSettings(module.moduleId),
+            systemAdmin: systemAdminApi
+        }));
     } catch (error) {
         renderModuleFailure(module, root, error);
     }
@@ -865,13 +1218,17 @@ function loadModuleStyle(module, url) {
     const loaded = [...document.querySelectorAll("link[data-orderly-module-style]")]
         .find((node) => node.dataset.orderlyModuleStyle === module.moduleId);
     if (loaded) {
-        return Promise.resolve();
+        if (loaded.dataset.orderlyModuleUrl === url) {
+            return Promise.resolve();
+        }
+        loaded.remove();
     }
     return new Promise((resolve, reject) => {
         const style = document.createElement("link");
         style.rel = "stylesheet";
         style.href = url;
         style.dataset.orderlyModuleStyle = module.moduleId;
+        style.dataset.orderlyModuleUrl = url;
         style.addEventListener("load", () => resolve(), { once: true });
         style.addEventListener("error", () => {
             style.remove();
@@ -1049,7 +1406,7 @@ function renderOverview() {
 }
 
 async function loadOverviewCounts() {
-    const jobs = state.modules.map(async (module) => {
+    const jobs = state.modules.filter(isModuleVisible).map(async (module) => {
         const ui = state.moduleUi[module.moduleId];
         if (!ui?.card?.queryId) return [module.moduleId, null];
         try {
@@ -1072,27 +1429,31 @@ function renderModuleCards() {
     if (!grid) return;
     const settings = settingsStore.getSnapshot();
     const ordered = sortModules(state.modules, settings.moduleOrderIds);
-    const visible = ordered.filter((module) => !isModuleHidden(settings, module.moduleId));
+    const visible = ordered.filter(isModuleVisible);
+    const displayed = visible.filter((module) =>
+        state.moduleUi[module.moduleId]?.card !== null);
     grid.replaceChildren();
     if (orbit) {
         orbit.replaceChildren();
-        ordered.slice(0, 3).forEach((module, index) => {
+        displayed.slice(0, 3).forEach((module, index) => {
             const ui = state.moduleUi[module.moduleId];
             const node = element("span", `orbit-node orbit-node--slot-${index + 1}`, "");
             node.innerHTML = icon(ui?.view.icon ?? "modules", 22);
             orbit.append(node);
         });
     }
-    if (!visible.length) {
+    if (!displayed.length) {
         grid.append(element(
             "div",
             "panel empty-state module-empty-state",
-            state.modules.length ? "所有模块已在设置中隐藏。" : "尚未安装功能模块；添加 Module/module_* 并重新构建后会显示在这里。"
+            state.modules.length
+                ? "当前没有已启用的功能模块；可在模组设置中重新启用。"
+                : "尚未安装功能模块；添加 Module/module_* 并重新构建后会显示在这里。"
         ));
         return;
     }
 
-    visible.forEach((module, index) => {
+    displayed.forEach((module, index) => {
         const ui = state.moduleUi[module.moduleId];
         const card = ui?.card ?? {
             title: module.title || module.moduleId,
@@ -1129,7 +1490,7 @@ function renderModuleCards() {
         up.addEventListener("click", () => changeModuleOrder(module.moduleId, -1));
         const down = element("button", "icon-button", "↓");
         down.type = "button";
-        down.disabled = index === visible.length - 1;
+        down.disabled = index === displayed.length - 1;
         down.setAttribute("aria-label", `下移 ${card.title}`);
         down.addEventListener("click", () => changeModuleOrder(module.moduleId, 1));
         controls.append(up, down);
@@ -1197,6 +1558,7 @@ function renderPlan() {
         const signal = element("span", "plan-empty__signal");
         signal.innerHTML = icon("route", 24);
         const examples = state.modules
+            .filter(isModuleVisible)
             .flatMap((module) => state.moduleUi[module.moduleId]?.examples ?? []);
         empty.append(
             signal,
@@ -1868,6 +2230,7 @@ function fillCommand(command) {
 function renderCommandExamples() {
     const container = document.querySelector("#command-examples");
     const examples = state.modules
+        .filter(isModuleVisible)
         .flatMap((module) => state.moduleUi[module.moduleId]?.examples ?? [])
         .slice(0, 4);
     const input = document.querySelector("#command-input");
@@ -2010,9 +2373,11 @@ function renderSettings({ focusPanel = false } = {}) {
     if (!nav || !panel) {
         return;
     }
+    if (!["appearance", "system"].includes(state.settingsSection)) {
+        state.settingsSection = "appearance";
+    }
     const sections = [
         { id: "appearance", label: "外观", note: "主题与动效", icon: "palette" },
-        { id: "modules", label: "模块管理", note: "导航可见性", icon: "modules" },
         { id: "system", label: "系统设置", note: "本地运行边界", icon: "shield" }
     ];
     nav.replaceChildren();
@@ -2043,8 +2408,6 @@ function renderSettings({ focusPanel = false } = {}) {
     panel.replaceChildren();
     if (state.settingsSection === "appearance") {
         renderAppearanceSettings(panel);
-    } else if (state.settingsSection === "modules") {
-        renderModuleSettings(panel);
     } else {
         renderSystemSettings(panel);
     }
@@ -2174,45 +2537,6 @@ function renderAppearanceSettings(panel) {
         settings.notifications
     ));
     fields.append(motionField, notifications);
-    panel.append(fields);
-}
-
-/**
- * 渲染模块可见性设置。
- *
- * @param {HTMLElement} panel 面板
- */
-function renderModuleSettings(panel) {
-    const settings = settingsStore.getSnapshot();
-    const header = element("header", "settings-panel__header");
-    header.append(
-        element("p", "eyebrow", "MODULES"),
-        element("h3", "", "模块管理"),
-        element("p", "", "这里只控制导航可见性；模块执行器仍由宿主契约统一注册与担保。")
-    );
-    panel.append(header);
-    const fields = element("div", "settings-fields settings-fields--modules");
-    if (state.modules.length === 0) {
-        fields.append(element("p", "empty-state", "当前没有已安装模块。安装本地模块并重启宿主后会显示在这里。"));
-    }
-    state.modules.forEach((module) => {
-        const hidden = isModuleHidden(settings, module.moduleId);
-        const row = element("div", "setting-field setting-field--row");
-        const copy = element("div");
-        copy.append(
-            element("label", "", module.title || module.moduleId),
-            element("p", "", module.description || "由模块契约声明的功能。")
-        );
-        row.append(copy, switchControl(
-            module.moduleId,
-            !hidden,
-            (visible) => {
-                const next = setModuleHidden(settingsStore.getSnapshot(), module.moduleId, !visible);
-                settingsStore.update({ hiddenModuleIds: next.hiddenModuleIds });
-            }
-        ));
-        fields.append(row);
-    });
     panel.append(fields);
 }
 

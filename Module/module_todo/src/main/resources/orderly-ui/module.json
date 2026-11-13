@@ -14,6 +14,14 @@
     "countKey": "count",
     "unit": "条待办"
   },
+  "settings": [
+    {
+      "key": "showCompleted",
+      "title": "显示已完成待办",
+      "type": "boolean",
+      "default": true
+    }
+  ],
   "examples": [
     { "label": "创建待办", "text": "创建待办：提交周报；截止：2026-11-20" }
   ],

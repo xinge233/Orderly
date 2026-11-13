@@ -1,7 +1,7 @@
 {
   "moduleId": "module_calendar",
   "title": "日程安排",
-  "description": "修改本地日程时间并保留可撤销的前后版本。",
+  "description": "查看和调整本地日程，并保留可回滚的前后版本。",
   "order": 30,
   "actions": [
     {

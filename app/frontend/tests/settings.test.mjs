@@ -3,13 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
-    isModuleHidden,
     normalizeSettings,
     normalizeThemeCatalog,
     reconcileAppliedTheme,
     reconcileSettingsForCatalog,
     resolveThemeSelection,
-    setModuleHidden,
     SettingsStore,
     ThemeManager
 } from "../src/settings.js";
@@ -139,31 +137,38 @@ test("invalid settings fall back to safe defaults", () => {
         theme: "unknown",
         motion: "gentle",
         notifications: true,
-        hiddenModuleIds: [],
-        moduleOrderIds: [],
-        sidebarModuleOrderIds: []
+        moduleOrderIds: []
     });
 });
 
-test("unknown legacy module booleans are ignored", () => {
-    assert.deepEqual(normalizeSettings({
+test("legacy visibility and sidebar settings are discarded", () => {
+    const settings = normalizeSettings({
         showFileModule: false,
         showTodoModule: true,
-        showCalendarModule: false
-    }).hiddenModuleIds, []);
+        showCalendarModule: false,
+        hiddenModuleIds: ["module_todo"],
+        sidebarModuleOrderIds: ["module_todo"]
+    });
+
+    assert.equal("hiddenModuleIds" in settings, false);
+    assert.equal("sidebarModuleOrderIds" in settings, false);
 });
 
-test("settings store persists dynamic module visibility without fixed module keys", () => {
+test("settings store persists only local presentation and card order", () => {
     const storage = memoryStorage();
     const store = new SettingsStore({ storage, storageKey: "test" });
 
-    const next = setModuleHidden(store.getSnapshot(), "module_new", true);
-    store.update({ hiddenModuleIds: next.hiddenModuleIds, motion: "none" });
+    store.update({
+        hiddenModuleIds: ["module_new"],
+        sidebarModuleOrderIds: ["module_new"],
+        moduleOrderIds: ["module_new"],
+        motion: "none"
+    });
 
-    assert.equal(isModuleHidden(store.getSnapshot(), "module_new"), true);
-    assert.deepEqual(store.getSnapshot().hiddenModuleIds, ["module_new"]);
-    assert.match(storage.getItem(), /"hiddenModuleIds":\["module_new"\]/);
-    assert.doesNotMatch(storage.getItem(), /showFileModule/);
+    assert.deepEqual(store.getSnapshot().moduleOrderIds, ["module_new"]);
+    assert.equal("hiddenModuleIds" in store.getSnapshot(), false);
+    assert.equal("sidebarModuleOrderIds" in store.getSnapshot(), false);
+    assert.doesNotMatch(storage.getItem(), /hiddenModuleIds|sidebarModuleOrderIds/);
 });
 
 test("theme fallback selects only an available default and never the first item", () => {
@@ -206,10 +211,10 @@ test("new theme catalog keeps local issues and ignores unsupported summaries", (
     assert.equal(catalog.builtInFallbackActive, false);
 });
 
-test("catalog reconciliation updates stale theme and removes unknown hidden modules", () => {
+test("catalog reconciliation updates stale theme and removes unknown card order ids", () => {
     const reconciled = reconcileSettingsForCatalog({
         theme: "removed",
-        hiddenModuleIds: ["module_kept", "module_removed"]
+        moduleOrderIds: ["module_kept", "module_removed"]
     }, [
         { moduleId: "module_kept" }
     ], [
@@ -217,8 +222,8 @@ test("catalog reconciliation updates stale theme and removes unknown hidden modu
     ]);
 
     assert.equal(reconciled.theme, "default-theme");
-    assert.deepEqual(reconciled.hiddenModuleIds, ["module_kept"]);
     assert.deepEqual(reconciled.moduleOrderIds, ["module_kept"]);
+    assert.equal("hiddenModuleIds" in reconciled, false);
 });
 
 test("settings persist module card order and reconcile catalog changes", () => {
@@ -235,7 +240,7 @@ test("settings persist module card order and reconcile catalog changes", () => {
     assert.match(storage.getItem(), /"moduleOrderIds":\["module_new","module_removed"\]/);
 });
 
-test("card and sidebar module orders stay independent", () => {
+test("local card order remains independent from host-owned sidebar and management order", () => {
     const storage = memoryStorage();
     const store = new SettingsStore({ storage, storageKey: "independent-order-test" });
     const modules = [
@@ -243,15 +248,14 @@ test("card and sidebar module orders stay independent", () => {
         { moduleId: "module_b", order: 20 }
     ];
     store.update({
-        moduleOrderIds: ["module_b", "module_a"],
-        sidebarModuleOrderIds: ["module_a", "module_b"]
+        moduleOrderIds: ["module_b", "module_a"]
     });
     const settings = reconcileSettingsForCatalog({
         ...store.getSnapshot()
     }, modules);
 
     assert.deepEqual(settings.moduleOrderIds, ["module_b", "module_a"]);
-    assert.deepEqual(settings.sidebarModuleOrderIds, ["module_a", "module_b"]);
+    assert.equal("sidebarModuleOrderIds" in settings, false);
 });
 
 test("theme manager commits all CSS links without injecting root tokens", async () => {

@@ -1,0 +1,13 @@
+{
+  "moduleId": "module_control",
+  "title": "模块控制",
+  "description": "系统级模块控制入口。",
+  "order": 0,
+  "system": {
+    "role": "BUSINESS_MODULE",
+    "protected": true
+  },
+  "actions": [],
+  "queries": [],
+  "plannerRules": []
+}

@@ -44,6 +44,7 @@ app/
   frontend/                静态本地界面
   host/                    Java 控制服务、授权、调度、快照、事件与 API
 Module/
+  module_control/           系统模块：模块启停、排序与设置入口
   module_fs/                文件能力、契约与逆操作
   module_todo/              待办能力、契约与逆操作
   module_calendar/          日程能力、契约与逆操作
@@ -58,6 +59,7 @@ docs/                       产品与协作文档
 
 - V7 采用 `Module/` 作为一级目录；不得在未更新本文件前创建 `modules/`。
 - 模块目录使用 `module_fs`、`module_todo`、`module_calendar` 等清晰标识。
+- `module_control` 是唯一受保护的系统模块，不属于业务模块目录；零业务模块仍要求该系统模块存在。
 - 构建脚本自动发现 `Module/module_*`，逐个构建模块 JAR；宿主启动时直接扫描运行模块目录并加载 JAR，不维护单独索引，也不要求在根 `pom.xml` 或 host `pom.xml` 登记具体模块。
 - 具体编译产物由 Maven 管理；不把 `target/` 或本地运行数据提交到仓库。
 
@@ -98,10 +100,22 @@ docs/                       产品与协作文档
 
 - host 不在编译期依赖具体模块，也不把模块打进 host fat JAR。构建脚本只把当前实际模块逐个复制到 `target/orderly-modules/` 运行时目录。
 - 宿主启动时按文件名稳定排序扫描该目录，用 `URLClassLoader` 加载外部 JAR；其父加载器共享 kernel SPI。宿主从 `orderly-modules/*.json` 读取契约，并用 `ServiceLoader.load(OrderlyModule.class, loader)` 绑定执行器。
-- 模块目录不存在是合法的零模块状态；`/api/modules` 返回空数组。契约与执行器集合不一致、重复模块或重复动作必须阻止启动。
+- 启动时必须恰好存在一个声明 `system.role=MODULE_CONTROL` 且受保护的 `module_control`。系统角色缺失或重复、契约与执行器集合不一致、重复模块或重复动作必须阻止启动；零业务模块仍合法。
+- 业务模块与系统模块分开暴露：`GET /api/modules` 只返回业务模块并附带运行态 `enabled`，`GET /api/system-modules` 返回系统模块且恒为启用。系统模块不能通过业务启停、排序或设置接口修改。
 - 模块查询使用 `GET /api/modules/{moduleId}/query/{queryId}`；模块 UI 只从 JAR 的 `orderly-ui/` 白名单资源读取并提供给 `GET /api/modules/{moduleId}/ui/{asset}`。框架不得为具体模块增加查询、端点或视图分支。
-- 模块只加载一次，不支持热加载。ClassLoader 随宿主关闭而关闭，不在运行中替换 JAR。
+- 运行中只允许通过 `POST /api/system/modules/refresh` 显式追加新模块。刷新扫描 `Module/module_*` 源码目录，并要求 `target/orderly-modules/` 已存在对应 JAR；不自动编译源码。新增模块默认启用并写入治理状态，未构建源码返回 `MODULE_NOT_BUILT`。
+- 已加载模块的源码或 JAR 更新、源码删除或 JAR 删除只返回 `RESTART_REQUIRED`，不得替换、更新、卸载或删除当前运行快照。刷新单个新增模块失败必须保留旧快照，不允许用新 JAR 替换已有模块。
+- ClassLoader 随宿主关闭而关闭，不在运行中替换 JAR。
 - 外部模块 JAR 是本地受信任的可执行代码，不是安全沙箱。当前不提供远程插件下载、来源验证、签名校验或权限隔离，只允许用户放入自己信任的模块。
+
+### 模块治理状态
+
+- 宿主在 `.orderly-data/module-governance.json` 单一 JSON 中持久化业务模块 `enabled`、全部运行模块的两套顺序（`sidebarOrder`、`managementOrder`）与 `moduleSettings`；写入使用同目录临时文件加原子替换。
+- 新业务模块默认启用，并按契约 `order` 插入 `module_control` 之前。`sidebarOrder` 和 `managementOrder` 都包含业务模块与系统模块 ID；失效模块 ID 从运行偏好中清理，系统模块可排序但不可停用或写入业务设置。
+- 状态文件损坏必须产生包含文件路径和原因的明确启动错误，不得静默回退为空状态。
+- 模块设置定义来自模块 JAR 的 `orderly-ui/module.json`。宿主校验字段 key 唯一、默认值、select options 与默认值归属、integer/text 范围，并拒绝未声明字段和错误类型。
+- 模块查询、计划规则、计划生成、计划确认和执行前检查都必须尊重业务模块 `enabled`。执行期间禁止停用；回滚不检查 `enabled`，始终允许按快照恢复。
+- 开关、设置、两类排序、刷新和打开模块源码目录都必须写入审计事件。打开目录只接受 Windows，只打开配置的 `orderly.module-source-dir`，不接受客户端路径。
 
 ## 5. 契约与 AI 边界
 
@@ -128,7 +142,7 @@ docs/                       产品与协作文档
 | 区域 | 最低要求 | 当前表达 |
 |---|---|---|
 | 主界面 | 计划预览、执行时间线、结果摘要的容器 | 首版必须体现 |
-| 左侧侧边栏 | 顶部搜索、模块导航、底部设置入口、可滚动 | 导航只来自 `/api/modules` 和模块 UI 清单；固定入口不可排序，动态模块可长按拖动并独立持久化；无模块时显示空状态 |
+| 左侧侧边栏 | 顶部搜索、模块导航、底部设置入口、可滚动 | 业务导航来自 `/api/modules`，模块控制入口来自 `/api/system-modules`；固定入口不可排序，动态模块可长按拖动并独立持久化；无业务模块时显示空状态 |
 | AI 对话入口 | 右下角默认收起，可展开为输入区域 | 当前只连接本地规则计划器，不得伪装外部模型 |
 | 设置弹窗 | 左侧导航、右侧内容、右上角关闭入口 | 动态主题与任意数量模块可见性设置 |
 | 视觉 | 卡片化、圆润、统一间距和语义变量 | 不硬编码颜色、字体、时长 |

@@ -4,6 +4,8 @@ import com.orderly.host.api.ApiException;
 import com.orderly.host.contract.ActionContract;
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.contract.ParameterContract;
+import com.orderly.host.modulecontrol.ModuleControlCoordinator;
+import com.orderly.host.modulecontrol.ModuleControlService;
 import com.orderly.host.planner.LocalRulePlanner;
 import com.orderly.host.planner.PlannerResult;
 import com.orderly.host.planner.PlannerStep;
@@ -29,14 +31,27 @@ public class PlanService {
 
     private final LocalRulePlanner planner;
     private final ContractCatalog catalog;
+    private final ModuleControlService moduleControl;
+    private final ModuleControlCoordinator coordinator;
     private final ConcurrentMap<String, ExecutionPlan> plans = new ConcurrentHashMap<>();
 
-    public PlanService(LocalRulePlanner planner, ContractCatalog catalog) {
+    public PlanService(
+            LocalRulePlanner planner,
+            ContractCatalog catalog,
+            ModuleControlService moduleControl,
+            ModuleControlCoordinator coordinator
+    ) {
         this.planner = planner;
         this.catalog = catalog;
+        this.moduleControl = moduleControl;
+        this.coordinator = coordinator;
     }
 
     public PlanView create(String goal) {
+        return coordinator.read(() -> createEnabled(goal));
+    }
+
+    private PlanView createEnabled(String goal) {
         PlannerResult result = planner.draft(goal);
         List<ExecutionStep> steps = new ArrayList<>();
         String previous = null;
@@ -51,11 +66,18 @@ public class PlanService {
                 );
             }
             ActionContract action = registered.orElseThrow();
+            String moduleId = catalog.moduleIdForAction(action.id());
+            if (catalog.isSystemModule(moduleId) || !moduleControl.isEnabled(moduleId)) {
+                return saveQuestion(
+                        goal,
+                        "模块“" + moduleId + "”当前已停用。请启用模块后重试；未生成可执行计划。"
+                );
+            }
             validateArguments(action, raw.arguments());
             String id = "s" + (index + 1);
             steps.add(new ExecutionStep(
                     id,
-                    catalog.moduleIdForAction(action.id()),
+                    moduleId,
                     action.id(),
                     action.title(),
                     action.description(),

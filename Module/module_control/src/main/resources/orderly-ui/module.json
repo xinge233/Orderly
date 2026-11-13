@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "view": {
+    "id": "module-control",
+    "caption": "启停与模块设置",
+    "icon": "modules"
+  },
+  "examples": [],
+  "script": "module.js",
+  "style": "module.css"
+}

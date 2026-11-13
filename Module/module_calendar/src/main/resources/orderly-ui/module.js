@@ -23,6 +23,7 @@ export default async function mount(root, context) {
     try {
         const payload = await context.query("calendar.list");
         const items = Array.isArray(payload?.items) ? payload.items : [];
+        const showEndTime = context.settings?.showEndTime !== false;
         list.replaceChildren();
         if (!items.length) {
             list.append(make("p", "calendar-ui-empty", "当前没有日程。"));
@@ -32,12 +33,12 @@ export default async function mount(root, context) {
             const row = make("article", "calendar-ui-item");
             const date = make("time", "calendar-ui-time", context.formatDate(item.startAt));
             const copy = make("div", "calendar-ui-copy");
-            copy.append(
-                make("strong", "", item.title || "未命名日程"),
-                make("small", "", item.endAt
+            copy.append(make("strong", "", item.title || "未命名日程"));
+            if (showEndTime) {
+                copy.append(make("small", "", item.endAt
                     ? `结束于 ${context.formatDate(item.endAt)}`
-                    : "结束时间未设置")
-            );
+                    : "结束时间未设置"));
+            }
             row.append(date, copy);
             list.append(row);
         });

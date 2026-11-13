@@ -3,12 +3,18 @@ package com.orderly.host.api;
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.contract.ModuleUiAsset;
 import com.orderly.host.contract.ModuleContract;
+import com.orderly.host.contract.ModuleEntry;
 import com.orderly.host.contract.ParameterContract;
 import com.orderly.host.contract.QueryContract;
 import com.orderly.host.event.ExecutionEvent;
 import com.orderly.host.event.ExecutionJournal;
 import com.orderly.host.execution.ExecutionRunResult;
 import com.orderly.host.execution.ExecutionService;
+import com.orderly.host.modulecontrol.ModuleControlService;
+import com.orderly.host.modulecontrol.ModuleFolderService;
+import com.orderly.host.modulecontrol.ModulePreferences;
+import com.orderly.host.modulecontrol.ModuleRefreshResult;
+import com.orderly.host.modulecontrol.ModuleRefreshService;
 import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanView;
 import com.orderly.host.runtime.WorkspaceRuntime;
@@ -21,8 +27,11 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -43,6 +52,9 @@ public class OrderlyController {
     private final ExecutionJournal journal;
     private final WorkspaceRuntime runtime;
     private final ThemeCatalog themes;
+    private final ModuleControlService moduleControl;
+    private final ModuleRefreshService moduleRefresh;
+    private final ModuleFolderService moduleFolder;
 
     public OrderlyController(
             ContractCatalog catalog,
@@ -50,7 +62,10 @@ public class OrderlyController {
             ExecutionService execution,
             ExecutionJournal journal,
             WorkspaceRuntime runtime,
-            ThemeCatalog themes
+            ThemeCatalog themes,
+            ModuleControlService moduleControl,
+            ModuleRefreshService moduleRefresh,
+            ModuleFolderService moduleFolder
     ) {
         this.catalog = catalog;
         this.plans = plans;
@@ -58,6 +73,9 @@ public class OrderlyController {
         this.journal = journal;
         this.runtime = runtime;
         this.themes = themes;
+        this.moduleControl = moduleControl;
+        this.moduleRefresh = moduleRefresh;
+        this.moduleFolder = moduleFolder;
     }
 
     @GetMapping("/health")
@@ -71,8 +89,13 @@ public class OrderlyController {
     }
 
     @GetMapping("/modules")
-    public List<ModuleContract> modules() {
-        return catalog.modules();
+    public List<ModuleEntry> modules() {
+        return moduleControl.businessModules();
+    }
+
+    @GetMapping("/system-modules")
+    public List<ModuleEntry> systemModules() {
+        return moduleControl.systemModules();
     }
 
     @GetMapping("/themes")
@@ -114,19 +137,18 @@ public class OrderlyController {
             @PathVariable String queryId,
             @RequestParam Map<String, String> parameters
     ) {
-        ModuleContract module = catalog.findModule(moduleId).orElseThrow(
-                () -> new ApiException(HttpStatus.NOT_FOUND, "MODULE_NOT_FOUND", "模块不存在：" + moduleId)
-        );
-        QueryContract query = module.queries().stream()
-                .filter(candidate -> candidate.id().equals(queryId))
-                .findFirst()
-                .orElseThrow(() -> new ApiException(
-                        HttpStatus.NOT_FOUND,
-                        "MODULE_QUERY_NOT_FOUND",
-                        "模块未声明查询：" + moduleId + "/" + queryId
-                ));
-        Map<String, String> validated = validateQueryParameters(query, parameters);
-        return catalog.requireExecutor(moduleId).query(queryId, validated, runtime);
+        return moduleControl.withEnabledBusinessModule(moduleId, module -> {
+            QueryContract query = module.queries().stream()
+                    .filter(candidate -> candidate.id().equals(queryId))
+                    .findFirst()
+                    .orElseThrow(() -> new ApiException(
+                            HttpStatus.NOT_FOUND,
+                            "MODULE_QUERY_NOT_FOUND",
+                            "模块未声明查询：" + moduleId + "/" + queryId
+                    ));
+            Map<String, String> validated = validateQueryParameters(query, parameters);
+            return catalog.requireExecutor(moduleId).query(queryId, validated, runtime);
+        });
     }
 
     @GetMapping("/modules/{moduleId}/ui/{asset}")
@@ -180,6 +202,68 @@ public class OrderlyController {
         return journal.subscribe();
     }
 
+    @PatchMapping("/modules/{moduleId}/activation")
+    public ModuleEntry activation(
+            @PathVariable String moduleId,
+            @RequestBody ActivationRequest request
+    ) {
+        if (request == null || request.enabled() == null) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_REQUEST",
+                    "activation.enabled 必须是布尔值"
+            );
+        }
+        return moduleControl.setActivation(moduleId, request.enabled());
+    }
+
+    @GetMapping("/system/module-preferences")
+    public ModulePreferences modulePreferences() {
+        return moduleControl.preferences();
+    }
+
+    @PutMapping("/system/module-preferences/sidebar-order")
+    public ModulePreferences updateSidebarOrder(@RequestBody ModuleOrderRequest request) {
+        return moduleControl.updateSidebarOrder(requireModuleIds(request));
+    }
+
+    @PutMapping("/system/module-preferences/management-order")
+    public ModulePreferences updateManagementOrder(@RequestBody ModuleOrderRequest request) {
+        return moduleControl.updateManagementOrder(requireModuleIds(request));
+    }
+
+    @PutMapping("/modules/{moduleId}/settings")
+    public Map<String, Object> updateModuleSettings(
+            @PathVariable String moduleId,
+            @RequestBody com.fasterxml.jackson.databind.JsonNode settings
+    ) {
+        return moduleControl.updateSettings(moduleId, settings);
+    }
+
+    @PostMapping("/modules/{moduleId}/settings/reset")
+    public Map<String, Object> resetModuleSettings(@PathVariable String moduleId) {
+        return moduleControl.resetSettings(moduleId);
+    }
+
+    @PostMapping("/system/modules/refresh")
+    public ModuleRefreshResult refreshModules() {
+        return moduleRefresh.refresh();
+    }
+
+    @PostMapping("/system/module-folder/open")
+    public Map<String, Boolean> openModuleFolder(
+            @RequestHeader(value = "X-Orderly-Action", required = false) String action
+    ) {
+        if (!"open-module-folder".equals(action)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_ACTION_HEADER",
+                    "打开模块目录必须声明 X-Orderly-Action: open-module-folder"
+            );
+        }
+        return moduleFolder.open();
+    }
+
     /** 用户目标。 */
     public record GoalRequest(String goal) {
     }
@@ -189,6 +273,23 @@ public class OrderlyController {
         public ConfirmRequest {
             confirmation = confirmation == null ? "" : confirmation;
         }
+    }
+
+    public record ActivationRequest(Boolean enabled) {
+    }
+
+    public record ModuleOrderRequest(List<String> moduleIds) {
+    }
+
+    private List<String> requireModuleIds(ModuleOrderRequest request) {
+        if (request == null || request.moduleIds() == null) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_REQUEST",
+                    "moduleIds 必须是字符串数组"
+            );
+        }
+        return request.moduleIds();
     }
 
     private Map<String, String> validateQueryParameters(

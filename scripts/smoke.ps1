@@ -22,6 +22,31 @@ if ($moduleIds | Where-Object { [string]::IsNullOrWhiteSpace($_) }) {
 if (($moduleIds | Sort-Object -Unique).Count -ne $moduleIds.Count) {
     throw "模块目录返回了重复 moduleId。"
 }
+foreach ($module in $modules) {
+    if ($module.enabled -isnot [bool]) {
+        throw "业务模块缺少布尔 enabled：$($module.moduleId)"
+    }
+}
+
+$systemModulesResponse = Invoke-RestMethod -Uri "$BaseUrl/api/system-modules" -Method Get
+$systemModules = @($systemModulesResponse | ForEach-Object { $_ })
+$controlModules = @($systemModules | Where-Object { $_.moduleId -eq "module_control" })
+if ($controlModules.Count -ne 1 -or $controlModules[0].enabled -ne $true -or
+        $controlModules[0].system.role -ne "MODULE_CONTROL") {
+    throw "/api/system-modules 未唯一返回启用状态的 module_control。"
+}
+if ($moduleIds -contains "module_control") {
+    throw "/api/modules 不得返回系统模块 module_control。"
+}
+
+$preferences = Invoke-RestMethod -Uri "$BaseUrl/api/system/module-preferences" -Method Get
+if ($null -eq $preferences.sidebarOrder -or $null -eq $preferences.managementOrder -or
+        $null -eq $preferences.moduleSettings) {
+    throw "模块偏好响应缺少 sidebarOrder、managementOrder 或 moduleSettings。"
+}
+if (@($preferences.sidebarOrder) -notcontains "module_control") {
+    throw "sidebarOrder 未包含系统模块 module_control。"
+}
 
 $themesResponse = Invoke-RestMethod -Uri "$BaseUrl/api/themes" -Method Get
 $themes = @($themesResponse.items | ForEach-Object { $_ })
@@ -122,7 +147,13 @@ if ($plan.kind -eq "PLAN") {
     }
 }
 
-Write-Host "HTTP 烟测通过：JDK 21、动态模块目录、模块 UI、通用查询、目录主题 schemaVersion/详情/CSS 资源、安全回退字段和未执行计划确认；未产生业务数据变更。"
+$refresh = Invoke-RestMethod -Uri "$BaseUrl/api/system/modules/refresh" -Method Post
+if ($null -eq $refresh.added -or $null -eq $refresh.issues -or
+        [string]::IsNullOrWhiteSpace([string]$refresh.revision)) {
+    throw "模块刷新响应缺少 added、issues 或 revision。"
+}
+
+Write-Host "HTTP 烟测通过：JDK 21、业务/系统模块目录、模块偏好、模块 UI、通用查询、目录主题 schemaVersion/详情/CSS 资源、安全回退字段、刷新响应和未执行计划确认；未产生业务数据变更。"
 Write-Host "已执行无必填参数的通用查询数量：$queryCount"
 
 exit 0

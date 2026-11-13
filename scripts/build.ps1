@@ -81,8 +81,13 @@ function Remove-TestArtifacts {
                 $_.Name -like "test-data-*" -or
                 $_.Name -like "zero-module-data-*" -or
                 $_.Name -like "zero-modules-*" -or
-            $_.Name -like "module-init-data-*" -or
-            $_.Name -like "theme-catalog-*"
+                $_.Name -like "module-init-data-*" -or
+                $_.Name -like "module-control-fixture-*" -or
+                $_.Name -like "module-refresh-fixture-*" -or
+                $_.Name -like "module-state-corruption-*" -or
+                $_.Name -like "module-folder-*" -or
+                $_.Name -like "module-system-*" -or
+                $_.Name -like "theme-catalog-*"
             } |
             ForEach-Object {
                 $fullPath = [System.IO.Path]::GetFullPath($_.FullName)
@@ -113,6 +118,10 @@ try {
     $moduleDirectories = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "Module") -Directory -Filter "module_*" |
         Sort-Object Name)
     $moduleNames = @($moduleDirectories | ForEach-Object { $_.Name })
+    $controlModules = @($moduleDirectories | Where-Object { $_.Name -eq "module_control" })
+    if ($controlModules.Count -ne 1) {
+        throw "宿主构建要求且仅允许一个 Module/module_control 源码目录，实际 $($controlModules.Count) 个。"
+    }
     Write-Host "扫描到 $($moduleNames.Count) 个模块：$($moduleNames -join ', ')"
 
     Reset-OrderlyStaging
@@ -126,6 +135,7 @@ try {
     )
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $systemModuleDirectories = @()
     foreach ($moduleDirectory in $moduleDirectories) {
         $pom = Join-Path $moduleDirectory.FullName "pom.xml"
         if (-not (Test-Path -LiteralPath $pom -PathType Leaf)) {
@@ -150,16 +160,51 @@ try {
         $moduleArchive = [System.IO.Compression.ZipFile]::OpenRead($moduleJars[0].FullName)
         try {
             $assetNames = @($moduleArchive.Entries | ForEach-Object { $_.FullName })
+            foreach ($requiredAsset in @("orderly-ui/module.json", "orderly-ui/module.js", "orderly-ui/module.css")) {
+                if ($assetNames -notcontains $requiredAsset) {
+                    throw "模块 $($moduleDirectory.Name) 缺少自包含 UI 资源：$requiredAsset"
+                }
+            }
+            $contractEntries = @($moduleArchive.Entries | Where-Object {
+                $_.FullName -match '^orderly-modules/[^/]+\.json$'
+            })
+            if ($contractEntries.Count -ne 1) {
+                throw "模块 $($moduleDirectory.Name) 必须且只能包含一个 orderly-modules/*.json 契约，实际 $($contractEntries.Count) 个。"
+            }
+            foreach ($contractEntry in $contractEntries) {
+                $reader = [System.IO.StreamReader]::new(
+                    $contractEntry.Open(),
+                    [System.Text.UTF8Encoding]::new($false),
+                    $true
+                )
+                try {
+                    $contract = $reader.ReadToEnd() | ConvertFrom-Json
+                } finally {
+                    $reader.Dispose()
+                }
+                if ($null -ne $contract.system) {
+                    if ($contract.system.role -ne "MODULE_CONTROL" -or $contract.system.protected -ne $true) {
+                        throw "模块 $($moduleDirectory.Name) 的 system 元数据必须为受保护的 MODULE_CONTROL。"
+                    }
+                    $systemModuleDirectories += $moduleDirectory.Name
+                }
+            }
+            if ($moduleDirectory.Name -eq "module_control") {
+                $controlContracts = @($contractEntries | Where-Object { $_.FullName -match 'module_control\.json$' })
+                if ($controlContracts.Count -ne 1) {
+                    throw "module_control 必须且只能声明一个 module_control.json 契约。"
+                }
+            }
         } finally {
             $moduleArchive.Dispose()
         }
-        foreach ($requiredAsset in @("orderly-ui/module.json", "orderly-ui/module.js", "orderly-ui/module.css")) {
-            if ($assetNames -notcontains $requiredAsset) {
-                throw "模块 $($moduleDirectory.Name) 缺少自包含 UI 资源：$requiredAsset"
-            }
-        }
         Copy-Item -LiteralPath $moduleJars[0].FullName `
             -Destination (Join-Path $stagingRoot "$($moduleDirectory.Name).jar") -Force
+    }
+    $systemModuleDirectories = @($systemModuleDirectories | Sort-Object -Unique)
+    if ($systemModuleDirectories.Count -ne 1 -or
+            $systemModuleDirectories[0] -ne "module_control") {
+        throw "宿主构建要求且仅允许 module_control 声明 MODULE_CONTROL，实际：$($systemModuleDirectories -join ', ')"
     }
 
     $hostArguments = @(

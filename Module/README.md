@@ -16,7 +16,8 @@
    防止已经移除的模块继续从旧 JAR 加载。
 5. 宿主启动时扫描 `orderly.modules-dir` 指向的目录，通过 `ServiceLoader` 加载
    `OrderlyModule` 执行器，并读取 JAR 中的契约和 UI 资源。
-6. 前端从 `/api/modules` 获取模块目录，并按模块 ID 加载对应 UI。
+6. 前端分别从 `/api/modules` 与 `/api/system-modules` 获取业务和系统模块目录，
+   并按模块 ID 加载对应 UI。
 
 因此，新增合规模块**不需要**修改根 `pom.xml`、宿主 Java 代码或前端模块列表。
 
@@ -55,6 +56,22 @@ Module/
 - `orderly-ui/module.css`：模块自有样式。
 
 一个 `module_*` 目录应只对应一个业务模块，并只产出一个可运行 JAR。
+
+`module_control` 是唯一例外：它是受保护的系统模块，必须存在于每个可运行安装中，但
+不能作为业务模块出现在 `/api/modules`。系统模块契约使用：
+
+```json
+{
+  "moduleId": "module_control",
+  "system": {
+    "role": "MODULE_CONTROL",
+    "protected": true
+  }
+}
+```
+
+系统角色在全运行集必须唯一。构建脚本要求且仅允许一个 `Module/module_control`，宿主
+启动时也会复核；缺少控制模块或出现第二个 `MODULE_CONTROL` 都必须失败。
 
 ## 3. 命名约束
 
@@ -210,6 +227,17 @@ UI 约束：
 - UI 加载失败或清单无效只应影响该模块的局部显示，不能导致其他模块不可用。
 - 模块样式必须使用主题语义变量，不得硬编码颜色值。
 
+可选设置声明位于 `module.json` 的 `settings`，可以写成字段数组或
+`{ "fields": [...] }`。字段支持：
+
+- `boolean`：默认值必须是布尔值。
+- `integer`：默认值为整数，可声明 `min`、`max`，默认值必须落在范围内。
+- `select`：`options` 是非空 `{value,label}` 数组，value 不得重复，默认值必须命中 option。
+- `text`：默认值为文本，可声明 `minLength`、`maxLength`、`placeholder`。
+
+字段必须有唯一 `key`、`type`、`default`，以及 `label` 或 `title`。宿主会按同一套声明
+校验设置写入；模块不能自行保存第二套设置定义。
+
 `module.js` 使用默认导出挂载视图：
 
 ```js
@@ -233,7 +261,9 @@ export default async function mount(root, context) {
 ```
 
 该入口会重新构建模块、清空并重建 `target/orderly-modules/`，然后启动宿主。不能在
-应用运行期间直接热加载新模块；新增、更新或移除模块后都需要重新构建并启动。
+应用运行期间替换、更新或卸载模块。模块控制界面只允许显式刷新追加新模块，且新模块
+必须已经构建到 `target/orderly-modules/`；未构建源码返回 `MODULE_NOT_BUILT`。已有模块
+更新或删除返回 `RESTART_REQUIRED`，需要重新构建并重启。
 
 如只需要使用已经构建好的模块 JAR，可执行：
 
@@ -289,13 +319,14 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1 -BaseUrl http:
 移除模块时，从 `Module/` 中移走对应的 `module_*` 源码目录，然后重新构建并启动。
 不需要修改框架代码。构建会清空 `target/orderly-modules/`，不会继续加载旧 JAR。
 
-删除最后一个模块也是合法状态：宿主应正常启动，`/api/modules` 返回空目录，侧边栏
-和总览显示空状态，其他框架功能不得报错。
+删除全部业务模块也是合法状态：`module_control` 必须保留，宿主应正常启动，
+`/api/modules` 返回空目录，侧边栏和总览显示空状态，其他框架功能不得报错。
 
 ## 11. 安全与责任边界
 
 - 模块 JAR 是本地受信任代码，不是安全沙箱。
-- 当前不支持远程分发、来源验证、签名校验、热加载或热卸载。
+- 当前不支持远程分发、来源验证、签名校验、自动热加载、替换或卸载；运行中只允许
+  显式追加已构建的新模块。
 - 模块负责自己的业务能力、契约、逆操作、界面和动效声明。
 - 框架负责注册、授权、确认、调度、快照、回滚、事件记录和统一外观。
 - 新增能力应先更新契约、样例和校验，再实现执行器和界面。

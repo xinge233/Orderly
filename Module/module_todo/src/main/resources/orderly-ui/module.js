@@ -23,14 +23,19 @@ export default async function mount(root, context) {
 
     try {
         const payload = await context.query("todo.list");
-        const items = Array.isArray(payload?.items) ? payload.items : [];
+        const allItems = Array.isArray(payload?.items) ? payload.items : [];
+        const showCompleted = context.settings?.showCompleted !== false;
+        const items = showCompleted
+            ? allItems
+            : allItems.filter((item) => String(item?.status ?? "OPEN") === "OPEN");
         summary.replaceChildren(
             make("strong", "", String(items.length)),
             make("span", "", "条待办")
         );
         list.replaceChildren();
         if (!items.length) {
-            list.append(make("p", "todo-ui-empty", "当前没有待办。"));
+            list.append(make("p", "todo-ui-empty",
+                showCompleted ? "当前没有待办。" : "当前没有未完成待办。"));
             return;
         }
         items.forEach((item) => {

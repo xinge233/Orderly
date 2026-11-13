@@ -10,9 +10,7 @@ const DEFAULTS = Object.freeze({
     theme: "",
     motion: "gentle",
     notifications: true,
-    hiddenModuleIds: [],
-    moduleOrderIds: [],
-    sidebarModuleOrderIds: []
+    moduleOrderIds: []
 });
 
 const MOTIONS = new Set(MOTION_OPTIONS.map((item) => item.value));
@@ -20,15 +18,6 @@ const THEME_ID = /^[a-z][a-z0-9-]{0,63}$/;
 const THEME_STYLE_PATH = /^(?:[a-z0-9][a-z0-9.-]*\/)*[a-z0-9][a-z0-9.-]*\.css$/;
 const SUPPORTED_THEME_SCHEMA_VERSION = 1;
 const REQUIRED_THEME_STYLES = Object.freeze(["tokens.css", "motion.css"]);
-
-function normalizeHiddenModules(source) {
-    if (Array.isArray(source.hiddenModuleIds)) {
-        return [...new Set(source.hiddenModuleIds
-            .filter((id) => typeof id === "string" && id.trim())
-            .map((id) => id.trim()))];
-    }
-    return [];
-}
 
 function normalizeModuleOrder(source, key) {
     if (!Array.isArray(source[key])) {
@@ -53,9 +42,7 @@ export function normalizeSettings(input) {
         notifications: typeof source.notifications === "boolean"
             ? source.notifications
             : DEFAULTS.notifications,
-        hiddenModuleIds: normalizeHiddenModules(source),
-        moduleOrderIds: normalizeModuleOrder(source, "moduleOrderIds"),
-        sidebarModuleOrderIds: normalizeModuleOrder(source, "sidebarModuleOrderIds")
+        moduleOrderIds: normalizeModuleOrder(source, "moduleOrderIds")
     };
 }
 
@@ -69,15 +56,10 @@ export function normalizeSettings(input) {
  */
 export function reconcileSettingsForCatalog(input, modules = [], themes = []) {
     const settings = normalizeSettings(input);
-    const moduleIds = new Set(modules
-        .map((module) => module?.moduleId)
-        .filter((id) => typeof id === "string"));
     return {
         ...settings,
         theme: resolveThemeSelection(settings.theme, themes),
-        hiddenModuleIds: settings.hiddenModuleIds.filter((id) => moduleIds.has(id)),
-        moduleOrderIds: reconcileModuleOrder(modules, settings.moduleOrderIds),
-        sidebarModuleOrderIds: reconcileModuleOrder(modules, settings.sidebarModuleOrderIds)
+        moduleOrderIds: reconcileModuleOrder(modules, settings.moduleOrderIds)
     };
 }
 
@@ -148,39 +130,6 @@ export function normalizeThemeCatalog(payload) {
     };
 }
 
-/**
- * 返回模块是否被用户隐藏。
- *
- * @param {object} settings 设置
- * @param {string} moduleId 模块 id
- * @returns {boolean} 是否隐藏
- */
-export function isModuleHidden(settings, moduleId) {
-    return normalizeSettings(settings).hiddenModuleIds.includes(moduleId);
-}
-
-/**
- * 更新单个模块可见性。
- *
- * @param {object} settings 设置
- * @param {string} moduleId 模块 id
- * @param {boolean} hidden 是否隐藏
- * @returns {object} 新设置
- */
-export function setModuleHidden(settings, moduleId, hidden) {
-    const current = normalizeSettings(settings);
-    const hiddenIds = new Set(current.hiddenModuleIds);
-    if (hidden) {
-        hiddenIds.add(moduleId);
-    } else {
-        hiddenIds.delete(moduleId);
-    }
-    return {
-        ...current,
-        hiddenModuleIds: [...hiddenIds]
-    };
-}
-
 export class SettingsStore {
     #storage;
     #storageKey;
@@ -199,9 +148,7 @@ export class SettingsStore {
     getSnapshot() {
         return Object.freeze({
             ...this.#value,
-            hiddenModuleIds: Object.freeze([...this.#value.hiddenModuleIds]),
-            moduleOrderIds: Object.freeze([...this.#value.moduleOrderIds]),
-            sidebarModuleOrderIds: Object.freeze([...this.#value.sidebarModuleOrderIds])
+            moduleOrderIds: Object.freeze([...this.#value.moduleOrderIds])
         });
     }
 

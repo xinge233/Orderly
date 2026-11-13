@@ -11,7 +11,7 @@ function parentPath(path) {
 export default async function mount(root, context) {
     const make = context.element;
     let currentPath = "";
-    let mode = "workspace";
+    let mode = context.settings?.defaultView === "trash" ? "trash" : "workspace";
 
     const panel = make("section", "fs-ui-panel");
     const header = make("header", "fs-ui-header");
@@ -31,7 +31,7 @@ export default async function mount(root, context) {
     header.append(heading, actions);
 
     const tabs = make("div", "fs-ui-tabs");
-    const workspaceTab = make("button", "fs-ui-tab is-active", "工作区");
+    const workspaceTab = make("button", "fs-ui-tab", "工作区");
     const trashTab = make("button", "fs-ui-tab", "回收站");
     workspaceTab.type = "button";
     trashTab.type = "button";
@@ -46,6 +46,12 @@ export default async function mount(root, context) {
     const list = make("div", "fs-ui-list");
     panel.append(header, tabs, toolbar, list);
     root.replaceChildren(panel);
+
+    function syncMode() {
+        workspaceTab.classList.toggle("is-active", mode === "workspace");
+        trashTab.classList.toggle("is-active", mode === "trash");
+        toolbar.hidden = mode === "trash";
+    }
 
     async function load() {
         list.replaceChildren(make("p", "fs-ui-empty", "正在读取模块数据…"));
@@ -108,18 +114,15 @@ export default async function mount(root, context) {
     });
     workspaceTab.addEventListener("click", () => {
         mode = "workspace";
-        workspaceTab.classList.add("is-active");
-        trashTab.classList.remove("is-active");
-        toolbar.hidden = false;
+        syncMode();
         void load();
     });
     trashTab.addEventListener("click", () => {
         mode = "trash";
-        trashTab.classList.add("is-active");
-        workspaceTab.classList.remove("is-active");
-        toolbar.hidden = true;
+        syncMode();
         void load();
     });
 
+    syncMode();
     await load();
 }

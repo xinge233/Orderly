@@ -1,0 +1,436 @@
+.module-control-ui-panel {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: clamp(25rem, calc(100vh - 24rem), 43rem);
+    min-height: 25rem;
+    overflow: hidden;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+}
+
+.module-control-ui-header {
+    padding: var(--space-6) var(--space-6) var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+}
+
+.module-control-ui-header h1,
+.module-control-ui-header p,
+.module-control-ui-settings-header h2,
+.module-control-ui-settings-header p {
+    margin: 0;
+}
+
+.module-control-ui-eyebrow {
+    color: var(--color-accent-strong);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0;
+}
+
+.module-control-ui-description,
+.module-control-ui-settings-header p,
+.module-control-ui-copy span,
+.module-control-ui-field__label span,
+.module-control-ui-empty {
+    color: var(--color-text-soft);
+}
+
+.module-control-ui-list-view,
+.module-control-ui-settings {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    min-height: 0;
+}
+
+.module-control-ui-toolbar,
+.module-control-ui-settings-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-6);
+    border-bottom: 1px solid var(--color-line);
+    background: var(--color-surface-muted);
+}
+
+.module-control-ui-button,
+.module-control-ui-square,
+.module-control-ui-drag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-height: 2.25rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    padding: var(--space-2) var(--space-3);
+    font: inherit;
+    cursor: pointer;
+    transition:
+        border-color var(--duration-fast) var(--ease-out),
+        background var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out);
+}
+
+.module-control-ui-button:hover,
+.module-control-ui-square:hover,
+.module-control-ui-drag:hover {
+    border-color: var(--color-line-strong);
+    background: var(--color-surface-strong);
+}
+
+.module-control-ui-button.is-primary {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+    color: var(--color-accent-strong);
+}
+
+.module-control-ui-button:disabled,
+.module-control-ui-square:disabled,
+.module-control-ui-drag:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
+}
+
+.module-control-ui-button:focus-visible,
+.module-control-ui-square:focus-visible,
+.module-control-ui-drag:focus-visible,
+.module-control-ui-row:focus-within,
+.module-control-ui-field input:focus-visible,
+.module-control-ui-field select:focus-visible {
+    border-color: var(--color-focus);
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+.module-control-ui-icon,
+.module-control-ui-module-icon {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+}
+
+.module-control-ui-back .module-control-ui-icon {
+    transform: rotate(180deg);
+}
+
+.module-control-ui-status {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    min-height: 2.5rem;
+    padding: var(--space-2) var(--space-6);
+    color: var(--color-text-soft);
+    font-size: 0.84rem;
+}
+
+.module-control-ui-status.is-safe {
+    background: var(--color-safe-soft);
+    color: var(--color-safe);
+}
+
+.module-control-ui-status.is-warning {
+    background: var(--color-warning-soft);
+    color: var(--color-warning);
+}
+
+.module-control-ui-status.is-error {
+    background: var(--color-danger-soft);
+    color: var(--color-danger);
+}
+
+.module-control-ui-status__details {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.module-control-ui-build {
+    color: inherit;
+}
+
+.module-control-ui-list-scroll,
+.module-control-ui-settings-scroll {
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+.module-control-ui-list {
+    margin: 0;
+}
+
+.module-control-ui-row {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 4.75rem;
+    padding: var(--space-3) var(--space-6);
+    border-bottom: 1px solid var(--color-line);
+    background: transparent;
+    transition:
+        background var(--duration-fast) var(--ease-out),
+        opacity var(--duration-fast) var(--ease-out);
+}
+
+.module-control-ui-row:last-child {
+    border-bottom: 0;
+}
+
+.module-control-ui-row:hover {
+    background: var(--color-surface-muted);
+}
+
+.module-control-ui-row.is-dragging {
+    background: var(--color-accent-soft);
+    opacity: 0.72;
+}
+
+.module-control-ui-row.is-drop-target {
+    box-shadow: inset 0 2px 0 var(--color-focus);
+}
+
+.module-control-ui-drag {
+    width: 2.25rem;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    color: var(--color-text-soft);
+    cursor: grab;
+    touch-action: none;
+}
+
+.module-control-ui-drag:active {
+    cursor: grabbing;
+}
+
+.module-control-ui-module-icon {
+    width: 2.4rem;
+    height: 2.4rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-accent-soft);
+    color: var(--color-accent-strong);
+}
+
+.module-control-ui-copy {
+    display: grid;
+    min-width: 0;
+    gap: var(--space-1);
+}
+
+.module-control-ui-copy strong,
+.module-control-ui-copy span {
+    overflow-wrap: anywhere;
+}
+
+.module-control-ui-copy strong {
+    font-size: 0.96rem;
+}
+
+.module-control-ui-copy span {
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.module-control-ui-row-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.module-control-ui-square {
+    width: 2.25rem;
+    padding: 0;
+}
+
+.module-control-ui-switch {
+    position: relative;
+    display: inline-grid;
+    flex: none;
+    cursor: pointer;
+}
+
+.module-control-ui-switch input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+
+.module-control-ui-switch__track {
+    position: relative;
+    width: 2.5rem;
+    height: 1.4rem;
+    border: 1px solid var(--color-line-strong);
+    border-radius: 999px;
+    background: var(--color-surface-strong);
+    transition:
+        border-color var(--duration-fast) var(--ease-out),
+        background var(--duration-fast) var(--ease-out);
+}
+
+.module-control-ui-switch__track::after {
+    position: absolute;
+    top: 0.16rem;
+    left: 0.16rem;
+    width: 0.98rem;
+    height: 0.98rem;
+    border-radius: 50%;
+    background: var(--color-surface-raised);
+    box-shadow: var(--shadow-card);
+    content: "";
+    transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.module-control-ui-switch input:checked + .module-control-ui-switch__track {
+    border-color: var(--color-safe);
+    background: var(--color-safe);
+}
+
+.module-control-ui-switch input:checked + .module-control-ui-switch__track::after {
+    transform: translateX(1.08rem);
+}
+
+.module-control-ui-switch input:focus-visible + .module-control-ui-switch__track {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+.module-control-ui-switch input:disabled + .module-control-ui-switch__track {
+    cursor: not-allowed;
+    opacity: 0.58;
+}
+
+.module-control-ui-empty {
+    margin: 0;
+    padding: var(--space-8) var(--space-6);
+    text-align: center;
+}
+
+.module-control-ui-settings-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-6);
+    border-bottom: 1px solid var(--color-line);
+}
+
+.module-control-ui-settings-header h2 {
+    font-size: 1.15rem;
+}
+
+.module-control-ui-settings-header p {
+    margin-top: var(--space-1);
+    font-size: 0.84rem;
+}
+
+.module-control-ui-form {
+    display: grid;
+    gap: var(--space-5);
+    padding: var(--space-5) var(--space-6);
+}
+
+.module-control-ui-field {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.module-control-ui-field:not(.is-boolean) {
+    max-width: 32rem;
+}
+
+.module-control-ui-field__label {
+    display: grid;
+    gap: var(--space-1);
+}
+
+.module-control-ui-field__label span {
+    font-size: 0.82rem;
+}
+
+.module-control-ui-field input,
+.module-control-ui-field select {
+    width: 100%;
+    min-height: 2.45rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    padding: var(--space-2) var(--space-3);
+    font: inherit;
+}
+
+.module-control-ui-field input:focus,
+.module-control-ui-field select:focus {
+    outline: none;
+}
+
+.module-control-ui-switch--field {
+    justify-self: start;
+}
+
+.module-control-ui-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding-top: var(--space-2);
+}
+
+@media (max-width: 640px) {
+    .module-control-ui-panel {
+        height: auto;
+        min-height: 26rem;
+        max-height: calc(100vh - 16rem);
+    }
+
+    .module-control-ui-header,
+    .module-control-ui-toolbar,
+    .module-control-ui-settings-toolbar,
+    .module-control-ui-status,
+    .module-control-ui-row,
+    .module-control-ui-settings-header,
+    .module-control-ui-form {
+        padding-right: var(--space-4);
+        padding-left: var(--space-4);
+    }
+
+    .module-control-ui-row {
+        grid-template-columns: auto auto minmax(0, 1fr);
+    }
+
+    .module-control-ui-row-actions {
+        grid-column: 2 / 4;
+        justify-self: end;
+    }
+
+    .module-control-ui-toolbar .module-control-ui-button {
+        flex: 1 1 auto;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .module-control-ui-button,
+    .module-control-ui-square,
+    .module-control-ui-drag,
+    .module-control-ui-row,
+    .module-control-ui-switch__track,
+    .module-control-ui-switch__track::after {
+        transition: none;
+    }
+}
+
+[data-motion="none"] .module-control-ui-button,
+[data-motion="none"] .module-control-ui-square,
+[data-motion="none"] .module-control-ui-drag,
+[data-motion="none"] .module-control-ui-row,
+[data-motion="none"] .module-control-ui-switch__track,
+[data-motion="none"] .module-control-ui-switch__track::after {
+    transition: none;
+}

@@ -46,6 +46,39 @@
         }
       }
     },
+    "settings": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fields"],
+          "properties": {
+            "fields": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  { "$ref": "#/$defs/booleanField" },
+                  { "$ref": "#/$defs/integerField" },
+                  { "$ref": "#/$defs/selectField" },
+                  { "$ref": "#/$defs/textField" }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/booleanField" },
+              { "$ref": "#/$defs/integerField" },
+              { "$ref": "#/$defs/selectField" },
+              { "$ref": "#/$defs/textField" }
+            ]
+          }
+        }
+      ]
+    },
     "script": {
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\.js$"
@@ -53,6 +86,127 @@
     "style": {
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\.css$"
+    }
+  },
+  "$defs": {
+    "fieldBase": {
+      "type": "object",
+      "required": ["key", "type", "default"],
+      "anyOf": [
+        { "required": ["label"] },
+        { "required": ["title"] }
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+        },
+        "type": { "type": "string" },
+        "label": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" }
+      }
+    },
+    "booleanField": {
+      "allOf": [
+        { "$ref": "#/$defs/fieldBase" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "type": { "const": "boolean" },
+            "label": { "type": "string", "minLength": 1 },
+            "title": { "type": "string", "minLength": 1 },
+            "description": { "type": "string" },
+            "default": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "integerField": {
+      "allOf": [
+        { "$ref": "#/$defs/fieldBase" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "type": { "const": "integer" },
+            "label": { "type": "string", "minLength": 1 },
+            "title": { "type": "string", "minLength": 1 },
+            "description": { "type": "string" },
+            "default": { "type": "integer" },
+            "min": { "type": "integer" },
+            "max": { "type": "integer" }
+          }
+        }
+      ]
+    },
+    "selectOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "label"],
+      "properties": {
+        "value": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 }
+      }
+    },
+    "selectField": {
+      "allOf": [
+        { "$ref": "#/$defs/fieldBase" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["options"],
+          "properties": {
+            "key": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "type": { "const": "select" },
+            "label": { "type": "string", "minLength": 1 },
+            "title": { "type": "string", "minLength": 1 },
+            "description": { "type": "string" },
+            "default": { "type": "string", "minLength": 1 },
+            "options": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/selectOption" }
+            }
+          }
+        }
+      ]
+    },
+    "textField": {
+      "allOf": [
+        { "$ref": "#/$defs/fieldBase" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "type": { "const": "text" },
+            "label": { "type": "string", "minLength": 1 },
+            "title": { "type": "string", "minLength": 1 },
+            "description": { "type": "string" },
+            "default": { "type": "string" },
+            "placeholder": { "type": "string" },
+            "minLength": { "type": "integer", "minimum": 0 },
+            "maxLength": { "type": "integer", "minimum": 1 }
+          }
+        }
+      ]
     }
   }
 }

@@ -64,7 +64,10 @@ class OrderlyIntegrationTest {
 
     @Test
     void exposesHealthAndContractCatalog() throws Exception {
-        assertThat(catalog.modules()).hasSize(3);
+        assertThat(catalog.businessModules()).hasSize(3);
+        assertThat(catalog.systemModules())
+                .extracting(module -> module.moduleId())
+                .containsExactly("module_control");
         assertThat(catalog.modules().stream()
                 .flatMap(module -> module.actions().stream()).toList()).hasSize(7);
 
@@ -72,6 +75,16 @@ class OrderlyIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"))
                 .andExpect(jsonPath("$.planner").value("LOCAL_RULES"));
+        mockMvc.perform(get("/api/modules"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$[0].enabled").value(true));
+        mockMvc.perform(get("/api/system-modules"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].moduleId").value("module_control"))
+                .andExpect(jsonPath("$[0].system.role").value("MODULE_CONTROL"))
+                .andExpect(jsonPath("$[0].enabled").value(true));
         mockMvc.perform(get("/api/themes"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].id").value("paper"))

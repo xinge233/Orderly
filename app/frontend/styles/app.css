@@ -1770,13 +1770,6 @@ body.is-navigation-dragging * {
     margin-top: var(--space-3);
 }
 
-.settings-fields--modules {
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    max-height: min(48vh, 420px);
-    padding-right: var(--space-1);
-    overflow-y: auto;
-}
-
 .empty-state--nav {
     margin: var(--space-3) var(--space-2) 0;
     font-size: 0.72rem;
@@ -2105,8 +2098,7 @@ body.is-navigation-dragging * {
     .surface-grid,
     .plan-meta-grid,
     .summary-stats,
-    .theme-grid,
-    .settings-fields--modules {
+    .theme-grid {
         grid-template-columns: 1fr;
     }
 
@@ -2161,6 +2153,12 @@ body.is-navigation-dragging * {
     }
 
     .command-intro small {
+        display: none;
+    }
+
+    .command-dock:not(.is-expanded) .command-form,
+    .command-dock:not(.is-expanded) .command-examples,
+    .command-dock:not(.is-expanded) .dock-footnote {
         display: none;
     }
 

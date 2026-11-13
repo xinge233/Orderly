@@ -33,10 +33,10 @@ export class OrderlyApi {
      * 请求 JSON API。
      *
      * @param {string} path 路径
-     * @param {{method?: string, body?: unknown, signal?: AbortSignal}} options 选项
+     * @param {{method?: string, body?: unknown, signal?: AbortSignal, headers?: Record<string, string>}} options 选项
      * @returns {Promise<unknown>} 响应
      */
-    async request(path, { method = "GET", body, signal } = {}) {
+    async request(path, { method = "GET", body, signal, headers = {} } = {}) {
         let response;
         try {
             response = await this.#fetch(`${this.#baseUrl}${path}`, {
@@ -44,6 +44,7 @@ export class OrderlyApi {
                 signal,
                 headers: {
                     Accept: "application/json",
+                    ...headers,
                     ...(body === undefined ? {} : { "Content-Type": "application/json" })
                 },
                 ...(body === undefined ? {} : { body: JSON.stringify(body) })
@@ -85,6 +86,71 @@ export class OrderlyApi {
 
     getModules(options) {
         return this.request("/api/modules", options);
+    }
+
+    getSystemModules(options) {
+        return this.request("/api/system-modules", options);
+    }
+
+    getModulePreferences(options) {
+        return this.request("/api/system/module-preferences", options);
+    }
+
+    setModuleEnabled(moduleId, enabled, options = {}) {
+        return this.request(`/api/modules/${encodeURIComponent(moduleId)}/activation`, {
+            ...options,
+            method: "PATCH",
+            body: { enabled }
+        });
+    }
+
+    saveSidebarModuleOrder(moduleIds, options = {}) {
+        return this.request("/api/system/module-preferences/sidebar-order", {
+            ...options,
+            method: "PUT",
+            body: { moduleIds }
+        });
+    }
+
+    saveManagementModuleOrder(moduleIds, options = {}) {
+        return this.request("/api/system/module-preferences/management-order", {
+            ...options,
+            method: "PUT",
+            body: { moduleIds }
+        });
+    }
+
+    saveModuleSettings(moduleId, values, options = {}) {
+        return this.request(`/api/modules/${encodeURIComponent(moduleId)}/settings`, {
+            ...options,
+            method: "PUT",
+            body: values
+        });
+    }
+
+    resetModuleSettings(moduleId, options = {}) {
+        return this.request(`/api/modules/${encodeURIComponent(moduleId)}/settings/reset`, {
+            ...options,
+            method: "POST"
+        });
+    }
+
+    refreshSystemModules(options = {}) {
+        return this.request("/api/system/modules/refresh", {
+            ...options,
+            method: "POST"
+        });
+    }
+
+    openModuleFolder(options = {}) {
+        return this.request("/api/system/module-folder/open", {
+            ...options,
+            method: "POST",
+            headers: {
+                ...options.headers,
+                "X-Orderly-Action": "open-module-folder"
+            }
+        });
     }
 
     getThemes(options) {

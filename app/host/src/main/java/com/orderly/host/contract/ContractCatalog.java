@@ -16,8 +16,10 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -48,14 +50,17 @@ public class ContractCatalog implements AutoCloseable {
     );
     private static final long MAX_UI_ASSET_BYTES = 2L * 1024L * 1024L;
 
-    private final List<ModuleContract> modules;
-    private final Map<String, ModuleContract> modulesById;
-    private final Map<String, ActionContract> actionsById;
-    private final List<PlannerRuleContract> plannerRules;
-    private final Map<String, OrderlyModule> executors;
-    private final Map<String, Path> moduleJars;
-    private final URLClassLoader moduleClassLoader;
+    private volatile List<ModuleContract> modules;
+    private volatile Map<String, ModuleContract> modulesById;
+    private volatile Map<String, ActionContract> actionsById;
+    private volatile List<PlannerRuleContract> plannerRules;
+    private volatile Map<String, OrderlyModule> executors;
+    private volatile Map<String, Path> moduleJars;
+    private volatile Map<String, ModuleSettingsDefinition> settingsByModule;
+    private volatile URLClassLoader moduleClassLoader;
     private final Path moduleDirectory;
+    private final List<URLClassLoader> moduleClassLoaders;
+    private long generation;
 
     public ContractCatalog(
             ObjectMapper objectMapper,
@@ -69,8 +74,9 @@ public class ContractCatalog implements AutoCloseable {
         Map<String, QueryContract> queries = new LinkedHashMap<>();
         Map<String, PlannerRuleContract> rules = new LinkedHashMap<>();
         Map<String, Path> jarsByModule = new LinkedHashMap<>();
+        Map<String, ModuleSettingsDefinition> settings = new LinkedHashMap<>();
         for (Path jar : jars) {
-            loadContracts(jar, objectMapper, loaded, actions, queries, rules, jarsByModule);
+            loadContracts(jar, objectMapper, loaded, actions, queries, rules, jarsByModule, settings);
         }
 
         URLClassLoader candidate = null;
@@ -104,6 +110,10 @@ public class ContractCatalog implements AutoCloseable {
         }
 
         this.moduleClassLoader = candidate;
+        this.moduleClassLoaders = new ArrayList<>();
+        if (candidate != null) {
+            this.moduleClassLoaders.add(candidate);
+        }
         this.modules = loaded.values().stream()
                 .sorted(Comparator.comparingInt(ModuleContract::order)
                         .thenComparing(ModuleContract::moduleId))
@@ -113,10 +123,65 @@ public class ContractCatalog implements AutoCloseable {
         this.plannerRules = List.copyOf(rules.values());
         this.executors = Map.copyOf(loadedExecutors);
         this.moduleJars = Map.copyOf(jarsByModule);
+        this.settingsByModule = Map.copyOf(settings);
     }
 
     public List<ModuleContract> modules() {
         return modules;
+    }
+
+    public List<ModuleContract> businessModules() {
+        return modules.stream().filter(module -> module.system() == null).toList();
+    }
+
+    public List<ModuleContract> systemModules() {
+        return modules.stream().filter(module -> module.system() != null).toList();
+    }
+
+    public boolean isSystemModule(String moduleId) {
+        ModuleContract module = modulesById.get(moduleId);
+        return module != null && module.system() != null;
+    }
+
+    public ModuleSettingsDefinition settingsFor(String moduleId) {
+        return settingsByModule.getOrDefault(moduleId, ModuleSettingsDefinition.empty());
+    }
+
+    public Optional<ModuleArtifact> moduleArtifact(String moduleId) {
+        Path jar = moduleJars.get(moduleId);
+        if (jar == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(new ModuleArtifact(
+                    moduleId,
+                    jar,
+                    jar.getFileName().toString(),
+                    Files.size(jar),
+                    Files.getLastModifiedTime(jar).toMillis()
+            ));
+        } catch (IOException exception) {
+            throw new IllegalStateException("读取模块 JAR 摘要失败：" + jar, exception);
+        }
+    }
+
+    /** 启动阶段必须恰好存在一个受保护的控制模块。 */
+    public synchronized void validateSystemModules() {
+        List<ModuleContract> system = systemModules();
+        if (system.size() != 1) {
+            throw new IllegalStateException(
+                    "宿主必须且只能加载一个 MODULE_CONTROL 系统模块，当前数量：" + system.size()
+            );
+        }
+        ModuleContract control = system.getFirst();
+        if (!"module_control".equals(control.moduleId())
+                || control.system() == null
+                || !ModuleSystemMetadata.CONTROL_ROLE.equals(control.system().role())
+                || !control.system().protectedModule()) {
+            throw new IllegalStateException(
+                    "系统模块必须是受保护的 module_control/MODULE_CONTROL"
+            );
+        }
     }
 
     public Path moduleDirectory() {
@@ -138,10 +203,154 @@ public class ContractCatalog implements AutoCloseable {
     }
 
     /** 由宿主启动阶段统一调用各模块的幂等初始化。 */
-    public void initializeModules(ModuleRuntime runtime) {
+    public synchronized void initializeModules(ModuleRuntime runtime) {
         for (ModuleContract module : modules) {
             requireExecutor(module.moduleId()).initialize(runtime);
         }
+    }
+
+    /**
+     * 预检一个新业务模块，不修改当前目录快照。失败时调用方无需回滚。
+     */
+    public synchronized PreparedModule prepareModule(
+            Path jar,
+            ModuleRuntime runtime,
+            ObjectMapper objectMapper
+    ) {
+        Path candidateJar = requireRegularJar(jar.toAbsolutePath().normalize());
+        Map<String, ModuleContract> loaded = new LinkedHashMap<>(modulesById);
+        Map<String, ActionContract> actions = new LinkedHashMap<>(actionsById);
+        Map<String, QueryContract> queries = new LinkedHashMap<>();
+        Map<String, PlannerRuleContract> rules = new LinkedHashMap<>();
+        Map<String, Path> jarsByModule = new LinkedHashMap<>(moduleJars);
+        Map<String, ModuleSettingsDefinition> settings = new LinkedHashMap<>(settingsByModule);
+        modules.forEach(module -> module.queries().forEach(query -> queries.put(query.id(), query)));
+        modules.forEach(module -> module.plannerRules().forEach(rule -> rules.put(rule.id(), rule)));
+
+        Set<String> existingIds = new LinkedHashSet<>(modulesById.keySet());
+        loadContracts(
+                candidateJar,
+                objectMapper,
+                loaded,
+                actions,
+                queries,
+                rules,
+                jarsByModule,
+                settings
+        );
+        List<ModuleContract> addedContracts = loaded.values().stream()
+                .filter(module -> !existingIds.contains(module.moduleId()))
+                .toList();
+        if (addedContracts.size() != 1) {
+            throw new IllegalStateException(
+                    "刷新 JAR 必须且只能声明一个新的模块契约：" + candidateJar.getFileName()
+            );
+        }
+        ModuleContract addedModule = addedContracts.getFirst();
+        if (addedModule.system() != null) {
+            throw new IllegalStateException(
+                    "刷新只允许追加业务模块，拒绝系统模块候选：" + addedModule.moduleId()
+            );
+        }
+
+        URLClassLoader candidateLoader = null;
+        Map<String, OrderlyModule> loadedExecutors = new LinkedHashMap<>(executors);
+        try {
+            candidateLoader = new URLClassLoader(
+                    new URL[]{toUrl(candidateJar)},
+                    moduleClassLoader == null ? OrderlyModule.class.getClassLoader() : moduleClassLoader
+            );
+            Set<String> addedExecutorIds = new LinkedHashSet<>();
+            for (OrderlyModule module : ServiceLoader.load(OrderlyModule.class, candidateLoader)) {
+                String moduleId = module.moduleId();
+                if (moduleId == null || moduleId.isBlank()) {
+                    throw new IllegalStateException("模块执行器未声明 moduleId");
+                }
+                if (existingIds.contains(moduleId)) {
+                    continue;
+                }
+                if (loadedExecutors.putIfAbsent(moduleId, module) != null
+                        || !addedExecutorIds.add(moduleId)) {
+                    throw new IllegalStateException("检测到重复模块执行器：" + moduleId);
+                }
+            }
+            Set<String> addedContractIds = addedContracts.stream()
+                    .map(ModuleContract::moduleId)
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            if (!addedContractIds.equals(addedExecutorIds)) {
+                throw new IllegalStateException(
+                        "新增模块契约与执行器不一致，契约=" + addedContractIds + "，执行器=" + addedExecutorIds
+                );
+            }
+            for (ModuleContract module : addedContracts) {
+                loadedExecutors.get(module.moduleId()).initialize(runtime);
+            }
+        } catch (RuntimeException | Error exception) {
+            closeQuietly(candidateLoader);
+            throw exception instanceof IllegalStateException illegal
+                    ? illegal
+                    : new IllegalStateException("加载新增模块执行器失败", exception);
+        }
+
+        return new PreparedModule(
+                this,
+                addedModule,
+                candidateLoader,
+                loaded,
+                actions,
+                rules,
+                loadedExecutors,
+                jarsByModule,
+                settings,
+                generation
+        );
+    }
+
+    private synchronized void commitPrepared(PreparedModule prepared) {
+        if (prepared.owner != this) {
+            throw new IllegalArgumentException("模块预检结果不属于当前宿主");
+        }
+        if (prepared.closed || prepared.committed || prepared.rolledBack) {
+            throw new IllegalStateException("模块预检结果状态不允许提交");
+        }
+        if (prepared.baselineGeneration != generation) {
+            throw new IllegalStateException("模块目录已变化，拒绝提交过期预检结果");
+        }
+
+        moduleClassLoader = prepared.candidateLoader;
+        moduleClassLoaders.add(prepared.candidateLoader);
+        modules = prepared.modules;
+        modulesById = prepared.modulesById;
+        actionsById = prepared.actionsById;
+        plannerRules = prepared.plannerRules;
+        executors = prepared.executors;
+        moduleJars = prepared.moduleJars;
+        settingsByModule = prepared.settingsByModule;
+        generation++;
+        prepared.committed = true;
+    }
+
+    private synchronized void rollbackPrepared(PreparedModule prepared) {
+        if (prepared.owner != this || !prepared.committed) {
+            throw new IllegalStateException("模块预检结果尚未提交，不能回滚");
+        }
+        if (prepared.closed || prepared.rolledBack || prepared.baselineGeneration + 1 != generation) {
+            throw new IllegalStateException("模块目录已变化，拒绝回滚过期提交");
+        }
+
+        moduleClassLoader = prepared.previousClassLoader;
+        modules = prepared.previousModules;
+        modulesById = prepared.previousModulesById;
+        actionsById = prepared.previousActions;
+        plannerRules = prepared.previousPlannerRules;
+        executors = prepared.previousExecutors;
+        moduleJars = prepared.previousModuleJars;
+        settingsByModule = prepared.previousSettings;
+        moduleClassLoaders.remove(prepared.candidateLoader);
+        closeQuietly(prepared.candidateLoader);
+        generation--;
+        prepared.rolledBack = true;
+        prepared.closed = true;
     }
 
     /**
@@ -180,6 +389,26 @@ public class ContractCatalog implements AutoCloseable {
         }
     }
 
+    private ModuleSettingsDefinition readSettings(
+            JarFile jar,
+            String moduleId,
+            ObjectMapper objectMapper
+    ) {
+        JarEntry manifestEntry = jar.getJarEntry(UI_PREFIX + "module.json");
+        if (manifestEntry == null || manifestEntry.isDirectory()) {
+            throw new IllegalStateException("模块缺少 UI 清单：" + moduleId);
+        }
+        if (manifestEntry.getSize() > MAX_UI_ASSET_BYTES) {
+            throw new IllegalStateException("模块 UI 清单超过大小上限：" + moduleId);
+        }
+        try (var stream = jar.getInputStream(manifestEntry)) {
+            JsonNode manifest = objectMapper.readTree(stream);
+            return ModuleSettingsDefinition.parse(manifest.path("settings"), objectMapper);
+        } catch (IOException exception) {
+            throw new IllegalStateException("读取模块 UI 设置声明失败：" + moduleId, exception);
+        }
+    }
+
     public Optional<ActionContract> findAction(String actionId) {
         return Optional.ofNullable(actionsById.get(actionId));
     }
@@ -210,8 +439,22 @@ public class ContractCatalog implements AutoCloseable {
     @Override
     @PreDestroy
     public void close() throws IOException {
-        if (moduleClassLoader != null) {
-            moduleClassLoader.close();
+        List<URLClassLoader> loaders = new ArrayList<>(moduleClassLoaders);
+        Collections.reverse(loaders);
+        IOException failure = null;
+        for (URLClassLoader loader : loaders) {
+            try {
+                loader.close();
+            } catch (IOException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
         }
     }
 
@@ -247,7 +490,8 @@ public class ContractCatalog implements AutoCloseable {
             Map<String, ActionContract> actions,
             Map<String, QueryContract> queries,
             Map<String, PlannerRuleContract> plannerRules,
-            Map<String, Path> jarsByModule
+            Map<String, Path> jarsByModule,
+            Map<String, ModuleSettingsDefinition> settingsByModule
     ) {
         try (JarFile jar = new JarFile(jarPath.toFile(), false)) {
             List<JarEntry> contractEntries = jar.stream()
@@ -265,6 +509,7 @@ public class ContractCatalog implements AutoCloseable {
                 if (loaded.putIfAbsent(module.moduleId(), module) != null) {
                     throw new IllegalStateException("检测到重复模块契约：" + module.moduleId());
                 }
+                settingsByModule.put(module.moduleId(), readSettings(jar, module.moduleId(), objectMapper));
                 jarsByModule.put(module.moduleId(), jarPath);
                 for (ActionContract action : module.actions()) {
                     if (actions.putIfAbsent(action.id(), action) != null) {
@@ -343,14 +588,37 @@ public class ContractCatalog implements AutoCloseable {
         for (JsonNode node : rawPlannerRules) {
             plannerRules.add(parsePlannerRule(node));
         }
+        ModuleSystemMetadata system = parseSystemMetadata(root.path("system"));
         return new ModuleContract(
                 root.path("moduleId").asText(),
                 root.path("title").asText(),
                 root.path("description").asText(),
                 root.path("order").asInt(),
+                system,
                 actions,
                 queries,
                 plannerRules
+        );
+    }
+
+    private ModuleSystemMetadata parseSystemMetadata(JsonNode rawSystem) {
+        if (rawSystem.isMissingNode() || rawSystem.isNull()) {
+            return null;
+        }
+        if (!rawSystem.isObject()) {
+            throw new IllegalStateException("模块 system 必须是对象");
+        }
+        String role = rawSystem.path("role").asText("");
+        if (!ModuleSystemMetadata.CONTROL_ROLE.equals(role)) {
+            throw new IllegalStateException("不支持的系统模块角色：" + role);
+        }
+        JsonNode protectedNode = rawSystem.get("protected");
+        if (protectedNode == null || !protectedNode.isBoolean() || !protectedNode.asBoolean()) {
+            throw new IllegalStateException("模块 system.protected 必须为 true");
+        }
+        return new ModuleSystemMetadata(
+                role,
+                true
         );
     }
 
@@ -543,5 +811,100 @@ public class ContractCatalog implements AutoCloseable {
         } catch (IOException ignored) {
             // 初始化失败时保留原始异常，关闭失败不覆盖根因。
         }
+    }
+
+    /** 可提交或回滚的单模块追加预检结果。 */
+    public static final class PreparedModule implements AutoCloseable {
+        private final ContractCatalog owner;
+        private final ModuleContract module;
+        private final URLClassLoader candidateLoader;
+        private final List<ModuleContract> modules;
+        private final Map<String, ModuleContract> modulesById;
+        private final Map<String, ActionContract> actionsById;
+        private final List<PlannerRuleContract> plannerRules;
+        private final Map<String, OrderlyModule> executors;
+        private final Map<String, Path> moduleJars;
+        private final Map<String, ModuleSettingsDefinition> settingsByModule;
+        private final long baselineGeneration;
+
+        private final URLClassLoader previousClassLoader;
+        private final List<ModuleContract> previousModules;
+        private final Map<String, ModuleContract> previousModulesById;
+        private final Map<String, ActionContract> previousActions;
+        private final List<PlannerRuleContract> previousPlannerRules;
+        private final Map<String, OrderlyModule> previousExecutors;
+        private final Map<String, Path> previousModuleJars;
+        private final Map<String, ModuleSettingsDefinition> previousSettings;
+
+        private boolean committed;
+        private boolean rolledBack;
+        private boolean closed;
+
+        private PreparedModule(
+                ContractCatalog owner,
+                ModuleContract module,
+                URLClassLoader candidateLoader,
+                Map<String, ModuleContract> loaded,
+                Map<String, ActionContract> actions,
+                Map<String, PlannerRuleContract> rules,
+                Map<String, OrderlyModule> executors,
+                Map<String, Path> moduleJars,
+                Map<String, ModuleSettingsDefinition> settings,
+                long baselineGeneration
+        ) {
+            this.owner = owner;
+            this.module = module;
+            this.candidateLoader = candidateLoader;
+            this.modules = loaded.values().stream()
+                    .sorted(Comparator.comparingInt(ModuleContract::order)
+                            .thenComparing(ModuleContract::moduleId))
+                    .toList();
+            this.modulesById = Map.copyOf(loaded);
+            this.actionsById = Map.copyOf(actions);
+            this.plannerRules = List.copyOf(rules.values());
+            this.executors = Map.copyOf(executors);
+            this.moduleJars = Map.copyOf(moduleJars);
+            this.settingsByModule = Map.copyOf(settings);
+            this.baselineGeneration = baselineGeneration;
+
+            this.previousClassLoader = owner.moduleClassLoader;
+            this.previousModules = owner.modules;
+            this.previousModulesById = owner.modulesById;
+            this.previousActions = owner.actionsById;
+            this.previousPlannerRules = owner.plannerRules;
+            this.previousExecutors = owner.executors;
+            this.previousModuleJars = owner.moduleJars;
+            this.previousSettings = owner.settingsByModule;
+        }
+
+        public ModuleContract module() {
+            return module;
+        }
+
+        public void commit() {
+            owner.commitPrepared(this);
+        }
+
+        public void rollback() {
+            owner.rollbackPrepared(this);
+        }
+
+        @Override
+        public void close() {
+            if (!committed && !closed) {
+                closed = true;
+                owner.closeQuietly(candidateLoader);
+            }
+        }
+    }
+
+    /** 当前加载模块对应的 JAR 摘要，供显式刷新判断是否发生替换。 */
+    public record ModuleArtifact(
+            String moduleId,
+            Path path,
+            String fileName,
+            long size,
+            long lastModifiedMillis
+    ) {
     }
 }

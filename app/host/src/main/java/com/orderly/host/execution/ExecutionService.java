@@ -4,6 +4,8 @@ import com.orderly.host.api.ApiException;
 import com.orderly.host.contract.ActionContract;
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.event.ExecutionJournal;
+import com.orderly.host.modulecontrol.ModuleControlCoordinator;
+import com.orderly.host.modulecontrol.ModuleControlService;
 import com.orderly.host.plan.ExecutionPlan;
 import com.orderly.host.plan.ExecutionStep;
 import com.orderly.host.plan.PlanService;
@@ -36,23 +38,28 @@ public class ExecutionService {
     private final ContractCatalog catalog;
     private final WorkspaceRuntime runtime;
     private final ExecutionJournal journal;
-    private final Object executionLock = new Object();
+    private final ModuleControlService moduleControl;
+    private final ModuleControlCoordinator coordinator;
 
     public ExecutionService(
             PlanService plans,
             ContractCatalog catalog,
             WorkspaceRuntime runtime,
-            ExecutionJournal journal
+            ExecutionJournal journal,
+            ModuleControlService moduleControl,
+            ModuleControlCoordinator coordinator
     ) {
         this.plans = plans;
         this.catalog = catalog;
         this.runtime = runtime;
         this.journal = journal;
+        this.moduleControl = moduleControl;
+        this.coordinator = coordinator;
     }
 
     public ExecutionRunResult confirm(String planId, boolean confirmed, String confirmation) {
         ExecutionPlan plan = plans.require(planId);
-        synchronized (executionLock) {
+        try (var permit = coordinator.beginExecution()) {
             if (plan.status() != PlanStatus.PREVIEW) {
                 throw new ApiException(
                         HttpStatus.CONFLICT,
@@ -65,6 +72,7 @@ public class ExecutionService {
                         "澄清问题不能执行；请重新描述目标");
             }
             validateConfirmation(plan, confirmed, confirmation);
+            validateEnabledModules(plan);
 
             plan.status(PlanStatus.RUNNING);
             journal.append("PLAN", plan.id(), null, null, null, "RUNNING",
@@ -101,7 +109,7 @@ public class ExecutionService {
 
     public ExecutionRunResult rollback(String planId) {
         ExecutionPlan plan = plans.require(planId);
-        synchronized (executionLock) {
+        return coordinator.read(() -> {
             if (plan.status() != PlanStatus.COMPLETED && plan.status() != PlanStatus.PARTIALLY_ROLLED_BACK) {
                 throw new ApiException(
                         HttpStatus.CONFLICT,
@@ -122,7 +130,7 @@ public class ExecutionService {
                     success ? "整单已回滚" : "部分步骤回滚失败",
                     PlanView.from(plan)
             );
-        }
+        });
     }
 
     private void validateConfirmation(ExecutionPlan plan, boolean confirmed, String phrase) {
@@ -148,6 +156,13 @@ public class ExecutionService {
     }
 
     private void executeStep(ExecutionPlan plan, ExecutionStep step) {
+        if (!moduleControl.isEnabled(step.moduleId()) || catalog.isSystemModule(step.moduleId())) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "MODULE_DISABLED",
+                    "模块已停用：" + step.moduleId()
+            );
+        }
         ActionContract action = catalog.requireAction(step.actionId());
         OrderlyModule module = catalog.requireExecutor(step.moduleId());
         ModuleInvocation invocation = new ModuleInvocation(
@@ -226,5 +241,17 @@ public class ExecutionService {
     private String safeMessage(RuntimeException exception) {
         String message = exception.getMessage();
         return message == null || message.isBlank() ? "执行失败" : message;
+    }
+
+    private void validateEnabledModules(ExecutionPlan plan) {
+        for (ExecutionStep step : plan.steps()) {
+            if (catalog.isSystemModule(step.moduleId()) || !moduleControl.isEnabled(step.moduleId())) {
+                throw new ApiException(
+                        HttpStatus.CONFLICT,
+                        "MODULE_DISABLED",
+                        "计划包含已停用模块：" + step.moduleId()
+                );
+            }
+        }
     }
 }

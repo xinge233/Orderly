@@ -14,6 +14,18 @@
     "countKey": "count",
     "unit": "个顶层条目"
   },
+  "settings": [
+    {
+      "key": "defaultView",
+      "title": "默认视图",
+      "type": "select",
+      "default": "workspace",
+      "options": [
+        { "value": "workspace", "label": "工作区" },
+        { "value": "trash", "label": "回收站" }
+      ]
+    }
+  ],
   "examples": [
     { "label": "创建归档目录", "text": "创建目录 归档" },
     { "label": "移动示例笔记", "text": "移动 收件箱/示例笔记.txt 到 待整理/示例笔记.txt" }

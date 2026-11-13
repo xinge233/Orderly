@@ -86,6 +86,56 @@ test("API client reads dynamic module and theme catalogs", async () => {
     assert.deepEqual(urls, ["/api/modules", "/api/themes", "/api/themes/theme%2Fa"]);
 });
 
+test("API client uses the module governance endpoints and action header", async () => {
+    const requests = [];
+    const api = new OrderlyApi({
+        fetchImpl: async (url, options) => {
+            requests.push({ url, options });
+            return new Response("{}", { status: 200 });
+        }
+    });
+
+    await api.getSystemModules();
+    await api.getModulePreferences();
+    await api.setModuleEnabled("module/todo", false);
+    await api.saveSidebarModuleOrder(["module_todo", "module_control"]);
+    await api.saveManagementModuleOrder(["module_todo"]);
+    await api.saveModuleSettings("module/todo", { compact: true });
+    await api.resetModuleSettings("module/todo");
+    await api.refreshSystemModules();
+    await api.openModuleFolder();
+
+    assert.deepEqual(requests.map(({ url }) => url), [
+        "/api/system-modules",
+        "/api/system/module-preferences",
+        "/api/modules/module%2Ftodo/activation",
+        "/api/system/module-preferences/sidebar-order",
+        "/api/system/module-preferences/management-order",
+        "/api/modules/module%2Ftodo/settings",
+        "/api/modules/module%2Ftodo/settings/reset",
+        "/api/system/modules/refresh",
+        "/api/system/module-folder/open"
+    ]);
+    assert.deepEqual(
+        requests.slice(2, 7).map(({ options }) => [
+            options.method,
+            options.body ? JSON.parse(options.body) : null
+        ]),
+        [
+            ["PATCH", { enabled: false }],
+            ["PUT", { moduleIds: ["module_todo", "module_control"] }],
+            ["PUT", { moduleIds: ["module_todo"] }],
+            ["PUT", { compact: true }],
+            ["POST", null]
+        ]
+    );
+    assert.equal(requests[7].options.method, "POST");
+    assert.equal(
+        requests[8].options.headers["X-Orderly-Action"],
+        "open-module-folder"
+    );
+});
+
 test("API client addresses module UI and generic queries", async () => {
     const urls = [];
     const api = new OrderlyApi({

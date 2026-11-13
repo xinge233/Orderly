@@ -409,6 +409,17 @@ function Assert-ModuleIds([string[]]$Expected) {
     }
 }
 
+function Assert-SystemModule {
+    $systemModules = @(Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/system-modules" -TimeoutSec 5 |
+        ForEach-Object { $_ })
+    $control = @($systemModules | Where-Object { $_.moduleId -eq "module_control" })
+    if ($control.Count -ne 1 -or $control[0].enabled -ne $true -or
+            $control[0].system.role -ne "MODULE_CONTROL") {
+        throw "系统模块目录未唯一返回启用状态的 module_control。"
+    }
+    Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/module_control/ui/module.json" 200
+}
+
 function Assert-HttpStatus([string]$Uri, [int]$ExpectedStatus) {
     $actual = $null
     try {
@@ -450,7 +461,12 @@ try {
     $javaExe = Assert-Java21
     New-Item -ItemType Directory -Path $backupRoot | Out-Null
     New-Item -ItemType Directory -Path $dataRoot | Out-Null
-    $baselineModules = @(Get-ChildItem -LiteralPath $moduleRoot -Directory -Filter "module_*" | Sort-Object Name)
+    $allBaselineModules = @(Get-ChildItem -LiteralPath $moduleRoot -Directory -Filter "module_*" | Sort-Object Name)
+    $controlModules = @($allBaselineModules | Where-Object { $_.Name -eq "module_control" })
+    if ($controlModules.Count -ne 1) {
+        throw "模块化验收要求唯一 Module/module_control 系统模块。"
+    }
+    $baselineModules = @($allBaselineModules | Where-Object { $_.Name -ne "module_control" })
     if ($baselineModules.Count -eq 0) { throw "模块化验收至少需要一个模块源目录。" }
     $baselineIds = @($baselineModules | ForEach-Object { $_.Name })
 
@@ -458,6 +474,7 @@ try {
     Invoke-Build
     Start-Orderly $javaExe
     Assert-ModuleIds -Expected $baselineIds
+    Assert-SystemModule
     Assert-ModuleSurface -ExpectedIds $baselineIds
     $baselineResponse = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/modules" -TimeoutSec 5
     $baselineCatalog = @($baselineResponse | ForEach-Object { $_ })
@@ -486,11 +503,14 @@ try {
     Stop-Orderly
 
     Write-Host "[3/6] 移出全部模块"
-    $left = @(Get-ChildItem -LiteralPath $moduleRoot -Directory -Filter "module_*" | Sort-Object Name)
+    $left = @(Get-ChildItem -LiteralPath $moduleRoot -Directory -Filter "module_*" |
+        Where-Object { $_.Name -ne "module_control" } |
+        Sort-Object Name)
     foreach ($module in $left) { Move-ModuleToBackup $module }
     Invoke-Build
     Start-Orderly $javaExe
     Assert-ModuleIds -Expected @()
+    Assert-SystemModule
     $baselineQuery = @($baselineCatalog[0].queries)[0]
     Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/$($baselineCatalog[0].moduleId)/query/$([uri]::EscapeDataString([string]$baselineQuery.id))" 404
     Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/$($baselineCatalog[0].moduleId)/ui/module.json" 404
@@ -503,6 +523,7 @@ try {
     Invoke-Build
     Start-Orderly $javaExe
     Assert-ModuleIds -Expected $baselineIds
+    Assert-SystemModule
     Assert-ModuleSurface -ExpectedIds $baselineIds
     Stop-Orderly
 
@@ -521,6 +542,7 @@ try {
     Start-Orderly $javaExe
     $idsWithAcceptance = @($baselineIds + $script:generatedModule.ModuleId)
     Assert-ModuleIds -Expected $idsWithAcceptance
+    Assert-SystemModule
     $moduleCatalog = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/modules" -TimeoutSec 5
     $acceptanceEntry = @($moduleCatalog | Where-Object { $_.moduleId -eq $script:generatedModule.ModuleId })
     if ($acceptanceEntry.Count -ne 1) {

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "view": {
+    "id": "settings-demo",
+    "caption": "设置示例",
+    "icon": "settings"
+  },
+  "examples": [],
+  "settings": {
+    "fields": [
+      {
+        "key": "sortBy",
+        "type": "select",
+        "label": "排序方式",
+        "default": "not-an-option",
+        "options": [
+          { "value": "name", "label": "名称" },
+          { "value": "modified", "label": "修改时间" }
+        ]
+      }
+    ]
+  },
+  "script": "module.js",
+  "style": "module.css"
+}
