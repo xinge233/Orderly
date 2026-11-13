@@ -17,7 +17,12 @@ test("desktop shell has no topbar and uses the compact sidebar width", async () 
     assert.doesNotMatch(html, /id="breadcrumb"/);
     assert.doesNotMatch(`${tokens}\n${appCss}`, /--topbar-height/);
     assert.doesNotMatch(appCss, /\.topbar\b|\.breadcrumb\b/);
-    assert.match(tokens, /--sidebar-width:\s*240px;/);
+    assert.match(tokens, /--sidebar-width:\s*64px;/);
+    assert.match(tokens, /--sidebar-expanded-width:\s*208px;/);
+    assert.match(
+        appCss,
+        /\.app-shell\s*\{[\s\S]*?grid-template-columns:\s*var\(--sidebar-width\) minmax\(0,\s*1fr\);/
+    );
     assert.match(appCss, /\.main-content\s*\{[\s\S]*?min-height:\s*100vh;/);
 });
 

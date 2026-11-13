@@ -81,6 +81,10 @@ test("each directory theme owns layered tokens and motion CSS", async () => {
         assert.match(motion, /@keyframes orderly-target-pulse/);
         assert.match(motion, /@keyframes orderly-spin/);
         assert.match(motion, /scroll-behavior:\s*smooth/);
+        assert.match(
+            motion,
+            /\[data-motion-scope="sidebar"\]\s*\{[\s\S]*?transition:[\s\S]*?width var\(--duration-normal\) var\(--ease-out\),[\s\S]*?padding var\(--duration-normal\) var\(--ease-out\),[\s\S]*?transform var\(--duration-normal\) var\(--ease-out\);/
+        );
         assert.ok(manifest.assets.every((asset) => !asset.endsWith(".svg")));
         assert.doesNotMatch(`${tokens}\n${motion}`, /module-view|data-module|module_fs|module_todo|module_calendar/);
         assert.doesNotMatch(`${tokens}\n${motion}`, /--theme-texture/);

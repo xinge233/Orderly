@@ -48,6 +48,8 @@ themes/
 - 主题 CSS 必须写入 `@layer orderly.theme { ... }`。
 - 主题不得携带 JavaScript，也不得选择具体业务模块内部 DOM。
 - 框架公开挂点只包括 `app-shell`、`sidebar`、`main`、`overview`、`module-card`、`settings-dialog`、`command-panel` 和 `feedback`。
+- 桌面 `sidebar` 默认是 64px 图标轨道，展开后以 208px 覆盖层显示；主内容网格始终只预留 64px。主题只负责该挂点公开状态的视觉与动效，不得改变主内容重排规则。
+- `sidebar` 的宽度与内边距过渡属于主题 `motion.css`；基础 `app.css` 不声明过渡。`attention` 是由计划目标提示短暂覆盖的动效状态，结束后必须回到真实的 `expanded` 或 `collapsed` 状态。
 - 根代码保留 `orderly.safety` 层，优先关闭 `motion: none` 与 `prefers-reduced-motion` 下的动画、过渡和滚动行为。
 
 主题 CSS 可以直接引用已登记的相对资源。由于样式表通过 `/api/themes/{id}/assets/tokens.css` 提供，`tokens.css` 内的 `url("assets/paper-grain.webp")` 会解析为 `/api/themes/{id}/assets/assets/paper-grain.webp`：

@@ -35,7 +35,8 @@
         --shadow-soft: none;
         --shadow-card: none;
         --grid-line: GrayText;
-        --sidebar-width: 240px;
+        --sidebar-width: 64px;
+        --sidebar-expanded-width: 208px;
         --mobile-toolbar-height: 54px;
         --content-max: 1380px;
         --space-1: 4px;

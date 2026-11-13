@@ -14,7 +14,7 @@
     <a class="skip-link" href="#main-content">跳到主要内容</a>
 
     <div class="app-shell" data-motion-scope="app-shell" data-motion-state="ready" data-motion-phase="active">
-        <aside class="sidebar" id="sidebar" aria-label="应用导航" data-motion-scope="sidebar" data-motion-state="expanded" data-motion-phase="active">
+        <aside class="sidebar" id="sidebar" aria-label="应用导航" data-motion-scope="sidebar" data-motion-state="collapsed" data-motion-phase="active">
             <header class="brand">
                 <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
                 <span class="brand-copy">
@@ -26,7 +26,7 @@
             <label class="search-box">
                 <span class="search-box__icon" data-icon="search" aria-hidden="true"></span>
                 <span class="sr-only">搜索功能</span>
-                <input id="nav-search" type="search" placeholder="搜索功能" autocomplete="off">
+                <input id="nav-search" type="search" placeholder="搜索功能" autocomplete="off" aria-label="搜索功能">
                 <kbd>/</kbd>
             </label>
 
@@ -36,14 +36,14 @@
             </div>
 
             <footer class="sidebar-footer">
-                <div class="sandbox-status">
+                <div class="sandbox-status" role="status" aria-live="polite" aria-label="正在连接本地服务，等待健康检查">
                     <span class="status-dot" id="health-dot" aria-hidden="true"></span>
                     <span>
                         <strong id="health-label">正在连接本地服务</strong>
                         <small id="health-detail">等待健康检查</small>
                     </span>
                 </div>
-                <button class="settings-trigger" id="open-settings" type="button">
+                <button class="settings-trigger" id="open-settings" type="button" aria-label="打开设置">
                     <span data-icon="settings" aria-hidden="true"></span>
                     <span><strong>设置</strong><small>外观、动效与系统</small></span>
                     <kbd>Ctrl ,</kbd>

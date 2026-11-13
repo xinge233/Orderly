@@ -106,6 +106,7 @@ a {
     top: 0;
     display: flex;
     flex-direction: column;
+    width: var(--sidebar-width);
     height: 100vh;
     padding: var(--space-6) var(--space-4) var(--space-4);
     border-right: 1px solid var(--color-line);
@@ -451,6 +452,269 @@ body.is-navigation-dragging * {
 .settings-trigger:hover {
     border-color: var(--color-line);
     background: var(--color-surface);
+}
+
+@media (min-width: 821px) {
+    .sidebar {
+        padding: var(--space-5) var(--space-3) var(--space-4);
+        overflow: hidden;
+    }
+
+    .sidebar.is-expanded {
+        width: var(--sidebar-expanded-width);
+        box-shadow: var(--shadow-soft);
+    }
+
+    .brand {
+        justify-content: center;
+        min-width: 0;
+        padding: 0 0 var(--space-6);
+    }
+
+    .brand-mark {
+        width: 40px;
+        height: 40px;
+        flex: 0 0 40px;
+    }
+
+    .brand-copy {
+        display: none;
+    }
+
+    .search-box {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1fr;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        margin: 0 0 var(--space-5);
+        padding: 0;
+        overflow: hidden;
+    }
+
+    .search-box input {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: text;
+    }
+
+    .search-box input::placeholder {
+        color: transparent;
+    }
+
+    .search-box kbd {
+        display: none;
+    }
+
+    .nav-groups {
+        justify-items: center;
+    }
+
+    .nav-group {
+        width: 100%;
+    }
+
+    .nav-group__label,
+    .nav-drag-handle,
+    .nav-copy {
+        display: none;
+    }
+
+    .nav-list {
+        justify-items: center;
+    }
+
+    .nav-item {
+        grid-template-columns: 34px;
+        gap: 0;
+        width: 40px;
+        min-height: 40px;
+        padding: 3px;
+        justify-self: center;
+    }
+
+    .nav-item--module {
+        grid-template-columns: 34px;
+        column-gap: 0;
+    }
+
+    .nav-icon {
+        width: 34px;
+        height: 34px;
+    }
+
+    .nav-count {
+        position: absolute;
+        top: -3px;
+        right: -3px;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
+        border: 2px solid var(--color-sidebar);
+        background: var(--color-accent);
+        color: var(--color-accent-contrast);
+        font-size: 0.58rem;
+        line-height: 12px;
+    }
+
+    .empty-state--nav {
+        display: none;
+    }
+
+    .sidebar-footer {
+        gap: var(--space-1);
+        justify-items: center;
+    }
+
+    .sandbox-status {
+        width: 40px;
+        height: 40px;
+        grid-template-columns: 1fr;
+        place-items: center;
+        padding: 0;
+        border-color: transparent;
+        background: transparent;
+    }
+
+    .sandbox-status > span:not(.status-dot),
+    .settings-trigger > span:not([data-icon]),
+    .settings-trigger kbd {
+        display: none;
+    }
+
+    .settings-trigger {
+        width: 40px;
+        height: 40px;
+        grid-template-columns: 1fr;
+        place-items: center;
+        gap: 0;
+        padding: 0;
+    }
+
+    .sidebar.is-expanded {
+        padding: var(--space-5) var(--space-3) var(--space-4);
+    }
+
+    .sidebar.is-expanded .brand {
+        justify-content: flex-start;
+        padding: 0 var(--space-2) var(--space-6);
+    }
+
+    .sidebar.is-expanded .brand-copy {
+        display: flex;
+    }
+
+    .sidebar.is-expanded .search-box {
+        width: auto;
+        height: auto;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        place-items: center;
+        margin: 0 var(--space-1) var(--space-5);
+        padding: 0 var(--space-3);
+        overflow: visible;
+    }
+
+    .sidebar.is-expanded .search-box input {
+        position: static;
+        width: 100%;
+        height: 42px;
+        opacity: 1;
+        cursor: auto;
+    }
+
+    .sidebar.is-expanded .search-box input::placeholder {
+        color: var(--color-text-faint);
+    }
+
+    .sidebar.is-expanded .search-box kbd {
+        display: inline-block;
+    }
+
+    .sidebar.is-expanded .nav-groups,
+    .sidebar.is-expanded .nav-list {
+        justify-items: stretch;
+    }
+
+    .sidebar.is-expanded .nav-group__label {
+        display: block;
+    }
+
+    .sidebar.is-expanded .nav-item {
+        grid-template-columns: 34px minmax(0, 1fr) auto;
+        gap: var(--space-3);
+        width: 100%;
+        min-height: 0;
+        padding: var(--space-2);
+        justify-self: stretch;
+    }
+
+    .sidebar.is-expanded .nav-item--module {
+        grid-template-columns: 10px 34px minmax(0, 1fr) max-content;
+        column-gap: var(--space-2);
+    }
+
+    .sidebar.is-expanded .nav-drag-handle {
+        display: grid;
+    }
+
+    .sidebar.is-expanded .nav-copy {
+        display: flex;
+    }
+
+    .sidebar.is-expanded .nav-count {
+        position: static;
+        min-width: 24px;
+        height: auto;
+        padding: 2px 7px;
+        border: 0;
+        background: var(--color-surface-muted);
+        color: var(--color-text-faint);
+        font-size: 0.68rem;
+        line-height: normal;
+    }
+
+    .sidebar.is-expanded .empty-state--nav {
+        display: block;
+    }
+
+    .sidebar.is-expanded .sidebar-footer {
+        gap: var(--space-2);
+        justify-items: stretch;
+    }
+
+    .sidebar.is-expanded .sandbox-status {
+        width: auto;
+        height: auto;
+        grid-template-columns: auto minmax(0, 1fr);
+        place-items: normal;
+        padding: var(--space-3);
+        border-color: var(--color-line);
+        background: color-mix(in srgb, var(--color-surface) 54%, transparent);
+    }
+
+    .sidebar.is-expanded .sandbox-status > span:not(.status-dot) {
+        display: block;
+    }
+
+    .sidebar.is-expanded .settings-trigger {
+        width: auto;
+        height: auto;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: var(--space-3);
+        padding: var(--space-3);
+    }
+
+    .sidebar.is-expanded .settings-trigger > span:not([data-icon]) {
+        display: block;
+    }
+
+    .sidebar.is-expanded .settings-trigger kbd {
+        display: inline-block;
+    }
 }
 
 .app-main {

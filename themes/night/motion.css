@@ -34,7 +34,10 @@
     }
 
     html[data-theme="night"] [data-motion-scope="sidebar"] {
-        transition: transform var(--duration-normal) var(--ease-out);
+        transition:
+            width var(--duration-normal) var(--ease-out),
+            padding var(--duration-normal) var(--ease-out),
+            transform var(--duration-normal) var(--ease-out);
     }
 
     html[data-theme="night"] [data-motion-scope="module-card"] {

@@ -671,3 +671,72 @@ docs/agents/ORDERLY-FRONTEND-THEME-MODULARIZATION-HANDOFF.md。
 - 定向测试、门禁、模块化和实际启动验证结果真实可追溯。
 - PM 已完成只读验收，主代理已检查实际文件。
 - 更新已提交并推送到 `origin/framework-v3`；若推送失败，交付说明明确写出。
+
+## 15. ORDERLY-FRONTEND-EXPANDING-SIDEBAR 实施交接
+
+### 15.1 状态与范围
+
+| 项目 | 内容 |
+|---|---|
+| 状态 | 实现完成，自动化与启动烟测通过，等待 PM 最终验收 |
+| 任务编号 | `ORDERLY-FRONTEND-EXPANDING-SIDEBAR` |
+| 实施日期 | 2026-11-13 |
+| 桌面默认 | 64px 图标轨道，主内容始终只预留 64px |
+| 桌面展开 | 208px 覆盖层，不改变主内容 `left`/`width`，不触发主内容重排 |
+| 自动展开 | `(min-width: 821px) and (hover: hover) and (pointer: fine)`，指针停留 140ms 后展开 |
+| 自动收起 | 指针离开后 400ms 收起；焦点、非空搜索、拖拽或设置弹窗会抑制收起 |
+| 移动端 | `<=820px` 继续使用现有点击抽屉、`inert`、`aria-hidden`、焦点返回与 Escape 路径 |
+
+本任务只修改前端壳层、主题动效、相关测试和本交接文档。未修改 `Module/`、`app/kernel/`、`app/host/`、`contracts/`、产品资料、脚本或依赖，未实现 Pin 持久化或设置项。
+
+### 15.2 实施摘要
+
+- `tokens.css` 将 `--sidebar-width` 改为 64px，并新增 `--sidebar-expanded-width: 208px`；`app-shell` 网格仍只消费 64px 轨道。
+- `index.html` 的侧栏运动状态初始为 `collapsed`；搜索与设置按钮补充稳定 `aria-label`。
+- `app.js` 使用单一展开状态对象和一个展开/收起定时器；即时展开入口覆盖指针点击搜索、`/`、焦点进入、Tab、拖拽激活。
+- 指针离开后统一检查 `focus-within`、搜索值、拖拽状态、body 拖拽类和设置弹窗；条件解除时通过 `focusout`、输入清空、拖拽结束和弹窗关闭重新评估。
+- 收起态显示 34px 图标、40px 控件命中区、状态点和非零模块数量角标；零值及 `—`/占位值不创建角标。导航按钮的 `aria-label` 同时包含名称、说明与真实数量。
+- `pulsePlanModules` 只在桌面短暂设置 `attention`，2.6 秒后按当前真实展开状态恢复；移动端不写入桌面 attention 状态。
+- 三个目录主题的 `sidebar` 动效增加 `width`、`padding` 与 `transform` 过渡；`app.css` 未新增 `transition`，`orderly.safety` 继续禁用全部动效。
+- 命令栏继续按 64px 侧栏宽度计算可用空间；1080px 断点保留原计算。
+
+### 15.3 实际验证
+
+```text
+npm test
+  65 tests, 65 pass, 0 fail
+
+npm run check
+  exit 0
+
+git diff --check
+  exit 0（仅提示部分文件下次写回时 CRLF 行尾转换）
+
+.\scripts\gate.ps1
+  exit 0
+  Maven host tests: 49 run, 0 failures, 0 errors, 1 skipped
+  Frontend tests: 65 pass
+  Module UI contract samples: 4 pass
+
+.\scripts\modularity.ps1
+  exit 0
+
+.\scripts\start.ps1 -SkipBuild -Port 18082
+  startup success, 127.0.0.1:18082
+
+.\scripts\smoke.ps1 -BaseUrl http://127.0.0.1:18082
+  exit 0
+
+最终代码复跑：
+.\scripts\start.ps1 -SkipBuild -Port 18083
+  startup success, graceful shutdown complete
+.\scripts\smoke.ps1 -BaseUrl http://127.0.0.1:18083
+  exit 0
+```
+
+验证说明：
+
+- 完整门禁首次尝试因既有 `127.0.0.1:8080` 本地宿主锁定 `target/orderly-modules/*.jar` 而失败；确认进程属于本仓库后停止该宿主，重新执行 `gate.ps1` 通过。该次失败属于环境占用，不是代码测试失败。
+- 真实 HTTP 首页返回 200，且包含初始 `collapsed` 状态、搜索 `aria-label` 与设置 `aria-label`。
+- HTTP 烟测覆盖 JDK 21、业务/系统模块目录、模块偏好、模块 UI、通用查询、目录主题详情/CSS、回退字段、刷新响应和未确认计划拒绝，未产生业务数据变更。
+- Edge 多尺寸与 140ms/400ms 真实交互时序验收由主代理负责，本工程师未将其表述为已通过。

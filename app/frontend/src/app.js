@@ -44,6 +44,10 @@ const themeManager = new ThemeManager();
 const NAV_DRAG_HOLD_MS = 320;
 const NAV_DRAG_MOVE_TOLERANCE = 7;
 const MOBILE_NAV_QUERY = "(max-width: 820px)";
+const DESKTOP_SIDEBAR_QUERY = "(min-width: 821px)";
+const SIDEBAR_POINTER_QUERY = "(min-width: 821px) and (hover: hover) and (pointer: fine)";
+const SIDEBAR_EXPAND_DELAY_MS = 140;
+const SIDEBAR_COLLAPSE_DELAY_MS = 400;
 
 const NAV_SECTIONS = Object.freeze([
     {
@@ -94,6 +98,13 @@ let navigationDrag = null;
 let navigationHoldTimer = null;
 let suppressNavigationClickUntil = 0;
 let sidebarOrderRequestGeneration = 0;
+const desktopSidebar = {
+    active: false,
+    expanded: false,
+    pointerInside: false,
+    timer: null,
+    attentionTimer: null
+};
 
 /**
  * 创建简单元素。
@@ -605,12 +616,23 @@ function bindGlobalControls() {
     });
 
     const search = document.querySelector("#nav-search");
-    search?.addEventListener("input", () => renderNavigation(search.value));
+    search?.addEventListener("pointerdown", () => expandDesktopSidebarImmediately());
+    search?.addEventListener("focus", () => expandDesktopSidebarImmediately());
+    search?.addEventListener("click", () => expandDesktopSidebarImmediately());
+    search?.addEventListener("input", () => {
+        renderNavigation(search.value);
+        if (search.value.trim()) {
+            expandDesktopSidebarImmediately();
+        } else {
+            reconcileDesktopSidebar();
+        }
+    });
     search?.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
             search.value = "";
             renderNavigation("");
             search.blur();
+            reconcileDesktopSidebar();
         }
     });
 
@@ -632,7 +654,7 @@ function bindGlobalControls() {
         const isTyping = ["INPUT", "TEXTAREA", "SELECT"].includes(tagName);
         if (event.key === "/" && !isTyping) {
             event.preventDefault();
-            search?.focus();
+            focusDesktopSidebarSearch();
         }
     });
     document.addEventListener("keydown", (event) => {
@@ -649,19 +671,8 @@ function bindGlobalControls() {
         closeMobileNav();
     }, { capture: true });
 
-    const mobileViewport = window.matchMedia(MOBILE_NAV_QUERY);
-    mobileViewport.addEventListener("change", (event) => {
-        const sidebar = document.querySelector("#sidebar");
-        if (event.matches) {
-            if (sidebar?.contains(document.activeElement)) {
-                document.querySelector("#mobile-menu")?.focus({ preventScroll: true });
-            }
-            syncMobileSidebarAvailability();
-            return;
-        }
-        closeMobileNav({ restoreFocus: false });
-    });
-    syncMobileSidebarAvailability();
+    bindDesktopSidebarControls();
+    bindSidebarViewport();
 
     document.addEventListener("pointermove", moveNavigationDrag, { passive: false });
     document.addEventListener("pointerup", finishNavigationDrag);
@@ -671,6 +682,194 @@ function bindGlobalControls() {
         cancelNavigationDrag();
         eventStream?.close();
     }, { once: true });
+}
+
+/**
+ * 绑定桌面图标侧栏的指针与焦点展开入口。
+ */
+function bindDesktopSidebarControls() {
+    const sidebar = document.querySelector("#sidebar");
+    if (!sidebar) {
+        return;
+    }
+
+    sidebar.addEventListener("pointerenter", () => {
+        if (!desktopSidebar.active
+            || !window.matchMedia(SIDEBAR_POINTER_QUERY).matches) {
+            return;
+        }
+        desktopSidebar.pointerInside = true;
+        scheduleDesktopSidebarExpansion();
+    });
+    sidebar.addEventListener("pointerleave", () => {
+        if (!desktopSidebar.active) {
+            return;
+        }
+        desktopSidebar.pointerInside = false;
+        reconcileDesktopSidebar();
+    });
+    sidebar.addEventListener("focusin", () => {
+        if (desktopSidebar.active) {
+            expandDesktopSidebarImmediately();
+        }
+    });
+    sidebar.addEventListener("focusout", () => {
+        window.queueMicrotask(reconcileDesktopSidebar);
+    });
+
+    const pointerViewport = window.matchMedia(SIDEBAR_POINTER_QUERY);
+    pointerViewport.addEventListener("change", () => {
+        desktopSidebar.pointerInside = false;
+        reconcileDesktopSidebar();
+    });
+}
+
+/**
+ * 根据当前视口在桌面图标态和移动抽屉态之间重置侧栏。
+ */
+function bindSidebarViewport() {
+    const mobileViewport = window.matchMedia(MOBILE_NAV_QUERY);
+    mobileViewport.addEventListener("change", (event) => {
+        const sidebar = document.querySelector("#sidebar");
+        if (event.matches) {
+            deactivateDesktopSidebar();
+            if (sidebar?.contains(document.activeElement)) {
+                document.querySelector("#mobile-menu")?.focus({ preventScroll: true });
+            }
+            syncMobileSidebarAvailability();
+            return;
+        }
+        closeMobileNav({ restoreFocus: false });
+        activateDesktopSidebar();
+    });
+
+    if (mobileViewport.matches) {
+        deactivateDesktopSidebar();
+        syncMobileSidebarAvailability();
+    } else {
+        activateDesktopSidebar();
+    }
+}
+
+function activateDesktopSidebar() {
+    const sidebar = document.querySelector("#sidebar");
+    if (!sidebar || !window.matchMedia(DESKTOP_SIDEBAR_QUERY).matches) {
+        return;
+    }
+    desktopSidebar.active = true;
+    desktopSidebar.pointerInside = false;
+    setDesktopSidebarExpansion(false);
+    sidebar.inert = false;
+    sidebar.removeAttribute("aria-hidden");
+}
+
+function deactivateDesktopSidebar() {
+    clearDesktopSidebarTimer();
+    clearSidebarAttention();
+    desktopSidebar.active = false;
+    desktopSidebar.pointerInside = false;
+    desktopSidebar.expanded = false;
+    const sidebar = document.querySelector("#sidebar");
+    sidebar?.classList.remove("is-expanded");
+    if (sidebar && !sidebar.classList.contains("is-open")) {
+        sidebar.dataset.motionState = "collapsed";
+        sidebar.dataset.motionPhase = "active";
+    }
+}
+
+function setDesktopSidebarExpansion(expanded) {
+    const sidebar = document.querySelector("#sidebar");
+    if (!sidebar || !desktopSidebar.active) {
+        return;
+    }
+    desktopSidebar.expanded = expanded;
+    sidebar.classList.toggle("is-expanded", expanded);
+    if (desktopSidebar.attentionTimer == null) {
+        sidebar.dataset.motionState = expanded ? "expanded" : "collapsed";
+    }
+    sidebar.dataset.motionPhase = "active";
+}
+
+function expandDesktopSidebarImmediately() {
+    if (!desktopSidebar.active) {
+        return;
+    }
+    clearDesktopSidebarTimer();
+    setDesktopSidebarExpansion(true);
+}
+
+function focusDesktopSidebarSearch() {
+    const search = document.querySelector("#nav-search");
+    if (!desktopSidebar.active) {
+        return;
+    }
+    expandDesktopSidebarImmediately();
+    search?.focus({ preventScroll: true });
+}
+
+function scheduleDesktopSidebarExpansion() {
+    if (!desktopSidebar.active || desktopSidebar.expanded) {
+        clearDesktopSidebarTimer();
+        return;
+    }
+    scheduleDesktopSidebarTransition(
+        () => setDesktopSidebarExpansion(true),
+        SIDEBAR_EXPAND_DELAY_MS
+    );
+}
+
+function desktopSidebarCollapseBlocked() {
+    const sidebar = document.querySelector("#sidebar");
+    const search = document.querySelector("#nav-search");
+    const dialog = document.querySelector("#settings-dialog");
+    return desktopSidebar.pointerInside
+        || Boolean(sidebar?.contains(document.activeElement))
+        || Boolean(search?.value.trim())
+        || navigationDrag?.active === true
+        || document.body.classList.contains("is-navigation-dragging")
+        || dialog?.open === true;
+}
+
+function reconcileDesktopSidebar() {
+    if (!desktopSidebar.active) {
+        return;
+    }
+    if (desktopSidebarCollapseBlocked()) {
+        clearDesktopSidebarTimer();
+        return;
+    }
+    if (!desktopSidebar.expanded) {
+        clearDesktopSidebarTimer();
+        return;
+    }
+    scheduleDesktopSidebarTransition(
+        () => setDesktopSidebarExpansion(false),
+        SIDEBAR_COLLAPSE_DELAY_MS
+    );
+}
+
+function scheduleDesktopSidebarTransition(callback, delay) {
+    clearDesktopSidebarTimer();
+    desktopSidebar.timer = window.setTimeout(() => {
+        desktopSidebar.timer = null;
+        callback();
+    }, delay);
+}
+
+function clearDesktopSidebarTimer() {
+    if (desktopSidebar.timer == null) {
+        return;
+    }
+    window.clearTimeout(desktopSidebar.timer);
+    desktopSidebar.timer = null;
+}
+
+function clearSidebarAttention() {
+    if (desktopSidebar.attentionTimer == null) {
+        return;
+    }
+    window.clearTimeout(desktopSidebar.attentionTimer);
+    desktopSidebar.attentionTimer = null;
 }
 
 /**
@@ -796,21 +995,25 @@ function syncSettingControls(settings) {
  * @param {unknown} error 连接错误
  */
 function updateHealth(error = null) {
+    const sandboxStatus = document.querySelector(".sandbox-status");
     const dot = document.querySelector("#health-dot");
     const label = document.querySelector("#health-label");
     const detail = document.querySelector("#health-detail");
     const planner = document.querySelector("#planner-badge");
     const online = !error && String(state.health?.status ?? "").toUpperCase() === "UP";
+    const statusText = online ? "本地服务已连接" : "本地服务未连接";
+    const detailText = online
+        ? `沙箱：${state.health?.workspace ?? ".orderly-data/workspace"}`
+        : "请确认 Java 宿主已启动";
 
     dot?.classList.toggle("is-online", online);
     dot?.classList.toggle("is-offline", Boolean(error));
+    sandboxStatus?.setAttribute("aria-label", `${statusText}；${detailText}`);
     if (label) {
-        label.textContent = online ? "本地服务已连接" : "本地服务未连接";
+        label.textContent = statusText;
     }
     if (detail) {
-        detail.textContent = online
-            ? `沙箱：${state.health?.workspace ?? ".orderly-data/workspace"}`
-            : "请确认 Java 宿主已启动";
+        detail.textContent = detailText;
     }
     if (planner) {
         const plannerStatus = String(state.health?.planner ?? "LOCAL_RULES").toUpperCase();
@@ -860,6 +1063,12 @@ function renderNavigation(query = "") {
             );
             button.type = "button";
             button.dataset.view = item.id;
+            const count = navigationCount(item.id);
+            const countLabel = hasNavigationCount(count) ? `，数量 ${count}` : "";
+            button.setAttribute(
+                "aria-label",
+                `${item.label}，${item.caption}${countLabel}`
+            );
             if (state.activeView === item.id) {
                 button.setAttribute("aria-current", "page");
             }
@@ -881,11 +1090,10 @@ function renderNavigation(query = "") {
                 element("small", "", item.caption)
             );
             button.append(copy);
-            const count = navigationCount(item.id);
-            if (count != null) {
-                button.append(element("span", "nav-count", String(count)));
-            } else {
-                button.append(element("span", "nav-count", "·"));
+            if (hasNavigationCount(count)) {
+                const badge = element("span", "nav-count", String(count));
+                badge.setAttribute("aria-hidden", "true");
+                button.append(badge);
             }
             button.addEventListener("click", (event) => {
                 if (performance.now() < suppressNavigationClickUntil) {
@@ -939,6 +1147,7 @@ function activateNavigationDrag() {
     navigationHoldTimer = null;
     if (!navigationDrag) return;
     navigationDrag.active = true;
+    expandDesktopSidebarImmediately();
     navigationDrag.element.classList.add("is-nav-dragging");
     document.body.classList.add("is-navigation-dragging");
     try {
@@ -1018,6 +1227,7 @@ function clearNavigationDrag() {
     }
     document.body.classList.remove("is-navigation-dragging");
     navigationDrag = null;
+    reconcileDesktopSidebar();
 }
 
 function clearNavigationDropTargets() {
@@ -1109,6 +1319,18 @@ function moduleForView(view) {
 function navigationCount(view) {
     const module = state.modules.find((item) => moduleNavigationItem(item).id === view);
     return module ? state.moduleCounts[module.moduleId] ?? null : null;
+}
+
+function hasNavigationCount(count) {
+    if (count == null) {
+        return false;
+    }
+    const text = String(count).trim();
+    if (!text || ["—", "-", "·", "占位", "尚未接入"].includes(text)) {
+        return false;
+    }
+    const numeric = Number(text);
+    return !Number.isFinite(numeric) || numeric !== 0;
 }
 
 /**
@@ -2068,7 +2290,19 @@ async function rollbackCurrent() {
 function pulsePlanModules() {
     const modules = new Set(state.plan?.steps.map((step) => step.moduleId) ?? []);
     const sidebar = document.querySelector(".sidebar");
-    sidebar?.setAttribute("data-motion-state", "attention");
+    clearSidebarAttention();
+    if (sidebar && desktopSidebar.active) {
+        sidebar.setAttribute("data-motion-state", "attention");
+        sidebar.setAttribute("data-motion-phase", "active");
+        desktopSidebar.attentionTimer = window.setTimeout(() => {
+            desktopSidebar.attentionTimer = null;
+            sidebar.setAttribute(
+                "data-motion-state",
+                desktopSidebar.expanded ? "expanded" : "collapsed"
+            );
+            sidebar.setAttribute("data-motion-phase", "active");
+        }, 2600);
+    }
     document.querySelectorAll("[data-view]").forEach((button) => {
         const target = Boolean(button.dataset.moduleId && modules.has(button.dataset.moduleId));
         button.classList.toggle("is-plan-target", target);
@@ -2076,11 +2310,6 @@ function pulsePlanModules() {
             window.setTimeout(() => button.classList.remove("is-plan-target"), 2600);
         }
     });
-    window.setTimeout(() => {
-        if (!navigationDrag?.active) {
-            sidebar?.setAttribute("data-motion-state", "expanded");
-        }
-    }, 2600);
 }
 
 
@@ -2379,6 +2608,7 @@ function closeMobileNav({ restoreFocus = true } = {}) {
         menu?.focus({ preventScroll: true });
     }
     syncMobileSidebarAvailability();
+    reconcileDesktopSidebar();
 }
 
 /**
@@ -2391,6 +2621,7 @@ function openSettings() {
         dialog.dataset.motionState = "open";
         dialog.dataset.motionPhase = "active";
         dialog.showModal();
+        reconcileDesktopSidebar();
     }
 }
 
@@ -2428,6 +2659,7 @@ function bindSettingsDialog() {
                 settingsTrigger?.focus({ preventScroll: true });
             });
         }
+        window.queueMicrotask(reconcileDesktopSidebar);
     });
     document.addEventListener("keydown", (event) => {
         if ((event.ctrlKey || event.metaKey) && event.key === ",") {
