@@ -49,6 +49,33 @@ test("compact view ports keep the collapsed command dock out of page content", a
     );
 });
 
+test("module control opens as a right-screen modal with a compact title", async () => {
+    const html = await read("../index.html");
+    const app = await read("../src/app.js");
+    const appCss = await read("../styles/app.css");
+    const moduleCss = await read(
+        "../../../Module/module_control/src/main/resources/orderly-ui/module.css"
+    );
+
+    assert.match(html, /id="module-control-dialog"/);
+    assert.match(html, /id="close-module-control"/);
+    assert.match(app, /hasSystemAdminPrivilege\(selectedModule\)/);
+    assert.match(app, /dialog\.showModal\(\)/);
+    assert.match(
+        appCss,
+        /\.module-control-dialog\s*\{[\s\S]*inset:\s*0 0 0 var\(--sidebar-width\)/
+    );
+    assert.match(
+        appCss,
+        /\.module-control-dialog\s*\{[\s\S]*border-radius:\s*0/
+    );
+    assert.match(
+        moduleCss,
+        /\.module-control-ui-header h1\s*\{\s*font-size:\s*1\.35rem;/
+    );
+    assert.match(moduleCss, /\.module-control-ui-panel\s*\{[\s\S]*height:\s*100%;/);
+});
+
 test("each directory theme owns layered tokens and motion CSS", async () => {
     for (const id of ["paper", "moss", "night"]) {
         const tokens = await read(`../../../themes/${id}/tokens.css`);
