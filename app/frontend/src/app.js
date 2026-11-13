@@ -83,9 +83,7 @@ const state = {
     moduleErrors: {},
     moduleCounts: {},
     dragModuleId: null,
-    moduleAssetVersion: String(Date.now()),
-    moduleControlOpen: false,
-    moduleControlViewId: ""
+    moduleAssetVersion: String(Date.now())
 };
 
 const systemAdminApi = createSystemAdminApi();
@@ -592,27 +590,6 @@ function bindGlobalControls() {
     document.querySelector("#open-settings")?.addEventListener("click", openSettings);
     document.querySelector("#mobile-menu")?.addEventListener("click", openMobileNav);
     document.querySelector("#mobile-scrim")?.addEventListener("click", closeMobileNav);
-    document.querySelector("#close-module-control")?.addEventListener("click", closeModuleControlDialog);
-    const moduleControlDialog = document.querySelector("#module-control-dialog");
-    moduleControlDialog?.addEventListener("click", (event) => {
-        if (event.target === moduleControlDialog) {
-            closeModuleControlDialog();
-        }
-    });
-    moduleControlDialog?.addEventListener("close", () => {
-        const previousViewId = state.moduleControlViewId;
-        state.moduleControlOpen = false;
-        state.moduleControlViewId = "";
-        moduleControlDialog.dataset.motionState = "closed";
-        moduleControlDialog.dataset.motionPhase = "idle";
-        document.querySelector("#module-control-dialog-content")?.replaceChildren();
-        renderNavigation(document.querySelector("#nav-search")?.value ?? "");
-        if (previousViewId) {
-            document.querySelector(
-                `#primary-nav [data-view="${CSS.escape(previousViewId)}"]`
-            )?.focus({ preventScroll: true });
-        }
-    });
     document.querySelector("#dock-toggle")?.addEventListener("click", () => {
         const dock = document.querySelector("#command-dock");
         const expanded = dock?.classList.toggle("is-expanded") ?? false;
@@ -848,11 +825,9 @@ function renderNavigation(query = "") {
         group.append(element("h2", "nav-group__label", section.label));
         const list = element("div", "nav-list");
         visibleItems.forEach((item) => {
-            const isActive = state.activeView === item.id
-                || (state.moduleControlOpen && state.moduleControlViewId === item.id);
             const button = element(
                 "button",
-                `nav-item${isActive ? " is-active" : ""}`
+                `nav-item${state.activeView === item.id ? " is-active" : ""}`
             );
             button.type = "button";
             button.dataset.view = item.id;
@@ -1105,61 +1080,15 @@ function navigationCount(view) {
 }
 
 /**
- * 打开模组设置弹出层。
- *
- * @param {object} module 系统模块
- */
-async function openModuleControlDialog(module) {
-    const dialog = document.querySelector("#module-control-dialog");
-    const content = document.querySelector("#module-control-dialog-content");
-    if (!dialog || !content) {
-        return;
-    }
-    closeMobileNav();
-    state.moduleControlOpen = true;
-    state.moduleControlViewId = moduleNavigationItem(module).id;
-    renderNavigation(document.querySelector("#nav-search")?.value ?? "");
-
-    const loading = element("section", "loading-panel");
-    loading.append(
-        element("span", "loading-orbit"),
-        element("h1", "", "正在打开模组设置"),
-        element("p", "", "读取模块治理状态…")
-    );
-    content.replaceChildren(loading);
-    if (!dialog.open) {
-        dialog.dataset.motionState = "open";
-        dialog.dataset.motionPhase = "active";
-        dialog.showModal();
-    }
-    await mountModuleInto(module, content, { genericFallback: false });
-}
-
-/**
- * 关闭模组设置弹出层。
- */
-function closeModuleControlDialog() {
-    const dialog = document.querySelector("#module-control-dialog");
-    if (dialog?.open) {
-        dialog.close();
-    }
-}
-
-/**
  * 切换主视图。
  *
  * @param {string} view 视图名
  */
 async function navigate(view) {
-    closeMobileNav();
-    const selectedModule = moduleForView(view);
-    if (selectedModule && hasSystemAdminPrivilege(selectedModule)) {
-        await openModuleControlDialog(selectedModule);
-        return;
-    }
-    closeModuleControlDialog();
     state.activeView = view;
+    closeMobileNav();
     renderNavigation(document.querySelector("#nav-search")?.value ?? "");
+    const selectedModule = moduleForView(view);
     const labels = {
         overview: "总览",
         history: "执行记录"
@@ -1231,38 +1160,20 @@ function renderLoadError(error) {
  * @param {object} module 模块契约
  */
 async function mountModule(module) {
-    const main = document.querySelector("#main-content");
-    if (!main) return;
-    await mountModuleInto(module, main, { genericFallback: true });
-}
-
-/**
- * 把模块挂载到指定容器。
- *
- * @param {object} module 模块契约
- * @param {HTMLElement} target 目标容器
- * @param {{genericFallback?: boolean}} options 降级选项
- */
-async function mountModuleInto(module, target, { genericFallback = false } = {}) {
     const ui = state.moduleUi[module.moduleId];
     if (!ui) {
-        if (genericFallback) {
-            renderGenericModule(module, state.moduleErrors[module.moduleId] || "模块未提供 UI 清单");
-        } else {
-            renderModuleFailure(
-                module,
-                target,
-                state.moduleErrors[module.moduleId] || "模块未提供 UI 清单"
-            );
-        }
+        renderGenericModule(module, state.moduleErrors[module.moduleId] || "模块未提供 UI 清单");
         return;
     }
+    const main = document.querySelector("#main-content");
+    if (!main) return;
+
     const view = element("div", "view-stack module-view");
     view.dataset.moduleView = module.moduleId;
     const root = element("div", "module-view__root");
     root.id = `module-view-${module.moduleId}`;
     view.append(root);
-    target.replaceChildren(view);
+    main.replaceChildren(view);
 
     try {
         const styleUrl = `${api.moduleAssetUrl(module.moduleId, ui.style)}?v=${state.moduleAssetVersion}`;
