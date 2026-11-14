@@ -813,7 +813,7 @@ Ctrl+C
 
 | 项目 | 内容 |
 |---|---|
-| 状态 | 范围内实现与自动化验证完成，等待 PM 最终验收 |
+| 状态 | 主代理真实浏览器验收与 PM 独立复核完成，结论 `PASS` |
 | 任务编号 | `ORDERLY-FRONTEND-SIDEBAR-CHAT-BUBBLE-EXPANSION` |
 | 实施日期 | 2026-11-14 |
 | 气泡形态 | 左侧带尾圆角聊天气泡，继续由外置 `#sidebar-count-layer` 承载 |
@@ -899,3 +899,107 @@ PM 最终结论
 ```
 
 当前 Windows 系统实际启用 `prefers-reduced-motion: reduce`，因此普通运行时动画会按安全层设计立即完成；上述 `200ms` 过渡通过 Edge CDP 模拟无减少动效后验证。既有 SSE 活动连接导致的 30 秒优雅停机超时仍属于独立既有问题，本次未修改。
+
+## 18. ORDERLY-FRONTEND-SIDEBAR-CLIP-REVEAL 实施交接
+
+### 18.1 状态与范围
+
+| 项目 | 内容 |
+|---|---|
+| 状态 | 范围内实现与自动化验证完成，等待 PM 最终验收 |
+| 任务编号 | `ORDERLY-FRONTEND-SIDEBAR-CLIP-REVEAL` |
+| 实施日期 | 2026-11-14 |
+| 桌面覆盖层 | 固定 208px 宽，主网格始终只预留 64px |
+| 收起/展开 | 仅通过 `clip-path: inset(...)` 从 64px 边界揭示到完整 208px |
+| 移动端 | `clip-path: none`，继续使用独立 `transform` 抽屉 |
+
+本任务只修改前端侧栏样式与计数同步、三套主题动效、相关测试、主题说明、架构基线和本交接文档。未修改 `tokens.css`、`index.html`、`Module/`、`app/kernel/`、`app/host/`、`contracts/`、`scripts/`、依赖、日期交接文档或产品原始资料。
+
+### 18.2 实施摘要
+
+- 桌面侧栏固定为 208px 覆盖层，`app-shell` 仍只预留 64px。收起和展开仅切换 `clip-path`，不再改变 `width`。
+- 品牌、搜索框、导航、图标、文字、拖拽把手、footer、sandbox 与设置入口在收起、展开和中间帧使用同一套几何；删除 `.is-expanded` 下的子元素布局切换。文字起点布置在 64px 边界之外，由外层裁切决定是否可见。
+- 使用 `sidebar::before` 在 63/64px 处提供固定轨道边缘线，不占用主题可能使用的 `sidebar::after`；桌面不再依赖被裁切的侧栏阴影。
+- 三套主题只过渡 `clip-path var(--duration-sidebar) var(--ease-out)`；现有 `200ms`、`110ms`、`0ms` 时长继续来自 tokens。
+- 移动端显式设置 `clip-path: none`，继续使用原有 `transform` 抽屉、`inert`、ARIA、Escape 与焦点返回路径。
+- 计数气泡读取 `getComputedStyle(sidebar).clipPath`，解析 `inset(...)` 得到当前可见宽度，并按进度在 `railRight + 4px` 与真实文字右缘 `+7px` 之间连续插值。所有测量完成后才写气泡样式，并继续避让拖拽把手。
+- 在插值和拖拽把手避让完成后，若 `clip-path` 动画仍在跟踪、当前不是稳定全收起状态，且气泡右缘超过当前可见裁切边界，则将气泡左缘钳制为 `currentVisibleRight - bubbleWidth`；稳定收起态继续使用 `railRight + 4px`。
+- 展开和收起都启动同一帧跟踪生命周期；两处 `transitionend` 处理器均只接受 `clip-path`。动效时长 `<= 0` 时直接渲染端点，不启动持续 `requestAnimationFrame`；重复状态切换会清理旧帧、事件监听和兜底计时器。
+
+### 18.3 自动化验证
+
+```text
+app/frontend: npm test
+  67 tests, 67 pass, 0 fail
+
+app/frontend: npm run check
+  exit 0
+
+.\scripts\gate.ps1
+  exit 0
+  Maven host tests: 49 run, 0 failures, 0 errors, 1 skipped
+  Frontend tests: 67 pass
+  Module UI contract samples: 4 pass
+
+git diff --check
+  exit 0
+  only LF -> CRLF conversion warnings
+
+.\scripts\start.ps1 -SkipBuild -Port 18090
+  startup success, 127.0.0.1:18090
+
+.\scripts\smoke.ps1 -BaseUrl http://127.0.0.1:18090
+  exit 0, 5 required-free generic queries passed
+
+Ctrl+C
+  Tomcat graceful shutdown complete
+```
+
+新增或更新的静态契约覆盖：
+
+- 桌面固定 208px、64px 网格、clip-path inset、固定 63/64px 边缘线。
+- `.is-expanded` 不再包含子元素几何切换，导航、搜索、footer 与文字位置固定。
+- 三套主题只使用 `clip-path` 过渡，不再出现 `width` 过渡。
+- 两个 `transitionend` 处理器只识别 `clip-path`。
+- clip-path inset 解析、当前可见宽度、收起/展开气泡插值、拖拽把手避让及“先读取后写样式”。
+- 动画中间帧气泡右缘钳制发生在拖拽把手避让之后、样式写入之前，稳定收起态不受钳制影响。
+- `duration <= 0` 端点直出，不启动持续帧循环。
+- 移动端 `clip-path: none`、独立 transform 与既有 inert/ARIA 行为。
+
+Playwright 工程自检因本机缺少其配置的 Chrome 可执行文件而未启动；真实浏览器下的中间帧几何、裁切命中、焦点轮廓、气泡连续移动和三主题观感由主代理验收，最终结果见 18.4。本工程师未将未执行的浏览器视觉检查表述为已通过。
+
+### 18.4 主代理与 PM 最终验收
+
+```text
+Edge CDP：prefers-reduced-motion: no-preference
+
+约 10.8ms
+  仍处于稳定收起，visibleRight=64px
+
+约 14.4ms
+  visibleRight=113.36px
+  module_fs 气泡右缘=113px
+  越界=0px
+
+约 100ms
+  visibleRight=202.43px
+  气泡右缘=165px
+  越界=0px
+
+终态
+  visibleRight=208px
+  气泡右缘=168px
+  文字右缘=139.41px，间距约 6.59px
+  拖拽把手间距=12px
+  气泡左缘序列：68px -> 91px -> 143px -> 146px
+
+23 帧采样
+  动画中间帧气泡越界数量=0
+  sidebar/main/导航行/图标/搜索/footer/sandbox/settings 最大 rect 偏差=0px
+  clip-path transitionend=1 次
+
+PM 最终结论
+  PASS，无阻塞，无返工项
+```
+
+主代理完整 `gate.ps1` 退出码 `0`：Maven 49 项、0 失败、0 错误、1 跳过；前端 67 项通过；契约样例 4 项通过。真实启动 `127.0.0.1:18094` 后烟测退出码 `0`，5 个通用查询通过。既有 SSE 活动连接导致的 30 秒优雅停机超时仍属于独立既有问题，本次未修改。

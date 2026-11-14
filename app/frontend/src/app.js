@@ -801,14 +801,17 @@ function setDesktopSidebarExpansion(expanded) {
     }
     const wasExpanded = desktopSidebar.expanded;
     const changed = wasExpanded !== expanded;
+    const duration = sidebarTransitionDurationMs();
     desktopSidebar.expanded = expanded;
     sidebar.classList.toggle("is-expanded", expanded);
     if (changed) {
-        if (expanded) {
+        if (duration <= 0) {
+            cancelSidebarCountTracking();
+            cancelSidebarCountRefresh();
+            renderSidebarCountLayer();
+        } else if (expanded) {
             beginSidebarCountTracking();
         } else {
-            cancelSidebarCountTracking();
-            clearSidebarCountLayer();
             scheduleSidebarCountRefreshAfterCollapse();
         }
     } else if (expanded) {
@@ -937,6 +940,71 @@ function navigationTextRect(button) {
     return rect.width > 0 && rect.height > 0 ? rect : null;
 }
 
+function clipInsetValues(clipPath) {
+    const match = /^inset\((.*)\)$/.exec(String(clipPath ?? "").trim());
+    if (!match) {
+        return [];
+    }
+    const values = [];
+    let current = "";
+    let depth = 0;
+    for (const character of match[1]) {
+        if (character === "(") {
+            depth += 1;
+        } else if (character === ")") {
+            depth = Math.max(0, depth - 1);
+        }
+        if (/\s/.test(character) && depth === 0) {
+            if (current) {
+                values.push(current);
+                current = "";
+            }
+        } else {
+            current += character;
+        }
+    }
+    if (current) {
+        values.push(current);
+    }
+    const roundIndex = values.indexOf("round");
+    return roundIndex === -1 ? values : values.slice(0, roundIndex);
+}
+
+function clipInsetLength(value, basis) {
+    if (value === "0") {
+        return 0;
+    }
+    const simple = /^(-?\d+(?:\.\d+)?)(px|%)$/.exec(value ?? "");
+    if (simple) {
+        const amount = Number(simple[1]);
+        return simple[2] === "%" ? basis * amount / 100 : amount;
+    }
+    const calc = /^calc\(\s*(\d+(?:\.\d+)?)%\s*-\s*(\d+(?:\.\d+)?)px\s*\)$/
+        .exec(value ?? "");
+    if (calc) {
+        return basis * Number(calc[1]) / 100 - Number(calc[2]);
+    }
+    return null;
+}
+
+function sidebarVisibleWidth(sidebarWidth, clipPath) {
+    const values = clipInsetValues(clipPath);
+    if (!values.length) {
+        return sidebarWidth;
+    }
+    const rightValue = values.length >= 2 ? values[1] : values[0];
+    const leftValue = values.length >= 4
+        ? values[3]
+        : values.length >= 2 ? values[1] : values[0];
+    const left = clipInsetLength(leftValue, sidebarWidth) ?? 0;
+    const right = clipInsetLength(rightValue, sidebarWidth) ?? 0;
+    return Math.max(0, Math.min(sidebarWidth, sidebarWidth - left - right));
+}
+
+function isSidebarClipTransition(event, sidebar) {
+    return event.target === sidebar && event.propertyName === "clip-path";
+}
+
 function renderSidebarCountLayer() {
     const layer = document.querySelector("#sidebar-count-layer");
     if (!layer) {
@@ -957,18 +1025,13 @@ function renderSidebarCountLayer() {
         [...layer.querySelectorAll(".sidebar-count-bubble[data-module-id]")]
             .map((bubble) => [bubble.dataset.moduleId, bubble])
     );
-    const sidebarRect = sidebar.getBoundingClientRect();
-    const railRight = sidebarRect.left + sidebarRailWidth();
+    const entries = [];
     document.querySelectorAll(".nav-item--module[data-module-id]").forEach((button) => {
         const moduleId = button.dataset.moduleId;
         const count = navigationCount(moduleId);
-        const rect = button.getBoundingClientRect();
-        if (count == null || rect.width <= 0 || rect.height <= 0) {
+        if (count == null) {
             return;
         }
-        const textRect = desktopSidebar.expanded
-            ? navigationTextRect(button)
-            : null;
         const bubble = existing.get(moduleId)
             ?? element("span", "sidebar-count-bubble", String(count));
         if (!existing.delete(moduleId)) {
@@ -978,23 +1041,60 @@ function renderSidebarCountLayer() {
             bubble.textContent = String(count);
         }
         bubble.dataset.moduleId = moduleId;
-        let left = textRect
-            ? textRect.right + 7
-            : railRight + 4;
-        const handleRect = textRect
-            ? button.querySelector(".nav-drag-handle")?.getBoundingClientRect()
-            : null;
-        const bubbleWidth = bubble.getBoundingClientRect().width;
+        entries.push({ bubble, button });
+    });
+    existing.forEach((bubble) => bubble.remove());
+
+    const sidebarRect = sidebar.getBoundingClientRect();
+    const clipPath = window.getComputedStyle(sidebar).clipPath;
+    const visibleWidth = sidebarVisibleWidth(sidebarRect.width, clipPath);
+    const railWidth = sidebarRailWidth();
+    const railRight = sidebarRect.left + railWidth;
+    const expansionProgress = Math.max(
+        0,
+        Math.min(
+            1,
+            (visibleWidth - railWidth) / Math.max(1, sidebarRect.width - railWidth)
+        )
+    );
+    const measurements = entries.map(({ bubble, button }) => {
+        const rect = button.getBoundingClientRect();
+        const textRect = navigationTextRect(button);
+        const handleRect = button.querySelector(".nav-drag-handle")
+            ?.getBoundingClientRect();
+        return {
+            bubble,
+            bubbleWidth: bubble.getBoundingClientRect().width,
+            handleRect,
+            rect,
+            textRect
+        };
+    });
+
+    measurements.forEach(({ bubble, bubbleWidth, handleRect, rect, textRect }) => {
+        if (rect.width <= 0 || rect.height <= 0) {
+            bubble.remove();
+            return;
+        }
+        const collapsedLeft = railRight + 4;
+        const expandedLeft = textRect ? textRect.right + 7 : collapsedLeft;
+        let left = collapsedLeft
+            + (expandedLeft - collapsedLeft) * expansionProgress;
         if (handleRect?.width > 0
             && left - 6 < handleRect.right
             && left + bubbleWidth > handleRect.left) {
             left = handleRect.right + 7;
         }
         left = Math.max(railRight + 4, left);
+        const currentVisibleRight = sidebarRect.left + visibleWidth;
+        if (sidebarCountTrackingFrame != null
+            && visibleWidth > railWidth
+            && left + bubbleWidth > currentVisibleRight) {
+            left = currentVisibleRight - bubbleWidth;
+        }
         bubble.style.left = `${Math.round(left)}px`;
         bubble.style.top = `${Math.round(rect.top + (rect.height / 2))}px`;
     });
-    existing.forEach((bubble) => bubble.remove());
 }
 
 function clearSidebarCountLayer() {
@@ -1021,58 +1121,60 @@ function sidebarTransitionDurationMs() {
 }
 
 function scheduleSidebarCountRefreshAfterCollapse() {
-    clearSidebarCountLayer();
+    cancelSidebarCountTracking();
     cancelSidebarCountRefresh();
     const sidebar = document.querySelector("#sidebar");
-    const finish = () => {
-        cancelSidebarCountRefresh();
-        renderSidebarCountLayer();
-    };
     const handler = (event) => {
-        if (event.propertyName === "width") {
-            finish();
+        if (!isSidebarClipTransition(event, sidebar)) {
+            return;
         }
+        finishSidebarCountTracking();
     };
     sidebarCountTransitionHandler = handler;
-    sidebar?.addEventListener("transitionend", handler, { once: true });
+    sidebar?.addEventListener("transitionend", handler);
+    startSidebarCountFrameLoop();
     sidebarCountRefreshTimer = window.setTimeout(
-        finish,
+        finishSidebarCountTracking,
         sidebarTransitionDurationMs() + 32
     );
+    renderSidebarCountLayer();
 }
 
 function beginSidebarCountTracking() {
     cancelSidebarCountTracking();
     cancelSidebarCountRefresh();
     const sidebar = document.querySelector("#sidebar");
-    if (!desktopSidebar.active || !desktopSidebar.expanded || !sidebar) {
+    if (!desktopSidebar.active || !sidebar) {
         return;
     }
 
-    const track = () => {
-        sidebarCountTrackingFrame = null;
-        if (!desktopSidebar.active || !desktopSidebar.expanded) {
-            return;
-        }
-        renderSidebarCountLayer();
-        sidebarCountTrackingFrame = requestSidebarFrame(track);
-    };
-    sidebarCountTrackingFrame = requestSidebarFrame(track);
-
     const finish = (event) => {
-        if (event
-            && (event.target !== sidebar || event.propertyName !== "width")) {
+        if (event && !isSidebarClipTransition(event, sidebar)) {
             return;
         }
         finishSidebarCountTracking();
     };
     sidebarCountTrackingHandler = finish;
     sidebar.addEventListener("transitionend", finish);
+    startSidebarCountFrameLoop();
     sidebarCountRefreshTimer = window.setTimeout(
         finishSidebarCountTracking,
         sidebarTransitionDurationMs() + 32
     );
     renderSidebarCountLayer();
+}
+
+function startSidebarCountFrameLoop() {
+    const track = () => {
+        if (!desktopSidebar.active
+            || window.matchMedia(MOBILE_NAV_QUERY).matches) {
+            sidebarCountTrackingFrame = null;
+            return;
+        }
+        renderSidebarCountLayer();
+        sidebarCountTrackingFrame = requestSidebarFrame(track);
+    };
+    sidebarCountTrackingFrame = requestSidebarFrame(track);
 }
 
 function finishSidebarCountTracking() {

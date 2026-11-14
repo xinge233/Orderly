@@ -83,7 +83,11 @@ test("each directory theme owns layered tokens and motion CSS", async () => {
         assert.match(motion, /scroll-behavior:\s*smooth/);
         assert.match(
             motion,
-            /\[data-motion-scope="sidebar"\]\s*\{\s*transition:\s*width var\(--duration-sidebar\) var\(--ease-out\);/
+            /\[data-motion-scope="sidebar"\]\s*\{\s*transition:\s*clip-path var\(--duration-sidebar\) var\(--ease-out\);/
+        );
+        assert.doesNotMatch(
+            motion,
+            /\[data-motion-scope="sidebar"\]\s*\{\s*transition:\s*width var\(/
         );
         assert.doesNotMatch(
             motion,

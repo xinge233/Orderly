@@ -10,6 +10,10 @@ test("desktop shell has no topbar and uses the compact sidebar width", async () 
     const html = await read("../index.html");
     const tokens = await read("../styles/tokens.css");
     const appCss = await read("../styles/app.css");
+    const desktopCss = appCss.slice(
+        appCss.indexOf("@media (min-width: 821px)"),
+        appCss.indexOf(".app-main {", appCss.indexOf("@media (min-width: 821px)"))
+    );
 
     assert.doesNotMatch(html, /class="topbar"/);
     assert.doesNotMatch(html, /data-motion-scope="topbar"/);
@@ -22,6 +26,14 @@ test("desktop shell has no topbar and uses the compact sidebar width", async () 
     assert.match(
         appCss,
         /\.app-shell\s*\{[\s\S]*?grid-template-columns:\s*var\(--sidebar-width\) minmax\(0,\s*1fr\);/
+    );
+    assert.match(
+        desktopCss,
+        /\.sidebar\s*\{[\s\S]*?width:\s*var\(--sidebar-expanded-width\);[\s\S]*?clip-path:\s*inset\(0 calc\(100% - var\(--sidebar-width\)\) 0 0\);/
+    );
+    assert.match(
+        desktopCss,
+        /\.sidebar\.is-expanded\s*\{\s*clip-path:\s*inset\(0 0 0 0\);\s*\}/
     );
     assert.match(appCss, /\.main-content\s*\{[\s\S]*?min-height:\s*100vh;/);
 });
@@ -60,6 +72,10 @@ test("mobile toolbar exposes the required height, menu contract and view title",
     assert.match(
         mobileCss,
         /\.sidebar\s*\{[\s\S]*?width:\s*min\(300px, calc\(100vw - 48px\)\);/
+    );
+    assert.match(
+        mobileCss,
+        /\.sidebar\s*\{[\s\S]*?clip-path:\s*none;[\s\S]*?transform:\s*translateX\(-105%\);/
     );
 });
 

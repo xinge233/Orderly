@@ -14,10 +14,25 @@ function between(source, startMarker, endMarker) {
     return source.slice(start, end);
 }
 
-test("desktop sidebar starts collapsed and the shell only reserves the icon rail", async () => {
+test("desktop sidebar is a fixed 208px overlay revealed by clip-path", async () => {
     const html = await read("../index.html");
     const tokens = await read("../styles/tokens.css");
     const appCss = await read("../styles/app.css");
+    const desktopCss = between(
+        appCss,
+        "@media (min-width: 821px)",
+        ".app-main {"
+    );
+    const collapsedRule = between(
+        desktopCss,
+        ".sidebar {",
+        ".sidebar::before {"
+    );
+    const expandedRule = between(
+        desktopCss,
+        ".sidebar.is-expanded {",
+        ".brand {"
+    );
 
     assert.match(
         html,
@@ -30,13 +45,28 @@ test("desktop sidebar starts collapsed and the shell only reserves the icon rail
         /\.app-shell\s*\{[\s\S]*?grid-template-columns:\s*var\(--sidebar-width\) minmax\(0,\s*1fr\);/
     );
     assert.match(
-        appCss,
-        /\.sidebar\.is-expanded\s*\{[\s\S]*?width:\s*var\(--sidebar-expanded-width\);/
+        collapsedRule,
+        /width:\s*var\(--sidebar-expanded-width\);/
     );
+    assert.match(
+        collapsedRule,
+        /clip-path:\s*inset\(0 calc\(100% - var\(--sidebar-width\)\) 0 0\);/
+    );
+    assert.match(
+        expandedRule,
+        /clip-path:\s*inset\(0 0 0 0\);/
+    );
+    assert.doesNotMatch(expandedRule, /width:/);
+    assert.doesNotMatch(`${collapsedRule}\n${expandedRule}`, /transition:\s*width/);
+    assert.match(
+        desktopCss,
+        /\.sidebar::before\s*\{[\s\S]*?left:\s*calc\(var\(--sidebar-width\) - 1px\);[\s\S]*?background:\s*var\(--color-line\);/
+    );
+    assert.doesNotMatch(desktopCss, /\.sidebar::after/);
     assert.doesNotMatch(appCss, /\.app-shell\s*\{[^}]*--sidebar-expanded-width/s);
 });
 
-test("desktop navigation keeps fixed 34/40 visuals and constrains hover and selection", async () => {
+test("desktop sidebar geometry stays fixed while hover and selection stay compact", async () => {
     const html = await read("../index.html");
     const app = await read("../src/app.js");
     const appCss = await read("../styles/app.css");
@@ -56,21 +86,16 @@ test("desktop navigation keeps fixed 34/40 visuals and constrains hover and sele
         "async function navigate"
     );
 
-    for (const selector of [
-        ".brand-copy",
-        ".search-box input",
-        ".search-box kbd",
-        ".nav-group__label",
-        ".nav-copy",
-        ".nav-drag-handle",
-        ".workspace-path",
-        ".settings-trigger > span:not([data-icon])"
-    ]) {
-        assert.ok(desktopCss.includes(selector), `桌面收起态缺少隐藏规则：${selector}`);
-    }
+    const expandedRule = between(
+        desktopCss,
+        ".sidebar.is-expanded {",
+        ".brand {"
+    );
+    assert.match(expandedRule, /clip-path:\s*inset\(0 0 0 0\);/);
+    assert.doesNotMatch(desktopCss, /\.sidebar\.is-expanded\s+\./);
     assert.match(
         desktopCss,
-        /\.nav-item\s*\{[\s\S]*?width:\s*40px;[\s\S]*?height:\s*40px;[\s\S]*?min-height:\s*40px;/
+        /\.nav-item\s*\{\s*grid-template-columns:\s*34px minmax\(0,\s*1fr\);[\s\S]*?gap:\s*var\(--space-5\);[\s\S]*?width:\s*100%;[\s\S]*?height:\s*40px;[\s\S]*?min-height:\s*40px;/
     );
     assert.match(
         desktopCss,
@@ -78,15 +103,23 @@ test("desktop navigation keeps fixed 34/40 visuals and constrains hover and sele
     );
     assert.match(
         desktopCss,
-        /\.sidebar\.is-expanded \.nav-item\s*\{[\s\S]*?height:\s*40px;[\s\S]*?min-height:\s*40px;/
+        /\.nav-copy\s*\{\s*position:\s*static;\s*width:\s*auto;/
     );
     assert.match(
         desktopCss,
-        /\.sidebar\.is-expanded \.nav-item\s*\{[\s\S]*?padding:\s*3px;/
+        /\.brand-copy\s*\{\s*display:\s*flex;\s*\}/
     );
     assert.match(
         desktopCss,
-        /\.sidebar\.is-expanded \.nav-copy\s*\{[\s\S]*?position:\s*static;/
+        /\.search-box\s*\{[\s\S]*?grid-template-columns:\s*34px minmax\(0,\s*1fr\) auto;[\s\S]*?gap:\s*var\(--space-4\);/
+    );
+    assert.match(
+        desktopCss,
+        /\.search-box input\s*\{[\s\S]*?position:\s*static;[\s\S]*?opacity:\s*1;/
+    );
+    assert.match(
+        desktopCss,
+        /\.nav-group__label\s*\{[\s\S]*?padding:\s*0 var\(--space-3\) 0\s+calc\(var\(--sidebar-width\) - var\(--space-4\) \+ var\(--space-2\)\);/
     );
     assert.match(appCss, /\.nav-icon\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/);
     assert.match(
@@ -152,11 +185,11 @@ test("workspace footer fits the full relative path in a 24px icon rail", async (
     );
     assert.match(
         desktopCss,
-        /\.sandbox-status\s*\{[\s\S]*?width:\s*40px;[\s\S]*?height:\s*40px;[\s\S]*?grid-template-columns:\s*24px;[\s\S]*?place-items:\s*center;[\s\S]*?justify-content:\s*center;/
+        /\.sandbox-status\s*\{[\s\S]*?width:\s*100%;[\s\S]*?grid-template-columns:\s*34px minmax\(0,\s*1fr\);[\s\S]*?gap:\s*var\(--space-4\);[\s\S]*?padding:\s*3px var\(--space-2\);/
     );
     assert.match(
         desktopCss,
-        /\.sidebar\.is-expanded \.sandbox-status\s*\{[\s\S]*?grid-template-columns:\s*24px minmax\(0, 1fr\);[\s\S]*?justify-content:\s*normal;[\s\S]*?gap:\s*6px;[\s\S]*?padding:\s*3px 6px;/
+        /\.settings-trigger\s*\{[\s\S]*?width:\s*100%;[\s\S]*?grid-template-columns:\s*34px minmax\(0,\s*1fr\) auto;[\s\S]*?gap:\s*var\(--space-4\);/
     );
     assert.match(
         updateHealth,
@@ -217,6 +250,7 @@ test("focus, search, slash and drag expand immediately while safe blockers delay
     const drag = between(app, "function activateNavigationDrag", "function moveNavigationDrag");
     const clearDrag = between(app, "function clearNavigationDrag", "function clearNavigationDropTargets");
     const settings = between(app, "function openSettings", "function renderSettings");
+    const activate = between(app, "function activateDesktopSidebar", "function deactivateDesktopSidebar");
 
     assert.match(controls, /sidebar\.addEventListener\("focusin"/);
     assert.match(controls, /expandDesktopSidebarImmediately\(\)/);
@@ -231,6 +265,9 @@ test("focus, search, slash and drag expand immediately while safe blockers delay
     assert.match(drag, /expandDesktopSidebarImmediately\(\)/);
     assert.match(clearDrag, /reconcileDesktopSidebar\(\)/);
     assert.match(settings, /queueMicrotask\(reconcileDesktopSidebar\)/);
+    assert.match(activate, /sidebar\.inert = false;/);
+    assert.match(activate, /sidebar\.removeAttribute\("aria-hidden"\);/);
+    assert.doesNotMatch(activate, /setAttribute\("aria-hidden", "true"\)/);
 });
 
 test("plan attention temporarily overlays the real expanded or collapsed state", async () => {
@@ -259,6 +296,10 @@ test("mobile drawer keeps its width, inert/ARIA behavior and is isolated from de
         mobile,
         /\.sidebar\s*\{[\s\S]*?width:\s*min\(300px, calc\(100vw - 48px\)\);/
     );
+    assert.match(
+        mobile,
+        /\.sidebar\s*\{[\s\S]*?clip-path:\s*none;[\s\S]*?transform:\s*translateX\(-105%\);/
+    );
     assert.match(mobile, /\.sidebar\.is-open\s*\{\s*transform:\s*translateX\(0\);/);
     assert.match(controls, /if \(!desktopSidebar\.active[\s\S]*?return;/);
     assert.match(app, /sidebar\.inert = hidden;/);
@@ -267,7 +308,7 @@ test("mobile drawer keeps its width, inert/ARIA behavior and is isolated from de
     assert.match(mobileOpen, /data-motion-state", "open"/);
 });
 
-test("module counts use external chat bubbles that stay anchored through expansion", async () => {
+test("module counts interpolate with parsed clip width through expansion and collapse", async () => {
     const html = await read("../index.html");
     const app = await read("../src/app.js");
     const appCss = await read("../styles/app.css");
@@ -279,6 +320,16 @@ test("module counts use external chat bubbles that stay anchored through expansi
     const textAnchor = between(
         app,
         "function navigationTextRect",
+        "function clipInsetValues"
+    );
+    const clipParser = between(
+        app,
+        "function clipInsetValues",
+        "function isSidebarClipTransition"
+    );
+    const expansionState = between(
+        app,
+        "function setDesktopSidebarExpansion",
         "function renderSidebarCountLayer"
     );
     const renderNavigation = between(
@@ -314,20 +365,49 @@ test("module counts use external chat bubbles that stay anchored through expansi
     );
     assert.match(renderCounts, /\.nav-item--module\[data-module-id\]/);
     assert.match(renderCounts, /button\.getBoundingClientRect\(\)/);
-    assert.match(renderCounts, /const railRight = sidebarRect\.left \+ sidebarRailWidth\(\);/);
+    assert.match(renderCounts, /window\.getComputedStyle\(sidebar\)\.clipPath/);
+    assert.match(renderCounts, /sidebarVisibleWidth\(sidebarRect\.width, clipPath\)/);
+    assert.match(renderCounts, /const railRight = sidebarRect\.left \+ railWidth;/);
+    assert.match(renderCounts, /const expansionProgress = Math\.max/);
+    assert.match(renderCounts, /const collapsedLeft = railRight \+ 4;/);
+    assert.match(renderCounts, /const expandedLeft = textRect \? textRect\.right \+ 7 : collapsedLeft;/);
+    assert.match(
+        renderCounts,
+        /let left = collapsedLeft\s*\+ \(expandedLeft - collapsedLeft\) \* expansionProgress;/
+    );
+    assert.match(clipParser, /function clipInsetValues/);
+    assert.match(clipParser, /function sidebarVisibleWidth/);
+    assert.match(clipParser, /const rightValue = values\.length >= 2 \? values\[1\] : values\[0\];/);
+    assert.match(clipParser, /return Math\.max\(0, Math\.min\(sidebarWidth, sidebarWidth - left - right\)\);/);
     assert.match(renderCounts, /const existing = new Map/);
     assert.match(renderCounts, /existing\.get\(moduleId\)[\s\S]*?element\("span", "sidebar-count-bubble"/);
     assert.match(textAnchor, /button\.querySelector\("\.nav-copy strong"\)/);
     assert.match(textAnchor, /const range = document\.createRange\(\);/);
     assert.match(textAnchor, /range\.selectNodeContents\(text\);/);
     assert.match(textAnchor, /range\.getBoundingClientRect\(\)/);
-    assert.match(renderCounts, /const textRect = desktopSidebar\.expanded\s*\? navigationTextRect\(button\)/);
-    assert.match(renderCounts, /let left = textRect\s*\? textRect\.right \+ 7\s*: railRight \+ 4;/);
+    assert.match(renderCounts, /const textRect = navigationTextRect\(button\);/);
     assert.match(
         renderCounts,
         /left - 6 < handleRect\.right[\s\S]*?left \+ bubbleWidth > handleRect\.left[\s\S]*?left = handleRect\.right \+ 7;/
     );
+    assert.match(
+        renderCounts,
+        /left = Math\.max\(railRight \+ 4, left\);[\s\S]*?const currentVisibleRight = sidebarRect\.left \+ visibleWidth;[\s\S]*?sidebarCountTrackingFrame != null[\s\S]*?visibleWidth > railWidth[\s\S]*?left \+ bubbleWidth > currentVisibleRight[\s\S]*?left = currentVisibleRight - bubbleWidth;/
+    );
     assert.doesNotMatch(renderCounts, /querySelector\("\.nav-copy"\)\?\.getBoundingClientRect\(\)/);
+    const measurementsAt = renderCounts.indexOf("const measurements = entries.map");
+    const handleAvoidanceAt = renderCounts.indexOf("left = handleRect.right + 7;");
+    const clipClampAt = renderCounts.indexOf("left = currentVisibleRight - bubbleWidth;");
+    const styleWriteAt = renderCounts.indexOf("bubble.style.left");
+    assert.ok(measurementsAt >= 0);
+    assert.ok(handleAvoidanceAt > measurementsAt);
+    assert.ok(clipClampAt > handleAvoidanceAt);
+    assert.ok(styleWriteAt > measurementsAt);
+    assert.ok(styleWriteAt > clipClampAt);
+    assert.doesNotMatch(
+        renderCounts.slice(measurementsAt, styleWriteAt),
+        /bubble\.style\s*=/
+    );
     assert.match(
         renderCounts,
         /element\("span", "sidebar-count-bubble", String\(count\)\)/
@@ -348,7 +428,16 @@ test("module counts use external chat bubbles that stay anchored through expansi
     assert.match(app, /sidebarCountTrackingFrame = requestSidebarFrame\(track\)/);
     assert.match(
         app,
-        /sidebar\.addEventListener\("transitionend", finish\)/
+        /function startSidebarCountFrameLoop\(\)\s*\{\s*const track = \(\) => \{[\s\S]*?renderSidebarCountLayer\(\);[\s\S]*?sidebarCountTrackingFrame = requestSidebarFrame\(track\);/
+    );
+    assert.match(app, /event\.propertyName === "clip-path"/);
+    assert.equal(
+        (app.match(/if \([^\n]*isSidebarClipTransition\(event, sidebar\)/g) ?? []).length,
+        2
+    );
+    assert.equal(
+        (app.match(/addEventListener\("transitionend", (?:handler|finish)\)/g) ?? []).length,
+        2
     );
     assert.match(
         app,
@@ -356,14 +445,30 @@ test("module counts use external chat bubbles that stay anchored through expansi
     );
     assert.match(
         app,
-        /if \(expanded\) \{\s*beginSidebarCountTracking\(\);\s*\} else \{[\s\S]*?clearSidebarCountLayer\(\);/
+        /function scheduleSidebarCountRefreshAfterCollapse\(\)\s*\{\s*cancelSidebarCountTracking\(\);\s*cancelSidebarCountRefresh\(\);/
+    );
+    assert.doesNotMatch(
+        between(
+            app,
+            "function scheduleSidebarCountRefreshAfterCollapse",
+            "function beginSidebarCountTracking"
+        ),
+        /clearSidebarCountLayer/
+    );
+    assert.match(
+        expansionState,
+        /if \(duration <= 0\) \{\s*cancelSidebarCountTracking\(\);\s*cancelSidebarCountRefresh\(\);\s*renderSidebarCountLayer\(\);/
+    );
+    assert.match(
+        expansionState,
+        /else if \(expanded\) \{\s*beginSidebarCountTracking\(\);\s*\} else \{\s*scheduleSidebarCountRefreshAfterCollapse\(\);/
     );
     assert.match(app, /addEventListener\(\s*"scroll",\s*queueSidebarCountRender/s);
     assert.match(app, /addEventListener\("resize", queueSidebarCountRender/);
     assert.match(renderNavigation, /queueSidebarCountRender\(\);/);
 });
 
-test("desktop sidebar motion is width-only and mobile keeps its transform transition", async () => {
+test("desktop sidebar motion is clip-path-only and mobile keeps transform", async () => {
     const appCss = await read("../styles/app.css");
     const tokens = await read("../styles/tokens.css");
     const desktopCss = between(
@@ -396,7 +501,11 @@ test("desktop sidebar motion is width-only and mobile keeps its transform transi
         assert.match(motion, /^@layer orderly\.theme \{/);
         assert.match(
             motion,
-            /\[data-motion-scope="sidebar"\]\s*\{\s*transition:\s*width var\(--duration-sidebar\) var\(--ease-out\);/
+            /\[data-motion-scope="sidebar"\]\s*\{\s*transition:\s*clip-path var\(--duration-sidebar\) var\(--ease-out\);/
+        );
+        assert.doesNotMatch(
+            motion,
+            /\[data-motion-scope="sidebar"\]\s*\{\s*transition:\s*width var\(/
         );
         assert.doesNotMatch(motion, /padding var\(/);
         assert.doesNotMatch(

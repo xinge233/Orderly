@@ -21,7 +21,7 @@
     }
 
     html[data-theme="night"] [data-motion-scope="sidebar"] {
-        transition: width var(--duration-sidebar) var(--ease-out);
+        transition: clip-path var(--duration-sidebar) var(--ease-out);
     }
 
     @media (max-width: 820px) {
