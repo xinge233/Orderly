@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "study",
+  "label": "研习蓝",
+  "note": "清爽学习工作台",
+  "order": 30,
+  "default": false,
+  "colorScheme": "light",
+  "browserColor": "#f7f8fc",
+  "styles": [
+    "tokens.css",
+    "motion.css"
+  ],
+  "assets": []
+}

@@ -1,0 +1,329 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/study-data.schema.json",
+  "title": "Orderly read-only study data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "ownerModule",
+    "readOnly",
+    "title",
+    "description",
+    "sources",
+    "count",
+    "payload"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": {
+      "enum": ["assistant", "materials", "knowledge-map", "review"]
+    },
+    "ownerModule": {
+      "type": "string",
+      "pattern": "^module_[a-z0-9_]+$"
+    },
+    "readOnly": { "const": true },
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1 },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "count": { "type": "integer", "minimum": 0 },
+    "payload": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "kind": { "const": "assistant" } },
+        "required": ["kind"]
+      },
+      "then": { "$ref": "#/$defs/assistantPayload" }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "materials" } },
+        "required": ["kind"]
+      },
+      "then": { "$ref": "#/$defs/materialsPayload" }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "knowledge-map" } },
+        "required": ["kind"]
+      },
+      "then": { "$ref": "#/$defs/knowledgeMapPayload" }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "review" } },
+        "required": ["kind"]
+      },
+      "then": { "$ref": "#/$defs/reviewPayload" }
+    }
+  ],
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "kind", "location"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["module-data", "material", "note", "rule"] },
+        "location": { "type": "string", "minLength": 1 }
+      }
+    },
+    "assistantPayload": {
+      "properties": {
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "planner",
+            "externalModelConnected",
+            "tasks",
+            "conversation",
+            "toolTrace",
+            "citations"
+          ],
+          "properties": {
+            "planner": { "const": "local-rules" },
+            "externalModelConnected": { "const": false },
+            "tasks": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/task" }
+            },
+            "conversation": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/message" }
+            },
+            "toolTrace": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/toolStep" }
+            },
+            "citations": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/citation" }
+            }
+          }
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "detail"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "detail": { "type": "string", "minLength": 1 }
+      }
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role", "content", "readOnly"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "role": { "enum": ["user", "assistant"] },
+        "content": { "type": "string", "minLength": 1 },
+        "readOnly": { "const": true }
+      }
+    },
+    "toolStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "state", "detail"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "state": { "enum": ["sample", "not-connected", "available"] },
+        "detail": { "type": "string", "minLength": 1 }
+      }
+    },
+    "citation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sourceId", "title", "excerpt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "sourceId": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "excerpt": { "type": "string", "minLength": 1 }
+      }
+    },
+    "materialsPayload": {
+      "properties": {
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["courses", "materials"],
+          "properties": {
+            "courses": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/course" }
+            },
+            "materials": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/material" }
+            }
+          }
+        }
+      }
+    },
+    "course": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "code", "description"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "code": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 }
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "courseId",
+        "chapter",
+        "format",
+        "status",
+        "sourceId",
+        "excerpt",
+        "cards"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "courseId": { "type": "string", "minLength": 1 },
+        "chapter": { "type": "string", "minLength": 1 },
+        "format": { "enum": ["PDF", "Markdown", "HTML", "DOCX"] },
+        "status": { "enum": ["已整理", "待复核", "只读示例"] },
+        "sourceId": { "type": "string", "minLength": 1 },
+        "excerpt": { "type": "string", "minLength": 1 },
+        "cards": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/card" }
+        }
+      }
+    },
+    "card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "summary"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 }
+      }
+    },
+    "knowledgeMapPayload": {
+      "properties": {
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["nodes", "edges"],
+          "properties": {
+            "nodes": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/knowledgeNode" }
+            },
+            "edges": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/knowledgeEdge" }
+            }
+          }
+        }
+      }
+    },
+    "knowledgeNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "category",
+        "courseId",
+        "summary",
+        "sourceIds",
+        "layer",
+        "order"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "category": { "enum": ["模块", "概念", "方法", "公式", "练习"] },
+        "courseId": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "sourceIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "layer": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "order": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "knowledgeEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "target", "label", "kind"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "target": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["contains", "depends", "supports", "applies"] }
+      }
+    },
+    "reviewPayload": {
+      "properties": {
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["gradingMode", "questions"],
+          "properties": {
+            "gradingMode": { "const": "none" },
+            "questions": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/question" }
+            }
+          }
+        }
+      }
+    },
+    "question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "courseId",
+        "chapter",
+        "knowledgePoint",
+        "prompt",
+        "answerOutline",
+        "sourceId",
+        "difficulty",
+        "readOnly"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "courseId": { "type": "string", "minLength": 1 },
+        "chapter": { "type": "string", "minLength": 1 },
+        "knowledgePoint": { "type": "string", "minLength": 1 },
+        "prompt": { "type": "string", "minLength": 1 },
+        "answerOutline": { "type": "string", "minLength": 1 },
+        "sourceId": { "type": "string", "minLength": 1 },
+        "difficulty": { "enum": ["基础", "进阶", "综合"] },
+        "readOnly": { "const": true }
+      }
+    }
+  }
+}

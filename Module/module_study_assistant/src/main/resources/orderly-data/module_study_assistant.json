@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "kind": "assistant",
+  "ownerModule": "module_study_assistant",
+  "readOnly": true,
+  "title": "AI 学习助手",
+  "description": "聚合本周复习节奏、只读示例对话与本模块工具轨迹；规划交给右下角本地规则计划器，未连接外部模型。",
+  "sources": [
+    {
+      "id": "study-week-plan",
+      "label": "本周学习计划",
+      "kind": "module-data",
+      "location": "classpath:orderly-data/module_study_assistant.json#tasks"
+    },
+    {
+      "id": "study-reference-notes",
+      "label": "复习资料摘记",
+      "kind": "note",
+      "location": "classpath:orderly-data/module_study_assistant.json#citations"
+    }
+  ],
+  "count": 4,
+  "payload": {
+    "planner": "local-rules",
+    "externalModelConnected": false,
+    "tasks": [
+      {
+        "id": "task-calculus-review",
+        "title": "复盘高数极限与导数错题",
+        "detail": "按章节归并本周错题，标出仍需回看的计算步骤。"
+      },
+      {
+        "id": "task-linear-algebra",
+        "title": "完成线性代数第三章练习",
+        "detail": "重点检查矩阵秩与线性方程组解的结构。"
+      },
+      {
+        "id": "task-notes",
+        "title": "整理数据结构课堂笔记",
+        "detail": "补齐树遍历示例，并把疑问留到下一次答疑。"
+      },
+      {
+        "id": "task-seminar",
+        "title": "准备算法研讨课问题",
+        "detail": "从动态规划章节挑选两个需要比较解法的案例。"
+      }
+    ],
+    "conversation": [
+      {
+        "id": "message-example-user",
+        "role": "user",
+        "content": "帮我把本周数学复习安排成可检查的任务。",
+        "readOnly": true
+      },
+      {
+        "id": "message-example-assistant",
+        "role": "assistant",
+        "content": "只读示例：先核对错题范围，再为每个知识点补充一次独立练习。此处不会生成实时回答，目标会交给右下角本地规则计划器。",
+        "readOnly": true
+      }
+    ],
+    "toolTrace": [
+      {
+        "id": "tool-query",
+        "label": "读取本模块学习数据",
+        "state": "available",
+        "detail": "通过 study.assistant.read 从模块 JAR 读取自有只读数据。"
+      },
+      {
+        "id": "tool-sample-dialog",
+        "label": "展示示例对话",
+        "state": "sample",
+        "detail": "对话内容来自契约样例，仅用于展示工作台结构。"
+      },
+      {
+        "id": "tool-task-history",
+        "label": "打开任务记录",
+        "state": "not-connected",
+        "detail": "任务记录能力尚未接入，界面保留明确禁用状态。"
+      }
+    ],
+    "citations": [
+      {
+        "id": "citation-week-plan",
+        "sourceId": "study-week-plan",
+        "title": "本周学习计划",
+        "excerpt": "四条待办按数学复盘、练习、课堂笔记和研讨准备拆分。"
+      },
+      {
+        "id": "citation-calculus",
+        "sourceId": "study-reference-notes",
+        "title": "高数错题摘记",
+        "excerpt": "优先复核极限代换条件，再检查导数定义在分段点处的使用。"
+      },
+      {
+        "id": "citation-linear-algebra",
+        "sourceId": "study-reference-notes",
+        "title": "线性代数提示",
+        "excerpt": "判断解的结构前，先比较系数矩阵与增广矩阵的秩。"
+      }
+    ]
+  }
+}

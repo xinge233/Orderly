@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "kind": "materials",
+  "ownerModule": "module_fs",
+  "readOnly": true,
+  "title": "资料管理示例",
+  "description": "用于展示资料管理视图的模块自有只读示例。",
+  "sources": [
+    {
+      "id": "materials-data",
+      "label": "资料索引示例",
+      "kind": "module-data",
+      "location": "Module/module_fs/src/main/resources/orderly-data/module_fs.json"
+    },
+    {
+      "id": "material-calculus",
+      "label": "微积分课程讲义",
+      "kind": "material",
+      "location": "study://courses/calculus/chapter-1"
+    }
+  ],
+  "count": 1,
+  "payload": {
+    "courses": [
+      {
+        "id": "calculus",
+        "title": "高等数学",
+        "code": "MATH-101",
+        "description": "极限、导数与积分基础。"
+      }
+    ],
+    "materials": [
+      {
+        "id": "material-limits",
+        "title": "极限与连续",
+        "courseId": "calculus",
+        "chapter": "第一章",
+        "format": "PDF",
+        "status": "已整理",
+        "sourceId": "material-calculus",
+        "excerpt": "极限描述函数值在自变量趋近某一点时的变化趋势。",
+        "cards": [
+          {
+            "id": "card-limit",
+            "title": "核心定义",
+            "summary": "通过任意小的误差范围理解极限。"
+          }
+        ]
+      }
+    ]
+  }
+}

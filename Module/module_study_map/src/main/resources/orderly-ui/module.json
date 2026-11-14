@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "view": {
+    "id": "study-map",
+    "icon": "route",
+    "caption": "知识脉络"
+  },
+  "card": {
+    "title": "高等数学知识脉络",
+    "description": "按课程筛选和搜索高等数学节点，并查看知识点之间的关系。",
+    "badge": "只读知识图谱",
+    "icon": "route",
+    "queryId": "study.map.read",
+    "countKey": "count",
+    "unit": "个知识节点"
+  },
+  "settings": [],
+  "examples": [],
+  "script": "module.js",
+  "style": "module.css"
+}

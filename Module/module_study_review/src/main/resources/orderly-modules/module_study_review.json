@@ -1,0 +1,16 @@
+{
+  "moduleId": "module_study_review",
+  "title": "复习自测",
+  "description": "只读查看复习题目与参考提纲，作答和掌握标记仅作本地界面演示。",
+  "order": 40,
+  "actions": [],
+  "queries": [
+    {
+      "id": "study.review.read",
+      "title": "读取复习自测",
+      "description": "从模块自身 JAR 读取只读复习题目，不自动阅卷。",
+      "parameters": []
+    }
+  ],
+  "plannerRules": []
+}

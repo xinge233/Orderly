@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "kind": "assistant",
+  "ownerModule": "module_study_assistant",
+  "readOnly": true,
+  "title": "学习规划助手",
+  "description": "由本地规则生成只读示例，不连接外部模型。",
+  "sources": [
+    {
+      "id": "assistant-data",
+      "label": "学习规划示例",
+      "kind": "module-data",
+      "location": "Module/module_study_assistant/src/main/resources/orderly-data/module_study_assistant.json"
+    }
+  ],
+  "count": 1,
+  "payload": {
+    "planner": "local-rules",
+    "externalModelConnected": false,
+    "tasks": [
+      {
+        "id": "task-review",
+        "title": "整理本周复习重点",
+        "detail": "从自测清单中挑选薄弱知识点。"
+      }
+    ],
+    "conversation": [
+      {
+        "id": "message-sample",
+        "role": "assistant",
+        "content": "这是只读示例。真实目标会交给右下角本地规则计划器。",
+        "readOnly": true
+      }
+    ],
+    "toolTrace": [
+      {
+        "id": "tool-query",
+        "label": "读取学习资源",
+        "state": "available",
+        "detail": "通过模块查询读取本模块自有数据。"
+      }
+    ],
+    "citations": [
+      {
+        "id": "citation-data",
+        "sourceId": "assistant-data",
+        "title": "学习规划示例",
+        "excerpt": "页面数据来自模块 JAR，不访问其他模块。"
+      }
+    ]
+  }
+}

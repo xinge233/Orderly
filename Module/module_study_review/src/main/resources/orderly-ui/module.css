@@ -1,0 +1,479 @@
+.study-review-ui {
+    display: grid;
+    gap: var(--space-5);
+    padding: var(--space-6);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+    color: var(--color-text);
+    font-family: var(--font-ui);
+}
+
+.study-review-ui-header,
+.study-review-ui-controls,
+.study-review-ui-pane-heading,
+.study-review-ui-progress-heading,
+.study-review-ui-mark-row,
+.study-review-ui-answer-heading {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+}
+
+.study-review-ui-header {
+    justify-content: space-between;
+    padding-bottom: var(--space-5);
+    border-bottom: 1px solid var(--color-line);
+}
+
+.study-review-ui-heading {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.study-review-ui h1,
+.study-review-ui h2,
+.study-review-ui p {
+    margin: 0;
+}
+
+.study-review-ui h1,
+.study-review-ui h2 {
+    font-family: var(--font-display);
+    letter-spacing: 0;
+}
+
+.study-review-ui h1 {
+    font-size: var(--font-size-panel-title);
+}
+
+.study-review-ui h2 {
+    font-size: var(--font-size-body);
+}
+
+.study-review-ui-eyebrow {
+    color: var(--color-accent-strong);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.study-review-ui-lead,
+.study-review-ui-progress-meta,
+.study-review-ui-question small,
+.study-review-ui-answer-heading small,
+.study-review-ui-mark-copy small,
+.study-review-ui-empty {
+    color: var(--color-text-soft);
+    font-size: var(--font-size-small);
+}
+
+.study-review-ui-button,
+.study-review-ui-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: var(--font-size-small);
+    cursor: pointer;
+    transition:
+        background-color var(--duration-fast) var(--ease-out),
+        border-color var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out);
+}
+
+.study-review-ui-button {
+    padding: var(--space-2) var(--space-3);
+}
+
+.study-review-ui-generate {
+    flex-wrap: wrap;
+    border-color: var(--color-line);
+    background: var(--color-surface-muted);
+    color: var(--color-text-soft);
+    cursor: not-allowed;
+    opacity: 0.82;
+}
+
+.study-review-ui-generate small {
+    border-radius: var(--radius-xs);
+    background: var(--color-warning-soft);
+    color: var(--color-warning);
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--font-size-caption);
+    font-weight: 700;
+}
+
+.study-review-ui-icon {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+}
+
+.study-review-ui-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-accent-soft);
+    border-radius: var(--radius-sm);
+    background: var(--color-accent-soft);
+    color: var(--color-accent-strong);
+    font-size: var(--font-size-small);
+}
+
+.study-review-ui-notice p {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+}
+
+.study-review-ui-controls {
+    align-items: flex-end;
+    justify-content: space-between;
+}
+
+.study-review-ui-course {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 13rem;
+    color: var(--color-text-soft);
+    font-size: var(--font-size-small);
+}
+
+.study-review-ui-course select {
+    min-height: 2.5rem;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    padding: 0 var(--space-3);
+    font-family: var(--font-ui);
+    font-size: var(--font-size-control);
+}
+
+.study-review-ui-progress {
+    display: grid;
+    flex: 1;
+    gap: var(--space-2);
+    max-width: 34rem;
+}
+
+.study-review-ui-progress-heading {
+    justify-content: space-between;
+}
+
+.study-review-ui-progress-heading span {
+    color: var(--color-text-soft);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-small);
+}
+
+.study-review-ui-progress-track {
+    overflow: hidden;
+    height: var(--space-2);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface-strong);
+}
+
+.study-review-ui-progress-fill {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--color-accent);
+    transition: width var(--duration-normal) var(--ease-out);
+}
+
+.study-review-ui-workspace {
+    display: grid;
+    grid-template-columns: minmax(15rem, 21rem) minmax(0, 1fr);
+    min-height: 31rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+}
+
+.study-review-ui-list-pane,
+.study-review-ui-detail-pane {
+    min-width: 0;
+    padding: var(--space-5);
+}
+
+.study-review-ui-list-pane {
+    border-right: 1px solid var(--color-line);
+    background: var(--color-surface-muted);
+}
+
+.study-review-ui-detail-pane {
+    display: grid;
+    align-content: start;
+    gap: var(--space-4);
+}
+
+.study-review-ui-pane-heading {
+    justify-content: space-between;
+    margin-bottom: var(--space-4);
+}
+
+.study-review-ui-pane-heading span {
+    color: var(--color-text-soft);
+    font-size: var(--font-size-caption);
+}
+
+.study-review-ui-question-list {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.study-review-ui-question {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    padding: var(--space-3);
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background-color var(--duration-fast) var(--ease-out),
+        border-color var(--duration-fast) var(--ease-out);
+}
+
+.study-review-ui-question:hover {
+    background: var(--color-surface-strong);
+}
+
+.study-review-ui-question:focus-visible,
+.study-review-ui-button:focus-visible,
+.study-review-ui-mark:focus-visible,
+.study-review-ui-course select:focus-visible,
+.study-review-ui-answer:focus-visible,
+.study-review-ui-outline summary:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+.study-review-ui-question.is-selected {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+}
+
+.study-review-ui-question.is-mastered .study-review-ui-question-icon {
+    color: var(--color-safe);
+}
+
+.study-review-ui-question.is-weak .study-review-ui-question-icon {
+    color: var(--color-warning);
+}
+
+.study-review-ui-question-icon {
+    display: inline-grid;
+    place-items: center;
+    color: var(--color-text-soft);
+}
+
+.study-review-ui-question-copy {
+    display: grid;
+    min-width: 0;
+    gap: var(--space-1);
+}
+
+.study-review-ui-question-copy strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.study-review-ui-question-status,
+.study-review-ui-tag {
+    border-radius: var(--radius-xs);
+    background: var(--color-surface-strong);
+    color: var(--color-text-soft);
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--font-size-caption);
+    white-space: nowrap;
+}
+
+.study-review-ui-question.is-mastered .study-review-ui-question-status,
+.study-review-ui-tag.is-mastered {
+    background: var(--color-safe-soft);
+    color: var(--color-safe);
+}
+
+.study-review-ui-question.is-weak .study-review-ui-question-status,
+.study-review-ui-tag.is-weak {
+    background: var(--color-warning-soft);
+    color: var(--color-warning);
+}
+
+.study-review-ui-detail-route {
+    color: var(--color-accent-strong);
+    font-size: var(--font-size-caption);
+    font-weight: 700;
+}
+
+.study-review-ui-detail-title {
+    font-size: var(--font-size-panel-title);
+}
+
+.study-review-ui-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.study-review-ui-prompt {
+    padding: var(--space-4);
+    border-left: 3px solid var(--color-accent);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface-muted);
+    font-size: var(--font-size-control);
+    line-height: 1.7;
+}
+
+.study-review-ui-answer-field {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.study-review-ui-answer-heading {
+    justify-content: space-between;
+}
+
+.study-review-ui-answer {
+    width: 100%;
+    min-height: 9rem;
+    resize: vertical;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    padding: var(--space-3);
+    font-family: var(--font-ui);
+    font-size: var(--font-size-body);
+    line-height: 1.65;
+}
+
+.study-review-ui-mark-row {
+    justify-content: space-between;
+    padding: var(--space-3) 0;
+    border-top: 1px solid var(--color-line);
+    border-bottom: 1px solid var(--color-line);
+}
+
+.study-review-ui-mark-copy {
+    display: grid;
+    gap: var(--space-1);
+}
+
+.study-review-ui-mark-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.study-review-ui-mark {
+    padding: var(--space-2) var(--space-3);
+}
+
+.study-review-ui-mark.is-mastered {
+    color: var(--color-safe);
+}
+
+.study-review-ui-mark.is-weak {
+    color: var(--color-warning);
+}
+
+.study-review-ui-mark.is-mastered.is-active {
+    border-color: var(--color-safe);
+    background: var(--color-safe-soft);
+}
+
+.study-review-ui-mark.is-weak.is-active {
+    border-color: var(--color-warning);
+    background: var(--color-warning-soft);
+}
+
+.study-review-ui-outline {
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    padding: var(--space-3) var(--space-4);
+}
+
+.study-review-ui-outline summary {
+    color: var(--color-accent-strong);
+    cursor: pointer;
+    font-size: var(--font-size-small);
+    font-weight: 700;
+}
+
+.study-review-ui-outline p {
+    margin-top: var(--space-3);
+    color: var(--color-text-soft);
+    font-size: var(--font-size-body);
+    line-height: 1.65;
+}
+
+.study-review-ui-error {
+    color: var(--color-danger);
+}
+
+@media (max-width: 900px) {
+    .study-review-ui-controls {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .study-review-ui-progress {
+        width: 100%;
+        max-width: none;
+    }
+
+    .study-review-ui-workspace {
+        grid-template-columns: 1fr;
+    }
+
+    .study-review-ui-list-pane {
+        border-right: 0;
+        border-bottom: 1px solid var(--color-line);
+    }
+}
+
+@media (max-width: 640px) {
+    .study-review-ui {
+        padding: var(--space-4);
+    }
+
+    .study-review-ui-header,
+    .study-review-ui-mark-row,
+    .study-review-ui-answer-heading {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .study-review-ui-generate {
+        justify-content: flex-start;
+    }
+
+    .study-review-ui-question {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .study-review-ui-question-status {
+        grid-column: 2;
+        justify-self: start;
+    }
+}

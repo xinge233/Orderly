@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "assistant",
+  "ownerModule": "module_study_assistant",
+  "readOnly": true,
+  "title": "错误示例",
+  "description": "禁止声称已连接外部模型。",
+  "sources": [],
+  "count": 0,
+  "payload": {
+    "planner": "local-rules",
+    "externalModelConnected": true,
+    "tasks": [],
+    "conversation": [],
+    "toolTrace": [],
+    "citations": []
+  }
+}

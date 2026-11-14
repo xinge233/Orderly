@@ -231,3 +231,46 @@ git merge-base --is-ancestor 882d2d3 HEAD
 
 - OpenAI Docs，Projects and chats：<https://learn.chatgpt.com/docs/projects.md>
 - OpenAI Docs，ChatGPT desktop app：<https://developers.openai.com/codex/app.md>
+
+## 10. 学习工作台扩展实施交接（2026-11-14）
+
+本节记录交接基线 `3eceb34` 之后新增的学习界面参考扩展。第 0 至 9 节仍是侧边栏阶段的历史快照，不应覆盖本节的新事实。
+
+### 10.1 用户已确认范围
+
+- 新增浅色 `study`（研习蓝）目录主题，视觉取色与层级参考学习高保真原型。
+- 新增三个独立只读模块：`module_study_assistant`（AI 学习助手）、`module_study_map`（知识脉络）、`module_study_review`（复习自测）。
+- 将 `module_fs` 的主视图改为资料管理样式，同时保留原有文件动作、授权、确认、快照、回滚和项目回收站语义。
+- 学习数据保存在各模块自身目录，通过一套只读契约校验，不建立集中式学习数据目录，也不允许模块互相读取数据。
+- 上传、AI 整理、任务记录、自动出题、自动阅卷保留为明确标注“尚未接入”的界面状态；AI 助手只显示本地规则边界和只读示例。
+
+### 10.2 模块与数据边界
+
+| 模块 | 视图 ID | 查询 | 模块内数据 |
+|---|---|---|---|
+| `module_study_assistant` | `study-assistant` | `study.assistant.read` | `orderly-data/module_study_assistant.json` |
+| `module_study_map` | `study-map` | `study.map.read` | `orderly-data/module_study_map.json` |
+| `module_study_review` | `study-review` | `study.review.read` | `orderly-data/module_study_review.json` |
+| `module_fs` | `files` | `fs.materials` | `orderly-data/module_fs.json` |
+
+四个业务模块由同一宿主聚合类加载器加载。学习数据资源名必须带模块 ID，不能共用 `orderly-data/study-data.json`，否则 `Class.getResourceAsStream` 会首先解析到 JAR 搜索顺序中的同一份数据。该问题已在集成阶段复现并修复。
+
+`contracts/study-data.schema.json` 定义 `assistant`、`materials`、`knowledge-map`、`review` 四种负载。`scripts/validate-study-data.mjs` 同时校验模块契约/UI 清单中的严格 JSON 重复键、模块文件、合法/非法样例、模块归属、`readOnly: true`、集合计数、来源引用、知识图边端点、AI 外部模型声明和复习阅卷模式。
+
+### 10.3 验证证据
+
+- `node scripts/validate-study-data.mjs`：通过。
+- `.\scripts\gate.ps1`：通过；Maven 49 项、1 项既有跳过；前端 70 项；契约 10 项。
+- `.\scripts\modularity.ps1`：通过全模块、单模块移除、零模块、恢复、临时模块自动发现与可逆移出、目录主题增删和主题失效回退。
+- `.\scripts\smoke.ps1 -BaseUrl http://127.0.0.1:18098`：通过，四个学习查询均在宿主内返回符合契约的数据；共执行 9 条无必填参数查询。
+- 通用集成测试与启动烟测不限制业务模块总数，也不要求任何具体业务模块存在；唯一强制模块是受保护的系统模块 `module_control`，模块偏好必须返回 `moduleSettings`。学习模块查询仅在该模块实际安装时校验。
+- Edge 实测 `devicePixelRatio=1`：820、821、1024、1440、1920 与 390px 均无横向溢出；桌面展开侧栏 272px，主网格左缘保持 72px，侧栏覆盖伪元素为 `none`。
+- 四视图实测：资料管理 8 行、知识图 31 节点、复习题 6 道、AI 学习助手明确显示“本地规则”和“未接入外部模型”；设置中的主题选项包含 `paper`、`moss`、`night`、`study`，可从其他主题切换回 `study`；待接入按钮与未持久化标记提示正确。
+- 四个模块 JAR 均包含各自的 SPI、模块契约、UI 三件资源与模块唯一学习数据文件。
+
+### 10.4 当前限制
+
+- 学习模块是界面参考扩展，不代表 V7 已承诺通用 AI 学习业务。
+- 不连接外部模型，不实现上传、自动整理、任务记录持久化、自动出题、自动阅卷或掌握状态写回。
+- 浏览器验收基于应用自管测试数据；真实个人目录仍不在当前授权范围。
+- `docs/~$Orderly-项目策划书-v7.docx` 是用户 Word 程序产生的临时锁文件，不属于实现产物，不提交。

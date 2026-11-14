@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "view": {
+    "id": "study-review",
+    "icon": "check",
+    "caption": "只读复习自测"
+  },
+  "card": {
+    "title": "复习自测",
+    "description": "查看科目、复习进度与题目详情；作答和标记不会持久化。",
+    "badge": "未接入阅卷",
+    "icon": "check",
+    "queryId": "study.review.read",
+    "countKey": "count",
+    "unit": "道题目"
+  },
+  "examples": [],
+  "script": "module.js",
+  "style": "module.css"
+}

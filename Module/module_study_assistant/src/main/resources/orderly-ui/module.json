@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "view": {
+    "id": "study-assistant",
+    "icon": "spark",
+    "caption": "AI 学习助手"
+  },
+  "card": {
+    "title": "AI 学习助手",
+    "description": "查看本周待办、只读示例对话、工具轨迹与引用资料。",
+    "badge": "本地规则 · 只读",
+    "icon": "spark",
+    "queryId": "study.assistant.read",
+    "countKey": "count",
+    "unit": "项本周任务"
+  },
+  "settings": [],
+  "examples": [],
+  "script": "module.js",
+  "style": "module.css"
+}

@@ -23,6 +23,7 @@ public final class FileModule implements OrderlyModule {
 
     public static final String MODULE_ID = "module_fs";
     private static final String INITIALIZATION_STATE = "module_fs_initialized";
+    private final StudyMaterialsCatalog materialsCatalog = new StudyMaterialsCatalog();
 
     @Override
     public String moduleId() {
@@ -60,6 +61,7 @@ public final class FileModule implements OrderlyModule {
         return switch (queryId) {
             case "fs.list" -> listQuery(parameters.getOrDefault("path", ""), runtime);
             case "fs.summary" -> listQuery("", runtime);
+            case "fs.materials" -> materialsCatalog.load();
             case "fs.trash" -> {
                 List<TrashEntry> entries = runtime.listTrash();
                 yield Map.of("entries", entries, "count", entries.size());

@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "kind": "review",
+  "ownerModule": "module_study_review",
+  "readOnly": true,
+  "title": "复习自测示例",
+  "description": "只读题目与作答区域，不自动阅卷，也不保存作答。",
+  "sources": [
+    {
+      "id": "review-data",
+      "label": "自测题库示例",
+      "kind": "module-data",
+      "location": "Module/module_study_review/src/main/resources/orderly-data/module_study_review.json"
+    }
+  ],
+  "count": 6,
+  "payload": {
+    "gradingMode": "none",
+    "questions": [
+      {
+        "id": "question-limit",
+        "courseId": "calculus",
+        "chapter": "第一章",
+        "knowledgePoint": "极限",
+        "prompt": "用一句话说明极限的直观含义。",
+        "answerOutline": "描述自变量趋近某一点时，函数值趋近某个确定值的趋势。",
+        "sourceId": "review-data",
+        "difficulty": "基础",
+        "readOnly": true
+      },
+      {
+        "id": "question-derivative-definition",
+        "courseId": "calculus",
+        "chapter": "第二章",
+        "knowledgePoint": "导数的定义",
+        "prompt": "如何用极限定义函数在某一点的导数？",
+        "answerOutline": "写出自变量增量趋近于零时差商的极限，并说明其几何意义。",
+        "sourceId": "review-data",
+        "difficulty": "基础",
+        "readOnly": true
+      },
+      {
+        "id": "question-definite-integral-area",
+        "courseId": "calculus",
+        "chapter": "第五章",
+        "knowledgePoint": "定积分",
+        "prompt": "定积分为什么可以用来表示曲线下方的面积？",
+        "answerOutline": "从分割、近似、求和与取极限的过程解释黎曼和的几何含义。",
+        "sourceId": "review-data",
+        "difficulty": "进阶",
+        "readOnly": true
+      },
+      {
+        "id": "question-matrix-rank",
+        "courseId": "linear-algebra",
+        "chapter": "第三章",
+        "knowledgePoint": "矩阵的秩",
+        "prompt": "矩阵的秩反映了线性变换的什么特征？",
+        "answerOutline": "说明秩是列空间或行空间的维数，并联系线性变换像空间的维度。",
+        "sourceId": "review-data",
+        "difficulty": "进阶",
+        "readOnly": true
+      },
+      {
+        "id": "question-hash-collision",
+        "courseId": "data-structures",
+        "chapter": "第七章",
+        "knowledgePoint": "哈希冲突",
+        "prompt": "开放寻址法和链地址法分别如何解决哈希冲突？",
+        "answerOutline": "比较同表探测与桶内链表或集合两种策略，并说明其对查找和空间的影响。",
+        "sourceId": "review-data",
+        "difficulty": "综合",
+        "readOnly": true
+      },
+      {
+        "id": "question-bfs-shortest-path",
+        "courseId": "data-structures",
+        "chapter": "第九章",
+        "knowledgePoint": "广度优先搜索",
+        "prompt": "在无权图中，为什么广度优先搜索第一次到达某点时对应最短路径？",
+        "answerOutline": "按层扩展，说明队列保证距离不超过当前层，并用反证或层数归纳论证。",
+        "sourceId": "review-data",
+        "difficulty": "进阶",
+        "readOnly": true
+      }
+    ]
+  }
+}

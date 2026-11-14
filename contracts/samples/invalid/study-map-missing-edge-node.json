@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "kind": "knowledge-map",
+  "ownerModule": "module_study_map",
+  "readOnly": true,
+  "title": "错误示例",
+  "description": "边的端点必须存在于节点集合。",
+  "sources": [],
+  "count": 1,
+  "payload": {
+    "nodes": [
+      {
+        "id": "known",
+        "label": "已知节点",
+        "category": "概念",
+        "courseId": "calculus",
+        "summary": "已知节点。",
+        "sourceIds": [],
+        "layer": 0,
+        "order": 0
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-invalid",
+        "source": "known",
+        "target": "missing",
+        "label": "无效",
+        "kind": "depends"
+      }
+    ]
+  }
+}

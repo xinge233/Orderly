@@ -1,7 +1,7 @@
 {
   "moduleId": "module_fs",
-  "title": "文件与目录",
-  "description": "在应用自管沙箱内浏览、创建、移动和回收文件。",
+  "title": "资料管理",
+  "description": "浏览课程资料，并在应用自管沙箱内通过受控计划创建、移动和回收文件。",
   "order": 10,
   "actions": [
     {
@@ -65,6 +65,12 @@
       "parameters": [
         { "name": "path", "type": "string", "required": false, "description": "工作区相对路径" }
       ]
+    },
+    {
+      "id": "fs.materials",
+      "title": "资料目录",
+      "description": "只读读取模块 classpath 内的课程与学习资料。",
+      "parameters": []
     },
     {
       "id": "fs.summary",

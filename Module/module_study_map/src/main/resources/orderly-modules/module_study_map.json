@@ -1,0 +1,16 @@
+{
+  "moduleId": "module_study_map",
+  "title": "知识脉络",
+  "description": "只读浏览高等数学知识节点、先修关系与课程筛选。",
+  "order": 40,
+  "actions": [],
+  "queries": [
+    {
+      "id": "study.map.read",
+      "title": "读取知识图谱",
+      "description": "只读读取模块 JAR 内的高等数学节点和关系。",
+      "parameters": []
+    }
+  ],
+  "plannerRules": []
+}

@@ -42,6 +42,11 @@ try {
         throw "模块 UI 契约样例校验失败，退出码：$LASTEXITCODE"
     }
 
+    & node (Join-Path $repoRoot "scripts\validate-study-data.mjs")
+    if ($LASTEXITCODE -ne 0) {
+        throw "学习数据契约校验失败，退出码：$LASTEXITCODE"
+    }
+
     $forbiddenDelete = & rg -n --glob '*.java' 'Files\.delete|deleteIfExists' app Module
     if ($LASTEXITCODE -eq 0) {
         throw "检测到物理删除调用：`n$forbiddenDelete"

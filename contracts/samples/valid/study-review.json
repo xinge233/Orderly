@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "kind": "review",
+  "ownerModule": "module_study_review",
+  "readOnly": true,
+  "title": "复习自测示例",
+  "description": "只读题目与作答区域，不自动阅卷。",
+  "sources": [
+    {
+      "id": "review-data",
+      "label": "自测题库示例",
+      "kind": "module-data",
+      "location": "Module/module_study_review/src/main/resources/orderly-data/module_study_review.json"
+    }
+  ],
+  "count": 1,
+  "payload": {
+    "gradingMode": "none",
+    "questions": [
+      {
+        "id": "question-limit",
+        "courseId": "calculus",
+        "chapter": "第一章",
+        "knowledgePoint": "极限",
+        "prompt": "用一句话说明极限的直观含义。",
+        "answerOutline": "描述自变量趋近时的函数值趋势。",
+        "sourceId": "review-data",
+        "difficulty": "基础",
+        "readOnly": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "kind": "knowledge-map",
+  "ownerModule": "module_study_map",
+  "readOnly": true,
+  "title": "高等数学知识脉络",
+  "description": "从模块自有节点和边生成只读知识关系图。",
+  "sources": [
+    {
+      "id": "map-data",
+      "label": "知识关系示例",
+      "kind": "module-data",
+      "location": "Module/module_study_map/src/main/resources/orderly-data/module_study_map.json"
+    }
+  ],
+  "count": 3,
+  "payload": {
+    "nodes": [
+      {
+        "id": "lim",
+        "label": "极限",
+        "category": "概念",
+        "courseId": "calculus",
+        "summary": "研究变量趋近过程的基础概念。",
+        "sourceIds": ["map-data"],
+        "layer": 0,
+        "order": 0
+      },
+      {
+        "id": "derivative",
+        "label": "导数",
+        "category": "方法",
+        "courseId": "calculus",
+        "summary": "用极限刻画瞬时变化率。",
+        "sourceIds": ["map-data"],
+        "layer": 1,
+        "order": 0
+      },
+      {
+        "id": "application",
+        "label": "最值问题",
+        "category": "练习",
+        "courseId": "calculus",
+        "summary": "利用导数分析函数单调性与极值。",
+        "sourceIds": ["map-data"],
+        "layer": 2,
+        "order": 0
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-limit-derivative",
+        "source": "lim",
+        "target": "derivative",
+        "label": "定义",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-derivative-application",
+        "source": "derivative",
+        "target": "application",
+        "label": "应用",
+        "kind": "applies"
+      }
+    ]
+  }
+}

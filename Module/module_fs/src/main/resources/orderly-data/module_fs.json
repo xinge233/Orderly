@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 1,
+  "kind": "materials",
+  "ownerModule": "module_fs",
+  "readOnly": true,
+  "title": "课程资料库",
+  "description": "按课程整理的学习资料只读索引，用于展示资料管理的浏览、检索与详情阅读。",
+  "sources": [
+    {
+      "id": "materials-index",
+      "label": "资料管理模块数据",
+      "kind": "module-data",
+      "location": "Module/module_fs/src/main/resources/orderly-data/module_fs.json"
+    },
+    {
+      "id": "material-calculus-limits",
+      "label": "极限与连续讲义",
+      "kind": "material",
+      "location": "study://calculus/limits-and-continuity"
+    },
+    {
+      "id": "material-calculus-derivative",
+      "label": "导数运算笔记",
+      "kind": "material",
+      "location": "study://calculus/derivative-rules"
+    },
+    {
+      "id": "material-ds-complexity",
+      "label": "算法复杂度专题",
+      "kind": "material",
+      "location": "study://data-structures/algorithm-complexity"
+    },
+    {
+      "id": "material-ds-trees",
+      "label": "树结构导读",
+      "kind": "material",
+      "location": "study://data-structures/tree-structures"
+    },
+    {
+      "id": "material-linear-matrix",
+      "label": "矩阵基础示例",
+      "kind": "material",
+      "location": "study://linear-algebra/matrix-basics"
+    },
+    {
+      "id": "material-linear-eigen",
+      "label": "特征值复习卡",
+      "kind": "material",
+      "location": "study://linear-algebra/eigenvalues"
+    },
+    {
+      "id": "material-writing-review",
+      "label": "文献综述写作指南",
+      "kind": "material",
+      "location": "study://academic-writing/literature-review"
+    },
+    {
+      "id": "material-writing-citation",
+      "label": "引用规范清单",
+      "kind": "material",
+      "location": "study://academic-writing/citation-guide"
+    }
+  ],
+  "count": 8,
+  "payload": {
+    "courses": [
+      {
+        "id": "calculus",
+        "title": "高等数学",
+        "code": "MATH-101",
+        "description": "极限、导数与积分基础，强调概念之间的联系。"
+      },
+      {
+        "id": "data-structures",
+        "title": "数据结构",
+        "code": "CS-204",
+        "description": "从复杂度分析到线性结构与树结构的核心方法。"
+      },
+      {
+        "id": "linear-algebra",
+        "title": "线性代数",
+        "code": "MATH-102",
+        "description": "矩阵、向量空间、特征值与线性变换。"
+      },
+      {
+        "id": "academic-writing",
+        "title": "学术写作",
+        "code": "WRIT-110",
+        "description": "面向课程论文的文献组织、论证与引用规范。"
+      }
+    ],
+    "materials": [
+      {
+        "id": "material-limits",
+        "title": "极限与连续",
+        "courseId": "calculus",
+        "chapter": "第一章",
+        "format": "PDF",
+        "status": "已整理",
+        "sourceId": "material-calculus-limits",
+        "excerpt": "极限描述函数值在自变量趋近某一点时的变化趋势，是连续与可导判断的基础。",
+        "cards": [
+          {
+            "id": "card-limit-definition",
+            "title": "核心定义",
+            "summary": "用任意小的误差范围描述函数值最终靠近的目标。"
+          },
+          {
+            "id": "card-continuity",
+            "title": "连续条件",
+            "summary": "函数在一点连续需要该点有定义、极限存在且二者相等。"
+          }
+        ]
+      },
+      {
+        "id": "material-derivatives",
+        "title": "导数运算规则",
+        "courseId": "calculus",
+        "chapter": "第二章",
+        "format": "Markdown",
+        "status": "待复核",
+        "sourceId": "material-calculus-derivative",
+        "excerpt": "汇总和差、乘积、商与复合函数的求导规则，并给出常见易错点。",
+        "cards": [
+          {
+            "id": "card-chain-rule",
+            "title": "链式法则",
+            "summary": "复合函数求导时，外层导数与内层导数相乘。"
+          },
+          {
+            "id": "card-derivative-check",
+            "title": "复核提示",
+            "summary": "先判断函数结构，再选择规则，最后检查定义域。"
+          }
+        ]
+      },
+      {
+        "id": "material-complexity",
+        "title": "算法复杂度专题",
+        "courseId": "data-structures",
+        "chapter": "第一章",
+        "format": "PDF",
+        "status": "已整理",
+        "sourceId": "material-ds-complexity",
+        "excerpt": "使用渐进记号比较算法增长趋势，并区分时间、空间与最坏情况分析。",
+        "cards": [
+          {
+            "id": "card-big-o",
+            "title": "大 O 记号",
+            "summary": "关注输入规模增长时运行时间上界的增长量级。"
+          },
+          {
+            "id": "card-amortized",
+            "title": "均摊分析",
+            "summary": "将偶尔出现的高成本操作分摊到连续多次操作中。"
+          }
+        ]
+      },
+      {
+        "id": "material-trees",
+        "title": "树结构导读",
+        "courseId": "data-structures",
+        "chapter": "第四章",
+        "format": "Markdown",
+        "status": "已整理",
+        "sourceId": "material-ds-trees",
+        "excerpt": "从根、子树与遍历方式入手，比较二叉树、搜索树与平衡树的适用场景。",
+        "cards": [
+          {
+            "id": "card-tree-traversal",
+            "title": "遍历顺序",
+            "summary": "前序、中序、后序和层序遍历体现不同的访问策略。"
+          },
+          {
+            "id": "card-balanced-tree",
+            "title": "平衡的意义",
+            "summary": "控制树高可以维持查找、插入和删除的对数级效率。"
+          }
+        ]
+      },
+      {
+        "id": "material-matrix",
+        "title": "矩阵基础",
+        "courseId": "linear-algebra",
+        "chapter": "第一章",
+        "format": "PDF",
+        "status": "只读示例",
+        "sourceId": "material-linear-matrix",
+        "excerpt": "说明矩阵加法、数乘、乘法与初等行变换的基本规则。",
+        "cards": [
+          {
+            "id": "card-matrix-multiply",
+            "title": "矩阵乘法",
+            "summary": "左侧矩阵的列数必须与右侧矩阵的行数一致。"
+          },
+          {
+            "id": "card-row-operation",
+            "title": "行变换",
+            "summary": "初等行变换用于消元，同时保持方程组解集不变。"
+          }
+        ]
+      },
+      {
+        "id": "material-eigenvalues",
+        "title": "特征值与特征向量",
+        "courseId": "linear-algebra",
+        "chapter": "第五章",
+        "format": "HTML",
+        "status": "待复核",
+        "sourceId": "material-linear-eigen",
+        "excerpt": "从线性变换的不变方向理解特征向量，并由特征方程求解特征值。",
+        "cards": [
+          {
+            "id": "card-eigen-equation",
+            "title": "特征方程",
+            "summary": "将矩阵减去除以特征值后的单位矩阵，并求其行列式为零的条件。"
+          },
+          {
+            "id": "card-diagonalization",
+            "title": "可对角化",
+            "summary": "拥有足够多线性无关特征向量时，矩阵可以被对角化。"
+          }
+        ]
+      },
+      {
+        "id": "material-literature-review",
+        "title": "文献综述写作路径",
+        "courseId": "academic-writing",
+        "chapter": "第三章",
+        "format": "Markdown",
+        "status": "待复核",
+        "sourceId": "material-writing-review",
+        "excerpt": "围绕研究问题筛选文献、归类观点并建立段落之间的论证关系。",
+        "cards": [
+          {
+            "id": "card-review-question",
+            "title": "问题驱动",
+            "summary": "先明确综述要回答的问题，再决定纳入文献的边界。"
+          },
+          {
+            "id": "card-synthesis",
+            "title": "综合而非罗列",
+            "summary": "按观点和方法组织文献，说明分歧、证据与仍未解决的问题。"
+          }
+        ]
+      },
+      {
+        "id": "material-citations",
+        "title": "引用规范清单",
+        "courseId": "academic-writing",
+        "chapter": "附录",
+        "format": "DOCX",
+        "status": "已整理",
+        "sourceId": "material-writing-citation",
+        "excerpt": "整理正文引用、参考文献条目与直接引语需要保持一致的字段。",
+        "cards": [
+          {
+            "id": "card-citation-consistency",
+            "title": "前后一致",
+            "summary": "正文引用与参考文献列表中的作者、年份和标题应相互对应。"
+          },
+          {
+            "id": "card-source-record",
+            "title": "来源留痕",
+            "summary": "记录页码、版本与访问日期，便于复核引用信息。"
+          }
+        ]
+      }
+    ]
+  }
+}

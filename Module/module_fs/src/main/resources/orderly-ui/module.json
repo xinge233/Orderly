@@ -2,32 +2,21 @@
   "version": 1,
   "view": {
     "id": "files",
-    "icon": "folder",
-    "caption": "浏览与整理"
+    "icon": "file",
+    "caption": "资料管理"
   },
   "card": {
-    "title": "文件与目录",
-    "description": "浏览应用自管工作区，并通过受控计划移动或回收文件。",
-    "badge": "真实本地文件",
-    "icon": "folder",
-    "queryId": "fs.summary",
+    "title": "资料管理",
+    "description": "按课程检索只读学习资料，并从模块自带数据读取详情。",
+    "badge": "模块只读资料",
+    "icon": "file",
+    "queryId": "fs.materials",
     "countKey": "count",
-    "unit": "个顶层条目"
+    "unit": "份资料"
   },
-  "settings": [
-    {
-      "key": "defaultView",
-      "title": "默认视图",
-      "type": "select",
-      "default": "workspace",
-      "options": [
-        { "value": "workspace", "label": "工作区" },
-        { "value": "trash", "label": "回收站" }
-      ]
-    }
-  ],
+  "settings": [],
   "examples": [
-    { "label": "创建归档目录", "text": "创建目录 归档" },
+    { "label": "创建课程目录", "text": "创建目录 课程归档" },
     { "label": "移动示例笔记", "text": "移动 收件箱/示例笔记.txt 到 待整理/示例笔记.txt" }
   ],
   "script": "module.js",

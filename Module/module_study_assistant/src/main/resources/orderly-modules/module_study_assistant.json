@@ -1,0 +1,16 @@
+{
+  "moduleId": "module_study_assistant",
+  "title": "AI 学习助手",
+  "description": "只读查看本周学习任务、示例对话、工具轨迹与引用资料。",
+  "order": 40,
+  "actions": [],
+  "queries": [
+    {
+      "id": "study.assistant.read",
+      "title": "读取学习工作台",
+      "description": "只读读取模块 JAR 自有的学习工作台数据。",
+      "parameters": []
+    }
+  ],
+  "plannerRules": []
+}

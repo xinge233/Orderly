@@ -51,6 +51,9 @@ if (@($preferences.sidebarOrder) -notcontains "module_control") {
 $themesResponse = Invoke-RestMethod -Uri "$BaseUrl/api/themes" -Method Get
 $themes = @($themesResponse.items | ForEach-Object { $_ })
 $themeIds = @($themes | ForEach-Object { $_.id })
+if ($themeIds -notcontains "study") {
+    throw "目录主题缺少浅色研习蓝主题 study。"
+}
 if (($themeIds | Sort-Object -Unique).Count -ne $themeIds.Count) {
     throw "主题目录返回了重复 id。"
 }
@@ -118,6 +121,62 @@ foreach ($module in $modules) {
         if ($required.Count -eq 0) {
             Invoke-RestMethod -Uri "$BaseUrl/api/modules/$moduleId/query/$([uri]::EscapeDataString([string]$query.id))" -Method Get | Out-Null
             $queryCount++
+        }
+    }
+}
+
+$optionalStudyQueries = [ordered]@{
+    module_fs = "fs.materials"
+    module_study_assistant = "study.assistant.read"
+    module_study_map = "study.map.read"
+    module_study_review = "study.review.read"
+}
+foreach ($entry in $optionalStudyQueries.GetEnumerator()) {
+    if ($moduleIds -notcontains $entry.Key) {
+        continue
+    }
+    $moduleId = [uri]::EscapeDataString([string]$entry.Key)
+    $queryId = [uri]::EscapeDataString([string]$entry.Value)
+    $payload = Invoke-RestMethod -Uri "$BaseUrl/api/modules/$moduleId/query/$queryId" -Method Get
+    if ($null -eq $payload -or $null -eq $payload.payload) {
+        throw "学习数据查询缺少 payload：$($entry.Key)/$($entry.Value)"
+    }
+    if ($payload.readOnly -ne $true -or $payload.ownerModule -ne $entry.Key) {
+        throw "学习数据查询未声明正确的只读归属：$($entry.Key)/$($entry.Value)"
+    }
+    switch ($entry.Key) {
+        "module_fs" {
+            if ($payload.kind -ne "materials" -or
+                    [int]$payload.count -ne @($payload.payload.materials).Count) {
+                throw "资料管理查询未返回完整 materials 负载。"
+            }
+        }
+        "module_study_assistant" {
+            if ($payload.kind -ne "assistant" -or
+                    $payload.payload.planner -ne "local-rules" -or
+                    $payload.payload.externalModelConnected -ne $false -or
+                    [int]$payload.count -ne @($payload.payload.tasks).Count) {
+                throw "学习工作台查询未保持本地规则和未连接外部模型。"
+            }
+        }
+        "module_study_map" {
+            $nodeIds = @($payload.payload.nodes | ForEach-Object { [string]$_.id })
+            foreach ($edge in @($payload.payload.edges)) {
+                if ($nodeIds -notcontains [string]$edge.source -or
+                        $nodeIds -notcontains [string]$edge.target) {
+                    throw "知识图谱查询包含无效边端点：$($edge.id)"
+                }
+            }
+            if ([int]$payload.count -ne $nodeIds.Count) {
+                throw "知识图谱查询的 count 与节点数量不一致。"
+            }
+        }
+        "module_study_review" {
+            if ($payload.kind -ne "review" -or
+                    $payload.payload.gradingMode -ne "none" -or
+                    [int]$payload.count -ne @($payload.payload.questions).Count) {
+                throw "复习自测查询未保持只读且未接入阅卷。"
+            }
         }
     }
 }

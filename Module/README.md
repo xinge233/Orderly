@@ -39,6 +39,7 @@ Module/
       └─ resources/
          ├─ META-INF/services/com.orderly.kernel.OrderlyModule
          ├─ orderly-modules/example.json
+         ├─ orderly-data/<moduleId>.json
          └─ orderly-ui/
             ├─ module.json
             ├─ module.js
@@ -54,6 +55,12 @@ Module/
 - `orderly-ui/module.json`：侧边栏、总览卡片和前端视图元数据。
 - `orderly-ui/module.js`：模块自有前端逻辑。
 - `orderly-ui/module.css`：模块自有样式。
+
+学习相关模块如果使用 `contracts/study-data.schema.json`，还必须把只读数据本体放在
+自己的 `src/main/resources/orderly-data/<moduleId>.json`，不得建立集中式学习数据目录，
+也不得读取其他模块的数据文件。当前 `module_study_assistant`、`module_study_map`、
+`module_study_review` 与 `module_fs` 分别用自身声明的查询暴露 `assistant`、
+`knowledge-map`、`review` 与 `materials` 四类只读负载。
 
 一个 `module_*` 目录应只对应一个业务模块，并只产出一个可运行 JAR。
 
@@ -284,6 +291,9 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\start.ps1 -SkipBuild
 - 宿主 fat JAR 不包含该模块的 JAR、契约或 UI。
 - `/api/modules` 返回新模块。
 - 新模块出现在侧边栏和总览，卡片排序、拖动和键盘移动正常。
+- 声明学习数据的模块必须通过 `node scripts/validate-study-data.mjs`，并确认 JAR
+  内含自己的 `orderly-data/<moduleId>.json`。资源名必须带模块 ID，因为宿主聚合
+  类加载器不能让多个 JAR 共用同一个根资源路径。
 - `/api/modules/{moduleId}/ui/module.json` 及 JS/CSS 可访问。
 - 契约中声明的只读查询能够通过通用查询接口执行。
 - 写操作先进入计划确认，删除操作只进入项目回收站。

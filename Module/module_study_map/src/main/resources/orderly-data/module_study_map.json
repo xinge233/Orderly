@@ -1,0 +1,662 @@
+{
+  "schemaVersion": 1,
+  "kind": "knowledge-map",
+  "ownerModule": "module_study_map",
+  "readOnly": true,
+  "title": "高等数学知识脉络",
+  "description": "从模块自有节点和边生成只读知识关系图，覆盖极限、微分、积分、级数、多元函数与常微分方程。",
+  "sources": [
+    {
+      "id": "map-data",
+      "label": "高等数学知识图谱",
+      "kind": "module-data",
+      "location": "Module/module_study_map/src/main/resources/orderly-data/module_study_map.json"
+    }
+  ],
+  "count": 31,
+  "payload": {
+    "nodes": [
+      {
+        "id": "calculus-core",
+        "label": "高等数学",
+        "category": "模块",
+        "courseId": "calculus",
+        "summary": "以极限为共同基础，组织一元微积分、多元微积分、级数与常微分方程。",
+        "sourceIds": ["map-data"],
+        "layer": 0,
+        "order": 0
+      },
+      {
+        "id": "functions",
+        "label": "函数",
+        "category": "概念",
+        "courseId": "calculus",
+        "summary": "研究定义域、值域、复合、反函数与基本初等函数的整体结构。",
+        "sourceIds": ["map-data"],
+        "layer": 0,
+        "order": 1
+      },
+      {
+        "id": "lim",
+        "label": "极限",
+        "category": "概念",
+        "courseId": "calculus",
+        "summary": "研究变量趋近过程的基础概念，也是连续、导数、积分与级数收敛的共同语言。",
+        "sourceIds": ["map-data"],
+        "layer": 0,
+        "order": 2
+      },
+      {
+        "id": "continuity",
+        "label": "连续与间断",
+        "category": "概念",
+        "courseId": "calculus",
+        "summary": "用极限刻画函数在一点附近的稳定行为，并区分不同类型的不连续点。",
+        "sourceIds": ["map-data"],
+        "layer": 0,
+        "order": 3
+      },
+      {
+        "id": "sequence-limit",
+        "label": "数列极限",
+        "category": "概念",
+        "courseId": "calculus-2",
+        "summary": "研究离散指标趋于无穷时的收敛、发散、单调有界与极限运算。",
+        "sourceIds": ["map-data"],
+        "layer": 0,
+        "order": 4
+      },
+      {
+        "id": "derivative",
+        "label": "导数",
+        "category": "方法",
+        "courseId": "calculus",
+        "summary": "用极限刻画瞬时变化率，并建立切线斜率与局部线性近似。",
+        "sourceIds": ["map-data"],
+        "layer": 1,
+        "order": 0
+      },
+      {
+        "id": "derivative-rules",
+        "label": "求导法则",
+        "category": "方法",
+        "courseId": "calculus",
+        "summary": "组合和、积、商、复合与反函数求导规则，并处理隐函数和高阶导数。",
+        "sourceIds": ["map-data"],
+        "layer": 1,
+        "order": 1
+      },
+      {
+        "id": "differential",
+        "label": "微分",
+        "category": "概念",
+        "courseId": "calculus",
+        "summary": "用线性主部表示函数增量，为近似计算和误差估计提供局部模型。",
+        "sourceIds": ["map-data"],
+        "layer": 1,
+        "order": 2
+      },
+      {
+        "id": "mean-value-theorem",
+        "label": "中值定理",
+        "category": "公式",
+        "courseId": "calculus",
+        "summary": "连接函数值与导数值，包含罗尔、拉格朗日和柯西中值定理。",
+        "sourceIds": ["map-data"],
+        "layer": 1,
+        "order": 3
+      },
+      {
+        "id": "derivative-applications",
+        "label": "导数应用",
+        "category": "方法",
+        "courseId": "calculus",
+        "summary": "把导数用于单调性、凹凸性、极值、最值与曲线作图。",
+        "sourceIds": ["map-data"],
+        "layer": 1,
+        "order": 4
+      },
+      {
+        "id": "lhopital",
+        "label": "洛必达法则",
+        "category": "方法",
+        "courseId": "calculus",
+        "summary": "在满足条件下把特定未定式极限转化为导数之比的极限。",
+        "sourceIds": ["map-data"],
+        "layer": 1,
+        "order": 5
+      },
+      {
+        "id": "application",
+        "label": "最值问题",
+        "category": "练习",
+        "courseId": "calculus",
+        "summary": "利用导数分析函数单调性与极值，并结合边界比较确定最值。",
+        "sourceIds": ["map-data"],
+        "layer": 2,
+        "order": 0
+      },
+      {
+        "id": "monotonicity",
+        "label": "单调性与极值",
+        "category": "方法",
+        "courseId": "calculus",
+        "summary": "通过一阶导数符号研究增减区间、驻点和极值判定。",
+        "sourceIds": ["map-data"],
+        "layer": 2,
+        "order": 1
+      },
+      {
+        "id": "taylor",
+        "label": "泰勒公式",
+        "category": "公式",
+        "courseId": "calculus",
+        "summary": "用多项式逼近局部函数，并用余项控制近似误差。",
+        "sourceIds": ["map-data"],
+        "layer": 2,
+        "order": 2
+      },
+      {
+        "id": "antiderivative",
+        "label": "不定积分",
+        "category": "概念",
+        "courseId": "calculus",
+        "summary": "求导的逆过程，以原函数族表示所有可能的反导数。",
+        "sourceIds": ["map-data"],
+        "layer": 2,
+        "order": 3
+      },
+      {
+        "id": "definite-integral",
+        "label": "定积分",
+        "category": "概念",
+        "courseId": "calculus",
+        "summary": "通过分割、近似、求和与取极限得到黎曼积分，并解释面积与累积量。",
+        "sourceIds": ["map-data"],
+        "layer": 3,
+        "order": 0
+      },
+      {
+        "id": "fundamental-theorem",
+        "label": "微积分基本定理",
+        "category": "公式",
+        "courseId": "calculus",
+        "summary": "把变上限积分与导数连接起来，并为定积分计算提供牛顿-莱布尼茨公式。",
+        "sourceIds": ["map-data"],
+        "layer": 3,
+        "order": 1
+      },
+      {
+        "id": "integration-substitution",
+        "label": "换元积分法",
+        "category": "方法",
+        "courseId": "calculus",
+        "summary": "通过变量替换把积分转化为更易计算的标准形式，并同步调整上下限。",
+        "sourceIds": ["map-data"],
+        "layer": 3,
+        "order": 2
+      },
+      {
+        "id": "integration-by-parts",
+        "label": "分部积分法",
+        "category": "公式",
+        "courseId": "calculus",
+        "summary": "由乘积求导法则反推积分恒等式，用于处理乘积型和递推型积分。",
+        "sourceIds": ["map-data"],
+        "layer": 3,
+        "order": 3
+      },
+      {
+        "id": "improper-integral",
+        "label": "反常积分",
+        "category": "概念",
+        "courseId": "calculus",
+        "summary": "通过极限处理无穷区间或无界函数的积分，并讨论收敛与发散。",
+        "sourceIds": ["map-data"],
+        "layer": 3,
+        "order": 4
+      },
+      {
+        "id": "ordinary-differential-equations",
+        "label": "常微分方程",
+        "category": "模块",
+        "courseId": "calculus-2",
+        "summary": "研究含未知函数及其导数的方程，用积分与代数方法求解并解释动态过程。",
+        "sourceIds": ["map-data"],
+        "layer": 4,
+        "order": 0
+      },
+      {
+        "id": "first-order-ode",
+        "label": "一阶微分方程",
+        "category": "方法",
+        "courseId": "calculus-2",
+        "summary": "覆盖可分离变量、齐次、一阶线性与恰当方程等基本模型。",
+        "sourceIds": ["map-data"],
+        "layer": 4,
+        "order": 1
+      },
+      {
+        "id": "second-order-linear-ode",
+        "label": "二阶线性微分方程",
+        "category": "公式",
+        "courseId": "calculus-2",
+        "summary": "通过特征方程和特解叠加处理常系数齐次与非齐次线性方程。",
+        "sourceIds": ["map-data"],
+        "layer": 4,
+        "order": 2
+      },
+      {
+        "id": "multivariable-function",
+        "label": "多元函数",
+        "category": "概念",
+        "courseId": "calculus-2",
+        "summary": "研究多变量映射的定义域、等高线、极限、连续与几何表示。",
+        "sourceIds": ["map-data"],
+        "layer": 4,
+        "order": 3
+      },
+      {
+        "id": "partial-derivative",
+        "label": "偏导数",
+        "category": "方法",
+        "courseId": "calculus-2",
+        "summary": "固定其余变量研究单方向变化率，并扩展到高阶偏导和混合偏导。",
+        "sourceIds": ["map-data"],
+        "layer": 4,
+        "order": 4
+      },
+      {
+        "id": "multiple-integral",
+        "label": "重积分",
+        "category": "方法",
+        "courseId": "calculus-2",
+        "summary": "在二维或三维区域上累积函数值，并通过累次积分或换元简化计算。",
+        "sourceIds": ["map-data"],
+        "layer": 4,
+        "order": 5
+      },
+      {
+        "id": "infinite-series",
+        "label": "无穷级数",
+        "category": "概念",
+        "courseId": "calculus-2",
+        "summary": "研究无穷和的部分和极限、正项级数判别、交错级数与绝对收敛。",
+        "sourceIds": ["map-data"],
+        "layer": 4,
+        "order": 6
+      },
+      {
+        "id": "power-series",
+        "label": "幂级数",
+        "category": "公式",
+        "courseId": "calculus-2",
+        "summary": "用收敛半径和收敛域描述函数级数，并联系泰勒展开进行求和与近似。",
+        "sourceIds": ["map-data"],
+        "layer": 4,
+        "order": 7
+      },
+      {
+        "id": "total-differential",
+        "label": "全微分",
+        "category": "公式",
+        "courseId": "calculus-2",
+        "summary": "用各偏导构成的线性主部描述多元函数的局部变化。",
+        "sourceIds": ["map-data"],
+        "layer": 5,
+        "order": 0
+      },
+      {
+        "id": "line-integral",
+        "label": "曲线积分",
+        "category": "方法",
+        "courseId": "calculus-2",
+        "summary": "沿曲线累积标量或向量场效应，并联系格林公式与路径无关性。",
+        "sourceIds": ["map-data"],
+        "layer": 5,
+        "order": 1
+      },
+      {
+        "id": "calculus-synthesis",
+        "label": "综合题方法",
+        "category": "练习",
+        "courseId": "calculus-2",
+        "summary": "串联极限、微分、积分、级数与多元分析，按条件选择定理和计算路径。",
+        "sourceIds": ["map-data"],
+        "layer": 5,
+        "order": 2
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-core-functions",
+        "source": "calculus-core",
+        "target": "functions",
+        "label": "包含",
+        "kind": "contains"
+      },
+      {
+        "id": "edge-core-lim",
+        "source": "calculus-core",
+        "target": "lim",
+        "label": "包含",
+        "kind": "contains"
+      },
+      {
+        "id": "edge-functions-lim",
+        "source": "functions",
+        "target": "lim",
+        "label": "提供研究对象",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-lim-sequence",
+        "source": "lim",
+        "target": "sequence-limit",
+        "label": "推广到数列",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-lim-continuity",
+        "source": "lim",
+        "target": "continuity",
+        "label": "定义连续性",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-lim-derivative",
+        "source": "lim",
+        "target": "derivative",
+        "label": "差商极限",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-derivative-rules",
+        "source": "derivative",
+        "target": "derivative-rules",
+        "label": "建立计算规则",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-continuity-rules",
+        "source": "continuity",
+        "target": "derivative-rules",
+        "label": "限定适用条件",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-derivative-differential",
+        "source": "derivative",
+        "target": "differential",
+        "label": "局部线性化",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-derivative-mvt",
+        "source": "derivative",
+        "target": "mean-value-theorem",
+        "label": "连接函数值",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-lim-lhopital",
+        "source": "lim",
+        "target": "lhopital",
+        "label": "处理未定式",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-derivative-lhopital",
+        "source": "derivative",
+        "target": "lhopital",
+        "label": "依赖导数",
+        "kind": "depends"
+      },
+      {
+        "id": "edge-mvt-taylor",
+        "source": "mean-value-theorem",
+        "target": "taylor",
+        "label": "提供余项思想",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-derivative-monotonicity",
+        "source": "derivative",
+        "target": "monotonicity",
+        "label": "判断符号",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-monotonicity-application",
+        "source": "monotonicity",
+        "target": "application",
+        "label": "确定极值",
+        "kind": "applies"
+      },
+      {
+        "id": "edge-taylor-application",
+        "source": "taylor",
+        "target": "application",
+        "label": "近似计算",
+        "kind": "applies"
+      },
+      {
+        "id": "edge-derivative-applications",
+        "source": "derivative-applications",
+        "target": "application",
+        "label": "提供方法",
+        "kind": "applies"
+      },
+      {
+        "id": "edge-derivative-antiderivative",
+        "source": "derivative",
+        "target": "antiderivative",
+        "label": "互为逆过程",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-lim-definite-integral",
+        "source": "lim",
+        "target": "definite-integral",
+        "label": "黎曼和极限",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-antiderivative-definite",
+        "source": "antiderivative",
+        "target": "definite-integral",
+        "label": "提供原函数",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-definite-ftc",
+        "source": "definite-integral",
+        "target": "fundamental-theorem",
+        "label": "建立联系",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-ftc-substitution",
+        "source": "fundamental-theorem",
+        "target": "integration-substitution",
+        "label": "支持计算",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-ftc-parts",
+        "source": "fundamental-theorem",
+        "target": "integration-by-parts",
+        "label": "支持计算",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-definite-improper",
+        "source": "definite-integral",
+        "target": "improper-integral",
+        "label": "推广到极限",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-ode-first",
+        "source": "ordinary-differential-equations",
+        "target": "first-order-ode",
+        "label": "包含",
+        "kind": "contains"
+      },
+      {
+        "id": "edge-ode-second",
+        "source": "ordinary-differential-equations",
+        "target": "second-order-linear-ode",
+        "label": "包含",
+        "kind": "contains"
+      },
+      {
+        "id": "edge-derivative-first-ode",
+        "source": "derivative",
+        "target": "first-order-ode",
+        "label": "识别导数项",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-antiderivative-first-ode",
+        "source": "antiderivative",
+        "target": "first-order-ode",
+        "label": "积分求解",
+        "kind": "applies"
+      },
+      {
+        "id": "edge-first-second-ode",
+        "source": "first-order-ode",
+        "target": "second-order-linear-ode",
+        "label": "扩展阶数",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-definite-second-ode",
+        "source": "definite-integral",
+        "target": "second-order-linear-ode",
+        "label": "求解工具",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-core-multivariable",
+        "source": "calculus-core",
+        "target": "multivariable-function",
+        "label": "包含",
+        "kind": "contains"
+      },
+      {
+        "id": "edge-functions-multivariable",
+        "source": "functions",
+        "target": "multivariable-function",
+        "label": "扩展维度",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-multivariable-partial",
+        "source": "multivariable-function",
+        "target": "partial-derivative",
+        "label": "定义偏导",
+        "kind": "contains"
+      },
+      {
+        "id": "edge-partial-total",
+        "source": "partial-derivative",
+        "target": "total-differential",
+        "label": "合成线性主部",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-partial-multiple",
+        "source": "partial-derivative",
+        "target": "multiple-integral",
+        "label": "支持累次积分",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-definite-multiple",
+        "source": "definite-integral",
+        "target": "multiple-integral",
+        "label": "推广到区域",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-partial-line",
+        "source": "partial-derivative",
+        "target": "line-integral",
+        "label": "构造向量场",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-multivariable-line",
+        "source": "multivariable-function",
+        "target": "line-integral",
+        "label": "沿路径累积",
+        "kind": "applies"
+      },
+      {
+        "id": "edge-core-series",
+        "source": "calculus-core",
+        "target": "infinite-series",
+        "label": "包含",
+        "kind": "contains"
+      },
+      {
+        "id": "edge-lim-series",
+        "source": "lim",
+        "target": "infinite-series",
+        "label": "部分和极限",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-sequence-series",
+        "source": "sequence-limit",
+        "target": "infinite-series",
+        "label": "判别收敛",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-series-power",
+        "source": "infinite-series",
+        "target": "power-series",
+        "label": "包含",
+        "kind": "contains"
+      },
+      {
+        "id": "edge-taylor-power",
+        "source": "taylor",
+        "target": "power-series",
+        "label": "提供展开式",
+        "kind": "supports"
+      },
+      {
+        "id": "edge-power-synthesis",
+        "source": "power-series",
+        "target": "calculus-synthesis",
+        "label": "综合应用",
+        "kind": "applies"
+      },
+      {
+        "id": "edge-line-synthesis",
+        "source": "line-integral",
+        "target": "calculus-synthesis",
+        "label": "综合应用",
+        "kind": "applies"
+      },
+      {
+        "id": "edge-multiple-synthesis",
+        "source": "multiple-integral",
+        "target": "calculus-synthesis",
+        "label": "综合应用",
+        "kind": "applies"
+      },
+      {
+        "id": "edge-second-synthesis",
+        "source": "second-order-linear-ode",
+        "target": "calculus-synthesis",
+        "label": "综合应用",
+        "kind": "applies"
+      }
+    ]
+  }
+}

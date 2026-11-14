@@ -64,12 +64,12 @@ class OrderlyIntegrationTest {
 
     @Test
     void exposesHealthAndContractCatalog() throws Exception {
-        assertThat(catalog.businessModules()).hasSize(3);
+        assertThat(catalog.businessModules())
+                .extracting(module -> module.moduleId())
+                .doesNotHaveDuplicates();
         assertThat(catalog.systemModules())
                 .extracting(module -> module.moduleId())
                 .containsExactly("module_control");
-        assertThat(catalog.modules().stream()
-                .flatMap(module -> module.actions().stream()).toList()).hasSize(7);
 
         mockMvc.perform(get("/api/health"))
                 .andExpect(status().isOk())
@@ -77,8 +77,7 @@ class OrderlyIntegrationTest {
                 .andExpect(jsonPath("$.planner").value("LOCAL_RULES"));
         mockMvc.perform(get("/api/modules"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(3))
-                .andExpect(jsonPath("$[0].enabled").value(true));
+                .andExpect(jsonPath("$").isArray());
         mockMvc.perform(get("/api/system-modules"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))

@@ -1,6 +1,6 @@
 # 契约目录
 
-`plan.schema.json` 定义计划与澄清问题的公开结构，`module.schema.json` 定义模块契约，`module-ui.schema.json` 定义模块自带 UI 清单，`theme.schema.json` 定义目录主题包的 `theme.json`，`samples/` 提供前端和测试共享的示例。
+`plan.schema.json` 定义计划与澄清问题的公开结构，`module.schema.json` 定义模块契约，`module-ui.schema.json` 定义模块自带 UI 清单，`theme.schema.json` 定义目录主题包的 `theme.json`，`study-data.schema.json` 定义学习相关模块的只读数据边界，`samples/` 提供前端和测试共享的示例。
 
 `samples/valid/module.json`、`module-control.json` 与模块 UI 样例是宿主和前端实际校验逻辑接受的合法样例；`samples/invalid/` 中的模块契约和 UI 清单会被对应逻辑明确拒绝。`gate.ps1` 同时执行 Java 模块契约样例测试与 Node 模块 UI 样例测试，防止 schema、样例和运行时规则漂移。
 
@@ -17,5 +17,7 @@
 运行中刷新只允许显式追加新模块。新源码目录必须已有同名 JAR，宿主不会自动编译；未构建返回 `MODULE_NOT_BUILT`。已有模块更新或删除返回 `RESTART_REQUIRED`，不会替换当前运行快照。API 约定见根 README。
 
 `trash` 是文件模块唯一的删除语义：对象从工作区移动到 `.orderly-data/trash`，从不执行物理删除。
+
+学习数据由 `module_study_assistant`、`module_study_map`、`module_study_review` 与 `module_fs` 各自保存在模块 JAR 的 `orderly-data/<moduleId>.json` 中，不建立集中式学习数据目录。资源名必须使用模块 ID，避免宿主聚合类加载器把多个 JAR 的同名资源解析到同一份数据。每条数据必须声明自身 `ownerModule`、`readOnly: true` 和以下四种 `kind` 之一：`assistant`、`materials`、`knowledge-map`、`review`。模块只能通过自己声明的只读查询访问自身资源；知识图的边端点必须存在于同一份数据的节点集合，AI 助手数据不得声称连接外部模型，复习数据不得包含自动阅卷能力。
 
 主题不使用扁平 JSON，也不回退 classpath。`GET /api/themes` 返回可用项、局部问题与默认主题配置状态；`GET /api/themes/{id}` 返回完整清单元数据；`GET /api/themes/{id}/assets/{asset}` 只提供清单白名单内的 CSS、栅格图与字体，不提供 SVG。
