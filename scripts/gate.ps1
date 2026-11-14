@@ -4,9 +4,194 @@ param()
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $frontendRoot = Join-Path $repoRoot "app\frontend"
+$contextScript = Join-Path $PSScriptRoot "context.ps1"
+$powerShellExecutable = (Get-Process -Id $PID).Path
+
+function Invoke-ContextProcess {
+    param(
+        [string[]]$Arguments,
+        [string]$ScriptPath
+    )
+
+    $selectedContextScript = if ([string]::IsNullOrWhiteSpace($ScriptPath)) {
+        $contextScript
+    }
+    else {
+        $ScriptPath
+    }
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = (& $powerShellExecutable `
+            -NoProfile `
+            -NonInteractive `
+            -File $selectedContextScript @Arguments 2>&1) | Out-String
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    return [pscustomobject]@{
+        ExitCode = $exitCode
+        Output = $output
+    }
+}
+
+function Assert-ContextRejected {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$CaseName,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments,
+        [string]$ExpectedText,
+        [string]$ScriptPath,
+        [string]$ForbiddenText
+    )
+
+    $result = Invoke-ContextProcess -Arguments $Arguments -ScriptPath $ScriptPath
+    if ($result.ExitCode -eq 0) {
+        throw "上下文工具未拒绝 $CaseName。"
+    }
+    if (-not [string]::IsNullOrEmpty($ExpectedText) -and
+            -not $result.Output.Contains($ExpectedText)) {
+        throw "上下文工具拒绝 $CaseName 时未包含预期原因：$ExpectedText"
+    }
+    if (-not [string]::IsNullOrEmpty($ForbiddenText) -and
+            $result.Output.Contains($ForbiddenText)) {
+        throw "上下文工具拒绝 $CaseName 时泄漏了文件正文。"
+    }
+}
+
+function Assert-ContextBinaryTailRejected {
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
+        "orderly-context-binary-" + [guid]::NewGuid().ToString("N")
+    )
+    try {
+        $tempScripts = Join-Path $tempRoot "scripts"
+        New-Item -ItemType Directory -Path $tempScripts -Force | Out-Null
+        $tempContext = Join-Path $tempScripts "context.ps1"
+        Copy-Item -LiteralPath $contextScript -Destination $tempContext
+
+        $binary = New-Object byte[] 9001
+        $prefix = [System.Text.Encoding]::ASCII.GetBytes("x" * 9000)
+        [System.Array]::Copy($prefix, $binary, $prefix.Length)
+        [System.IO.File]::WriteAllBytes((Join-Path $tempRoot "tail-null.bin"), $binary)
+
+        & git -C $tempRoot init --quiet 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "无法创建二进制检测临时仓库，退出码：$LASTEXITCODE"
+        }
+        & git -C $tempRoot add -- "tail-null.bin" 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "无法暂存二进制检测夹具，退出码：$LASTEXITCODE"
+        }
+
+        Assert-ContextRejected `
+            -CaseName "首块后含 NUL 的二进制文件" `
+            -ScriptPath $tempContext `
+            -Arguments @("-Path", "tail-null.bin") `
+            -ExpectedText "拒绝二进制文件：tail-null.bin"
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempRoot) {
+            $tempBase = [System.IO.Path]::GetFullPath(
+                [System.IO.Path]::GetTempPath()
+            ).TrimEnd(
+                [System.IO.Path]::DirectorySeparatorChar,
+                [System.IO.Path]::AltDirectorySeparatorChar
+            )
+            $resolvedTempRoot = [System.IO.Path]::GetFullPath($tempRoot)
+            $expectedPrefix = $tempBase + [System.IO.Path]::DirectorySeparatorChar
+            $leaf = [System.IO.Path]::GetFileName($resolvedTempRoot)
+            if (-not $resolvedTempRoot.StartsWith(
+                    $expectedPrefix,
+                    [System.StringComparison]::OrdinalIgnoreCase
+                ) -or
+                -not $leaf.StartsWith(
+                    "orderly-context-binary-",
+                    [System.StringComparison]::Ordinal
+                )) {
+                throw "拒绝清理非预期的二进制检测临时目录：$resolvedTempRoot"
+            }
+            Remove-Item -LiteralPath $resolvedTempRoot -Recurse -Force
+        }
+    }
+}
 
 Push-Location $repoRoot
 try {
+    $tokens = $null
+    $parseErrors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile(
+        $contextScript,
+        [ref]$tokens,
+        [ref]$parseErrors
+    ) | Out-Null
+    if ($parseErrors.Count -ne 0) {
+        throw "上下文工具语法解析失败：`n$($parseErrors.Message -join "`n")"
+    }
+
+    $contextRead = Invoke-ContextProcess -Arguments @("-Path", "AGENTS.md")
+    if ($contextRead.ExitCode -ne 0) {
+        throw "上下文工具无法读取 AGENTS.md，退出码：$($contextRead.ExitCode)`n$($contextRead.Output)"
+    }
+    if (-not $contextRead.Output.Contains("FILE path=AGENTS.md bytes=")) {
+        throw "上下文工具成功读取时未输出路径与字节量。"
+    }
+
+    Assert-ContextRejected `
+        -CaseName "仓库外路径" `
+        -Arguments @("-Path", "..\AGENTS.md")
+    Assert-ContextRejected `
+        -CaseName "目录" `
+        -Arguments @("-Path", "app")
+    Assert-ContextRejected `
+        -CaseName "二进制文件" `
+        -Arguments @("-Path", "docs\归序Orderly-项目策划书-v7.docx")
+    Assert-ContextBinaryTailRejected
+    Assert-ContextRejected `
+        -CaseName "未跟踪文件" `
+        -Arguments @("-Path", ".git\config") `
+        -ForbiddenText "[core]"
+    Assert-ContextRejected `
+        -CaseName "含 pathspec 元字符的未跟踪路径" `
+        -Arguments @("-Path", "AGENTS.m[d]") `
+        -ExpectedText "拒绝未跟踪文件：AGENTS.m[d]" `
+        -ForbiddenText "# AGENTS.md"
+    Assert-ContextRejected `
+        -CaseName "忽略路径" `
+        -Arguments @("-Path", "target\context-tool-untracked-probe.tmp")
+    Assert-ContextRejected `
+        -CaseName "超限读取" `
+        -Arguments @("-Path", "AGENTS.md", "-Count", "501") `
+        -ForbiddenText "# AGENTS.md"
+
+    $audit = Invoke-ContextProcess -Arguments @("-Mode", "audit")
+    if ($audit.ExitCode -ne 0) {
+        throw "上下文工具审计失败，退出码：$($audit.ExitCode)`n$($audit.Output)"
+    }
+
+    $repoMapText = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "docs\repo-map.md")
+    if ($repoMapText.Contains("``````")) {
+        throw "docs/repo-map.md 不得包含代码围栏。"
+    }
+
+    $ignoreLines = @(Get-Content -LiteralPath (Join-Path $repoRoot ".gitignore") |
+        ForEach-Object { $_.Trim() })
+    foreach ($requiredIgnoreLine in @(
+        ".m2-repository/",
+        "target/",
+        ".orderly-data/",
+        "output/~$*"
+    )) {
+        if ($ignoreLines -notcontains $requiredIgnoreLine) {
+            throw ".gitignore 缺少规则：$requiredIgnoreLine"
+        }
+    }
+
+    Write-Host "上下文门禁通过：语法、成功读取、边界拒绝、正文不泄漏、审计、仓库地图与忽略规则均成功。"
+
     & (Join-Path $PSScriptRoot "build.ps1")
     if ($LASTEXITCODE -ne 0) {
         throw "模块化构建失败，退出码：$LASTEXITCODE"
@@ -116,7 +301,7 @@ try {
         throw "主题 important 扫描异常，rg 退出码：$LASTEXITCODE"
     }
 
-    Write-Host "门禁通过：模块化 Maven 测试、契约样例、语法、前端测试、目录主题边界、classpath 回退、基础动画、设置 live region 和样式变量检查均成功。"
+    Write-Host "门禁通过：上下文约束、模块化 Maven 测试、契约样例、语法、前端测试、目录主题边界、classpath 回退、基础动画、设置 live region 和样式变量检查均成功。"
 }
 finally {
     Pop-Location

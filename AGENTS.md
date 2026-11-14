@@ -66,6 +66,13 @@
 - V7 是未来产品与技术蓝图，`docs/ai 文档.md` 是界面参考，两者都不能自动扩大当前任务范围。
 - 发现材料之间无法消解的冲突时，停止实施并报告主代理。
 
+### 3.1 上下文与读取纪律
+
+- 完成必读规则后，先用 `docs/repo-map.md` 定位职责和读取路由，再用 `scripts/context.ps1` 做有界读取、搜索或差异统计。
+- 上下文工具只读取 Git 跟踪文件，不接受仓库外路径、目录、未跟踪或忽略文件、重解析点、二进制和超限请求。
+- 不整目录输出源码、日志、生成物或历史交接；历史交接按需读取相关章节，且不构成新的实施授权。
+- 产品资料只在任务确需原始事实时读取。详细读取流程见 `docs/agents/collaboration-workflow.md`。
+
 ## 4. 架构基线
 
 以下目标目录边界已在首版实现中落地；后续实现必须沿用，不得创建未批准的顶层目录：
@@ -164,6 +171,8 @@ docs/         产品资料与协作文档
 | `docs/agents/README.md` | 协作文件索引、调用方式和当前阶段摘要 |
 | `docs/agents/architecture-baseline.md` | 产品事实、当前/未来范围、未来目录边界与最低界面基线 |
 | `docs/agents/collaboration-workflow.md` | 主代理、PM、软件工程师之间的完整协作与质量门禁 |
+| `docs/repo-map.md` | 仓库入口、职责、读取路由、忽略目录、二进制资产与验证命令的轻量索引 |
+| `scripts/context.ps1` | 只读、有界、仅限 Git 跟踪文件的上下文读取工具 |
 | `docs/agents/templates/task-brief.md` | 统一任务输入模板 |
 | `docs/agents/templates/pm-review.md` | PM 只读验收报告模板 |
 | `docs/agents/templates/software-engineer-handoff.md` | 软件工程师交付与自检报告模板 |

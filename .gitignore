@@ -13,6 +13,7 @@ target/
 # Process and diagnostic output
 *.log
 *.pid
+output/~$*
 
 # OS metadata
 .DS_Store

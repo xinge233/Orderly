@@ -67,6 +67,19 @@
 
 `gate.ps1` 执行模块化 Maven 测试与打包、框架与模块 UI 语法、前端 Node 测试，并检查物理删除调用、业务样式硬编码色值、固定模块映射和固定业务端点。`modularity.ps1` 通过移动源码和重启宿主，验证全业务模块、移除单模块、零业务模块（保留 `module_control`）、恢复、临时模块自动发现与可逆移出、模块 UI/查询/计划规则、动态主题与已选主题失效回退；结束后恢复原生模块源码，并清理 `target` 验收临时目录。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
 
+## 低 token 读取
+
+先读取 `docs/repo-map.md` 定位入口，再用 `scripts/context.ps1` 做只读、有界读取。工具只接受 Git 跟踪文件，默认每次读取 200 行，并拒绝仓库外路径、目录、未跟踪或忽略文件、重解析点、二进制和超限请求。
+
+```powershell
+.\scripts\context.ps1 -Mode map
+.\scripts\context.ps1 -Path AGENTS.md
+.\scripts\context.ps1 -Mode files -Kind ps1
+.\scripts\context.ps1 -Mode search -Pattern "createPlan" -Count 20
+.\scripts\context.ps1 -Mode diff
+.\scripts\context.ps1 -Mode audit
+```
+
 ## 架构
 
 - `app/kernel/`：模块 SPI 与跨端数据契约。
