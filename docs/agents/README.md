@@ -29,6 +29,7 @@
 | `templates/software-engineer-handoff.md` | 软件工程师交接模板 |
 | `ORDERLY-MODULES-SELF-CONTAINED.md` | 模块自包含与动态扩展总任务卡 |
 | `ORDERLY-FRONTEND-THEME-MODULARIZATION-HANDOFF.md` | 前端目录主题包实施记录，包含已拍板决策、架构边界、验证证据和后续验收矩阵 |
+| `ORDERLY-SESSION-HANDOFF-2026-11-14.md` | 2026-11-14 会话状态交接，记录侧边栏完成状态、验证证据、风险和新对话读取方式 |
 | `ORDERLY-MODULES-CONTRACT-SAMPLES.md` | 模块契约与 UI 样例、校验定向返工任务卡 |
 | `ORDERLY-MODULES-SELF-CONTAINED-software-engineer-handoff.md` | 总任务软件工程师交接报告 |
 
