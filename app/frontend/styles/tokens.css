@@ -35,10 +35,12 @@
         --shadow-soft: none;
         --shadow-card: none;
         --grid-line: GrayText;
-        --sidebar-width: 64px;
-        --sidebar-expanded-width: 208px;
+        --sidebar-width: 72px;
+        --sidebar-expanded-width: 272px;
+        --sidebar-row-height: 48px;
+        --sidebar-icon-size: 40px;
         --mobile-toolbar-height: 54px;
-        --content-max: 1380px;
+        --content-max: 1520px;
         --space-1: 4px;
         --space-2: 8px;
         --space-3: 12px;
@@ -53,6 +55,11 @@
         --radius-md: 18px;
         --radius-lg: 26px;
         --radius-xl: 34px;
+        --font-size-caption: 0.75rem;
+        --font-size-small: 0.8125rem;
+        --font-size-body: 0.875rem;
+        --font-size-control: 0.9375rem;
+        --font-size-panel-title: 1.375rem;
         --duration-fast: 140ms;
         --duration-normal: 240ms;
         --duration-slow: 520ms;

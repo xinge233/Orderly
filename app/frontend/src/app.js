@@ -1106,7 +1106,7 @@ function sidebarRailWidth() {
         .getPropertyValue("--sidebar-width")
         .trim();
     const width = Number.parseFloat(raw);
-    return Number.isFinite(width) && width > 0 ? width : 64;
+    return Number.isFinite(width) && width > 0 ? width : 72;
 }
 
 function sidebarTransitionDurationMs() {

@@ -1003,3 +1003,104 @@ PM 最终结论
 ```
 
 主代理完整 `gate.ps1` 退出码 `0`：Maven 49 项、0 失败、0 错误、1 跳过；前端 67 项通过；契约样例 4 项通过。真实启动 `127.0.0.1:18094` 后烟测退出码 `0`，5 个通用查询通过。既有 SSE 活动连接导致的 30 秒优雅停机超时仍属于独立既有问题，本次未修改。
+
+## 19. ORDERLY-FRONTEND-SIDEBAR-LAYOUT-TYPOGRAPHY-REFINEMENT 实施交接
+
+### 19.1 状态与范围
+
+| 项目 | 内容 |
+|---|---|
+| 状态 | 实现、仓库门禁、真实启动、HTTP 烟测、真实浏览器验收、界面设计复核与 PM 最终只读审核均完成；允许提交 |
+| 任务编号 | `ORDERLY-FRONTEND-SIDEBAR-LAYOUT-TYPOGRAPHY-REFINEMENT` |
+| 实施日期 | 2026-11-14 |
+| 桌面覆盖层 | 固定 272px，主网格始终只预留 72px |
+| 桌面功能行 | 搜索、导航、工作区与设置统一 48px 高 |
+| 图标尺寸 | 导航 40px、品牌 44px、工作区 36px |
+| 内容宽度 | `--content-max: 1520px`，主内容居中并保持对称内边距 |
+
+本任务只修改前端 tokens、基础样式、侧栏轨道宽度回退、三份相关测试、主题说明、架构基线和本交接文档。未修改 `index.html`、`Module/`、`app/kernel/`、`app/host/`、`contracts/`、`scripts/`、依赖、产品资料、日期交接文档、`themes/*/motion.css` 或第 16、17、18 节历史记录。
+
+### 19.2 实施摘要
+
+- 将 `--sidebar-width` 调整为 72px、`--sidebar-expanded-width` 调整为 272px，并新增 48px 行高、40px 图标与 caption/small/body/control/panel-title 语义字号。
+- 桌面侧栏继续固定 272px 覆盖层并只过渡 `clip-path`。搜索、导航、工作区与设置行统一 48px；导航图标 40px、品牌图标 44px、工作区图标 36px。展开状态不再切换子元素几何。
+- 搜索框使用 `40px minmax(120px, 1fr) auto` 三列、12px 间距和 48px 高输入区，输入框 `min-width: 0`，快捷键列保留且不挤压输入区。
+- 工作区路径使用 12px caption 字号、`max-width: 100%`、`min-width: 0`、单行省略和文本溢出 ellipsis；完整工作区状态仍通过既有 `aria-label` 暴露。
+- 删除覆盖内容的 `sidebar::before` 边线，改由侧栏背景层绘制 71/72px 轨道边线；展开态清除背景线并继续使用覆盖层自身 272px 右边框。
+- 主内容改为 `width: min(100%, --content-max)`、`max-width: 1520px`、`margin-inline: auto` 和 `padding-inline: clamp(24px, 4vw, 48px)`，使 1920px 下左右留白对称且展开侧栏不改变主体几何。
+- 821-1080px 宽度下命令栏使用 `clamp(320px, calc(100vw - --sidebar-expanded-width - 48px), 580px)`，避免与展开后的 272px 侧栏相交。
+- 导航与控件采用语义字号，正文和辅助信息统一到 caption/small/body/control；为卡片、标题和长文本补充 `min-width: 0` 与 `overflow-wrap: anywhere`，保持页面无水平滚动。
+- `app.js` 仅将侧栏轨道宽度回退从 64px 同步为 72px；未新增模块特判，也未改动计数的外置层、ARIA 或 clip-path 跟踪逻辑。
+
+### 19.3 自动化验证
+
+```text
+app/frontend: npm test
+  69 tests, 69 pass, 0 fail
+
+app/frontend: npm run check
+  exit 0
+
+git diff --check
+  exit 0
+  only LF -> CRLF conversion warnings
+
+.\scripts\gate.ps1（初次运行，环境阻塞）
+  exit 1
+  scanning modules: module_calendar, module_control, module_fs, module_todo
+  Remove-Item: scripts/build.ps1:109
+  target/orderly-modules/module_calendar.jar is being used by another process
+
+.\scripts\gate.ps1（隔离 worktree）
+  exit 0
+  Maven: 49 tests, 0 failures, 0 errors, 1 skipped
+  frontend: 69 tests, 69 pass, 0 fail
+  module UI contract samples: 4 tests, 4 pass, 0 fail
+
+.\scripts\start.ps1 -SkipBuild -Port 18095（隔离 worktree）
+  started: exit not applicable (long-running process)
+
+.\scripts\smoke.ps1 -BaseUrl http://127.0.0.1:18095
+  exit 0
+  5 generic queries passed
+
+.\scripts\gate.ps1
+  exit 0
+  Maven: 49 tests, 0 failures, 0 errors, 1 skipped
+  frontend: 69 tests, 69 pass, 0 fail
+  module UI contract samples: 4 tests, 4 pass, 0 fail
+
+.\scripts\start.ps1 -SkipBuild -Port 18096
+  started: exit not applicable (long-running process)
+
+.\scripts\smoke.ps1 -BaseUrl http://127.0.0.1:18096
+  exit 0
+  5 generic queries passed
+```
+
+初次门禁时，端口 8080 由既有 Java 进程 PID 2784 占用，其命令行指向本仓库的 `target/orderly-modules` 和运行中 host JAR。该进程不是本次任务启动，因此未停止或干扰。后续复核确认 PID 2784 已退出，8080 当前无监听。
+
+主代理先保存初次阻塞证据，再将同一份 9 文件改动应用到独立临时 worktree `D:\code\Orderly_framework-v3-sidebar-verify`。临时 worktree 与主工作区的 `git diff` 哈希一致，并在其中完成完整门禁、构建、18095 真实启动和烟测。PID 2784 退出后，主工作区又独立完成最终门禁、18096 真实启动和烟测，结果同样通过。18095 与 18096 均为本次任务启动的验证实例，验收结束后关闭。
+
+新增静态契约覆盖：
+
+- 72px 网格轨道、固定 272px 覆盖层、背景边线与展开态清除背景线。
+- 48px 搜索/导航/工作区/设置行、40px 导航图标、44px 品牌图标、36px 工作区图标。
+- 搜索输入 `min-width: 0` 与至少 120px 轨道，工作区路径 caption 字号与 ellipsis。
+- 1520px 主内容宽度、居中边距和 72px 轨道外文字起点。
+- 821-1024px 命令栏按展开侧栏宽度避让。
+- 200ms/110ms/0ms 侧栏时长，以及禁止 width、height、font-size、transform 动画和 `zoom`。
+- 主题 `sidebar` 仍只过渡 `clip-path`，移动端仍为 `clip-path: none` 与独立 transform。
+
+### 19.4 真实浏览器验收
+
+主代理使用系统 Microsoft Edge，`deviceScaleFactor=1`、`visualViewport.scale=1`，在 18095 实例上执行 111 项浏览器断言并全部通过。覆盖宽度为 821、1024、1440、1920、2560 和 820px，视口高度 900px。
+
+- 821/1024/1440/1920/2560px：侧栏外框固定 272px，收起态 `clip-path` 只露出 72px；`.app-main` 左缘始终为 72px；展开前后搜索、导航、工作区与设置行始终为 48px，导航/搜索图标 40px、品牌图标 44px、工作区图标 36px。
+- 展开动画实测存在中间 `clip-path` 帧，最终为 `inset(0px)`；主题只对 `clip-path` 应用 200ms 过渡。展开态背景线清除，`sidebar::before` 与 `sidebar::after` 均为 `none`，没有边线覆盖侧栏内容。
+- 所有桌面宽度下搜索输入宽度约 140px，`.orderly-data/workspace` 完整显示且右缘不超过侧栏内容边界；数量气泡与导航文字实际 Range 不重叠，也不与拖拽把手重叠。
+- 821/1024px 展开侧栏下命令栏左缘分别为 295px/413px，均位于 272px 侧栏之外；页面 `scrollWidth` 始终等于 `clientWidth`，无水平滚动。
+- 1920/2560px 下主内容宽度为 1520px，主区域内左右留白分别为 164/164px 和 484/484px，居中且对称。
+- 820px 仍为移动抽屉：工具栏可见，侧栏关闭态使用独立 transform，抽屉打开后左缘 0、视觉宽度 300px、scrim 与 `aria-expanded=true` 同步；移动端不渲染外置计数层，且无水平滚动。
+- 界面设计负责人只读复核 821/1024/1440/1920/2560 展开态、820 抽屉关闭/打开态，结论为 `PASS`，未发现层级、间距、裁切、气泡、路径、留白或边界交叠问题。
+- PM 最终只读复核确认 9 文件范围、模块边界、主题语义变量、测试与文档事实一致，结论为 `PASS`，无阻断项、无返工项，允许提交。

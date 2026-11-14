@@ -6,7 +6,7 @@ async function read(relativePath) {
     return readFile(new URL(relativePath, import.meta.url), "utf8");
 }
 
-test("desktop shell has no topbar and uses the compact sidebar width", async () => {
+test("desktop shell keeps a 72px grid with a fixed 272px clipped sidebar", async () => {
     const html = await read("../index.html");
     const tokens = await read("../styles/tokens.css");
     const appCss = await read("../styles/app.css");
@@ -21,21 +21,73 @@ test("desktop shell has no topbar and uses the compact sidebar width", async () 
     assert.doesNotMatch(html, /id="breadcrumb"/);
     assert.doesNotMatch(`${tokens}\n${appCss}`, /--topbar-height/);
     assert.doesNotMatch(appCss, /\.topbar\b|\.breadcrumb\b/);
-    assert.match(tokens, /--sidebar-width:\s*64px;/);
-    assert.match(tokens, /--sidebar-expanded-width:\s*208px;/);
+    assert.match(tokens, /--sidebar-width:\s*72px;/);
+    assert.match(tokens, /--sidebar-expanded-width:\s*272px;/);
+    assert.match(tokens, /--sidebar-row-height:\s*48px;/);
+    assert.match(tokens, /--sidebar-icon-size:\s*40px;/);
+    assert.match(tokens, /--content-max:\s*1520px;/);
+    assert.match(tokens, /--font-size-caption:\s*0\.75rem;/);
+    assert.match(tokens, /--font-size-small:\s*0\.8125rem;/);
+    assert.match(tokens, /--font-size-body:\s*0\.875rem;/);
+    assert.match(tokens, /--font-size-control:\s*0\.9375rem;/);
     assert.match(
         appCss,
         /\.app-shell\s*\{[\s\S]*?grid-template-columns:\s*var\(--sidebar-width\) minmax\(0,\s*1fr\);/
     );
     assert.match(
         desktopCss,
-        /\.sidebar\s*\{[\s\S]*?width:\s*var\(--sidebar-expanded-width\);[\s\S]*?clip-path:\s*inset\(0 calc\(100% - var\(--sidebar-width\)\) 0 0\);/
+        /\.sidebar\s*\{[\s\S]*?width:\s*var\(--sidebar-expanded-width\);[\s\S]*?background-image:[\s\S]*?var\(--color-line\) var\(--sidebar-width\)[\s\S]*?clip-path:\s*inset\(0 calc\(100% - var\(--sidebar-width\)\) 0 0\);/
     );
     assert.match(
         desktopCss,
-        /\.sidebar\.is-expanded\s*\{\s*clip-path:\s*inset\(0 0 0 0\);\s*\}/
+        /\.sidebar\.is-expanded\s*\{\s*background-image:\s*none;\s*clip-path:\s*inset\(0 0 0 0\);\s*\}/
     );
-    assert.match(appCss, /\.main-content\s*\{[\s\S]*?min-height:\s*100vh;/);
+    assert.doesNotMatch(desktopCss, /\.sidebar::(?:before|after)/);
+    assert.match(
+        appCss,
+        /\.main-content\s*\{[\s\S]*?width:\s*min\(100%,\s*var\(--content-max\)\);[\s\S]*?max-width:\s*var\(--content-max\);[\s\S]*?margin-inline:\s*auto;[\s\S]*?padding-inline:\s*clamp\(var\(--space-6\),\s*4vw,\s*var\(--space-12\)\);/
+    );
+});
+
+test("desktop sidebar rows use fixed 48px geometry and 40px navigation icons", async () => {
+    const appCss = await read("../styles/app.css");
+    const desktopCss = appCss.slice(
+        appCss.indexOf("@media (min-width: 821px)"),
+        appCss.indexOf(".app-main {", appCss.indexOf("@media (min-width: 821px)"))
+    );
+
+    assert.match(
+        desktopCss,
+        /\.search-box\s*\{[\s\S]*?grid-template-columns:\s*var\(--sidebar-icon-size\) minmax\(120px,\s*1fr\) auto;[\s\S]*?height:\s*var\(--sidebar-row-height\);/
+    );
+    assert.match(
+        desktopCss,
+        /\.search-box input\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?height:\s*var\(--sidebar-row-height\);[\s\S]*?font-size:\s*var\(--font-size-control\);/
+    );
+    assert.match(
+        desktopCss,
+        /\.nav-item\s*\{[\s\S]*?grid-template-columns:\s*var\(--sidebar-icon-size\) minmax\(0,\s*1fr\);[\s\S]*?height:\s*var\(--sidebar-row-height\);[\s\S]*?min-height:\s*var\(--sidebar-row-height\);/
+    );
+    assert.match(
+        desktopCss,
+        /\.sandbox-status\s*\{[\s\S]*?height:\s*var\(--sidebar-row-height\);[\s\S]*?grid-template-columns:\s*36px minmax\(0,\s*1fr\);/
+    );
+    assert.match(
+        desktopCss,
+        /\.settings-trigger\s*\{[\s\S]*?height:\s*var\(--sidebar-row-height\);[\s\S]*?grid-template-columns:\s*var\(--sidebar-icon-size\) minmax\(0,\s*1fr\) auto;/
+    );
+    assert.match(
+        desktopCss,
+        /\.brand-mark\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/
+    );
+    assert.match(
+        desktopCss,
+        /\.workspace-icon\s*\{[\s\S]*?width:\s*36px;[\s\S]*?height:\s*36px;/
+    );
+    assert.doesNotMatch(
+        desktopCss,
+        /\.sidebar\.is-expanded\s+(?:\.brand|\.search-box|\.nav-item|\.settings-trigger|\.sandbox-status)/
+    );
 });
 
 test("mobile toolbar exposes the required height, menu contract and view title", async () => {
@@ -193,7 +245,7 @@ test("sidebar labels stay single-line and internal count badges are never render
 
     assert.match(
         appCss,
-        /\.nav-item--module\s*\{[^}]*grid-template-columns:\s*34px minmax\(0, 1fr\);/
+        /\.nav-item--module\s*\{[^}]*grid-template-columns:\s*var\(--sidebar-icon-size\) minmax\(0, 1fr\);/
     );
     assert.match(
         appCss,

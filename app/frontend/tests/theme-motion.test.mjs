@@ -160,3 +160,34 @@ test("framework motion scopes cover only the public shell contract", async () =>
     }
     assert.doesNotMatch(html, /module-view[^>]*data-motion-scope/);
 });
+
+test("sidebar refinement uses semantic sizes and never animates geometry or type", async () => {
+    const tokens = await read("../styles/tokens.css");
+    const appCss = await read("../styles/app.css");
+    const desktopCss = appCss.slice(
+        appCss.indexOf("@media (min-width: 821px)"),
+        appCss.indexOf(".app-main {", appCss.indexOf("@media (min-width: 821px)"))
+    );
+
+    assert.match(tokens, /--sidebar-width:\s*72px;/);
+    assert.match(tokens, /--sidebar-expanded-width:\s*272px;/);
+    assert.match(tokens, /--sidebar-row-height:\s*48px;/);
+    assert.match(tokens, /--sidebar-icon-size:\s*40px;/);
+    assert.match(tokens, /--content-max:\s*1520px;/);
+    assert.match(tokens, /--duration-sidebar:\s*200ms;/);
+    assert.match(
+        tokens,
+        /html\[data-motion="minimal"\]\s*\{[\s\S]*?--duration-sidebar:\s*110ms;/
+    );
+    assert.match(
+        tokens,
+        /html\[data-motion="none"\]\s*\{[\s\S]*?--duration-sidebar:\s*0ms;/
+    );
+    assert.match(appCss, /font-size:\s*var\(--font-size-control\);/);
+    assert.doesNotMatch(appCss, /\bzoom\s*:/);
+    assert.doesNotMatch(desktopCss, /\bscale\s*\(/);
+    assert.doesNotMatch(
+        desktopCss,
+        /transition\s*:[^;]*(?:font-size|width|height|transform)/
+    );
+});

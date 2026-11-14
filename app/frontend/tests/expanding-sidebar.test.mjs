@@ -14,10 +14,11 @@ function between(source, startMarker, endMarker) {
     return source.slice(start, end);
 }
 
-test("desktop sidebar is a fixed 208px overlay revealed by clip-path", async () => {
+test("desktop sidebar is a fixed 272px overlay revealed by clip-path", async () => {
     const html = await read("../index.html");
     const tokens = await read("../styles/tokens.css");
     const appCss = await read("../styles/app.css");
+    const app = await read("../src/app.js");
     const desktopCss = between(
         appCss,
         "@media (min-width: 821px)",
@@ -26,7 +27,7 @@ test("desktop sidebar is a fixed 208px overlay revealed by clip-path", async () 
     const collapsedRule = between(
         desktopCss,
         ".sidebar {",
-        ".sidebar::before {"
+        ".sidebar.is-expanded {"
     );
     const expandedRule = between(
         desktopCss,
@@ -38,8 +39,11 @@ test("desktop sidebar is a fixed 208px overlay revealed by clip-path", async () 
         html,
         /<aside class="sidebar"[\s\S]*?data-motion-state="collapsed"/
     );
-    assert.match(tokens, /--sidebar-width:\s*64px;/);
-    assert.match(tokens, /--sidebar-expanded-width:\s*208px;/);
+    assert.match(tokens, /--sidebar-width:\s*72px;/);
+    assert.match(tokens, /--sidebar-expanded-width:\s*272px;/);
+    assert.match(tokens, /--sidebar-row-height:\s*48px;/);
+    assert.match(tokens, /--sidebar-icon-size:\s*40px;/);
+    assert.match(tokens, /--content-max:\s*1520px;/);
     assert.match(
         appCss,
         /\.app-shell\s*\{[\s\S]*?grid-template-columns:\s*var\(--sidebar-width\) minmax\(0,\s*1fr\);/
@@ -56,14 +60,20 @@ test("desktop sidebar is a fixed 208px overlay revealed by clip-path", async () 
         expandedRule,
         /clip-path:\s*inset\(0 0 0 0\);/
     );
+    assert.match(expandedRule, /background-image:\s*none;/);
     assert.doesNotMatch(expandedRule, /width:/);
     assert.doesNotMatch(`${collapsedRule}\n${expandedRule}`, /transition:\s*width/);
     assert.match(
-        desktopCss,
-        /\.sidebar::before\s*\{[\s\S]*?left:\s*calc\(var\(--sidebar-width\) - 1px\);[\s\S]*?background:\s*var\(--color-line\);/
+        collapsedRule,
+        /background-image:\s*[\s\S]*?linear-gradient\([\s\S]*?transparent calc\(var\(--sidebar-width\) - 1px\)[\s\S]*?var\(--color-line\) var\(--sidebar-width\)/
     );
-    assert.doesNotMatch(desktopCss, /\.sidebar::after/);
+    assert.match(collapsedRule, /background-repeat:\s*no-repeat;/);
+    assert.doesNotMatch(desktopCss, /\.sidebar::(?:before|after)/);
     assert.doesNotMatch(appCss, /\.app-shell\s*\{[^}]*--sidebar-expanded-width/s);
+    assert.match(
+        app,
+        /return Number\.isFinite\(width\) && width > 0 \? width : 72;/
+    );
 });
 
 test("desktop sidebar geometry stays fixed while hover and selection stay compact", async () => {
@@ -95,11 +105,11 @@ test("desktop sidebar geometry stays fixed while hover and selection stay compac
     assert.doesNotMatch(desktopCss, /\.sidebar\.is-expanded\s+\./);
     assert.match(
         desktopCss,
-        /\.nav-item\s*\{\s*grid-template-columns:\s*34px minmax\(0,\s*1fr\);[\s\S]*?gap:\s*var\(--space-5\);[\s\S]*?width:\s*100%;[\s\S]*?height:\s*40px;[\s\S]*?min-height:\s*40px;/
+        /\.nav-item\s*\{\s*grid-template-columns:\s*var\(--sidebar-icon-size\) minmax\(0,\s*1fr\);[\s\S]*?gap:\s*var\(--space-5\);[\s\S]*?width:\s*100%;[\s\S]*?height:\s*var\(--sidebar-row-height\);[\s\S]*?min-height:\s*var\(--sidebar-row-height\);/
     );
     assert.match(
         desktopCss,
-        /\.nav-item\s*\{[\s\S]*?padding:\s*3px;/
+        /\.nav-item\s*\{[\s\S]*?padding:\s*var\(--space-1\);/
     );
     assert.match(
         desktopCss,
@@ -111,20 +121,39 @@ test("desktop sidebar geometry stays fixed while hover and selection stay compac
     );
     assert.match(
         desktopCss,
-        /\.search-box\s*\{[\s\S]*?grid-template-columns:\s*34px minmax\(0,\s*1fr\) auto;[\s\S]*?gap:\s*var\(--space-4\);/
+        /\.search-box\s*\{[\s\S]*?grid-template-columns:\s*var\(--sidebar-icon-size\) minmax\(120px,\s*1fr\) auto;[\s\S]*?gap:\s*var\(--space-3\);/
     );
     assert.match(
         desktopCss,
-        /\.search-box input\s*\{[\s\S]*?position:\s*static;[\s\S]*?opacity:\s*1;/
+        /\.search-box input\s*\{[\s\S]*?position:\s*static;[\s\S]*?min-width:\s*0;[\s\S]*?height:\s*var\(--sidebar-row-height\);[\s\S]*?font-size:\s*var\(--font-size-control\);[\s\S]*?opacity:\s*1;/
     );
     assert.match(
         desktopCss,
-        /\.nav-group__label\s*\{[\s\S]*?padding:\s*0 var\(--space-3\) 0\s+calc\(var\(--sidebar-width\) - var\(--space-4\) \+ var\(--space-2\)\);/
+        /\.nav-group__label\s*\{[\s\S]*?padding:\s*0 var\(--space-3\) 0\s+calc\(var\(--sidebar-width\) \+ var\(--space-1\)\);/
     );
-    assert.match(appCss, /\.nav-icon\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/);
     assert.match(
         appCss,
-        /\.nav-item\s*\{[^}]*padding:\s*3px;[^}]*border-radius:\s*var\(--radius-sm\);/
+        /\.nav-icon\s*\{[^}]*width:\s*var\(--sidebar-icon-size\);[^}]*height:\s*var\(--sidebar-icon-size\);/
+    );
+    assert.match(
+        desktopCss,
+        /\.brand-mark\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/
+    );
+    assert.match(
+        desktopCss,
+        /\.workspace-icon\s*\{[\s\S]*?width:\s*36px;[\s\S]*?height:\s*36px;/
+    );
+    assert.match(
+        desktopCss,
+        /\.settings-trigger > \[data-icon\]\s*\{\s*width:\s*var\(--sidebar-icon-size\);\s*height:\s*var\(--sidebar-icon-size\);/
+    );
+    assert.match(
+        desktopCss,
+        /\.nav-item\s*\{[^}]*padding:\s*var\(--space-1\);/
+    );
+    assert.match(
+        appCss,
+        /\.nav-item\s*\{[^}]*border-radius:\s*var\(--radius-sm\);/
     );
     assert.match(
         desktopCss,
@@ -149,7 +178,7 @@ test("desktop sidebar geometry stays fixed while hover and selection stay compac
     assert.match(html, /aria-label="打开设置：外观、动效与系统"/);
 });
 
-test("workspace footer fits the full relative path in a 24px icon rail", async () => {
+test("workspace footer fits the path in a 36px icon row and ellipsizes overflow", async () => {
     const html = await read("../index.html");
     const app = await read("../src/app.js");
     const appCss = await read("../styles/app.css");
@@ -168,28 +197,28 @@ test("workspace footer fits the full relative path in a 24px icon rail", async (
     assert.match(html, /class="workspace-icon" data-icon="folder"/);
     assert.match(html, /id="workspace-path">\.orderly-data\/workspace<\/span>/);
     assert.match(
-        appCss,
-        /\.sandbox-status\s*\{\s*grid-template-columns:\s*24px minmax\(0, 1fr\);/
+        desktopCss,
+        /grid-template-columns:\s*36px minmax\(0, 1fr\);/
+    );
+    assert.match(
+        desktopCss,
+        /\.workspace-icon\s*\{[\s\S]*?width:\s*36px;[\s\S]*?height:\s*36px;/
     );
     assert.match(
         appCss,
-        /\.workspace-icon\s*\{[\s\S]*?width:\s*24px;[\s\S]*?height:\s*24px;/
+        /\.workspace-path\s*\{[\s\S]*?max-width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;[\s\S]*?font-size:\s*var\(--font-size-caption\);[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/
     );
     assert.match(
-        appCss,
-        /\.workspace-path\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;[\s\S]*?font-size:\s*0\.6rem;[\s\S]*?text-overflow:\s*clip;[\s\S]*?white-space:\s*nowrap;/
-    );
-    assert.doesNotMatch(
         between(appCss, ".workspace-path {", ".settings-trigger {"),
         /text-overflow:\s*ellipsis/
     );
     assert.match(
         desktopCss,
-        /\.sandbox-status\s*\{[\s\S]*?width:\s*100%;[\s\S]*?grid-template-columns:\s*34px minmax\(0,\s*1fr\);[\s\S]*?gap:\s*var\(--space-4\);[\s\S]*?padding:\s*3px var\(--space-2\);/
+        /\.sandbox-status\s*\{[\s\S]*?width:\s*100%;[\s\S]*?height:\s*var\(--sidebar-row-height\);[\s\S]*?grid-template-columns:\s*36px minmax\(0,\s*1fr\);[\s\S]*?gap:\s*var\(--space-5\);[\s\S]*?padding:\s*var\(--space-1\) var\(--space-2\);/
     );
     assert.match(
         desktopCss,
-        /\.settings-trigger\s*\{[\s\S]*?width:\s*100%;[\s\S]*?grid-template-columns:\s*34px minmax\(0,\s*1fr\) auto;[\s\S]*?gap:\s*var\(--space-4\);/
+        /\.settings-trigger\s*\{[\s\S]*?width:\s*100%;[\s\S]*?height:\s*var\(--sidebar-row-height\);[\s\S]*?grid-template-columns:\s*var\(--sidebar-icon-size\) minmax\(0,\s*1fr\) auto;[\s\S]*?gap:\s*var\(--space-5\);/
     );
     assert.match(
         updateHealth,
@@ -479,7 +508,10 @@ test("desktop sidebar motion is clip-path-only and mobile keeps transform", asyn
 
     assert.doesNotMatch(appCss, /(^|[\s;])transition\s*:/m);
     assert.doesNotMatch(desktopCss, /\bscale\s*\(/);
-    assert.doesNotMatch(desktopCss, /font-size\s*:/);
+    assert.doesNotMatch(
+        desktopCss,
+        /transition\s*:[^;]*(?:font-size|width|height|transform)/
+    );
     assert.doesNotMatch(desktopCss, /(?:height|transform)\s*:[^;]*var\(--duration/);
     assert.match(tokens, /--duration-sidebar:\s*200ms;/);
     assert.match(
@@ -523,7 +555,7 @@ test("desktop sidebar motion is clip-path-only and mobile keeps transform", asyn
     }
 });
 
-test("command dock continues to derive available width from the 64px rail", async () => {
+test("command dock clears the expanded 272px sidebar between 821px and 1080px", async () => {
     const appCss = await read("../styles/app.css");
     const desktopRule = between(
         appCss,
@@ -542,6 +574,6 @@ test("command dock continues to derive available width from the 64px rail", asyn
     );
     assert.match(
         compactRule,
-        /width:\s*min\(580px, calc\(100vw - var\(--sidebar-width\) - 48px\)\);/
+        /width:\s*clamp\(\s*320px,\s*calc\(100vw - var\(--sidebar-expanded-width\) - 48px\),\s*580px\s*\);/
     );
 });
