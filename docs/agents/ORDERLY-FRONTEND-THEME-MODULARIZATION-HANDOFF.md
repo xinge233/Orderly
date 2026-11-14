@@ -1104,3 +1104,61 @@ git diff --check
 - 820px 仍为移动抽屉：工具栏可见，侧栏关闭态使用独立 transform，抽屉打开后左缘 0、视觉宽度 300px、scrim 与 `aria-expanded=true` 同步；移动端不渲染外置计数层，且无水平滚动。
 - 界面设计负责人只读复核 821/1024/1440/1920/2560 展开态、820 抽屉关闭/打开态，结论为 `PASS`，未发现层级、间距、裁切、气泡、路径、留白或边界交叠问题。
 - PM 最终只读复核确认 9 文件范围、模块边界、主题语义变量、测试与文档事实一致，结论为 `PASS`，无阻断项、无返工项，允许提交。
+
+## 20. ORDERLY-FRONTEND-COLLAPSED-SIDEBAR-ROW-CLIPPING 实施交接
+
+### 20.1 状态与范围
+
+| 项目 | 内容 |
+|---|---|
+| 状态 | 实现、仓库门禁、真实启动、HTTP 烟测、真实浏览器验收、界面设计复核与 PM 最终审核均完成；允许提交 |
+| 任务编号 | `ORDERLY-FRONTEND-COLLAPSED-SIDEBAR-ROW-CLIPPING` |
+| 实施日期 | 2026-11-14 |
+| 桌面收起态 | 搜索行与工作区行不显示会被 72px 边界横切的整行背景和边框 |
+| 图标底座 | 搜索图标 40x40，工作区图标 36x36 |
+| 展开态 | 原有搜索行与工作区行背景、边框规则恢复生效 |
+
+本任务只修改 `app/frontend/styles/app.css`、`app/frontend/tests/expanding-sidebar.test.mjs` 和本节交接记录。未修改 272px 外框、72px 轨道、48px 行高、图标尺寸、`clip-path` 属性或时长、移动抽屉、主题、依赖、宿主、模块、契约和脚本。
+
+### 20.2 实施摘要
+
+- 在桌面 `@media (min-width: 821px)` 中新增只匹配 `.sidebar:not(.is-expanded)` 的行状态规则，将 `.search-box` 与 `.sandbox-status` 的边框和背景设为透明。
+- 搜索图标使用现有 `--sidebar-icon-size`、`--radius-sm` 和 `--color-surface-muted` 形成完整 40x40 圆角底座；工作区继续沿用原有 36x36 语义底座。
+- 收起规则不改变宽高、内边距、位移或动效。展开后 `:not(.is-expanded)` 不再匹配，搜索框原有 66% surface 背景及 focus 边框恢复，工作区原有 line 边框和 54% surface 背景恢复。
+- 新规则位于桌面媒体查询内，`<=820px` 移动抽屉不匹配该状态选择器，仍使用独立宽度、`clip-path: none` 和 `transform` 抽屉行为。
+
+### 20.3 自动化验证
+
+```text
+app/frontend: npm test
+  70 tests, 70 pass, 0 fail
+
+app/frontend: npm run check
+  exit 0
+
+git diff --check
+  exit 0
+  only LF -> CRLF conversion warnings
+
+.\scripts\gate.ps1
+  exit 0
+  Maven: 49 tests, 0 failures, 0 errors, 1 skipped
+  frontend: 70 tests, 70 pass, 0 fail
+  module UI contract samples: 4 tests, 4 pass, 0 fail
+
+.\scripts\start.ps1 -SkipBuild -Port 18097
+  started: exit not applicable (long-running process)
+
+.\scripts\smoke.ps1 -BaseUrl http://127.0.0.1:18097
+  exit 0
+  5 generic queries passed
+```
+
+主代理使用系统 Microsoft Edge、night 主题、`deviceScaleFactor=1` 和 `visualViewport.scale=1` 执行 51 项浏览器断言并全部通过，覆盖 821、1024、1440、1920、2560 和 820px：
+
+- 桌面收起态 `.search-box` 与 `.sandbox-status` 计算背景和边框均为 `rgba(0, 0, 0, 0)`，不再绘制会被 72px 裁切线横切的整行外框。
+- 搜索图标底座为 40x40px、右缘 62px；工作区图标底座为 36x36px、右缘 56px，均完整位于 72px 轨道内。
+- 展开态搜索行恢复 66% surface 背景，工作区行恢复 line 边框和 54% surface 背景；272px 覆盖层、72px 主网格和 48px 行高保持不变。
+- 820px 移动抽屉打开后搜索和工作区背景/边框完整，未匹配桌面收起态透明规则，页面无水平滚动。
+- 界面设计负责人只读复核收起态、展开态和移动抽屉截图，确认两处裁切残片消失，结论为 `PASS`，未发现新增残线、重叠或层级问题。
+- PM 最终只读复核确认范围、模块边界、测试、浏览器证据与文档事实一致，结论为 `PASS`，无阻断项、无返工项，允许提交并推送。

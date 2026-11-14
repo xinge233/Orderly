@@ -461,6 +461,12 @@ body.is-navigation-dragging * {
         clip-path: inset(0 0 0 0);
     }
 
+    .sidebar:not(.is-expanded) .search-box,
+    .sidebar:not(.is-expanded) .sandbox-status {
+        border-color: transparent;
+        background: transparent;
+    }
+
     .brand {
         justify-content: flex-start;
         gap: var(--space-4);
@@ -492,8 +498,12 @@ body.is-navigation-dragging * {
     }
 
     .search-box__icon {
+        display: grid;
+        place-items: center;
         width: var(--sidebar-icon-size);
         height: var(--sidebar-icon-size);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface-muted);
     }
 
     .search-box input {

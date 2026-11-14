@@ -76,6 +76,83 @@ test("desktop sidebar is a fixed 272px overlay revealed by clip-path", async () 
     );
 });
 
+test("collapsed desktop rows keep complete icon bases without clipped row chrome", async () => {
+    const tokens = await read("../styles/tokens.css");
+    const appCss = await read("../styles/app.css");
+    const desktopCss = between(
+        appCss,
+        "@media (min-width: 821px)",
+        ".app-main {"
+    );
+    const mobileCss = appCss.slice(appCss.indexOf("@media (max-width: 820px)"));
+    const collapsedRows = between(
+        desktopCss,
+        ".sidebar:not(.is-expanded) .search-box,",
+        ".brand {"
+    );
+    const baseSearch = between(
+        appCss,
+        ".search-box {",
+        ".search-box:focus-within {"
+    );
+    const baseWorkspace = between(
+        appCss,
+        ".workspace-icon {",
+        ".workspace-path {"
+    );
+    const expandedWorkspace = between(
+        desktopCss,
+        ".sandbox-status {",
+        ".sandbox-status .workspace-icon {"
+    );
+
+    assert.match(
+        collapsedRows,
+        /^\.sidebar:not\(\.is-expanded\) \.search-box,\s*\.sidebar:not\(\.is-expanded\) \.sandbox-status\s*\{/
+    );
+    assert.match(collapsedRows, /border-color:\s*transparent;/);
+    assert.match(collapsedRows, /background:\s*transparent;/);
+    assert.doesNotMatch(
+        collapsedRows,
+        /\b(?:width|height|padding|transform|transition)\s*:/
+    );
+    assert.match(
+        desktopCss,
+        /\.search-box__icon\s*\{\s*display:\s*grid;\s*place-items:\s*center;\s*width:\s*var\(--sidebar-icon-size\);\s*height:\s*var\(--sidebar-icon-size\);\s*border-radius:\s*var\(--radius-sm\);\s*background:\s*var\(--color-surface-muted\);\s*\}/
+    );
+    assert.match(
+        baseSearch,
+        /border:\s*1px solid transparent;[\s\S]*?background:\s*color-mix\(in srgb,\s*var\(--color-surface\) 66%,\s*transparent\);/
+    );
+    assert.match(
+        appCss,
+        /\.search-box:focus-within\s*\{\s*border-color:\s*var\(--color-line-strong\);\s*background:\s*var\(--color-surface\);\s*\}/
+    );
+    assert.match(
+        baseWorkspace,
+        /width:\s*24px;[\s\S]*?height:\s*24px;[\s\S]*?border-radius:\s*10px;[\s\S]*?background:\s*var\(--color-surface-muted\);/
+    );
+    assert.match(
+        desktopCss,
+        /\.sandbox-status \.workspace-icon\s*\{\s*width:\s*36px;\s*height:\s*36px;\s*justify-self:\s*center;\s*\}/
+    );
+    assert.match(
+        expandedWorkspace,
+        /border-color:\s*var\(--color-line\);[\s\S]*?background:\s*color-mix\(in srgb,\s*var\(--color-surface\) 54%,\s*transparent\);/
+    );
+    assert.doesNotMatch(
+        mobileCss,
+        /\.sidebar:not\(\.is-expanded\) \.(?:search-box|sandbox-status)/
+    );
+    assert.match(tokens, /--sidebar-width:\s*72px;/);
+    assert.match(tokens, /--sidebar-expanded-width:\s*272px;/);
+    assert.match(tokens, /--sidebar-row-height:\s*48px;/);
+    assert.match(
+        desktopCss,
+        /\.sidebar\s*\{[\s\S]*?width:\s*var\(--sidebar-expanded-width\);[\s\S]*?clip-path:\s*inset\(0 calc\(100% - var\(--sidebar-width\)\) 0 0\);/
+    );
+});
+
 test("desktop sidebar geometry stays fixed while hover and selection stay compact", async () => {
     const html = await read("../index.html");
     const app = await read("../src/app.js");
