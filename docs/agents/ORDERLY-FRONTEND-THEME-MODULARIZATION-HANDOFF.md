@@ -747,7 +747,7 @@ git diff --check
 
 | 项目 | 内容 |
 |---|---|
-| 状态 | 范围内实现与自动化验证完成，等待 PM 最终验收 |
+| 状态 | 主代理真实浏览器验收与 PM 独立复核完成，结论 `PASS` |
 | 任务编号 | `ORDERLY-FRONTEND-SIDEBAR-PULL-REFINEMENT` |
 | 实施日期 | 2026-11-14 |
 | 桌面收起 | 64px 图标轨道，主网格仍只预留 64px |
@@ -806,3 +806,96 @@ Ctrl+C
 - `modularity.ps1` 通过全模块、单模块移除、零模块、恢复、临时模块自动发现与可逆移出、目录主题增删重启生效、无重构建和已选主题失效回退场景。
 - Edge 下 40ms/120ms 时序、64px 边界外气泡视觉、固定 40px 行高和移动抽屉的真实浏览器验收仍由主代理负责，本工程师未将其表述为已通过。
 - 本工程师未创建 Git commit，也未推送远端；提交和推送由主代理按任务分工执行。
+
+## 17. ORDERLY-FRONTEND-SIDEBAR-CHAT-BUBBLE-EXPANSION 实施交接
+
+### 17.1 状态与范围
+
+| 项目 | 内容 |
+|---|---|
+| 状态 | 范围内实现与自动化验证完成，等待 PM 最终验收 |
+| 任务编号 | `ORDERLY-FRONTEND-SIDEBAR-CHAT-BUBBLE-EXPANSION` |
+| 实施日期 | 2026-11-14 |
+| 气泡形态 | 左侧带尾圆角聊天气泡，继续由外置 `#sidebar-count-layer` 承载 |
+| 收起定位 | 图标轨道右侧 |
+| 展开定位 | 模块文字右侧，展开期间按帧跟踪并在 `transitionend` 后最终同步 |
+| 默认动效 | `--duration-sidebar: 200ms`；克制动效为 `110ms`；关闭动效与系统减少动效为 `0ms` |
+
+本任务只修改前端侧栏实现、主题动效变量、相关自动化测试、主题说明和本交接文档。未修改 `Module/`、`app/kernel/`、`app/host/`、`contracts/`、`scripts/`、依赖、日期交接文档或两份产品原始资料。
+
+### 17.2 实施摘要
+
+- 外置数量气泡从胶囊角标改为左侧带小尾巴的圆角聊天气泡；尾巴使用固定向左的形状，不随收起或展开改变方向。
+- 气泡仍只查询通用 `.nav-item--module[data-module-id]`，继续通过 `navigationCount` 只显示有限正整数。总览等非模块项不生成气泡，`#sidebar-count-layer` 继续保持 `aria-hidden="true"` 和 `pointer-events: none`，真实数量继续进入导航按钮 `aria-label`。
+- 外置气泡节点按 `data-module-id` 复用，连续定位不会每帧销毁重建。收起态锚点为图标轨道右缘加 4px；展开态用 `Range.selectNodeContents()` 测量通用 `.nav-copy strong` 的实际文字矩形，将气泡放在文字右缘加 7px 处。若该位置会与 `.nav-drag-handle` 相交，则把气泡移到把手右侧的安全位置。
+- 展开开始时不再清空气泡。侧栏展开期间使用 `requestAnimationFrame` 持续同步，`transitionend` 或等长兜底计时器到达后停止跟踪并做最终同步；收起、离开桌面、重复展开和重新展开都会清理旧的帧/事件监听。
+- 桌面导航保留整行点击与键盘焦点范围，但悬停和选中背景只作用于固定 34px 图标块，不再铺满展开后的整行。图标仍为 34x34，行高仍为 40px，`padding` 与圆角未改变。
+- 三套主题仍只对 `sidebar` 使用 `width var(--duration-sidebar) var(--ease-out)`；没有新增横向文字缩放、纵向位移、高度过渡或字体缩放。移动抽屉继续使用独立 `transform` 过渡，移动端样式规则未改为桌面模式。
+
+### 17.3 自动化验证
+
+```text
+app/frontend: npm test
+  67 tests, 67 pass, 0 fail
+
+app/frontend: npm run check
+  exit 0
+
+.\scripts\gate.ps1
+  exit 0
+  Maven host tests: 49 run, 0 failures, 0 errors, 1 skipped
+  Frontend tests: 67 pass
+  Module UI contract samples: 4 pass
+
+git diff --check
+  exit 0
+  only LF -> CRLF conversion warnings
+
+.\scripts\start.ps1 -SkipBuild -Port 18088
+  startup success, 127.0.0.1:18088
+
+.\scripts\smoke.ps1 -BaseUrl http://127.0.0.1:18088
+  exit 0, 5 required-free generic queries passed
+
+Ctrl+C
+  Tomcat graceful shutdown complete
+```
+
+新增或更新的测试覆盖：
+
+- 气泡左侧尾巴、圆角外形及外置非交互层语义。
+- 收起态轨道锚点、展开态真实文字 Range 锚点、拖拽把手避让、气泡节点复用和 `requestAnimationFrame` 跟踪。
+- `transitionend` 最终同步、重复展开清理和收起恢复。
+- 固定 34x34 图标、40px 行高、桌面悬停/选中视觉不铺满整行。
+- 默认 200ms、克制 110ms、`motion: none` 与减少动效 0ms。
+- 三套主题侧栏规则只使用变量，不包含缩放、字体缩放或内边距/高度时长过渡。
+
+真实浏览器下的展开过程视觉、气泡与拖拽把手间距、三套主题切换观感由主代理验收，最终结果见 17.4；本工程师未将未执行的浏览器视觉检查表述为已通过。
+
+### 17.4 主代理与 PM 最终验收
+
+```text
+Edge 真实浏览器，1440px / 1920px
+  收起 64px，展开 208px
+  全部导航行 40px，全部图标 34x34px
+  展开气泡定位到真实文字右缘，首个气泡约为 textRight + 6.6px
+  气泡右缘 156px，拖拽把手左缘 180px，无交叠
+  paper / moss / night 均显示 3 个模块气泡
+
+Edge CDP 模拟 prefers-reduced-motion: no-preference
+  sidebar transition: width 0.2s
+  展开 70ms 中间态采样宽度约 197.4px
+
+390px 移动端
+  sidebar-count-layer display: none
+  气泡数量 0
+  移动菜单 aria-expanded=true，抽屉 left:0、transform:0
+
+motion: none 与系统减少动效
+  transition: none / 0s
+
+PM 最终结论
+  PASS，无阻塞，无返工项
+```
+
+当前 Windows 系统实际启用 `prefers-reduced-motion: reduce`，因此普通运行时动画会按安全层设计立即完成；上述 `200ms` 过渡通过 Edge CDP 模拟无减少动效后验证。既有 SSE 活动连接导致的 30 秒优雅停机超时仍属于独立既有问题，本次未修改。

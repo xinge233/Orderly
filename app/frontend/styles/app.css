@@ -527,6 +527,21 @@ body.is-navigation-dragging * {
         column-gap: 0;
     }
 
+    .nav-item:hover,
+    .nav-item.is-active {
+        background: transparent;
+        box-shadow: none;
+    }
+
+    .nav-item:hover .nav-icon {
+        background: var(--color-surface);
+    }
+
+    .nav-item.is-active .nav-icon {
+        background: var(--color-accent-soft);
+        color: var(--color-accent-strong);
+    }
+
     .nav-icon {
         width: 34px;
         height: 34px;
@@ -2159,21 +2174,33 @@ body.is-navigation-dragging * {
 .sidebar-count-bubble {
     position: fixed;
     display: grid;
-    min-width: 16px;
-    height: 16px;
+    min-width: 22px;
+    height: 20px;
     place-items: center;
-    padding: 0 4px;
+    padding: 0 6px;
     border: 2px solid var(--color-sidebar);
-    border-radius: 999px;
+    border-radius: var(--radius-xs);
     background: var(--color-accent);
     color: var(--color-accent-contrast);
     font-family: var(--font-mono);
     font-size: 0.58rem;
     font-variant-numeric: tabular-nums;
-    line-height: 12px;
+    line-height: 1;
     pointer-events: none;
     transform: translateY(-50%);
     white-space: nowrap;
+}
+
+.sidebar-count-bubble::before {
+    position: absolute;
+    top: 50%;
+    left: -6px;
+    width: 7px;
+    height: 8px;
+    background: var(--color-accent);
+    clip-path: polygon(100% 0, 100% 100%, 0 50%);
+    content: "";
+    transform: translateY(-50%);
 }
 
 .scrim {

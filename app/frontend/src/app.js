@@ -99,6 +99,8 @@ let navigationHoldTimer = null;
 let suppressNavigationClickUntil = 0;
 let sidebarOrderRequestGeneration = 0;
 let sidebarCountFrame = null;
+let sidebarCountTrackingFrame = null;
+let sidebarCountTrackingHandler = null;
 let sidebarCountRefreshTimer = null;
 let sidebarCountTransitionHandler = null;
 const desktopSidebar = {
@@ -778,6 +780,7 @@ function activateDesktopSidebar() {
 function deactivateDesktopSidebar() {
     clearDesktopSidebarTimer();
     clearSidebarAttention();
+    cancelSidebarCountTracking();
     cancelSidebarCountRefresh();
     clearSidebarCountLayer();
     desktopSidebar.active = false;
@@ -797,13 +800,19 @@ function setDesktopSidebarExpansion(expanded) {
         return;
     }
     const wasExpanded = desktopSidebar.expanded;
+    const changed = wasExpanded !== expanded;
     desktopSidebar.expanded = expanded;
     sidebar.classList.toggle("is-expanded", expanded);
-    if (expanded) {
-        cancelSidebarCountRefresh();
-        clearSidebarCountLayer();
-    } else if (wasExpanded) {
-        scheduleSidebarCountRefreshAfterCollapse();
+    if (changed) {
+        if (expanded) {
+            beginSidebarCountTracking();
+        } else {
+            cancelSidebarCountTracking();
+            clearSidebarCountLayer();
+            scheduleSidebarCountRefreshAfterCollapse();
+        }
+    } else if (expanded) {
+        queueSidebarCountRender();
     }
     if (desktopSidebar.attentionTimer == null) {
         sidebar.dataset.motionState = expanded ? "expanded" : "collapsed";
@@ -897,12 +906,35 @@ function queueSidebarCountRender() {
     if (sidebarCountFrame != null) {
         return;
     }
-    const schedule = window.requestAnimationFrame
-        || ((callback) => window.setTimeout(callback, 0));
-    sidebarCountFrame = schedule(() => {
+    sidebarCountFrame = requestSidebarFrame(() => {
         sidebarCountFrame = null;
         renderSidebarCountLayer();
     });
+}
+
+function requestSidebarFrame(callback) {
+    return window.requestAnimationFrame
+        ? window.requestAnimationFrame(callback)
+        : window.setTimeout(callback, 0);
+}
+
+function cancelSidebarFrame(frame) {
+    if (window.requestAnimationFrame) {
+        window.cancelAnimationFrame(frame);
+    } else {
+        window.clearTimeout(frame);
+    }
+}
+
+function navigationTextRect(button) {
+    const text = button.querySelector(".nav-copy strong");
+    if (!text) {
+        return null;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const rect = range.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 ? rect : null;
 }
 
 function renderSidebarCountLayer() {
@@ -910,19 +942,23 @@ function renderSidebarCountLayer() {
     if (!layer) {
         return;
     }
-    layer.replaceChildren();
     if (!desktopSidebar.active
-        || desktopSidebar.expanded
         || window.matchMedia(MOBILE_NAV_QUERY).matches) {
+        layer.replaceChildren();
         return;
     }
 
     const sidebar = document.querySelector("#sidebar");
     if (!sidebar) {
+        layer.replaceChildren();
         return;
     }
+    const existing = new Map(
+        [...layer.querySelectorAll(".sidebar-count-bubble[data-module-id]")]
+            .map((bubble) => [bubble.dataset.moduleId, bubble])
+    );
     const sidebarRect = sidebar.getBoundingClientRect();
-    const left = sidebarRect.left + sidebarRailWidth() + 4;
+    const railRight = sidebarRect.left + sidebarRailWidth();
     document.querySelectorAll(".nav-item--module[data-module-id]").forEach((button) => {
         const moduleId = button.dataset.moduleId;
         const count = navigationCount(moduleId);
@@ -930,12 +966,35 @@ function renderSidebarCountLayer() {
         if (count == null || rect.width <= 0 || rect.height <= 0) {
             return;
         }
-        const bubble = element("span", "sidebar-count-bubble", String(count));
+        const textRect = desktopSidebar.expanded
+            ? navigationTextRect(button)
+            : null;
+        const bubble = existing.get(moduleId)
+            ?? element("span", "sidebar-count-bubble", String(count));
+        if (!existing.delete(moduleId)) {
+            layer.append(bubble);
+        }
+        if (bubble.textContent !== String(count)) {
+            bubble.textContent = String(count);
+        }
         bubble.dataset.moduleId = moduleId;
+        let left = textRect
+            ? textRect.right + 7
+            : railRight + 4;
+        const handleRect = textRect
+            ? button.querySelector(".nav-drag-handle")?.getBoundingClientRect()
+            : null;
+        const bubbleWidth = bubble.getBoundingClientRect().width;
+        if (handleRect?.width > 0
+            && left - 6 < handleRect.right
+            && left + bubbleWidth > handleRect.left) {
+            left = handleRect.right + 7;
+        }
+        left = Math.max(railRight + 4, left);
         bubble.style.left = `${Math.round(left)}px`;
         bubble.style.top = `${Math.round(rect.top + (rect.height / 2))}px`;
-        layer.append(bubble);
     });
+    existing.forEach((bubble) => bubble.remove());
 }
 
 function clearSidebarCountLayer() {
@@ -980,6 +1039,60 @@ function scheduleSidebarCountRefreshAfterCollapse() {
         finish,
         sidebarTransitionDurationMs() + 32
     );
+}
+
+function beginSidebarCountTracking() {
+    cancelSidebarCountTracking();
+    cancelSidebarCountRefresh();
+    const sidebar = document.querySelector("#sidebar");
+    if (!desktopSidebar.active || !desktopSidebar.expanded || !sidebar) {
+        return;
+    }
+
+    const track = () => {
+        sidebarCountTrackingFrame = null;
+        if (!desktopSidebar.active || !desktopSidebar.expanded) {
+            return;
+        }
+        renderSidebarCountLayer();
+        sidebarCountTrackingFrame = requestSidebarFrame(track);
+    };
+    sidebarCountTrackingFrame = requestSidebarFrame(track);
+
+    const finish = (event) => {
+        if (event
+            && (event.target !== sidebar || event.propertyName !== "width")) {
+            return;
+        }
+        finishSidebarCountTracking();
+    };
+    sidebarCountTrackingHandler = finish;
+    sidebar.addEventListener("transitionend", finish);
+    sidebarCountRefreshTimer = window.setTimeout(
+        finishSidebarCountTracking,
+        sidebarTransitionDurationMs() + 32
+    );
+    renderSidebarCountLayer();
+}
+
+function finishSidebarCountTracking() {
+    cancelSidebarCountTracking();
+    cancelSidebarCountRefresh();
+    renderSidebarCountLayer();
+}
+
+function cancelSidebarCountTracking() {
+    if (sidebarCountTrackingFrame != null) {
+        cancelSidebarFrame(sidebarCountTrackingFrame);
+        sidebarCountTrackingFrame = null;
+    }
+    if (sidebarCountTrackingHandler) {
+        document.querySelector("#sidebar")?.removeEventListener(
+            "transitionend",
+            sidebarCountTrackingHandler
+        );
+        sidebarCountTrackingHandler = null;
+    }
 }
 
 function cancelSidebarCountRefresh() {

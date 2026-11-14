@@ -36,7 +36,7 @@ test("desktop sidebar starts collapsed and the shell only reserves the icon rail
     assert.doesNotMatch(appCss, /\.app-shell\s*\{[^}]*--sidebar-expanded-width/s);
 });
 
-test("desktop collapsed navigation keeps a 40px rail, names controls and hides descriptions", async () => {
+test("desktop navigation keeps fixed 34/40 visuals and constrains hover and selection", async () => {
     const html = await read("../index.html");
     const app = await read("../src/app.js");
     const appCss = await read("../styles/app.css");
@@ -74,13 +74,37 @@ test("desktop collapsed navigation keeps a 40px rail, names controls and hides d
     );
     assert.match(
         desktopCss,
+        /\.nav-item\s*\{[\s\S]*?padding:\s*3px;/
+    );
+    assert.match(
+        desktopCss,
         /\.sidebar\.is-expanded \.nav-item\s*\{[\s\S]*?height:\s*40px;[\s\S]*?min-height:\s*40px;/
+    );
+    assert.match(
+        desktopCss,
+        /\.sidebar\.is-expanded \.nav-item\s*\{[\s\S]*?padding:\s*3px;/
     );
     assert.match(
         desktopCss,
         /\.sidebar\.is-expanded \.nav-copy\s*\{[\s\S]*?position:\s*static;/
     );
     assert.match(appCss, /\.nav-icon\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/);
+    assert.match(
+        appCss,
+        /\.nav-item\s*\{[^}]*padding:\s*3px;[^}]*border-radius:\s*var\(--radius-sm\);/
+    );
+    assert.match(
+        desktopCss,
+        /\.nav-item:hover,\s*\.nav-item\.is-active\s*\{\s*background:\s*transparent;\s*box-shadow:\s*none;/
+    );
+    assert.match(
+        desktopCss,
+        /\.nav-item:hover \.nav-icon\s*\{\s*background:\s*var\(--color-surface\);\s*\}/
+    );
+    assert.match(
+        desktopCss,
+        /\.nav-item\.is-active \.nav-icon\s*\{\s*background:\s*var\(--color-accent-soft\);/
+    );
     assert.match(renderNavigation, /button\.setAttribute\(\s*"aria-label"/);
     assert.match(renderNavigation, /`\$\{item\.label\}，\$\{item\.caption\}\$\{countLabel\}`/);
     assert.doesNotMatch(renderNavigation, /nav-count|nav-copy small|element\("small"/);
@@ -243,7 +267,7 @@ test("mobile drawer keeps its width, inert/ARIA behavior and is isolated from de
     assert.match(mobileOpen, /data-motion-state", "open"/);
 });
 
-test("module counts use an external noninteractive portal and never enter the clipped rail", async () => {
+test("module counts use external chat bubbles that stay anchored through expansion", async () => {
     const html = await read("../index.html");
     const app = await read("../src/app.js");
     const appCss = await read("../styles/app.css");
@@ -251,6 +275,11 @@ test("module counts use an external noninteractive portal and never enter the cl
         app,
         "function renderSidebarCountLayer",
         "function clearSidebarCountLayer"
+    );
+    const textAnchor = between(
+        app,
+        "function navigationTextRect",
+        "function renderSidebarCountLayer"
     );
     const renderNavigation = between(
         app,
@@ -277,43 +306,80 @@ test("module counts use an external noninteractive portal and never enter the cl
     );
     assert.match(
         appCss,
-        /\.sidebar-count-bubble\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?pointer-events:\s*none;/
+        /\.sidebar-count-bubble\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?border-radius:\s*var\(--radius-xs\);[\s\S]*?pointer-events:\s*none;/
+    );
+    assert.match(
+        appCss,
+        /\.sidebar-count-bubble::before\s*\{[\s\S]*?left:\s*-6px;[\s\S]*?clip-path:\s*polygon\(100% 0,\s*100% 100%,\s*0 50%\);/
     );
     assert.match(renderCounts, /\.nav-item--module\[data-module-id\]/);
     assert.match(renderCounts, /button\.getBoundingClientRect\(\)/);
-    assert.match(renderCounts, /sidebarRect\.left \+ sidebarRailWidth\(\) \+ 4/);
+    assert.match(renderCounts, /const railRight = sidebarRect\.left \+ sidebarRailWidth\(\);/);
+    assert.match(renderCounts, /const existing = new Map/);
+    assert.match(renderCounts, /existing\.get\(moduleId\)[\s\S]*?element\("span", "sidebar-count-bubble"/);
+    assert.match(textAnchor, /button\.querySelector\("\.nav-copy strong"\)/);
+    assert.match(textAnchor, /const range = document\.createRange\(\);/);
+    assert.match(textAnchor, /range\.selectNodeContents\(text\);/);
+    assert.match(textAnchor, /range\.getBoundingClientRect\(\)/);
+    assert.match(renderCounts, /const textRect = desktopSidebar\.expanded\s*\? navigationTextRect\(button\)/);
+    assert.match(renderCounts, /let left = textRect\s*\? textRect\.right \+ 7\s*: railRight \+ 4;/);
+    assert.match(
+        renderCounts,
+        /left - 6 < handleRect\.right[\s\S]*?left \+ bubbleWidth > handleRect\.left[\s\S]*?left = handleRect\.right \+ 7;/
+    );
+    assert.doesNotMatch(renderCounts, /querySelector\("\.nav-copy"\)\?\.getBoundingClientRect\(\)/);
     assert.match(
         renderCounts,
         /element\("span", "sidebar-count-bubble", String\(count\)\)/
     );
     assert.doesNotMatch(renderCounts, /item\.label|module\.title|card\.unit|caption/);
-    assert.match(
+    assert.doesNotMatch(
         renderCounts,
-        /desktopSidebar\.expanded[\s\S]*?window\.matchMedia\(MOBILE_NAV_QUERY\)\.matches/
+        /desktopSidebar\.active\s*\|\|\s*desktopSidebar\.expanded/
     );
     assert.match(countRule, /typeof raw === "number"/);
     assert.match(countRule, /\^\\d\+\$/);
     assert.match(countRule, /Number\.isInteger\(numeric\) && numeric > 0/);
     assert.match(app, /#sidebar-count-layer"\)\?\.replaceChildren\(\)/);
     assert.match(app, /function scheduleSidebarCountRefreshAfterCollapse/);
-    assert.match(app, /addEventListener\(\s*"scroll",\s*queueSidebarCountRender/s);
-    assert.match(app, /addEventListener\("resize", queueSidebarCountRender/);
+    assert.match(app, /function beginSidebarCountTracking/);
+    assert.match(app, /function finishSidebarCountTracking/);
+    assert.match(app, /function cancelSidebarCountTracking/);
+    assert.match(app, /sidebarCountTrackingFrame = requestSidebarFrame\(track\)/);
     assert.match(
         app,
-        /if \(expanded\) \{[\s\S]*?clearSidebarCountLayer\(\);[\s\S]*?\} else if \(wasExpanded\) \{[\s\S]*?scheduleSidebarCountRefreshAfterCollapse\(\);/
+        /sidebar\.addEventListener\("transitionend", finish\)/
     );
+    assert.match(
+        app,
+        /function beginSidebarCountTracking\(\)\s*\{\s*cancelSidebarCountTracking\(\);\s*cancelSidebarCountRefresh\(\);/
+    );
+    assert.match(
+        app,
+        /if \(expanded\) \{\s*beginSidebarCountTracking\(\);\s*\} else \{[\s\S]*?clearSidebarCountLayer\(\);/
+    );
+    assert.match(app, /addEventListener\(\s*"scroll",\s*queueSidebarCountRender/s);
+    assert.match(app, /addEventListener\("resize", queueSidebarCountRender/);
     assert.match(renderNavigation, /queueSidebarCountRender\(\);/);
 });
 
 test("desktop sidebar motion is width-only and mobile keeps its transform transition", async () => {
     const appCss = await read("../styles/app.css");
     const tokens = await read("../styles/tokens.css");
+    const desktopCss = between(
+        appCss,
+        "@media (min-width: 821px)",
+        ".app-main {"
+    );
 
     assert.doesNotMatch(appCss, /(^|[\s;])transition\s*:/m);
-    assert.match(tokens, /--duration-sidebar:\s*120ms;/);
+    assert.doesNotMatch(desktopCss, /\bscale\s*\(/);
+    assert.doesNotMatch(desktopCss, /font-size\s*:/);
+    assert.doesNotMatch(desktopCss, /(?:height|transform)\s*:[^;]*var\(--duration/);
+    assert.match(tokens, /--duration-sidebar:\s*200ms;/);
     assert.match(
         tokens,
-        /html\[data-motion="minimal"\]\s*\{[\s\S]*?--duration-sidebar:\s*80ms;/
+        /html\[data-motion="minimal"\]\s*\{[\s\S]*?--duration-sidebar:\s*110ms;/
     );
     assert.match(
         tokens,
@@ -333,6 +399,14 @@ test("desktop sidebar motion is width-only and mobile keeps its transform transi
             /\[data-motion-scope="sidebar"\]\s*\{\s*transition:\s*width var\(--duration-sidebar\) var\(--ease-out\);/
         );
         assert.doesNotMatch(motion, /padding var\(/);
+        assert.doesNotMatch(
+            between(
+                motion,
+                '[data-motion-scope="sidebar"] {',
+                "}"
+            ),
+            /\b\d+(?:\.\d+)?m?s\b/
+        );
         assert.match(
             motion,
             /@media \(max-width: 820px\)\s*\{[\s\S]*?transition:\s*transform var\(--duration-normal\) var\(--ease-out\);/
