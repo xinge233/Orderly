@@ -46,8 +46,8 @@ const NAV_DRAG_MOVE_TOLERANCE = 7;
 const MOBILE_NAV_QUERY = "(max-width: 820px)";
 const DESKTOP_SIDEBAR_QUERY = "(min-width: 821px)";
 const SIDEBAR_POINTER_QUERY = "(min-width: 821px) and (hover: hover) and (pointer: fine)";
-const SIDEBAR_EXPAND_DELAY_MS = 140;
-const SIDEBAR_COLLAPSE_DELAY_MS = 400;
+const SIDEBAR_EXPAND_DELAY_MS = 40;
+const SIDEBAR_COLLAPSE_DELAY_MS = 120;
 
 const NAV_SECTIONS = Object.freeze([
     {
@@ -98,6 +98,9 @@ let navigationDrag = null;
 let navigationHoldTimer = null;
 let suppressNavigationClickUntil = 0;
 let sidebarOrderRequestGeneration = 0;
+let sidebarCountFrame = null;
+let sidebarCountRefreshTimer = null;
+let sidebarCountTransitionHandler = null;
 const desktopSidebar = {
     active: false,
     expanded: false,
@@ -673,6 +676,11 @@ function bindGlobalControls() {
 
     bindDesktopSidebarControls();
     bindSidebarViewport();
+    document.querySelector(".sidebar-scroll")?.addEventListener(
+        "scroll",
+        queueSidebarCountRender,
+        { passive: true }
+    );
 
     document.addEventListener("pointermove", moveNavigationDrag, { passive: false });
     document.addEventListener("pointerup", finishNavigationDrag);
@@ -732,6 +740,7 @@ function bindSidebarViewport() {
     mobileViewport.addEventListener("change", (event) => {
         const sidebar = document.querySelector("#sidebar");
         if (event.matches) {
+            clearSidebarCountLayer();
             deactivateDesktopSidebar();
             if (sidebar?.contains(document.activeElement)) {
                 document.querySelector("#mobile-menu")?.focus({ preventScroll: true });
@@ -742,8 +751,10 @@ function bindSidebarViewport() {
         closeMobileNav({ restoreFocus: false });
         activateDesktopSidebar();
     });
+    window.addEventListener("resize", queueSidebarCountRender, { passive: true });
 
     if (mobileViewport.matches) {
+        clearSidebarCountLayer();
         deactivateDesktopSidebar();
         syncMobileSidebarAvailability();
     } else {
@@ -761,11 +772,14 @@ function activateDesktopSidebar() {
     setDesktopSidebarExpansion(false);
     sidebar.inert = false;
     sidebar.removeAttribute("aria-hidden");
+    queueSidebarCountRender();
 }
 
 function deactivateDesktopSidebar() {
     clearDesktopSidebarTimer();
     clearSidebarAttention();
+    cancelSidebarCountRefresh();
+    clearSidebarCountLayer();
     desktopSidebar.active = false;
     desktopSidebar.pointerInside = false;
     desktopSidebar.expanded = false;
@@ -782,8 +796,15 @@ function setDesktopSidebarExpansion(expanded) {
     if (!sidebar || !desktopSidebar.active) {
         return;
     }
+    const wasExpanded = desktopSidebar.expanded;
     desktopSidebar.expanded = expanded;
     sidebar.classList.toggle("is-expanded", expanded);
+    if (expanded) {
+        cancelSidebarCountRefresh();
+        clearSidebarCountLayer();
+    } else if (wasExpanded) {
+        scheduleSidebarCountRefreshAfterCollapse();
+    }
     if (desktopSidebar.attentionTimer == null) {
         sidebar.dataset.motionState = expanded ? "expanded" : "collapsed";
     }
@@ -870,6 +891,109 @@ function clearSidebarAttention() {
     }
     window.clearTimeout(desktopSidebar.attentionTimer);
     desktopSidebar.attentionTimer = null;
+}
+
+function queueSidebarCountRender() {
+    if (sidebarCountFrame != null) {
+        return;
+    }
+    const schedule = window.requestAnimationFrame
+        || ((callback) => window.setTimeout(callback, 0));
+    sidebarCountFrame = schedule(() => {
+        sidebarCountFrame = null;
+        renderSidebarCountLayer();
+    });
+}
+
+function renderSidebarCountLayer() {
+    const layer = document.querySelector("#sidebar-count-layer");
+    if (!layer) {
+        return;
+    }
+    layer.replaceChildren();
+    if (!desktopSidebar.active
+        || desktopSidebar.expanded
+        || window.matchMedia(MOBILE_NAV_QUERY).matches) {
+        return;
+    }
+
+    const sidebar = document.querySelector("#sidebar");
+    if (!sidebar) {
+        return;
+    }
+    const sidebarRect = sidebar.getBoundingClientRect();
+    const left = sidebarRect.left + sidebarRailWidth() + 4;
+    document.querySelectorAll(".nav-item--module[data-module-id]").forEach((button) => {
+        const moduleId = button.dataset.moduleId;
+        const count = navigationCount(moduleId);
+        const rect = button.getBoundingClientRect();
+        if (count == null || rect.width <= 0 || rect.height <= 0) {
+            return;
+        }
+        const bubble = element("span", "sidebar-count-bubble", String(count));
+        bubble.dataset.moduleId = moduleId;
+        bubble.style.left = `${Math.round(left)}px`;
+        bubble.style.top = `${Math.round(rect.top + (rect.height / 2))}px`;
+        layer.append(bubble);
+    });
+}
+
+function clearSidebarCountLayer() {
+    document.querySelector("#sidebar-count-layer")?.replaceChildren();
+}
+
+function sidebarRailWidth() {
+    const raw = window.getComputedStyle(document.documentElement)
+        .getPropertyValue("--sidebar-width")
+        .trim();
+    const width = Number.parseFloat(raw);
+    return Number.isFinite(width) && width > 0 ? width : 64;
+}
+
+function sidebarTransitionDurationMs() {
+    const raw = window.getComputedStyle(document.documentElement)
+        .getPropertyValue("--duration-sidebar")
+        .trim();
+    const value = Number.parseFloat(raw);
+    if (!Number.isFinite(value)) {
+        return SIDEBAR_COLLAPSE_DELAY_MS;
+    }
+    return raw.endsWith("ms") ? value : value * 1000;
+}
+
+function scheduleSidebarCountRefreshAfterCollapse() {
+    clearSidebarCountLayer();
+    cancelSidebarCountRefresh();
+    const sidebar = document.querySelector("#sidebar");
+    const finish = () => {
+        cancelSidebarCountRefresh();
+        renderSidebarCountLayer();
+    };
+    const handler = (event) => {
+        if (event.propertyName === "width") {
+            finish();
+        }
+    };
+    sidebarCountTransitionHandler = handler;
+    sidebar?.addEventListener("transitionend", handler, { once: true });
+    sidebarCountRefreshTimer = window.setTimeout(
+        finish,
+        sidebarTransitionDurationMs() + 32
+    );
+}
+
+function cancelSidebarCountRefresh() {
+    if (sidebarCountRefreshTimer != null) {
+        window.clearTimeout(sidebarCountRefreshTimer);
+        sidebarCountRefreshTimer = null;
+    }
+    if (sidebarCountTransitionHandler) {
+        document.querySelector("#sidebar")?.removeEventListener(
+            "transitionend",
+            sidebarCountTransitionHandler
+        );
+        sidebarCountTransitionHandler = null;
+    }
 }
 
 /**
@@ -994,26 +1118,23 @@ function syncSettingControls(settings) {
  *
  * @param {unknown} error 连接错误
  */
+function safeWorkspacePath() {
+    return ".orderly-data/workspace";
+}
+
 function updateHealth(error = null) {
     const sandboxStatus = document.querySelector(".sandbox-status");
-    const dot = document.querySelector("#health-dot");
-    const label = document.querySelector("#health-label");
-    const detail = document.querySelector("#health-detail");
+    const workspacePathNode = document.querySelector("#workspace-path");
     const planner = document.querySelector("#planner-badge");
     const online = !error && String(state.health?.status ?? "").toUpperCase() === "UP";
-    const statusText = online ? "本地服务已连接" : "本地服务未连接";
-    const detailText = online
-        ? `沙箱：${state.health?.workspace ?? ".orderly-data/workspace"}`
-        : "请确认 Java 宿主已启动";
+    const workspacePath = safeWorkspacePath();
+    const statusText = online
+        ? `工作区已就绪；路径 ${workspacePath}`
+        : "工作区不可用；请启动本地 Java 宿主";
 
-    dot?.classList.toggle("is-online", online);
-    dot?.classList.toggle("is-offline", Boolean(error));
-    sandboxStatus?.setAttribute("aria-label", `${statusText}；${detailText}`);
-    if (label) {
-        label.textContent = statusText;
-    }
-    if (detail) {
-        detail.textContent = detailText;
+    sandboxStatus?.setAttribute("aria-label", statusText);
+    if (workspacePathNode) {
+        workspacePathNode.textContent = workspacePath;
     }
     if (planner) {
         const plannerStatus = String(state.health?.planner ?? "LOCAL_RULES").toUpperCase();
@@ -1063,8 +1184,8 @@ function renderNavigation(query = "") {
             );
             button.type = "button";
             button.dataset.view = item.id;
-            const count = navigationCount(item.id);
-            const countLabel = hasNavigationCount(count) ? `，数量 ${count}` : "";
+            const count = item.moduleId ? navigationCount(item.moduleId) : null;
+            const countLabel = count == null ? "" : `，数量 ${count}`;
             button.setAttribute(
                 "aria-label",
                 `${item.label}，${item.caption}${countLabel}`
@@ -1085,16 +1206,8 @@ function renderNavigation(query = "") {
                 button.prepend(handle);
             }
             const copy = element("span", "nav-copy");
-            copy.append(
-                element("strong", "", item.label),
-                element("small", "", item.caption)
-            );
+            copy.append(element("strong", "", item.label));
             button.append(copy);
-            if (hasNavigationCount(count)) {
-                const badge = element("span", "nav-count", String(count));
-                badge.setAttribute("aria-hidden", "true");
-                button.append(badge);
-            }
             button.addEventListener("click", (event) => {
                 if (performance.now() < suppressNavigationClickUntil) {
                     event.preventDefault();
@@ -1124,6 +1237,7 @@ function renderNavigation(query = "") {
     if (!container.childElementCount) {
         container.append(element("p", "empty-state", "没有匹配的功能"));
     }
+    queueSidebarCountRender();
 }
 
 function beginNavigationDrag(event, button, moduleId) {
@@ -1311,26 +1425,23 @@ function moduleForView(view) {
 }
 
 /**
- * 获取导航计数。
+ * 获取动态模块导航计数。只有有限正整数才生成外置数字气泡。
  *
- * @param {string} view 视图 id
- * @returns {number | null} 数量
+ * @param {string} moduleId 业务或系统模块 id
+ * @returns {number | null} 可显示数量
  */
-function navigationCount(view) {
-    const module = state.modules.find((item) => moduleNavigationItem(item).id === view);
-    return module ? state.moduleCounts[module.moduleId] ?? null : null;
-}
-
-function hasNavigationCount(count) {
-    if (count == null) {
-        return false;
+function navigationCount(moduleId) {
+    const id = String(moduleId ?? "").trim();
+    if (!id) {
+        return null;
     }
-    const text = String(count).trim();
-    if (!text || ["—", "-", "·", "占位", "尚未接入"].includes(text)) {
-        return false;
-    }
-    const numeric = Number(text);
-    return !Number.isFinite(numeric) || numeric !== 0;
+    const raw = state.moduleCounts[id];
+    const numeric = typeof raw === "number"
+        ? raw
+        : typeof raw === "string" && /^\d+$/.test(raw.trim())
+            ? Number(raw.trim())
+            : Number.NaN;
+    return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
 }
 
 /**
@@ -2567,6 +2678,7 @@ function openMobileNav() {
     if (!window.matchMedia(MOBILE_NAV_QUERY).matches) {
         return;
     }
+    clearSidebarCountLayer();
     const sidebar = document.querySelector(".sidebar");
     const menu = document.querySelector("#mobile-menu");
     sidebar?.classList.add("is-open");
@@ -2609,6 +2721,7 @@ function closeMobileNav({ restoreFocus = true } = {}) {
     }
     syncMobileSidebarAvailability();
     reconcileDesktopSidebar();
+    queueSidebarCountRender();
 }
 
 /**
@@ -2861,7 +2974,7 @@ function renderSystemSettings(panel) {
     const fields = element("div", "settings-fields");
     [
         ["计划器", "本地规则计划器 · 未连接外部模型"],
-        ["文件边界", state.health?.workspace ?? ".orderly-data/workspace"],
+        ["文件边界", safeWorkspacePath()],
         ["删除策略", "仅移入 .orderly-data/trash，不提供物理删除"],
         ["执行担保", "计划确认 → 快照 → 执行 → 审计 → 失败回滚"]
     ].forEach(([label, value]) => {

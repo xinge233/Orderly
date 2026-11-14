@@ -36,7 +36,7 @@ test("desktop sidebar starts collapsed and the shell only reserves the icon rail
     assert.doesNotMatch(appCss, /\.app-shell\s*\{[^}]*--sidebar-expanded-width/s);
 });
 
-test("desktop collapsed navigation hides text but names controls and keeps count badges", async () => {
+test("desktop collapsed navigation keeps a 40px rail, names controls and hides descriptions", async () => {
     const html = await read("../index.html");
     const app = await read("../src/app.js");
     const appCss = await read("../styles/app.css");
@@ -52,7 +52,7 @@ test("desktop collapsed navigation hides text but names controls and keeps count
     );
     const countRule = between(
         app,
-        "function hasNavigationCount",
+        "function navigationCount",
         "async function navigate"
     );
 
@@ -63,40 +63,76 @@ test("desktop collapsed navigation hides text but names controls and keeps count
         ".nav-group__label",
         ".nav-copy",
         ".nav-drag-handle",
-        ".sandbox-status > span:not(.status-dot)",
+        ".workspace-path",
         ".settings-trigger > span:not([data-icon])"
     ]) {
         assert.ok(desktopCss.includes(selector), `桌面收起态缺少隐藏规则：${selector}`);
     }
     assert.match(
         desktopCss,
-        /\.nav-item\s*\{[\s\S]*?width:\s*40px;[\s\S]*?min-height:\s*40px;/
+        /\.nav-item\s*\{[\s\S]*?width:\s*40px;[\s\S]*?height:\s*40px;[\s\S]*?min-height:\s*40px;/
     );
     assert.match(
         desktopCss,
-        /\.nav-count\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*-3px;[\s\S]*?right:\s*-3px;/
+        /\.sidebar\.is-expanded \.nav-item\s*\{[\s\S]*?height:\s*40px;[\s\S]*?min-height:\s*40px;/
     );
     assert.match(
         desktopCss,
-        /\.sidebar\.is-expanded \.nav-copy\s*\{\s*display:\s*flex;/
+        /\.sidebar\.is-expanded \.nav-copy\s*\{[\s\S]*?position:\s*static;/
     );
+    assert.match(appCss, /\.nav-icon\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/);
     assert.match(renderNavigation, /button\.setAttribute\(\s*"aria-label"/);
-    assert.match(renderNavigation, /hasNavigationCount\(count\)/);
-    assert.match(renderNavigation, /badge\.setAttribute\("aria-hidden", "true"\)/);
-    assert.match(countRule, /count == null/);
-    assert.match(countRule, /numeric !== 0/);
+    assert.match(renderNavigation, /`\$\{item\.label\}，\$\{item\.caption\}\$\{countLabel\}`/);
+    assert.doesNotMatch(renderNavigation, /nav-count|nav-copy small|element\("small"/);
+    assert.match(countRule, /Number\.isInteger\(numeric\) && numeric > 0/);
+    assert.match(countRule, /\^\\d\+\$/);
+    assert.doesNotMatch(html, /<small>外观、动效与系统<\/small>/);
+    assert.doesNotMatch(html, /id="health-label"|id="health-detail"|class="status-dot"/);
     assert.match(html, /aria-label="搜索功能"/);
-    assert.match(html, /aria-label="打开设置"/);
+    assert.match(html, /aria-label="打开设置：外观、动效与系统"/);
 });
 
-test("collapsed health status keeps an independent live accessible name", async () => {
+test("workspace footer fits the full relative path in a 24px icon rail", async () => {
     const html = await read("../index.html");
     const app = await read("../src/app.js");
+    const appCss = await read("../styles/app.css");
     const updateHealth = between(app, "function updateHealth", "function renderNavigation");
+    const safePath = between(app, "function safeWorkspacePath", "function updateHealth");
+    const desktopCss = between(
+        appCss,
+        "@media (min-width: 821px)",
+        ".app-main {"
+    );
 
     assert.match(
         html,
-        /<div class="sandbox-status" role="status" aria-live="polite" aria-label="正在连接本地服务，等待健康检查">/
+        /<div class="sandbox-status" role="status" aria-live="polite" aria-label="正在连接本地服务，等待工作区状态">/
+    );
+    assert.match(html, /class="workspace-icon" data-icon="folder"/);
+    assert.match(html, /id="workspace-path">\.orderly-data\/workspace<\/span>/);
+    assert.match(
+        appCss,
+        /\.sandbox-status\s*\{\s*grid-template-columns:\s*24px minmax\(0, 1fr\);/
+    );
+    assert.match(
+        appCss,
+        /\.workspace-icon\s*\{[\s\S]*?width:\s*24px;[\s\S]*?height:\s*24px;/
+    );
+    assert.match(
+        appCss,
+        /\.workspace-path\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;[\s\S]*?font-size:\s*0\.6rem;[\s\S]*?text-overflow:\s*clip;[\s\S]*?white-space:\s*nowrap;/
+    );
+    assert.doesNotMatch(
+        between(appCss, ".workspace-path {", ".settings-trigger {"),
+        /text-overflow:\s*ellipsis/
+    );
+    assert.match(
+        desktopCss,
+        /\.sandbox-status\s*\{[\s\S]*?width:\s*40px;[\s\S]*?height:\s*40px;[\s\S]*?grid-template-columns:\s*24px;[\s\S]*?place-items:\s*center;[\s\S]*?justify-content:\s*center;/
+    );
+    assert.match(
+        desktopCss,
+        /\.sidebar\.is-expanded \.sandbox-status\s*\{[\s\S]*?grid-template-columns:\s*24px minmax\(0, 1fr\);[\s\S]*?justify-content:\s*normal;[\s\S]*?gap:\s*6px;[\s\S]*?padding:\s*3px 6px;/
     );
     assert.match(
         updateHealth,
@@ -104,18 +140,21 @@ test("collapsed health status keeps an independent live accessible name", async 
     );
     assert.match(
         updateHealth,
-        /const statusText = online \? "本地服务已连接" : "本地服务未连接";/
+        /const statusText = online[\s\S]*?工作区已就绪；路径 \$\{workspacePath\}[\s\S]*?: "工作区不可用；请启动本地 Java 宿主";/
     );
     assert.match(
         updateHealth,
-        /const detailText = online[\s\S]*?沙箱：\$\{state\.health\?\.workspace \?\? "\.orderly-data\/workspace"\}[\s\S]*?: "请确认 Java 宿主已启动";/
+        /workspacePathNode\.textContent = workspacePath;/
     );
     assert.match(
         updateHealth,
-        /sandboxStatus\?\.setAttribute\("aria-label", `\$\{statusText\}；\$\{detailText\}`\);/
+        /sandboxStatus\?\.setAttribute\("aria-label", statusText\);/
     );
-    assert.match(updateHealth, /label\.textContent = statusText;/);
-    assert.match(updateHealth, /detail\.textContent = detailText;/);
+    assert.match(safePath, /\.orderly-data\/workspace/);
+    assert.doesNotMatch(
+        updateHealth,
+        /health-dot|health-label|health-detail|label\.textContent|detail\.textContent/
+    );
 });
 
 test("desktop expansion uses one state timer and the confirmed hover delays", async () => {
@@ -127,8 +166,8 @@ test("desktop expansion uses one state timer and the confirmed hover delays", as
     );
 
     assert.match(app, /const SIDEBAR_POINTER_QUERY = "\(min-width: 821px\) and \(hover: hover\) and \(pointer: fine\)";/);
-    assert.match(app, /const SIDEBAR_EXPAND_DELAY_MS = 140;/);
-    assert.match(app, /const SIDEBAR_COLLAPSE_DELAY_MS = 400;/);
+    assert.match(app, /const SIDEBAR_EXPAND_DELAY_MS = 40;/);
+    assert.match(app, /const SIDEBAR_COLLAPSE_DELAY_MS = 120;/);
     assert.match(scheduler, /clearDesktopSidebarTimer\(\);/);
     assert.match(scheduler, /desktopSidebar\.timer = window\.setTimeout/);
     assert.equal(
@@ -204,18 +243,100 @@ test("mobile drawer keeps its width, inert/ARIA behavior and is isolated from de
     assert.match(mobileOpen, /data-motion-state", "open"/);
 });
 
-test("sidebar width and padding motion lives only in each theme safety layer", async () => {
+test("module counts use an external noninteractive portal and never enter the clipped rail", async () => {
+    const html = await read("../index.html");
+    const app = await read("../src/app.js");
+    const appCss = await read("../styles/app.css");
+    const renderCounts = between(
+        app,
+        "function renderSidebarCountLayer",
+        "function clearSidebarCountLayer"
+    );
+    const renderNavigation = between(
+        app,
+        "function renderNavigation",
+        "function beginNavigationDrag"
+    );
+    const countRule = between(app, "function navigationCount", "async function navigate");
+
+    assert.ok(
+        html.indexOf('id="sidebar-count-layer"')
+        > html.indexOf('class="app-shell"')
+    );
+    assert.ok(
+        html.indexOf('id="sidebar-count-layer"')
+        < html.indexOf('class="command-dock"')
+    );
+    assert.match(
+        html,
+        /id="sidebar-count-layer" aria-hidden="true"><\/div>/
+    );
+    assert.match(
+        appCss,
+        /\.sidebar-count-layer\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*25;[\s\S]*?pointer-events:\s*none;/
+    );
+    assert.match(
+        appCss,
+        /\.sidebar-count-bubble\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?pointer-events:\s*none;/
+    );
+    assert.match(renderCounts, /\.nav-item--module\[data-module-id\]/);
+    assert.match(renderCounts, /button\.getBoundingClientRect\(\)/);
+    assert.match(renderCounts, /sidebarRect\.left \+ sidebarRailWidth\(\) \+ 4/);
+    assert.match(
+        renderCounts,
+        /element\("span", "sidebar-count-bubble", String\(count\)\)/
+    );
+    assert.doesNotMatch(renderCounts, /item\.label|module\.title|card\.unit|caption/);
+    assert.match(
+        renderCounts,
+        /desktopSidebar\.expanded[\s\S]*?window\.matchMedia\(MOBILE_NAV_QUERY\)\.matches/
+    );
+    assert.match(countRule, /typeof raw === "number"/);
+    assert.match(countRule, /\^\\d\+\$/);
+    assert.match(countRule, /Number\.isInteger\(numeric\) && numeric > 0/);
+    assert.match(app, /#sidebar-count-layer"\)\?\.replaceChildren\(\)/);
+    assert.match(app, /function scheduleSidebarCountRefreshAfterCollapse/);
+    assert.match(app, /addEventListener\(\s*"scroll",\s*queueSidebarCountRender/s);
+    assert.match(app, /addEventListener\("resize", queueSidebarCountRender/);
+    assert.match(
+        app,
+        /if \(expanded\) \{[\s\S]*?clearSidebarCountLayer\(\);[\s\S]*?\} else if \(wasExpanded\) \{[\s\S]*?scheduleSidebarCountRefreshAfterCollapse\(\);/
+    );
+    assert.match(renderNavigation, /queueSidebarCountRender\(\);/);
+});
+
+test("desktop sidebar motion is width-only and mobile keeps its transform transition", async () => {
     const appCss = await read("../styles/app.css");
     const tokens = await read("../styles/tokens.css");
 
     assert.doesNotMatch(appCss, /(^|[\s;])transition\s*:/m);
+    assert.match(tokens, /--duration-sidebar:\s*120ms;/);
+    assert.match(
+        tokens,
+        /html\[data-motion="minimal"\]\s*\{[\s\S]*?--duration-sidebar:\s*80ms;/
+    );
+    assert.match(
+        tokens,
+        /html\[data-motion="none"\]\s*\{[\s\S]*?--duration-sidebar:\s*0ms;/
+    );
+    assert.match(
+        tokens,
+        /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?--duration-sidebar:\s*0ms;/
+    );
     assert.match(tokens, /@layer orderly\.safety/);
     assert.match(tokens, /transition: none !important/);
     for (const id of ["paper", "moss", "night"]) {
         const motion = await read(`../../../themes/${id}/motion.css`);
         assert.match(motion, /^@layer orderly\.theme \{/);
-        assert.match(motion, /width var\(--duration-normal\) var\(--ease-out\)/);
-        assert.match(motion, /padding var\(--duration-normal\) var\(--ease-out\)/);
+        assert.match(
+            motion,
+            /\[data-motion-scope="sidebar"\]\s*\{\s*transition:\s*width var\(--duration-sidebar\) var\(--ease-out\);/
+        );
+        assert.doesNotMatch(motion, /padding var\(/);
+        assert.match(
+            motion,
+            /@media \(max-width: 820px\)\s*\{[\s\S]*?transition:\s*transform var\(--duration-normal\) var\(--ease-out\);/
+        );
     }
 });
 

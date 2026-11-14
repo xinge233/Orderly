@@ -16,28 +16,18 @@
         animation: orderly-view-enter var(--duration-normal) var(--ease-out) both;
     }
 
-    html[data-theme="moss"] [data-motion-scope="sidebar"][data-motion-state="attention"]::after {
-        position: absolute;
-        top: 72px;
-        right: 18px;
-        width: 9px;
-        height: 9px;
-        border-radius: 50%;
-        background: var(--color-danger);
-        box-shadow: 0 0 0 5px var(--color-danger-soft);
-        content: "";
-        animation: orderly-target-pulse var(--duration-slow) var(--ease-spring) 3;
-    }
-
     html[data-theme="moss"] [data-motion-scope="feedback"][data-motion-state="running"] {
         animation: orderly-target-pulse var(--duration-slow) var(--ease-spring) infinite;
     }
 
     html[data-theme="moss"] [data-motion-scope="sidebar"] {
-        transition:
-            width var(--duration-normal) var(--ease-out),
-            padding var(--duration-normal) var(--ease-out),
-            transform var(--duration-normal) var(--ease-out);
+        transition: width var(--duration-sidebar) var(--ease-out);
+    }
+
+    @media (max-width: 820px) {
+        html[data-theme="moss"] [data-motion-scope="sidebar"] {
+            transition: transform var(--duration-normal) var(--ease-out);
+        }
     }
 
     html[data-theme="moss"] [data-motion-scope="module-card"] {

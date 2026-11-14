@@ -740,3 +740,69 @@ git diff --check
 - 真实 HTTP 首页返回 200，且包含初始 `collapsed` 状态、搜索 `aria-label` 与设置 `aria-label`。
 - HTTP 烟测覆盖 JDK 21、业务/系统模块目录、模块偏好、模块 UI、通用查询、目录主题详情/CSS、回退字段、刷新响应和未确认计划拒绝，未产生业务数据变更。
 - Edge 多尺寸与 140ms/400ms 真实交互时序验收由主代理负责，本工程师未将其表述为已通过。
+
+## 16. ORDERLY-FRONTEND-SIDEBAR-PULL-REFINEMENT 实施交接
+
+### 16.1 状态与范围
+
+| 项目 | 内容 |
+|---|---|
+| 状态 | 范围内实现与自动化验证完成，等待 PM 最终验收 |
+| 任务编号 | `ORDERLY-FRONTEND-SIDEBAR-PULL-REFINEMENT` |
+| 实施日期 | 2026-11-14 |
+| 桌面收起 | 64px 图标轨道，主网格仍只预留 64px |
+| 桌面展开 | 同一 DOM 横向拉开到 208px 覆盖层，主内容不重排 |
+| 自动展开/收起 | 指针停留 40ms 展开；条件解除后 120ms 收起 |
+
+本任务只修改前端壳层、主题动效、相关测试、主题说明和本交接文档，未修改 `Module/`、`app/kernel/`、`app/host/`、`contracts/`、`scripts/`、依赖或产品资料，也未修改 `renderModuleCards` 与 `card.badge`。
+
+### 16.2 实施摘要
+
+- 新增 `--duration-sidebar: 120ms`，克制动效为 80ms，关闭动效与系统减少动效为 0ms。
+- 桌面侧栏保持同一 DOM，导航图标固定 34px，导航、工作区、设置与搜索行固定 40px；侧栏使用 `overflow: hidden`，文字只随 208px 宽度增长从轨道边界露出。
+- 三套主题的桌面侧栏只过渡 `width var(--duration-sidebar) var(--ease-out)`，不再动画 `padding` 或桌面 `transform`；820px 以下单独保留移动抽屉 `transform` 过渡。
+- `renderNavigation` 只渲染单行 `strong`，完整导航说明仍进入 `aria-label`；设置入口可见描述已移除，完整说明保留在 `aria-label`。
+- 侧栏内部不再生成 `nav-count`。业务或系统模块只有在带 `moduleId`、计数为有限正整数时，才可能在收起态生成纯数字气泡；零、空值、占位符和非数字均不显示。
+- 新增长期位于 `body` 下的 `#sidebar-count-layer`，使用 `aria-hidden="true"`、`pointer-events: none` 和固定定位，根据动态模块按钮的 viewport 纵坐标把数字放在 64px 轨道外。展开开始、移动端、侧栏停用时清空；滚动、导航重绘、窗口缩放与收起完成后重算。
+- 工作区 footer 不再显示连接状态文案或绿色健康点，改用本地 `folder` 图标；收起态为 40px 图标区，展开态显示 `.orderly-data/workspace` 单行相对路径。`role="status"`、`aria-live` 与离线“工作区不可用 / 启动宿主”可访问名称保留，不暴露宿主返回的绝对个人路径。
+- 搜索、焦点、拖动、设置弹窗抑制收起、移动抽屉 `inert`/ARIA、Escape 和焦点返回路径保持原有行为。
+
+### 16.3 实际验证
+
+```text
+npm test
+  67 tests, 67 pass, 0 fail
+
+npm run check
+  exit 0
+
+git diff --check
+  exit 0
+  only LF -> CRLF conversion warnings
+
+.\scripts\gate.ps1
+  exit 0
+  Maven host tests: 49 run, 0 failures, 0 errors, 1 skipped
+  Frontend tests: 67 pass
+  Module UI contract samples: 4 pass
+
+.\scripts\modularity.ps1
+  exit 0
+
+.\scripts\start.ps1 -SkipBuild -Port 18087
+  startup success, 127.0.0.1:18087
+
+.\scripts\smoke.ps1 -BaseUrl http://127.0.0.1:18087
+  exit 0
+
+Ctrl+C
+  Tomcat graceful shutdown complete
+```
+
+验证说明：
+
+- `npm test`、`npm run check`、`git diff --check`、完整门禁、模块化检查和真实启动烟测均已由本工程师实际执行。
+- HTTP 烟测通过 JDK 21、业务/系统模块目录、模块偏好、模块 UI、通用查询、目录主题详情/CSS、安全回退字段、模块刷新响应和未确认计划拒绝。
+- `modularity.ps1` 通过全模块、单模块移除、零模块、恢复、临时模块自动发现与可逆移出、目录主题增删重启生效、无重构建和已选主题失效回退场景。
+- Edge 下 40ms/120ms 时序、64px 边界外气泡视觉、固定 40px 行高和移动抽屉的真实浏览器验收仍由主代理负责，本工程师未将其表述为已通过。
+- 本工程师未创建 Git commit，也未推送远端；提交和推送由主代理按任务分工执行。

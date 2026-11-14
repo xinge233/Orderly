@@ -36,16 +36,13 @@
             </div>
 
             <footer class="sidebar-footer">
-                <div class="sandbox-status" role="status" aria-live="polite" aria-label="正在连接本地服务，等待健康检查">
-                    <span class="status-dot" id="health-dot" aria-hidden="true"></span>
-                    <span>
-                        <strong id="health-label">正在连接本地服务</strong>
-                        <small id="health-detail">等待健康检查</small>
-                    </span>
+                <div class="sandbox-status" role="status" aria-live="polite" aria-label="正在连接本地服务，等待工作区状态">
+                    <span class="workspace-icon" data-icon="folder" aria-hidden="true"></span>
+                    <span class="workspace-path" id="workspace-path">.orderly-data/workspace</span>
                 </div>
-                <button class="settings-trigger" id="open-settings" type="button" aria-label="打开设置">
+                <button class="settings-trigger" id="open-settings" type="button" aria-label="打开设置：外观、动效与系统">
                     <span data-icon="settings" aria-hidden="true"></span>
-                    <span><strong>设置</strong><small>外观、动效与系统</small></span>
+                    <span><strong>设置</strong></span>
                     <kbd>Ctrl ,</kbd>
                 </button>
             </footer>
@@ -75,6 +72,8 @@
             </main>
         </div>
     </div>
+
+    <div class="sidebar-count-layer" id="sidebar-count-layer" aria-hidden="true"></div>
 
     <aside class="command-dock" id="command-dock" aria-label="计划指令入口" data-motion-scope="command-panel" data-motion-state="collapsed" data-motion-phase="active">
         <div class="command-dock__glow" aria-hidden="true"></div>

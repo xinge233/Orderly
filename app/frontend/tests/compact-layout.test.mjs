@@ -167,21 +167,27 @@ test("navigation rendering and the command intro keep current-view honesty visib
     );
 });
 
-test("sidebar module labels and counts have deterministic non-overlap rules", async () => {
+test("sidebar labels stay single-line and internal count badges are never rendered", async () => {
+    const app = await read("../src/app.js");
     const appCss = await read("../styles/app.css");
+    const renderNavigation = app.slice(
+        app.indexOf("function renderNavigation"),
+        app.indexOf("function beginNavigationDrag")
+    );
 
     assert.match(
         appCss,
-        /\.nav-item--module\s*\{[^}]*grid-template-columns:\s*10px 34px minmax\(0, 1fr\) max-content;/
+        /\.nav-item--module\s*\{[^}]*grid-template-columns:\s*34px minmax\(0, 1fr\);/
     );
     assert.match(
         appCss,
         /\.nav-copy strong\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/
     );
-    assert.match(
-        appCss,
-        /\.nav-count\s*\{[^}]*justify-self:\s*end;[^}]*white-space:\s*nowrap;/
-    );
+    assert.doesNotMatch(appCss, /\.nav-count\b/);
+    assert.doesNotMatch(appCss, /\.nav-copy small\b/);
+    assert.doesNotMatch(renderNavigation, /nav-count|element\("small"/);
+    assert.match(renderNavigation, /copy\.append\(element\("strong", "", item\.label\)\);/);
+    assert.match(renderNavigation, /item\.moduleId \? navigationCount\(item\.moduleId\) : null/);
 });
 
 test("mobile navigation layers scrim above the dock and sidebar above both", async () => {

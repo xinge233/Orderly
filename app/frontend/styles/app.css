@@ -111,6 +111,7 @@ a {
     padding: var(--space-6) var(--space-4) var(--space-4);
     border-right: 1px solid var(--color-line);
     background: var(--color-sidebar);
+    overflow: hidden;
 }
 
 .brand {
@@ -218,7 +219,8 @@ kbd {
 .sidebar-scroll {
     min-height: 0;
     flex: 1;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: var(--color-line-strong) transparent;
 }
@@ -251,7 +253,9 @@ kbd {
     align-items: center;
     gap: var(--space-3);
     width: 100%;
-    padding: var(--space-2);
+    height: 40px;
+    min-height: 40px;
+    padding: 3px;
     border: 0;
     border-radius: var(--radius-sm);
     background: transparent;
@@ -260,20 +264,25 @@ kbd {
 }
 
 .nav-item--module {
-    grid-template-columns: 10px 34px minmax(0, 1fr) max-content;
+    grid-template-columns: 34px minmax(0, 1fr);
     column-gap: var(--space-2);
     touch-action: pan-y;
     user-select: none;
 }
 
 .nav-drag-handle {
+    position: absolute;
+    top: 50%;
+    right: 3px;
     display: grid;
     place-items: center;
-    width: 10px;
+    width: 12px;
     color: var(--color-text-faint);
     font-size: 1rem;
     line-height: 1;
     cursor: grab;
+    pointer-events: none;
+    transform: translateY(-50%);
     touch-action: none;
 }
 
@@ -354,35 +363,17 @@ body.is-navigation-dragging * {
 .nav-copy {
     display: flex;
     min-width: 0;
+    height: 34px;
     flex-direction: column;
+    justify-content: center;
 }
 
 .nav-copy strong {
     overflow: hidden;
+    padding-right: 14px;
     font-size: 0.88rem;
     font-weight: 720;
     text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.nav-copy small {
-    overflow: hidden;
-    margin-top: 2px;
-    color: var(--color-text-faint);
-    font-size: 0.7rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.nav-count {
-    min-width: 24px;
-    padding: 2px 7px;
-    border-radius: 999px;
-    background: var(--color-surface-muted);
-    color: var(--color-text-faint);
-    font-size: 0.68rem;
-    justify-self: end;
-    text-align: center;
     white-space: nowrap;
 }
 
@@ -398,7 +389,8 @@ body.is-navigation-dragging * {
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--space-3);
-    padding: var(--space-3);
+    min-height: 40px;
+    padding: 3px var(--space-2);
     border: 1px solid var(--color-line);
     border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--color-surface) 54%, transparent);
@@ -406,42 +398,32 @@ body.is-navigation-dragging * {
 }
 
 .sandbox-status {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: 24px minmax(0, 1fr);
 }
 
-.sandbox-status strong,
 .settings-trigger strong {
     display: block;
     font-size: 0.78rem;
 }
 
-.sandbox-status small,
-.settings-trigger small {
-    display: block;
+.workspace-icon {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 10px;
+    background: var(--color-surface-muted);
+    color: var(--color-text-soft);
+}
+
+.workspace-path {
+    min-width: 0;
     overflow: hidden;
-    margin-top: 2px;
-    color: var(--color-text-faint);
-    font-size: 0.67rem;
-    text-overflow: ellipsis;
+    color: var(--color-text-soft);
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    text-overflow: clip;
     white-space: nowrap;
-}
-
-.status-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: var(--color-warning);
-    box-shadow: 0 0 0 5px var(--color-warning-soft);
-}
-
-.status-dot.is-online {
-    background: var(--color-safe);
-    box-shadow: 0 0 0 5px var(--color-safe-soft);
-}
-
-.status-dot.is-offline {
-    background: var(--color-danger);
-    box-shadow: 0 0 0 5px var(--color-danger-soft);
 }
 
 .settings-trigger {
@@ -511,30 +493,33 @@ body.is-navigation-dragging * {
     }
 
     .nav-groups {
-        justify-items: center;
+        gap: var(--space-4);
+        padding: 0 0 var(--space-5);
+        justify-items: stretch;
     }
 
     .nav-group {
         width: 100%;
     }
 
-    .nav-group__label,
-    .nav-drag-handle,
-    .nav-copy {
-        display: none;
+    .nav-group__label {
+        visibility: hidden;
     }
 
     .nav-list {
-        justify-items: center;
+        gap: 4px;
+        justify-items: stretch;
     }
 
     .nav-item {
         grid-template-columns: 34px;
         gap: 0;
         width: 40px;
+        height: 40px;
         min-height: 40px;
         padding: 3px;
         justify-self: center;
+        overflow: hidden;
     }
 
     .nav-item--module {
@@ -547,18 +532,17 @@ body.is-navigation-dragging * {
         height: 34px;
     }
 
-    .nav-count {
+    .nav-drag-handle {
         position: absolute;
-        top: -3px;
-        right: -3px;
-        min-width: 16px;
-        height: 16px;
-        padding: 0 4px;
-        border: 2px solid var(--color-sidebar);
-        background: var(--color-accent);
-        color: var(--color-accent-contrast);
-        font-size: 0.58rem;
-        line-height: 12px;
+        opacity: 0;
+    }
+
+    .nav-copy {
+        position: absolute;
+        top: 3px;
+        left: 45px;
+        width: 140px;
+        height: 34px;
     }
 
     .empty-state--nav {
@@ -573,14 +557,15 @@ body.is-navigation-dragging * {
     .sandbox-status {
         width: 40px;
         height: 40px;
-        grid-template-columns: 1fr;
+        grid-template-columns: 24px;
         place-items: center;
-        padding: 0;
+        justify-content: center;
+        padding: 3px;
         border-color: transparent;
         background: transparent;
     }
 
-    .sandbox-status > span:not(.status-dot),
+    .workspace-path,
     .settings-trigger > span:not([data-icon]),
     .settings-trigger kbd {
         display: none;
@@ -592,11 +577,7 @@ body.is-navigation-dragging * {
         grid-template-columns: 1fr;
         place-items: center;
         gap: 0;
-        padding: 0;
-    }
-
-    .sidebar.is-expanded {
-        padding: var(--space-5) var(--space-3) var(--space-4);
+        padding: 3px;
     }
 
     .sidebar.is-expanded .brand {
@@ -609,19 +590,19 @@ body.is-navigation-dragging * {
     }
 
     .sidebar.is-expanded .search-box {
-        width: auto;
-        height: auto;
+        width: 100%;
+        height: 40px;
         grid-template-columns: auto minmax(0, 1fr) auto;
         place-items: center;
-        margin: 0 var(--space-1) var(--space-5);
-        padding: 0 var(--space-3);
+        margin: 0 0 var(--space-5);
+        padding: 0 10px;
         overflow: visible;
     }
 
     .sidebar.is-expanded .search-box input {
         position: static;
         width: 100%;
-        height: 42px;
+        height: 40px;
         opacity: 1;
         cursor: auto;
     }
@@ -640,41 +621,33 @@ body.is-navigation-dragging * {
     }
 
     .sidebar.is-expanded .nav-group__label {
-        display: block;
+        visibility: visible;
     }
 
     .sidebar.is-expanded .nav-item {
-        grid-template-columns: 34px minmax(0, 1fr) auto;
-        gap: var(--space-3);
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: var(--space-2);
         width: 100%;
-        min-height: 0;
-        padding: var(--space-2);
+        height: 40px;
+        min-height: 40px;
+        padding: 3px;
         justify-self: stretch;
+        overflow: visible;
     }
 
     .sidebar.is-expanded .nav-item--module {
-        grid-template-columns: 10px 34px minmax(0, 1fr) max-content;
+        grid-template-columns: 34px minmax(0, 1fr);
         column-gap: var(--space-2);
     }
 
     .sidebar.is-expanded .nav-drag-handle {
-        display: grid;
+        opacity: 1;
     }
 
     .sidebar.is-expanded .nav-copy {
-        display: flex;
-    }
-
-    .sidebar.is-expanded .nav-count {
         position: static;
-        min-width: 24px;
-        height: auto;
-        padding: 2px 7px;
-        border: 0;
-        background: var(--color-surface-muted);
-        color: var(--color-text-faint);
-        font-size: 0.68rem;
-        line-height: normal;
+        width: auto;
+        height: 34px;
     }
 
     .sidebar.is-expanded .empty-state--nav {
@@ -687,25 +660,28 @@ body.is-navigation-dragging * {
     }
 
     .sidebar.is-expanded .sandbox-status {
-        width: auto;
-        height: auto;
-        grid-template-columns: auto minmax(0, 1fr);
+        width: 100%;
+        height: 40px;
+        grid-template-columns: 24px minmax(0, 1fr);
         place-items: normal;
-        padding: var(--space-3);
+        justify-items: stretch;
+        justify-content: normal;
+        gap: 6px;
+        padding: 3px 6px;
         border-color: var(--color-line);
         background: color-mix(in srgb, var(--color-surface) 54%, transparent);
     }
 
-    .sidebar.is-expanded .sandbox-status > span:not(.status-dot) {
+    .sidebar.is-expanded .workspace-path {
         display: block;
     }
 
     .sidebar.is-expanded .settings-trigger {
-        width: auto;
-        height: auto;
-        grid-template-columns: auto minmax(0, 1fr) auto;
+        width: 100%;
+        height: 40px;
+        grid-template-columns: 34px minmax(0, 1fr) auto;
         gap: var(--space-3);
-        padding: var(--space-3);
+        padding: 3px var(--space-2);
     }
 
     .sidebar.is-expanded .settings-trigger > span:not([data-icon]) {
@@ -2172,6 +2148,34 @@ body.is-navigation-dragging * {
     color: var(--color-surface);
 }
 
+.sidebar-count-layer {
+    position: fixed;
+    z-index: 25;
+    inset: 0;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.sidebar-count-bubble {
+    position: fixed;
+    display: grid;
+    min-width: 16px;
+    height: 16px;
+    place-items: center;
+    padding: 0 4px;
+    border: 2px solid var(--color-sidebar);
+    border-radius: 999px;
+    background: var(--color-accent);
+    color: var(--color-accent-contrast);
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 12px;
+    pointer-events: none;
+    transform: translateY(-50%);
+    white-space: nowrap;
+}
+
 .scrim {
     position: fixed;
     z-index: 10;
@@ -2318,6 +2322,10 @@ body.is-navigation-dragging * {
 
     .scrim {
         z-index: 40;
+    }
+
+    .sidebar-count-layer {
+        display: none;
     }
 
     .settings-body {
