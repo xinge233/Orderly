@@ -4,11 +4,17 @@ import com.orderly.host.api.ApiException;
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.execution.ExecutionRunResult;
 import com.orderly.host.execution.ExecutionService;
+import com.orderly.host.execution.ExecutionRecord;
+import com.orderly.host.execution.ExecutionRecordStore;
+import com.orderly.host.execution.ExecutionRecordStep;
 import com.orderly.host.event.ExecutionJournal;
 import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanStatus;
 import com.orderly.host.plan.PlanView;
 import com.orderly.host.runtime.WorkspaceRuntime;
+import com.orderly.host.system.SystemFeatureService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -17,6 +23,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.List;
 import java.util.Map;
@@ -61,6 +68,20 @@ class OrderlyIntegrationTest {
 
     @Autowired
     private ExecutionJournal journal;
+
+    @Autowired
+    private ExecutionRecordStore executionRecords;
+
+    @Autowired
+    private SystemFeatureService features;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @BeforeEach
+    void enablePlanning() {
+        features.setPlanningEnabled(true);
+    }
 
     @Test
     void exposesHealthAndContractCatalog() throws Exception {
@@ -197,6 +218,129 @@ class OrderlyIntegrationTest {
     }
 
     @Test
+    void planningFeatureGateKeepsExecutionHistoryReadable() throws Exception {
+        PlanView plan = plans.create("创建目录 功能关闭测试");
+        execution.confirm(plan.planId(), true, "");
+        features.setPlanningEnabled(false);
+        try {
+            mockMvc.perform(post("/api/plans")
+                            .contentType("application/json")
+                            .content("{\"goal\":\"创建目录 功能关闭后的计划\"}"))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("FEATURE_DISABLED"));
+            mockMvc.perform(post("/api/plans/{planId}/confirm", plan.planId())
+                            .contentType("application/json")
+                            .content("{\"confirmed\":true}"))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("FEATURE_DISABLED"));
+            mockMvc.perform(post("/api/plans/{planId}/rollback", plan.planId()))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("FEATURE_DISABLED"));
+            mockMvc.perform(get("/api/executions"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[?(@.executionId=='" + plan.planId() + "')]").exists())
+                    .andExpect(jsonPath("$[?(@.origin=='PLAN')]").exists());
+            mockMvc.perform(get("/api/executions/{id}", plan.planId()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.origin").value("PLAN"))
+                    .andExpect(jsonPath("$.snapshots").isMap())
+                    .andExpect(jsonPath("$.events").isArray());
+        } finally {
+            features.setPlanningEnabled(true);
+            execution.rollback(plan.planId());
+        }
+    }
+
+    @Test
+    void rejectsUnconfirmedAiDeleteBeforeAnyMutation() throws Exception {
+        mockMvc.perform(post("/api/ai/actions/execute")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "confirmed": false,
+                                  "actions": [{
+                                    "moduleId": "module_fs",
+                                    "actionId": "fs.trash",
+                                    "arguments": {"path": "待整理/草案.txt"}
+                                  }]
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFIRMATION_REQUIRED"))
+                .andExpect(jsonPath("$.details.highestRisk").value("DELETE"));
+        assertThat(runtime.exists(runtime.resolveWorkspacePath("待整理/草案.txt"))).isTrue();
+    }
+
+    @Test
+    void rejectsExplicitlyNonAiCallableAction() throws Exception {
+        mockMvc.perform(post("/api/ai/actions/execute")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "confirmed": true,
+                                  "actions": [{
+                                    "moduleId": "module_fs",
+                                    "actionId": "fs.restore",
+                                    "arguments": {"trashId": "not-used"}
+                                  }]
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ACTION_NOT_AI_CALLABLE"));
+    }
+
+    @Test
+    void executesAiActionsWithStructuredReferenceAndRollsBackRecord() throws Exception {
+        int before = runtime.readItems("todos").size();
+        MvcResult result = mockMvc.perform(post("/api/ai/actions/execute")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "confirmed": true,
+                                  "actions": [
+                                    {
+                                      "moduleId": "module_fs",
+                                      "actionId": "fs.list",
+                                      "arguments": {"path": "收件箱"}
+                                    },
+                                    {
+                                      "moduleId": "module_todo",
+                                      "actionId": "todo.create",
+                                      "arguments": {
+                                        "title": {
+                                          "$fromAction": 0,
+                                          "path": ["output", "entries", 0, "path"]
+                                        }
+                                      }
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.origin").value("AI_DIRECT"))
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.steps.length()").value(2))
+                .andExpect(jsonPath("$.steps[1].arguments.title").value("收件箱/示例笔记.txt"))
+                .andExpect(jsonPath("$.snapshots").isMap())
+                .andExpect(jsonPath("$.outputs").isMap())
+                .andExpect(jsonPath("$.events").isArray())
+                .andReturn();
+        String executionId = objectMapper.readTree(result.getResponse().getContentAsString())
+                .path("executionId")
+                .asText();
+        assertThat(executionId).isNotBlank();
+        assertThat(runtime.readItems("todos")).hasSize(before + 1);
+        assertThat(runtime.readItems("todos"))
+                .anyMatch(item -> "收件箱/示例笔记.txt".equals(item.get("title")));
+
+        mockMvc.perform(post("/api/executions/{id}/rollback", executionId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ROLLED_BACK"))
+                .andExpect(jsonPath("$.origin").value("AI_DIRECT"));
+        assertThat(runtime.readItems("todos")).hasSize(before);
+    }
+
+    @Test
     void supportsTheFrontendExamples() {
         PlanView archive = plans.create("创建目录 归档，然后移动 收件箱/示例笔记.txt 到 归档");
         assertThat(archive.steps()).hasSize(2);
@@ -242,14 +386,14 @@ class OrderlyIntegrationTest {
     }
 
     @Test
-    void deleteOnlyMovesToTrashAndRequiresPhrase() {
+    void deleteOnlyMovesToTrashAndRequiresRiskConfirmation() {
         PlanView plan = plans.create("删除 待整理/草案.txt");
-        assertThatThrownBy(() -> execution.confirm(plan.planId(), true, "确认"))
+        assertThatThrownBy(() -> execution.confirm(plan.planId(), false, ""))
                 .isInstanceOf(ApiException.class)
-                .hasMessageContaining("确认词");
+                .hasMessageContaining("必须确认");
         assertThat(runtime.exists(runtime.resolveWorkspacePath("待整理/草案.txt"))).isTrue();
 
-        ExecutionRunResult result = execution.confirm(plan.planId(), true, "删除");
+        ExecutionRunResult result = execution.confirm(plan.planId(), true, "");
         assertThat(result.outcome()).isEqualTo("COMPLETED");
         assertThat(runtime.exists(runtime.resolveWorkspacePath("待整理/草案.txt"))).isFalse();
         assertThat(runtime.listTrash()).anyMatch(entry ->
@@ -257,6 +401,20 @@ class OrderlyIntegrationTest {
 
         execution.rollback(plan.planId());
         assertThat(runtime.exists(runtime.resolveWorkspacePath("待整理/草案.txt"))).isTrue();
+    }
+
+    @Test
+    void failedPlanPersistsFailedStepAndRolledBackOutcome() {
+        PlanView plan = plans.create("移动 不存在/缺少.txt 到 目标/缺少.txt");
+        ExecutionRunResult result = execution.confirm(plan.planId(), true, "");
+        assertThat(result.outcome()).isEqualTo("FAILED_ROLLED_BACK");
+
+        ExecutionRecord record = executionRecords.require(plan.planId());
+        assertThat(record.origin()).isEqualTo("PLAN");
+        assertThat(record.status()).isEqualTo("FAILED_ROLLED_BACK");
+        assertThat(record.steps()).singleElement()
+                .extracting(ExecutionRecordStep::status)
+                .isEqualTo("FAILED");
     }
 
     @Test

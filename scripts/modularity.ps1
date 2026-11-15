@@ -68,6 +68,14 @@ function Stop-Orderly {
     $script:process = $null
 }
 
+function Set-PlanningEnabled([bool]$Enabled) {
+    Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/system/features/planning" `
+        -Method Put `
+        -ContentType "application/json" `
+        -Body (@{ enabled = $Enabled } | ConvertTo-Json) `
+        -TimeoutSec 5 | Out-Null
+}
+
 function Assert-PathWithin([string]$Path, [string]$Root, [string]$Description) {
     $fullPath = [System.IO.Path]::GetFullPath($Path)
     $fullRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd('\')
@@ -476,6 +484,10 @@ try {
     Assert-ModuleIds -Expected $baselineIds
     Assert-SystemModule
     Assert-ModuleSurface -ExpectedIds $baselineIds
+    $defaultFeatures = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/system/features" -TimeoutSec 5
+    if ($defaultFeatures.planningEnabled -ne $false) {
+        throw "新数据目录中计划功能未默认关闭。"
+    }
     $baselineResponse = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/modules" -TimeoutSec 5
     $baselineCatalog = @($baselineResponse | ForEach-Object { $_ })
     $removedOne = $baselineModules[-1]
@@ -488,6 +500,7 @@ try {
     Move-ModuleToBackup $removedOne
     Invoke-Build
     Start-Orderly $javaExe
+    Set-PlanningEnabled $true
     $remainingIds = @($baselineIds | Where-Object { $_ -ne $removedOne.Name })
     Assert-ModuleIds -Expected $remainingIds
     foreach ($query in @($removedContract[0].queries)) {
@@ -509,6 +522,7 @@ try {
     foreach ($module in $left) { Move-ModuleToBackup $module }
     Invoke-Build
     Start-Orderly $javaExe
+    Set-PlanningEnabled $true
     Assert-ModuleIds -Expected @()
     Assert-SystemModule
     $baselineQuery = @($baselineCatalog[0].queries)[0]
@@ -540,6 +554,7 @@ try {
     $script:generatedModule = New-AcceptanceModule
     Invoke-Build
     Start-Orderly $javaExe
+    Set-PlanningEnabled $true
     $idsWithAcceptance = @($baselineIds + $script:generatedModule.ModuleId)
     Assert-ModuleIds -Expected $idsWithAcceptance
     Assert-SystemModule

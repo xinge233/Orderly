@@ -19,6 +19,21 @@ const THEME_STYLE_PATH = /^(?:[a-z0-9][a-z0-9.-]*\/)*[a-z0-9][a-z0-9.-]*\.css$/;
 const SUPPORTED_THEME_SCHEMA_VERSION = 1;
 const REQUIRED_THEME_STYLES = Object.freeze(["tokens.css", "motion.css"]);
 
+/**
+ * 读取宿主计划功能状态；缺失或损坏时按产品默认关闭处理。
+ *
+ * @param {unknown} payload /api/system/features 响应
+ * @param {boolean} fallback 缺省值
+ * @returns {boolean} 是否启用
+ */
+export function normalizePlanningFeature(payload, fallback = false) {
+    return payload
+        && typeof payload === "object"
+        && typeof payload.planningEnabled === "boolean"
+        ? payload.planningEnabled
+        : fallback;
+}
+
 function normalizeModuleOrder(source, key) {
     if (!Array.isArray(source[key])) {
         return [];

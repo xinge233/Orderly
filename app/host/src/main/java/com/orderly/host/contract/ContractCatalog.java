@@ -633,6 +633,25 @@ public class ContractCatalog implements AutoCloseable {
         } catch (IllegalArgumentException exception) {
             throw new IllegalStateException("动作风险等级非法：" + node.path("id").asText());
         }
+        JsonNode rawConfirmationRequired = node.get("confirmationRequired");
+        if (rawConfirmationRequired != null && !rawConfirmationRequired.isBoolean()) {
+            throw new IllegalStateException("动作 confirmationRequired 必须是布尔值：" + node.path("id").asText());
+        }
+        JsonNode rawAiCallable = node.get("aiCallable");
+        if (rawAiCallable != null && !rawAiCallable.isBoolean()) {
+            throw new IllegalStateException("动作 aiCallable 必须是布尔值：" + node.path("id").asText());
+        }
+        JsonNode outputSchema = node.get("outputSchema");
+        if (outputSchema != null && !outputSchema.isNull()) {
+            try {
+                OutputSchemaValidator.validateDefinition(outputSchema);
+            } catch (IllegalStateException exception) {
+                throw new IllegalStateException(
+                        "动作 " + node.path("id").asText() + " 的 outputSchema 非法：" + exception.getMessage(),
+                        exception
+                );
+            }
+        }
         List<ParameterContract> parameters = parseParameters(node.path("parameters"), "动作");
         return new ActionContract(
                 node.path("id").asText(),
@@ -641,7 +660,9 @@ public class ContractCatalog implements AutoCloseable {
                 risk,
                 node.path("confirmationRequired").asBoolean(false),
                 node.path("confirmationPhrase").asText(""),
-                List.copyOf(parameters)
+                node.path("aiCallable").asBoolean(true),
+                List.copyOf(parameters),
+                outputSchema == null || outputSchema.isNull() ? null : outputSchema.deepCopy()
         );
     }
 
@@ -721,9 +742,6 @@ public class ContractCatalog implements AutoCloseable {
             }
             if (action.risk() != RiskLevel.READ_ONLY && !action.confirmationRequired()) {
                 throw new IllegalStateException("写或删除动作必须要求确认：" + action.id());
-            }
-            if (action.risk() == RiskLevel.DELETE && action.confirmationPhrase().isBlank()) {
-                throw new IllegalStateException("删除动作必须声明强确认词：" + action.id());
             }
             action.parameters().stream()
                     .collect(java.util.stream.Collectors.groupingBy(

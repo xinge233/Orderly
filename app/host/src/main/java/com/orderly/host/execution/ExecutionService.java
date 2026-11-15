@@ -1,63 +1,54 @@
 package com.orderly.host.execution;
 
 import com.orderly.host.api.ApiException;
-import com.orderly.host.contract.ActionContract;
-import com.orderly.host.contract.ContractCatalog;
+import com.orderly.host.event.ExecutionEvent;
 import com.orderly.host.event.ExecutionJournal;
 import com.orderly.host.modulecontrol.ModuleControlCoordinator;
-import com.orderly.host.modulecontrol.ModuleControlService;
 import com.orderly.host.plan.ExecutionPlan;
 import com.orderly.host.plan.ExecutionStep;
 import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanStatus;
 import com.orderly.host.plan.PlanView;
 import com.orderly.host.plan.StepStatus;
-import com.orderly.host.runtime.WorkspaceRuntime;
-import com.orderly.kernel.ModuleInvocation;
-import com.orderly.kernel.ModuleResult;
-import com.orderly.kernel.OrderlyModule;
+import com.orderly.host.system.SystemFeatureService;
 import com.orderly.kernel.RiskLevel;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
-/**
- * 中央执行与回滚服务。
- *
- * <p>模块永远只收到已校验、已确认的 {@link ModuleInvocation}。快照时机、
- * 逆序回滚、风险确认和事件记录都由本服务统一担保。</p>
- */
+/** 计划与持久化执行记录的统一确认、回滚入口。 */
 @Service
 public class ExecutionService {
 
     private final PlanService plans;
-    private final ContractCatalog catalog;
-    private final WorkspaceRuntime runtime;
     private final ExecutionJournal journal;
-    private final ModuleControlService moduleControl;
     private final ModuleControlCoordinator coordinator;
+    private final SystemFeatureService features;
+    private final ActionExecutionCore core;
+    private final ExecutionRecordStore records;
 
     public ExecutionService(
             PlanService plans,
-            ContractCatalog catalog,
-            WorkspaceRuntime runtime,
             ExecutionJournal journal,
-            ModuleControlService moduleControl,
-            ModuleControlCoordinator coordinator
+            ModuleControlCoordinator coordinator,
+            SystemFeatureService features,
+            ActionExecutionCore core,
+            ExecutionRecordStore records
     ) {
         this.plans = plans;
-        this.catalog = catalog;
-        this.runtime = runtime;
         this.journal = journal;
-        this.moduleControl = moduleControl;
         this.coordinator = coordinator;
+        this.features = features;
+        this.core = core;
+        this.records = records;
     }
 
     public ExecutionRunResult confirm(String planId, boolean confirmed, String confirmation) {
+        features.requirePlanningEnabled();
         ExecutionPlan plan = plans.require(planId);
         try (var permit = coordinator.beginExecution()) {
             if (plan.status() != PlanStatus.PREVIEW) {
@@ -68,38 +59,154 @@ public class ExecutionService {
                 );
             }
             if (plan.steps().isEmpty()) {
-                throw new ApiException(HttpStatus.CONFLICT, "PLAN_NEEDS_CLARIFICATION",
-                        "澄清问题不能执行；请重新描述目标");
+                throw new ApiException(
+                        HttpStatus.CONFLICT,
+                        "PLAN_NEEDS_CLARIFICATION",
+                        "澄清问题不能执行；请重新描述目标"
+                );
             }
-            validateConfirmation(plan, confirmed, confirmation);
-            validateEnabledModules(plan);
+            validateConfirmation(plan, confirmed);
+            validateTargets(plan);
+
+            Instant startedAt = Instant.now();
+            List<ExecutionRecordStep> recordSteps = new ArrayList<>();
+            for (ExecutionStep step : plan.steps()) {
+                recordSteps.add(recordStep(step));
+            }
+            ExecutionRecord record = new ExecutionRecord(
+                    plan.id(),
+                    "PLAN",
+                    "RUNNING",
+                    recordSteps,
+                    ExecutionRecord.aggregate(recordSteps, ExecutionRecord.StepPart.ARGUMENTS),
+                    ExecutionRecord.aggregate(recordSteps, ExecutionRecord.StepPart.OUTPUT),
+                    ExecutionRecord.aggregate(recordSteps, ExecutionRecord.StepPart.SNAPSHOT),
+                    eventsFor(plan.id()),
+                    startedAt,
+                    startedAt,
+                    null,
+                    startedAt
+            );
+            records.save(record);
 
             plan.status(PlanStatus.RUNNING);
-            journal.append("PLAN", plan.id(), null, null, null, "RUNNING",
-                    "计划已确认，开始执行");
+            journal.append(
+                    "PLAN",
+                    "PLAN",
+                    plan.id(),
+                    null,
+                    null,
+                    null,
+                    "RUNNING",
+                    "计划已确认，开始执行"
+            );
 
             List<ExecutionStep> completed = new ArrayList<>();
             try {
-                for (ExecutionStep step : plan.steps()) {
-                    executeStep(plan, step);
-                    completed.add(step);
+                for (int index = 0; index < plan.steps().size(); index++) {
+                    ExecutionStep step = plan.steps().get(index);
+                    step.status(StepStatus.RUNNING);
+                    try {
+                        ActionExecutionCore.ActionResult result = core.execute(
+                                plan.id(),
+                                step.id(),
+                                step.moduleId(),
+                                step.actionId(),
+                                step.arguments(),
+                                "PLAN"
+                        );
+                        step.snapshot(result.snapshot());
+                        step.output(result.output());
+                        step.message(result.message());
+                        step.status(StepStatus.COMPLETED);
+                        completed.add(step);
+                    } catch (ActionExecutionException exception) {
+                        step.snapshot(exception.snapshot());
+                        step.output(exception.output());
+                        step.message(exception.getMessage());
+                        if (exception.executed()) {
+                            step.status(StepStatus.COMPLETED);
+                            completed.add(step);
+                        } else {
+                            step.status(StepStatus.FAILED);
+                        }
+                        recordSteps.set(index, recordStep(step));
+                        throw exception;
+                    }
+                    recordSteps.set(index, recordStep(step));
+                    record = record.withChanges(
+                            "RUNNING",
+                            recordSteps,
+                            eventsFor(plan.id()),
+                            startedAt,
+                            null
+                    );
+                    records.save(record);
                 }
+
                 plan.status(PlanStatus.COMPLETED);
-                journal.append("PLAN", plan.id(), null, null, null, "COMPLETED",
-                        "计划执行完成");
+                journal.append(
+                        "PLAN",
+                        "PLAN",
+                        plan.id(),
+                        null,
+                        null,
+                        null,
+                        "COMPLETED",
+                        "计划执行完成"
+                );
+                Instant completedAt = Instant.now();
+                record = record.withChanges(
+                        "COMPLETED",
+                        recordSteps,
+                        eventsFor(plan.id()),
+                        startedAt,
+                        completedAt
+                );
+                records.save(record);
                 return new ExecutionRunResult(
-                        "COMPLETED", "COMPLETED", "计划执行完成", PlanView.from(plan));
+                        "COMPLETED",
+                        "COMPLETED",
+                        "计划执行完成",
+                        PlanView.from(plan)
+                );
             } catch (RuntimeException exception) {
                 String message = safeMessage(exception);
                 plan.status(PlanStatus.REJECTED);
-                journal.append("PLAN", plan.id(), null, null, null, "FAILED", message);
-                boolean rolledBack = rollbackSteps(plan, completed, "失败后自动回滚");
+                journal.append(
+                        "PLAN",
+                        "PLAN",
+                        plan.id(),
+                        null,
+                        null,
+                        null,
+                        "FAILED",
+                        message
+                );
+                boolean rolledBack = rollbackSteps(
+                        plan,
+                        completed,
+                        recordSteps,
+                        "失败后自动回滚"
+                );
                 if (!rolledBack) {
                     plan.status(PlanStatus.PARTIALLY_ROLLED_BACK);
                 }
+                String recordStatus = rolledBack
+                        ? "FAILED_ROLLED_BACK"
+                        : "FAILED_PARTIALLY_ROLLED_BACK";
+                Instant completedAt = Instant.now();
+                record = record.withChanges(
+                        recordStatus,
+                        recordSteps,
+                        eventsFor(plan.id()),
+                        startedAt,
+                        completedAt
+                );
+                records.save(record);
                 return new ExecutionRunResult(
-                        rolledBack ? "FAILED_ROLLED_BACK" : "FAILED_PARTIALLY_ROLLED_BACK",
-                        rolledBack ? "FAILED_ROLLED_BACK" : "FAILED_PARTIALLY_ROLLED_BACK",
+                        recordStatus,
+                        recordStatus,
                         message,
                         PlanView.from(plan)
                 );
@@ -108,9 +215,11 @@ public class ExecutionService {
     }
 
     public ExecutionRunResult rollback(String planId) {
+        features.requirePlanningEnabled();
         ExecutionPlan plan = plans.require(planId);
-        return coordinator.read(() -> {
-            if (plan.status() != PlanStatus.COMPLETED && plan.status() != PlanStatus.PARTIALLY_ROLLED_BACK) {
+        try (var permit = coordinator.beginExecution()) {
+            if (plan.status() != PlanStatus.COMPLETED
+                    && plan.status() != PlanStatus.PARTIALLY_ROLLED_BACK) {
                 throw new ApiException(
                         HttpStatus.CONFLICT,
                         "PLAN_NOT_ROLLBACKABLE",
@@ -120,138 +229,290 @@ public class ExecutionService {
             List<ExecutionStep> completed = plan.steps().stream()
                     .filter(step -> step.status() == StepStatus.COMPLETED)
                     .toList();
-            boolean success = rollbackSteps(plan, completed, "用户请求整单回滚");
+            ExecutionRecord record = records.find(plan.id()).orElse(null);
+            List<ExecutionRecordStep> recordSteps = record == null
+                    ? new ArrayList<>(recordSteps(plan))
+                    : new ArrayList<>(record.steps());
+            boolean success = rollbackSteps(
+                    plan,
+                    completed,
+                    recordSteps,
+                    "用户请求整单回滚"
+            );
             plan.status(success ? PlanStatus.ROLLED_BACK : PlanStatus.PARTIALLY_ROLLED_BACK);
-            journal.append("PLAN", plan.id(), null, null, null, plan.status().name(),
-                    success ? "整单已回滚" : "整单回滚未完全成功，请检查事件记录");
+            journal.append(
+                    "PLAN",
+                    "PLAN",
+                    plan.id(),
+                    null,
+                    null,
+                    null,
+                    plan.status().name(),
+                    success ? "整单已回滚" : "整单回滚未完全成功，请检查事件记录"
+            );
+            if (record != null) {
+                records.save(record.withChanges(
+                        success ? "ROLLED_BACK" : "PARTIALLY_ROLLED_BACK",
+                        recordSteps,
+                        eventsFor(plan.id()),
+                        record.startedAt(),
+                        Instant.now()
+                ));
+            }
             return new ExecutionRunResult(
                     success ? "ROLLED_BACK" : "PARTIALLY_ROLLED_BACK",
                     success ? "ROLLED_BACK" : "PARTIALLY_ROLLED_BACK",
                     success ? "整单已回滚" : "部分步骤回滚失败",
                     PlanView.from(plan)
             );
-        });
+        }
     }
 
-    private void validateConfirmation(ExecutionPlan plan, boolean confirmed, String phrase) {
-        boolean hasWrite = plan.steps().stream()
-                .anyMatch(step -> step.risk() != RiskLevel.READ_ONLY);
-        if (hasWrite && !confirmed) {
+    public ExecutionRecord rollbackExecution(String executionId) {
+        ExecutionRecord record = records.require(executionId);
+        try (var permit = coordinator.beginExecution()) {
+            if (!List.of("COMPLETED", "PARTIALLY_ROLLED_BACK", "FAILED_PARTIALLY_ROLLED_BACK")
+                    .contains(record.status())) {
+                throw new ApiException(
+                        HttpStatus.CONFLICT,
+                        "EXECUTION_NOT_ROLLBACKABLE",
+                        "执行记录当前状态不允许回滚：" + record.status()
+                );
+            }
+            List<ExecutionRecordStep> recordSteps = new ArrayList<>(record.steps());
+            boolean success = rollbackRecordSteps(record, recordSteps, "用户请求执行记录回滚");
+            ExecutionRecord saved = record.withChanges(
+                    success ? "ROLLED_BACK" : "PARTIALLY_ROLLED_BACK",
+                    recordSteps,
+                    eventsFor(executionId),
+                    record.startedAt(),
+                    Instant.now()
+            );
+            records.save(saved);
+            syncPlanAfterRecordRollback(saved, success);
+            return saved;
+        }
+    }
+
+    private void validateConfirmation(ExecutionPlan plan, boolean confirmed) {
+        RiskLevel highestRisk = highestRisk(plan.steps().stream()
+                .map(ExecutionStep::risk)
+                .toList());
+        if (highestRisk != RiskLevel.READ_ONLY && !confirmed) {
             throw new ApiException(
                     HttpStatus.CONFLICT,
                     "PLAN_CONFIRMATION_REQUIRED",
-                    "计划包含写入或删除步骤，必须确认后才能执行"
+                    "计划包含写入或删除步骤，必须确认后才能执行",
+                    Map.of("highestRisk", highestRisk.name())
             );
         }
+    }
+
+    private void validateTargets(ExecutionPlan plan) {
         for (ExecutionStep step : plan.steps()) {
-            if (step.risk() == RiskLevel.DELETE
-                    && !Objects.requireNonNullElse(phrase, "").trim().equals(step.confirmationPhrase())) {
-                throw new ApiException(
-                        HttpStatus.CONFLICT,
-                        "DELETE_CONFIRMATION_REQUIRED",
-                        "删除步骤必须输入确认词：" + step.confirmationPhrase()
-                );
-            }
-        }
-    }
-
-    private void executeStep(ExecutionPlan plan, ExecutionStep step) {
-        if (!moduleControl.isEnabled(step.moduleId()) || catalog.isSystemModule(step.moduleId())) {
-            throw new ApiException(
-                    HttpStatus.CONFLICT,
-                    "MODULE_DISABLED",
-                    "模块已停用：" + step.moduleId()
+            ActionExecutionCore.ResolvedAction target = core.requirePlanTarget(
+                    step.moduleId(),
+                    step.actionId()
             );
-        }
-        ActionContract action = catalog.requireAction(step.actionId());
-        OrderlyModule module = catalog.requireExecutor(step.moduleId());
-        ModuleInvocation invocation = new ModuleInvocation(
-                step.moduleId(),
-                step.actionId(),
-                plan.id(),
-                step.id(),
-                step.arguments()
-        );
-
-        step.status(StepStatus.RUNNING);
-        journal.append("STEP", plan.id(), step.id(), step.moduleId(), step.actionId(),
-                "RUNNING", step.title());
-        try {
-            Map<String, Object> snapshot = module.prepareSnapshot(invocation, runtime);
-            if (snapshot == null) {
-                throw new IllegalStateException("模块未提供快照");
-            }
-            step.snapshot(snapshot);
-            ModuleResult result = module.execute(invocation, runtime);
-            if (result == null) {
-                throw new IllegalStateException("模块返回空结果");
-            }
-            step.output(result.output());
-            step.message(result.message());
-            step.status(StepStatus.COMPLETED);
-            journal.append("STEP", plan.id(), step.id(), step.moduleId(), step.actionId(),
-                    "COMPLETED", result.message());
-        } catch (RuntimeException exception) {
-            step.message(safeMessage(exception));
-            step.status(StepStatus.FAILED);
-            journal.append("STEP", plan.id(), step.id(), step.moduleId(), action.id(),
-                    "FAILED", step.message());
-            throw exception;
+            core.validateArguments(target.action(), step.arguments());
         }
     }
 
-    private boolean rollbackSteps(ExecutionPlan plan, List<ExecutionStep> steps, String reason) {
+    private boolean rollbackSteps(
+            ExecutionPlan plan,
+            List<ExecutionStep> steps,
+            List<ExecutionRecordStep> recordSteps,
+            String reason
+    ) {
         boolean allSucceeded = true;
-        journal.append("ROLLBACK", plan.id(), null, null, null, "RUNNING", reason);
+        journal.append("ROLLBACK", "PLAN", plan.id(), null, null, null, "RUNNING", reason);
         for (int index = steps.size() - 1; index >= 0; index--) {
             ExecutionStep step = steps.get(index);
             if (step.status() != StepStatus.COMPLETED) {
                 continue;
             }
-            OrderlyModule module = catalog.requireExecutor(step.moduleId());
-            ModuleInvocation invocation = new ModuleInvocation(
-                    step.moduleId(),
-                    step.actionId(),
-                    plan.id(),
-                    step.id(),
-                    step.arguments()
-            );
             try {
-                ModuleResult rollback = module.rollback(
-                        invocation,
+                core.rollback(
+                        plan.id(),
+                        step.id(),
+                        step.moduleId(),
+                        step.actionId(),
+                        step.arguments(),
                         step.snapshot(),
                         step.output(),
-                        runtime
+                        "PLAN"
                 );
                 step.status(StepStatus.ROLLED_BACK);
-                journal.append("ROLLBACK_STEP", plan.id(), step.id(), step.moduleId(), step.actionId(),
-                        "ROLLED_BACK", rollback.message());
+                replaceRecordStep(recordSteps, step.id(), recordStep(step));
             } catch (RuntimeException exception) {
                 allSucceeded = false;
-                journal.append("ROLLBACK_STEP", plan.id(), step.id(), step.moduleId(), step.actionId(),
-                        "FAILED", safeMessage(exception));
+                replaceRecordStep(
+                        recordSteps,
+                        step.id(),
+                        withRecordStatus(recordStep(step), "ROLLBACK_FAILED", safeMessage(exception))
+                );
             }
         }
-        journal.append("ROLLBACK", plan.id(), null, null, null,
+        journal.append(
+                "ROLLBACK",
+                "PLAN",
+                plan.id(),
+                null,
+                null,
+                null,
                 allSucceeded ? "COMPLETED" : "FAILED",
-                allSucceeded ? "回滚完成" : "回滚部分失败，已保留审计记录");
+                allSucceeded ? "回滚完成" : "回滚部分失败，已保留审计记录"
+        );
         return allSucceeded;
+    }
+
+    private boolean rollbackRecordSteps(
+            ExecutionRecord record,
+            List<ExecutionRecordStep> steps,
+            String reason
+    ) {
+        boolean allSucceeded = true;
+        journal.append(
+                "ROLLBACK",
+                record.origin(),
+                record.executionId(),
+                null,
+                null,
+                null,
+                "RUNNING",
+                reason
+        );
+        for (int index = steps.size() - 1; index >= 0; index--) {
+            ExecutionRecordStep step = steps.get(index);
+            if (!"COMPLETED".equals(step.status())) {
+                continue;
+            }
+            try {
+                core.rollback(
+                        record.executionId(),
+                        step.stepId(),
+                        step.moduleId(),
+                        step.actionId(),
+                        step.arguments(),
+                        step.snapshot(),
+                        step.output(),
+                        record.origin()
+                );
+                steps.set(index, withRecordStatus(step, "ROLLED_BACK", step.message()));
+            } catch (RuntimeException exception) {
+                allSucceeded = false;
+                steps.set(index, withRecordStatus(
+                        step,
+                        "ROLLBACK_FAILED",
+                        safeMessage(exception)
+                ));
+            }
+        }
+        journal.append(
+                "ROLLBACK",
+                record.origin(),
+                record.executionId(),
+                null,
+                null,
+                null,
+                allSucceeded ? "COMPLETED" : "FAILED",
+                allSucceeded ? "回滚完成" : "回滚部分失败，已保留审计记录"
+        );
+        return allSucceeded;
+    }
+
+    private void syncPlanAfterRecordRollback(ExecutionRecord record, boolean success) {
+        if (!"PLAN".equals(record.origin())) {
+            return;
+        }
+        plans.find(record.executionId()).ifPresent(plan -> {
+            Map<String, String> statusByStep = record.steps().stream().collect(
+                    java.util.stream.Collectors.toMap(
+                            ExecutionRecordStep::stepId,
+                            ExecutionRecordStep::status
+                    )
+            );
+            for (ExecutionStep step : plan.steps()) {
+                String status = statusByStep.get(step.id());
+                if ("ROLLED_BACK".equals(status)) {
+                    step.status(StepStatus.ROLLED_BACK);
+                } else if ("ROLLBACK_FAILED".equals(status)) {
+                    step.status(StepStatus.FAILED);
+                }
+            }
+            plan.status(success ? PlanStatus.ROLLED_BACK : PlanStatus.PARTIALLY_ROLLED_BACK);
+        });
+    }
+
+    private List<ExecutionRecordStep> recordSteps(ExecutionPlan plan) {
+        return plan.steps().stream().map(this::recordStep).toList();
+    }
+
+    private ExecutionRecordStep recordStep(ExecutionStep step) {
+        return new ExecutionRecordStep(
+                step.id(),
+                step.moduleId(),
+                step.actionId(),
+                step.title(),
+                step.risk(),
+                step.arguments(),
+                step.status().name(),
+                step.snapshot(),
+                step.output(),
+                step.message()
+        );
+    }
+
+    private ExecutionRecordStep withRecordStatus(
+            ExecutionRecordStep step,
+            String status,
+            String message
+    ) {
+        return new ExecutionRecordStep(
+                step.stepId(),
+                step.moduleId(),
+                step.actionId(),
+                step.title(),
+                step.risk(),
+                step.arguments(),
+                status,
+                step.snapshot(),
+                step.output(),
+                message
+        );
+    }
+
+    private void replaceRecordStep(
+            List<ExecutionRecordStep> recordSteps,
+            String stepId,
+            ExecutionRecordStep replacement
+    ) {
+        for (int index = 0; index < recordSteps.size(); index++) {
+            if (recordSteps.get(index).stepId().equals(stepId)) {
+                recordSteps.set(index, replacement);
+                return;
+            }
+        }
+    }
+
+    private List<ExecutionEvent> eventsFor(String executionId) {
+        return journal.snapshot().stream()
+                .filter(event -> executionId.equals(event.planId()))
+                .toList();
+    }
+
+    private RiskLevel highestRisk(List<RiskLevel> risks) {
+        RiskLevel highest = RiskLevel.READ_ONLY;
+        for (RiskLevel risk : risks) {
+            if (risk.ordinal() > highest.ordinal()) {
+                highest = risk;
+            }
+        }
+        return highest;
     }
 
     private String safeMessage(RuntimeException exception) {
         String message = exception.getMessage();
         return message == null || message.isBlank() ? "执行失败" : message;
-    }
-
-    private void validateEnabledModules(ExecutionPlan plan) {
-        for (ExecutionStep step : plan.steps()) {
-            if (catalog.isSystemModule(step.moduleId()) || !moduleControl.isEnabled(step.moduleId())) {
-                throw new ApiException(
-                        HttpStatus.CONFLICT,
-                        "MODULE_DISABLED",
-                        "计划包含已停用模块：" + step.moduleId()
-                );
-            }
-        }
     }
 }

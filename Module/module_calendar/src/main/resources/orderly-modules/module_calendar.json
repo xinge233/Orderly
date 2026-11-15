@@ -13,7 +13,15 @@
       "parameters": [
         { "name": "title", "type": "string", "required": true, "description": "日程标题" },
         { "name": "newStartAt", "type": "string", "required": true, "description": "新的 ISO-8601 时间" }
-      ]
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["before", "after"],
+        "properties": {
+          "before": { "type": "object" },
+          "after": { "type": "object" }
+        }
+      }
     }
   ],
   "queries": [

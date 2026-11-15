@@ -17,7 +17,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiError> handleApi(ApiException exception) {
         return ResponseEntity.status(exception.status())
-                .body(ApiError.of(exception.code(), exception.getMessage()));
+                .body(ApiError.of(exception.code(), exception.getMessage(), exception.details()));
     }
 
     @ExceptionHandler({IllegalArgumentException.class, InvalidPathException.class})

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/action-execution.schema.json",
+  "title": "Orderly AI Action Execution Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["confirmed", "actions"],
+  "properties": {
+    "confirmed": {
+      "type": "boolean",
+      "description": "用户是否已勾选确认包含 WRITE 或 DELETE 的 Action 数组。"
+    },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["moduleId", "actionId", "arguments"],
+        "properties": {
+          "moduleId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+          },
+          "actionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "arguments": {
+            "type": "object",
+            "description": "参数值可包含 {\"$fromAction\": 索引, \"path\": [\"output\", ...]} 结构化引用。"
+          }
+        }
+      }
+    }
+  }
+}

@@ -3,12 +3,13 @@ package com.orderly.host.plan;
 import com.orderly.host.api.ApiException;
 import com.orderly.host.contract.ActionContract;
 import com.orderly.host.contract.ContractCatalog;
-import com.orderly.host.contract.ParameterContract;
+import com.orderly.host.execution.ActionExecutionCore;
 import com.orderly.host.modulecontrol.ModuleControlCoordinator;
 import com.orderly.host.modulecontrol.ModuleControlService;
 import com.orderly.host.planner.LocalRulePlanner;
 import com.orderly.host.planner.PlannerResult;
 import com.orderly.host.planner.PlannerStep;
+import com.orderly.host.system.SystemFeatureService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -16,12 +17,10 @@ import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -33,21 +32,28 @@ public class PlanService {
     private final ContractCatalog catalog;
     private final ModuleControlService moduleControl;
     private final ModuleControlCoordinator coordinator;
+    private final SystemFeatureService features;
+    private final ActionExecutionCore executionCore;
     private final ConcurrentMap<String, ExecutionPlan> plans = new ConcurrentHashMap<>();
 
     public PlanService(
             LocalRulePlanner planner,
             ContractCatalog catalog,
             ModuleControlService moduleControl,
-            ModuleControlCoordinator coordinator
+            ModuleControlCoordinator coordinator,
+            SystemFeatureService features,
+            ActionExecutionCore executionCore
     ) {
         this.planner = planner;
         this.catalog = catalog;
         this.moduleControl = moduleControl;
         this.coordinator = coordinator;
+        this.features = features;
+        this.executionCore = executionCore;
     }
 
     public PlanView create(String goal) {
+        features.requirePlanningEnabled();
         return coordinator.read(() -> createEnabled(goal));
     }
 
@@ -73,7 +79,13 @@ public class PlanService {
                         "模块“" + moduleId + "”当前已停用。请启用模块后重试；未生成可执行计划。"
                 );
             }
-            validateArguments(action, raw.arguments());
+            if (!action.aiCallable()) {
+                return saveQuestion(
+                        goal,
+                        "动作“" + action.id() + "”已明确禁止 AI 调用；未生成可执行计划。"
+                );
+            }
+            executionCore.validateArguments(action, raw.arguments());
             String id = "s" + (index + 1);
             steps.add(new ExecutionStep(
                     id,
@@ -131,44 +143,15 @@ public class PlanService {
         return plan;
     }
 
+    public Optional<ExecutionPlan> find(String id) {
+        return Optional.ofNullable(plans.get(id));
+    }
+
     public List<PlanView> list() {
         return plans.values().stream()
                 .sorted(java.util.Comparator.comparing(ExecutionPlan::createdAt).reversed())
                 .map(PlanView::from)
                 .toList();
-    }
-
-    private void validateArguments(ActionContract action, Map<String, Object> arguments) {
-        Set<String> allowed = new HashSet<>();
-        for (ParameterContract parameter : action.parameters()) {
-            allowed.add(parameter.name());
-            Object value = arguments.get(parameter.name());
-            if (parameter.required() && (value == null || value.toString().isBlank())) {
-                throw new IllegalArgumentException("动作 " + action.id() + " 缺少必填参数：" + parameter.name());
-            }
-            if (value != null) {
-                validateType(action.id(), parameter, value);
-            }
-        }
-        for (String supplied : arguments.keySet()) {
-            if (!allowed.contains(supplied)) {
-                throw new IllegalArgumentException("动作 " + action.id() + " 包含契约外参数：" + supplied);
-            }
-        }
-    }
-
-    private void validateType(String actionId, ParameterContract parameter, Object value) {
-        boolean valid = switch (parameter.type()) {
-            case "string" -> value instanceof String;
-            case "boolean" -> value instanceof Boolean;
-            case "integer" -> value instanceof Integer || value instanceof Long;
-            default -> false;
-        };
-        if (!valid) {
-            throw new IllegalArgumentException(
-                    "动作 " + actionId + " 参数 " + parameter.name() + " 类型应为 " + parameter.type()
-            );
-        }
     }
 
     private void validateDag(List<ExecutionStep> steps) {

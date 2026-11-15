@@ -9,7 +9,11 @@ import com.orderly.host.contract.QueryContract;
 import com.orderly.host.event.ExecutionEvent;
 import com.orderly.host.event.ExecutionJournal;
 import com.orderly.host.execution.ExecutionRunResult;
+import com.orderly.host.execution.ExecutionRecord;
+import com.orderly.host.execution.ExecutionRecordStore;
+import com.orderly.host.execution.ExecutionRecordSummary;
 import com.orderly.host.execution.ExecutionService;
+import com.orderly.host.execution.AiActionService;
 import com.orderly.host.modulecontrol.ModuleControlService;
 import com.orderly.host.modulecontrol.ModuleFolderService;
 import com.orderly.host.modulecontrol.ModulePreferences;
@@ -18,6 +22,7 @@ import com.orderly.host.modulecontrol.ModuleRefreshService;
 import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanView;
 import com.orderly.host.runtime.WorkspaceRuntime;
+import com.orderly.host.system.SystemFeatureService;
 import com.orderly.host.theme.ThemeAsset;
 import com.orderly.host.theme.ThemeCatalog;
 import com.orderly.host.theme.ThemeCatalogSnapshot;
@@ -55,6 +60,9 @@ public class OrderlyController {
     private final ModuleControlService moduleControl;
     private final ModuleRefreshService moduleRefresh;
     private final ModuleFolderService moduleFolder;
+    private final SystemFeatureService features;
+    private final AiActionService aiActions;
+    private final ExecutionRecordStore records;
 
     public OrderlyController(
             ContractCatalog catalog,
@@ -65,7 +73,10 @@ public class OrderlyController {
             ThemeCatalog themes,
             ModuleControlService moduleControl,
             ModuleRefreshService moduleRefresh,
-            ModuleFolderService moduleFolder
+            ModuleFolderService moduleFolder,
+            SystemFeatureService features,
+            AiActionService aiActions,
+            ExecutionRecordStore records
     ) {
         this.catalog = catalog;
         this.plans = plans;
@@ -76,6 +87,9 @@ public class OrderlyController {
         this.moduleControl = moduleControl;
         this.moduleRefresh = moduleRefresh;
         this.moduleFolder = moduleFolder;
+        this.features = features;
+        this.aiActions = aiActions;
+        this.records = records;
     }
 
     @GetMapping("/health")
@@ -86,6 +100,25 @@ public class OrderlyController {
                 "workspace", runtime.workspaceLabel(),
                 "javaVersion", Runtime.version().feature()
         );
+    }
+
+    @GetMapping("/system/features")
+    public Map<String, Object> systemFeatures() {
+        return features.features();
+    }
+
+    @PutMapping("/system/features/planning")
+    public Map<String, Object> updatePlanningFeature(
+            @RequestBody PlanningFeatureRequest request
+    ) {
+        if (request == null || request.enabled() == null) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_REQUEST",
+                    "enabled 必须是布尔值"
+            );
+        }
+        return features.setPlanningEnabled(request.enabled());
     }
 
     @GetMapping("/modules")
@@ -187,8 +220,36 @@ public class OrderlyController {
         return execution.rollback(planId);
     }
 
+    @PostMapping("/ai/actions/execute")
+    public ExecutionRecord executeAiActions(@RequestBody AiActionsRequest request) {
+        if (request == null) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_REQUEST",
+                    "请求体不能为空"
+            );
+        }
+        return aiActions.execute(request.confirmed(), request.actions());
+    }
+
+    @GetMapping("/executions")
+    public List<ExecutionRecordSummary> executions() {
+        return records.list();
+    }
+
+    @GetMapping("/executions/{executionId}")
+    public ExecutionRecord execution(@PathVariable String executionId) {
+        return records.require(executionId);
+    }
+
+    @PostMapping("/executions/{executionId}/rollback")
+    public ExecutionRecord rollbackExecution(@PathVariable String executionId) {
+        return execution.rollbackExecution(executionId);
+    }
+
     @GetMapping("/runs")
     public List<PlanView> runs() {
+        features.requirePlanningEnabled();
         return plans.list();
     }
 
@@ -279,6 +340,12 @@ public class OrderlyController {
     }
 
     public record ModuleOrderRequest(List<String> moduleIds) {
+    }
+
+    public record PlanningFeatureRequest(Boolean enabled) {
+    }
+
+    public record AiActionsRequest(boolean confirmed, List<AiActionService.ActionCall> actions) {
     }
 
     private List<String> requireModuleIds(ModuleOrderRequest request) {

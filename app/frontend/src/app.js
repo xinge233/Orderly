@@ -1,11 +1,15 @@
 import { ApiError, OrderlyApi } from "./api.js";
 import { hydrateIcons, icon } from "./icons.js";
 import {
+    EVENT_ORIGIN,
+    EVENT_ORIGIN_LABEL,
     RISK_LABEL,
     flattenText,
     formatDate,
+    inferEventOrigin,
     mergeEvents,
     normalizeEvent,
+    normalizeExecutionRecord,
     normalizePlan,
     requiresDeletePhrase,
     statusLabel,
@@ -32,6 +36,7 @@ import {
 import {
     MOTION_OPTIONS,
     normalizeThemeCatalog,
+    normalizePlanningFeature,
     reconcileAppliedTheme,
     reconcileSettingsForCatalog,
     SettingsStore,
@@ -61,14 +66,20 @@ const NAV_SECTIONS = Object.freeze([
         id: "activity",
         label: "活动",
         items: [
-            { id: "history", label: "执行记录", caption: "审计与回滚", icon: "history" }
+            { id: "history", label: "历史记录", caption: "事件与运行摘要", icon: "history" }
         ]
     }
 ]);
 
+const HISTORY_VIEWS = new Set(["timeline", "summary"]);
+const ROLLBACK_ORIGINS = new Set([EVENT_ORIGIN.PLAN, EVENT_ORIGIN.AI_DIRECT]);
+
 const state = {
     activeView: "overview",
     health: null,
+    planningEnabled: false,
+    planningFeatureLoading: true,
+    planningFeatureSaving: false,
     modules: [],
     modulePreferences: normalizeModulePreferences({}),
     moduleCatalogIssues: [],
@@ -83,6 +94,12 @@ const state = {
     deletePhrase: "",
     currentRun: null,
     events: [],
+    historyView: "timeline",
+    historyRuns: [],
+    historySource: "",
+    historyIssues: [],
+    rollbackFailures: {},
+    rollbackBusyId: "",
     settingsSection: "appearance",
     moduleUi: {},
     moduleErrors: {},
@@ -128,6 +145,15 @@ function element(tag, className = "", text = "") {
         node.textContent = text;
     }
     return node;
+}
+
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
 }
 
 /**
@@ -183,18 +209,80 @@ function errorMessage(error) {
 }
 
 /**
+ * 应用由宿主持有的计划功能状态。
+ *
+ * @param {boolean} enabled 是否启用
+ * @param {{render?: boolean, resetPlan?: boolean}} options 渲染配置
+ */
+function applyPlanningFeatureState(enabled, { render = true, resetPlan = true } = {}) {
+    const next = enabled === true;
+    state.planningEnabled = next;
+    document.documentElement.dataset.planning = next ? "enabled" : "disabled";
+    const dock = document.querySelector("#command-dock");
+    if (dock) {
+        dock.hidden = !next;
+        dock.inert = !next;
+        dock.setAttribute("aria-hidden", String(!next));
+        if (!next) {
+            dock.classList.remove("is-expanded");
+            dock.dataset.motionState = "collapsed";
+            dock.dataset.motionPhase = "idle";
+            document.querySelector("#dock-toggle")?.setAttribute("aria-expanded", "false");
+        }
+    }
+    if (!next && resetPlan) {
+        state.plan = null;
+        state.planBusy = false;
+        state.executing = false;
+        state.confirmed = false;
+        state.deletePhrase = "";
+        state.currentRun = null;
+    }
+    if (render) {
+        renderCommandExamples();
+        if (state.activeView === "overview"
+            && !document.querySelector(".loading-panel")) {
+            renderOverview();
+        }
+    }
+}
+
+/**
+ * 更新设置弹窗内的状态反馈。
+ *
+ * @param {string} message 消息
+ * @param {{error?: boolean}} options 配置
+ */
+function setSettingsStatus(message, { error = false } = {}) {
+    const status = document.querySelector("#settings-status");
+    if (!status) {
+        return;
+    }
+    status.textContent = message;
+    status.classList.toggle("is-error", error);
+}
+
+/**
  * 启动页面。
  */
 async function bootstrap() {
+    applyPlanningFeatureState(false, { render: false, resetPlan: false });
     hydrateIcons();
     bindGlobalControls();
     bindSettingsDialog();
 
-    const [moduleResult, systemModuleResult, preferenceResult, themeResult] = await Promise.allSettled([
+    const [
+        moduleResult,
+        systemModuleResult,
+        preferenceResult,
+        themeResult,
+        featureResult
+    ] = await Promise.allSettled([
         api.getModules(),
         api.getSystemModules(),
         api.getModulePreferences(),
-        api.getThemes()
+        api.getThemes(),
+        api.getSystemFeatures()
     ]);
     const catalogs = normalizeModuleCatalogs(
         moduleResult.status === "fulfilled" ? moduleResult.value : [],
@@ -216,6 +304,14 @@ async function bootstrap() {
     state.themeIssues = themeCatalog.issues;
     state.builtInFallbackActive = themeCatalog.builtInFallbackActive;
     themeManager.setCatalog(themeCatalog);
+    state.planningFeatureLoading = false;
+    applyPlanningFeatureState(
+        normalizePlanningFeature(
+            featureResult.status === "fulfilled" ? featureResult.value : {},
+            false
+        ),
+        { render: false }
+    );
 
     await loadModuleUis();
     const reconciled = reconcileSettingsForCatalog(
@@ -228,6 +324,9 @@ async function bootstrap() {
     applySettings(settingsStore.getSnapshot());
     renderSettings();
     renderCommandExamples();
+    if (document.querySelector("#settings-dialog")?.open) {
+        renderSettings();
+    }
 
     connectEventStream();
     try {
@@ -254,6 +353,11 @@ async function bootstrap() {
     }
     if (themeResult.status === "rejected") {
         toast(`主题目录读取失败：${errorMessage(themeResult.reason)}`, { error: true });
+    }
+    if (featureResult.status === "rejected") {
+        toast(`计划功能状态读取失败，已按关闭处理：${errorMessage(featureResult.reason)}`, {
+            error: true
+        });
     }
 
     void navigate("overview");
@@ -643,6 +747,9 @@ function bindGlobalControls() {
 
     document.querySelector("#command-form")?.addEventListener("submit", (event) => {
         event.preventDefault();
+        if (!state.planningEnabled) {
+            return;
+        }
         const input = document.querySelector("#command-input");
         void draftGoal(input?.value ?? "");
     });
@@ -687,11 +794,50 @@ function bindGlobalControls() {
     document.addEventListener("pointermove", moveNavigationDrag, { passive: false });
     document.addEventListener("pointerup", finishNavigationDrag);
     document.addEventListener("pointercancel", cancelNavigationDrag);
+    bindHistoryViewRail();
 
     window.addEventListener("pagehide", () => {
         cancelNavigationDrag();
         eventStream?.close();
     }, { once: true });
+}
+
+/**
+ * 绑定历史记录视图切换栏。
+ */
+function bindHistoryViewRail() {
+    document.querySelectorAll("[data-history-view]").forEach((button) => {
+        button.addEventListener("click", () => {
+            const view = String(button.dataset.historyView ?? "");
+            if (!HISTORY_VIEWS.has(view) || state.historyView === view) {
+                return;
+            }
+            state.historyView = view;
+            syncHistoryViewRail();
+            if (state.activeView === "history") {
+                renderHistory();
+                document.querySelector("#main-content")?.focus({ preventScroll: true });
+            }
+        });
+    });
+    syncHistoryViewRail();
+}
+
+/**
+ * 同步历史记录视图切换栏的可见性和选中态。
+ */
+function syncHistoryViewRail() {
+    const rail = document.querySelector("#history-view-rail");
+    if (!rail) {
+        return;
+    }
+    rail.hidden = state.activeView !== "history";
+    rail.querySelectorAll("[data-history-view]").forEach((button) => {
+        button.setAttribute(
+            "aria-pressed",
+            String(button.dataset.historyView === state.historyView)
+        );
+    });
 }
 
 /**
@@ -1666,12 +1812,13 @@ function navigationCount(moduleId) {
  */
 async function navigate(view) {
     state.activeView = view;
+    syncHistoryViewRail();
     closeMobileNav();
     renderNavigation(document.querySelector("#nav-search")?.value ?? "");
     const selectedModule = moduleForView(view);
     const labels = {
         overview: "总览",
-        history: "执行记录"
+        history: "历史记录"
     };
     const viewTitle = selectedModule?.title ?? labels[view] ?? "模块";
     const mobileTitle = document.querySelector("#mobile-view-title");
@@ -1895,33 +2042,32 @@ function renderOverview() {
     if (!main) {
         return;
     }
-    main.innerHTML = `
-        <div class="view-stack" data-motion-scope="overview" data-motion-state="entering" data-motion-phase="active">
-            <section class="hero-panel">
-                <div class="hero-content">
-                    <p class="eyebrow">CONTROLLED AGENT WORKFLOW</p>
-                    <h1>让 AI 把事做完，<br><em>也让你随时踩刹车。</em></h1>
-                    <p>
-                        已安装模块通过统一契约接入，并在一条可审查的流程中协作。
-                        本版本只操作应用自管沙箱，先生成计划，确认之后才会写入。
-                    </p>
-                    <div class="hero-tags">
-                        <span>${icon("shield")} 本地优先</span>
-                        <span>${icon("route")} 计划先于执行</span>
-                        <span>${icon("history")} 回收站与回滚</span>
-                    </div>
-                </div>
-                <div class="hero-diagram" aria-label="已安装模块汇聚到归序">
-                    <span class="orbit-ring"></span>
-                    <span class="orbit-core"><strong>归序</strong><small>工作流中枢</small></span>
-                    <span class="orbit-module-nodes" id="orbit-module-nodes"></span>
-                </div>
-            </section>
-
-            <section class="surface-grid" id="module-card-grid" aria-label="已安装模块摘要"></section>
-            <p class="sr-only" id="module-order-status" aria-live="polite"></p>
-
-            <div class="workflow-grid">
+    const planningCopy = state.planningEnabled
+        ? `
+            <p>
+                已安装模块通过统一契约接入，并在一条可审查的流程中协作。
+                本版本只操作应用自管沙箱，先生成计划，确认之后才会写入。
+            </p>
+            <div class="hero-tags">
+                <span>${icon("shield")} 本地优先</span>
+                <span>${icon("route")} 计划先于执行</span>
+                <span>${icon("history")} 回收站与回滚</span>
+            </div>
+        `
+        : `
+            <p>
+                计划功能当前由系统设置关闭。已安装模块与历史记录仍可正常使用，
+                需要生成和执行计划时可在系统设置中重新开启。
+            </p>
+            <div class="hero-tags">
+                <span>${icon("shield")} 本地优先</span>
+                <span>${icon("modules")} 模块契约协作</span>
+                <span>${icon("history")} 历史记录保留</span>
+            </div>
+        `;
+    const planningRegions = state.planningEnabled
+        ? `
+            <div class="workflow-grid" data-planning-region="plan">
                 <section class="panel">
                     <header class="panel__header">
                         <div>
@@ -1950,7 +2096,7 @@ function renderOverview() {
                 </aside>
             </div>
 
-            <div class="workflow-grid">
+            <div class="workflow-grid" data-planning-region="execution">
                 <section class="panel">
                     <header class="panel__header">
                         <div>
@@ -1972,6 +2118,27 @@ function renderOverview() {
                     <div class="run-summary" id="run-summary"></div>
                 </aside>
             </div>
+        `
+        : "";
+    main.innerHTML = `
+        <div class="view-stack" data-motion-scope="overview" data-motion-state="entering" data-motion-phase="active">
+            <section class="hero-panel">
+                <div class="hero-content">
+                    <p class="eyebrow">CONTROLLED AGENT WORKFLOW</p>
+                    <h1>让 AI 把事做完，<br><em>也让你随时踩刹车。</em></h1>
+                    ${planningCopy}
+                </div>
+                <div class="hero-diagram" aria-label="已安装模块汇聚到归序">
+                    <span class="orbit-ring"></span>
+                    <span class="orbit-core"><strong>归序</strong><small>工作流中枢</small></span>
+                    <span class="orbit-module-nodes" id="orbit-module-nodes"></span>
+                </div>
+            </section>
+
+            <section class="surface-grid" id="module-card-grid" aria-label="已安装模块摘要"></section>
+            <p class="sr-only" id="module-order-status" aria-live="polite"></p>
+
+            ${planningRegions}
         </div>
     `;
 
@@ -2301,6 +2468,10 @@ function renderPlan() {
  * @param {string} goal 用户目标
  */
 async function draftGoal(goal) {
+    if (!state.planningEnabled) {
+        toast("计划功能已关闭，请在系统设置中开启。", { error: true });
+        return;
+    }
     const cleanGoal = String(goal ?? "").trim();
     if (!cleanGoal) {
         toast("请先输入一条工作流目标。");
@@ -2351,7 +2522,7 @@ async function draftGoal(goal) {
  * 执行已确认计划。
  */
 async function executePlan() {
-    if (!state.plan || state.executing) {
+    if (!state.planningEnabled || !state.plan || state.executing) {
         return;
     }
     const decision = validateConfirmation(state.plan, {
@@ -2368,6 +2539,8 @@ async function executePlan() {
     shell?.setAttribute("data-motion-state", "busy");
     state.currentRun = {
         planId: state.plan.planId,
+        executionId: "",
+        origin: EVENT_ORIGIN.PLAN,
         status: "RUNNING",
         message: "宿主正在执行并记录事件"
     };
@@ -2389,6 +2562,8 @@ async function executePlan() {
     } catch (error) {
         state.currentRun = {
             planId: state.plan.planId,
+            executionId: "",
+            origin: EVENT_ORIGIN.PLAN,
             status: "FAILED",
             message: errorMessage(error),
             canRollback: false
@@ -2416,6 +2591,8 @@ function applyRunPayload(payload) {
     const status = String(source.status ?? "COMPLETED").toUpperCase();
     state.currentRun = {
         planId: String(source.planId ?? state.plan?.planId ?? ""),
+        executionId: String(source.executionId ?? state.currentRun?.executionId ?? ""),
+        origin: inferEventOrigin(source),
         status,
         message: String(source.message ?? source.summary ?? statusLabel(status)),
         canRollback: Boolean(source.canRollback ?? ["COMPLETED", "PARTIAL"].includes(status)),
@@ -2484,6 +2661,23 @@ function motionStateForStatus(status) {
 }
 
 /**
+ * 渲染事件或执行来源标签。
+ *
+ * @param {string} origin 来源
+ * @returns {HTMLElement} 标签
+ */
+function originChip(origin) {
+    const normalized = String(origin ?? EVENT_ORIGIN.SYSTEM).toUpperCase();
+    const chip = element(
+        "span",
+        "origin-chip",
+        EVENT_ORIGIN_LABEL[normalized] ?? EVENT_ORIGIN_LABEL[EVENT_ORIGIN.SYSTEM]
+    );
+    chip.dataset.origin = normalized;
+    return chip;
+}
+
+/**
  * 渲染真实执行时间线。
  */
 function renderTimeline() {
@@ -2519,8 +2713,13 @@ function renderTimeline() {
             String(event.sequence ?? index + 1).slice(-3)
         ));
         const copy = element("span", "timeline-copy");
-        copy.append(
+        const heading = element("span", "timeline-heading");
+        heading.append(
             element("strong", "", statusLabel(event.status)),
+            originChip(event.origin)
+        );
+        copy.append(
+            heading,
             element("p", "", event.message || event.title)
         );
         item.append(copy);
@@ -2575,8 +2774,8 @@ function renderRunSummary() {
     });
     summary.append(stats);
 
-    if (["COMPLETED", "PARTIAL"].includes(status) && (run.canRollback || run.planId)) {
-        const rollback = element("button", "danger-button", "撤销本次任务");
+    if (["COMPLETED", "PARTIAL", "SUCCESS", "SUCCEEDED"].includes(status) && run.executionId) {
+        const rollback = element("button", "danger-button", "回滚本次执行");
         rollback.type = "button";
         rollback.addEventListener("click", () => void rollbackCurrent());
         summary.append(rollback);
@@ -2587,15 +2786,16 @@ function renderRunSummary() {
  * 回滚当前任务。
  */
 async function rollbackCurrent() {
-    const planId = state.currentRun?.planId || state.plan?.planId;
-    if (!planId) {
-        toast("没有可撤销的任务。");
+    const executionId = state.currentRun?.executionId ?? "";
+    if (!executionId) {
+        toast("执行记录 ID 尚未返回，暂时无法回滚。", { error: true });
         return;
     }
     try {
-        const payload = await api.rollbackPlan(planId);
+        const payload = await api.rollbackExecution(executionId);
         applyRunPayload({
             ...(payload && typeof payload === "object" ? payload : {}),
+            executionId,
             status: payload && typeof payload === "object"
                 ? payload.status ?? "ROLLED_BACK"
                 : "ROLLED_BACK",
@@ -2640,54 +2840,129 @@ function pulsePlanModules() {
 
 
 /**
- * 加载运行记录和审计事件。
+ * 加载历史事件与运行摘要。
  */
 async function loadHistory() {
-    const [runPayload, eventPayload] = await Promise.all([
+    const [executionResult, runResult, eventResult] = await Promise.allSettled([
+        api.getExecutions(),
         api.getRuns(),
         api.getEvents()
     ]);
-    state.events = mergeEvents(state.events, unwrapList(eventPayload, ["events"]));
-    const runs = unwrapList(runPayload, ["runs"]).filter((item) => item && typeof item === "object");
+    state.historyIssues = [];
+    if (eventResult.status === "fulfilled") {
+        state.events = mergeEvents(
+            state.events,
+            unwrapList(eventResult.value, ["events"])
+        );
+    } else {
+        state.historyIssues.push({
+            scope: "events",
+            message: `事件读取失败：${errorMessage(eventResult.reason)}`
+        });
+    }
+
+    let records = [];
+    if (executionResult.status === "fulfilled") {
+        state.historySource = "executions";
+        records = unwrapList(executionResult.value, ["executions"])
+            .filter((item) => item && typeof item === "object");
+    } else if (runResult.status === "fulfilled") {
+        state.historySource = "runs";
+        records = unwrapList(runResult.value, ["runs"])
+            .filter((item) => item && typeof item === "object");
+        state.historyIssues.push({
+            scope: "summary",
+            message: `执行记录接口不可用，已回退到 /api/runs：${errorMessage(executionResult.reason)}`
+        });
+    } else {
+        state.historySource = "";
+        state.historyIssues.push({
+            scope: "summary",
+            message: "运行摘要来源暂时不可用。"
+        });
+    }
+    state.historyRuns = records.map((record, index) => {
+        const normalized = normalizeExecutionRecord(record, index);
+        return state.historySource === "executions"
+            ? normalized
+            : { ...normalized, executionId: "" };
+    });
+    renderHistory();
+}
+
+/**
+ * 渲染历史记录页及当前选择的视图。
+ */
+function renderHistory() {
     const main = document.querySelector("#main-content");
     if (!main) {
         return;
     }
+    syncHistoryViewRail();
+    const sourceLabel = state.historySource === "executions"
+        ? "运行摘要读取自 /api/executions"
+        : state.historySource === "runs"
+            ? "执行记录接口不可用，运行摘要兼容读取自 /api/runs"
+            : "运行摘要来源暂不可用";
+    const issueMessages = state.historyIssues
+        .filter((issue) => issue.scope === state.historyView
+            || (state.historyView === "summary" && issue.scope === "summary")
+            || (state.historyView === "timeline" && issue.scope === "events"))
+        .map((issue) => issue.message);
+    const issueNotice = issueMessages.length
+        ? `<div class="history-notice">${issueMessages
+            .map((message) => `<p>${escapeHtml(message)}</p>`)
+            .join("")}</div>`
+        : "";
+    const viewMarkup = state.historyView === "summary"
+        ? `
+            <section class="panel">
+                <header class="panel__header">
+                    <div>
+                        <p class="eyebrow">EXECUTION SUMMARY</p>
+                        <h2>运行摘要</h2>
+                        <p>${sourceLabel}</p>
+                    </div>
+                    <span class="status-chip">${state.historyRuns.length} 次执行</span>
+                </header>
+                ${issueNotice}
+                <div id="run-list"></div>
+            </section>
+        `
+        : `
+            <section class="panel">
+                <header class="panel__header">
+                    <div>
+                        <p class="eyebrow">EVENT TIMELINE</p>
+                        <h2>事件时间线</h2>
+                        <p>按宿主序号展示计划、AI 直接执行、模块控制与系统事件。</p>
+                    </div>
+                    <span class="status-chip">${state.events.length} 条</span>
+                </header>
+                ${issueNotice}
+                <ol class="timeline" id="history-timeline"></ol>
+            </section>
+        `;
     main.innerHTML = `
         <div class="view-stack">
             <header class="page-heading">
                 <span class="page-heading__icon">${icon("history", 25)}</span>
                 <div>
-                    <p class="eyebrow">AUDIT & ROLLBACK</p>
-                    <h1>执行记录</h1>
-                    <p>运行摘要来自本地宿主；回滚不会删除原审计事件。</p>
+                    <p class="eyebrow">LOCAL HISTORY</p>
+                    <h1>历史记录</h1>
+                    <p>审计事件与运行摘要均来自本地宿主；回滚不会删除原始历史。</p>
                 </div>
-                <span class="status-chip">只追加事件</span>
+                <span class="status-chip">${state.historyView === "timeline" ? "默认时间线" : "运行摘要"}</span>
             </header>
-            <section class="data-card">
-                <header class="panel__header">
-                    <div>
-                        <h2>任务运行</h2>
-                        <p>${runs.length} 次运行 · 实际读取自 /api/runs</p>
-                    </div>
-                </header>
-                <div id="run-list"></div>
-            </section>
-            <section class="panel">
-                <header class="panel__header">
-                    <div>
-                        <p class="eyebrow">EVENT LOG</p>
-                        <h2>最近事件</h2>
-                    </div>
-                    <span class="status-chip">${state.events.length} 条</span>
-                </header>
-                <ol class="timeline" id="history-timeline"></ol>
-            </section>
+            ${viewMarkup}
         </div>
     `;
     hydrateIcons(main);
-    renderHistoryRuns(runs);
-    renderHistoryEvents();
+    if (state.historyView === "summary") {
+        renderHistoryRuns(state.historyRuns);
+    } else {
+        renderHistoryEvents();
+    }
 }
 
 /**
@@ -2700,44 +2975,124 @@ function renderHistoryRuns(runs) {
     if (!container) {
         return;
     }
+    container.replaceChildren();
     if (!runs.length) {
-        container.append(emptyState("尚无运行记录", "确认并执行一条计划后会在这里留下审计摘要。"));
+        const summaryIssue = state.historyIssues
+            .filter((issue) => issue.scope === "summary")
+            .map((issue) => issue.message)
+            .join(" ");
+        container.append(emptyState(
+            "尚无运行摘要",
+            summaryIssue || "计划或 AI 直接执行完成后会在这里留下执行记录。"
+        ));
         return;
     }
     const list = element("div", "run-list");
     runs.forEach((run) => {
-        const planId = String(run.planId ?? run.id ?? "");
         const status = String(run.status ?? "COMPLETED").toUpperCase();
         const row = element("article", "run-row");
         const copy = element("div");
         copy.append(
-            element("h3", "", String(run.goal ?? run.message ?? "未命名任务")),
-            element(
-                "p",
-                "",
-                `${statusLabel(status)} · ${formatDate(run.createdAt ?? run.finishedAt ?? run.timestamp)} · ${planId.slice(0, 16)}`
-            )
+            element("h3", "", run.goal || "未命名执行")
         );
+        const meta = element("div", "run-meta");
+        meta.append(originChip(run.origin));
+        meta.append(element(
+            "span",
+            "",
+            `${statusLabel(status)} · ${formatDate(run.createdAt)} · ${run.displayId.slice(0, 24)}`
+        ));
+        copy.append(meta);
+        if (run.message) {
+            copy.append(element("p", "", run.message));
+        }
         const actions = element("div", "run-actions");
         actions.append(element("span", `risk-chip`, statusLabel(status)));
-        if (planId && ["COMPLETED", "PARTIAL"].includes(status)) {
-            const button = element("button", "text-button", "撤销");
-            button.type = "button";
-            button.addEventListener("click", async () => {
-                try {
-                    await api.rollbackPlan(planId);
-                    toast("运行已回滚。");
-                    await loadHistory();
-                } catch (error) {
-                    toast(errorMessage(error), { error: true });
-                }
-            });
-            actions.append(button);
+        const decision = executionRollbackDecision(run);
+        const button = element(
+            "button",
+            "text-button",
+            state.rollbackBusyId === run.executionId ? "正在回滚…" : "回滚执行"
+        );
+        button.type = "button";
+        button.disabled = !decision.allowed || Boolean(state.rollbackBusyId);
+        button.title = decision.reason || "通过执行记录回滚本次变更";
+        button.addEventListener("click", () => void rollbackHistoryExecution(run));
+        actions.append(button);
+        if (state.rollbackFailures[run.executionId]) {
+            copy.append(element(
+                "p",
+                "inline-error",
+                `回滚失败：${state.rollbackFailures[run.executionId]}`
+            ));
         }
         row.append(copy, actions);
         list.append(row);
     });
     container.append(list);
+}
+
+/**
+ * 判断执行记录是否可回滚。
+ *
+ * @param {object} run 执行记录
+ * @returns {{allowed: boolean, reason: string}} 判定
+ */
+function executionRollbackDecision(run) {
+    if (state.historySource !== "executions" || !run?.executionId) {
+        return {
+            allowed: false,
+            reason: "当前兼容运行摘要没有执行记录 ID，无法调用执行回滚。"
+        };
+    }
+    if (!ROLLBACK_ORIGINS.has(run.origin)) {
+        return {
+            allowed: false,
+            reason: "仅计划与 AI 直接执行记录支持回滚。"
+        };
+    }
+    if (!run.canRollback) {
+        return {
+            allowed: false,
+            reason: run.rollbackDisabledReason || "宿主标记当前执行不可回滚。"
+        };
+    }
+    if (state.rollbackFailures[run.executionId]) {
+        return {
+            allowed: false,
+            reason: `上次回滚失败：${state.rollbackFailures[run.executionId]}`
+        };
+    }
+    return { allowed: true, reason: "" };
+}
+
+/**
+ * 通过执行记录端点回滚单次执行。
+ *
+ * @param {object} run 执行记录
+ */
+async function rollbackHistoryExecution(run) {
+    const decision = executionRollbackDecision(run);
+    if (!decision.allowed || state.rollbackBusyId) {
+        if (decision.reason) {
+            toast(decision.reason, { error: true });
+        }
+        return;
+    }
+    state.rollbackBusyId = run.executionId;
+    renderHistory();
+    try {
+        await api.rollbackExecution(run.executionId);
+        delete state.rollbackFailures[run.executionId];
+        toast("执行记录已回滚，原始事件与历史仍保留。");
+        state.rollbackBusyId = "";
+        await loadHistory();
+    } catch (error) {
+        state.rollbackBusyId = "";
+        state.rollbackFailures[run.executionId] = errorMessage(error);
+        renderHistory();
+        toast(`回滚失败：${errorMessage(error)}`, { error: true });
+    }
 }
 
 /**
@@ -2749,6 +3104,7 @@ function renderHistoryEvents() {
         return;
     }
     const events = state.events.slice(-30);
+    timeline.replaceChildren();
     if (!events.length) {
         timeline.append(emptyState("尚无事件", "当前没有可展示的执行审计。"));
         return;
@@ -2761,8 +3117,13 @@ function renderHistoryEvents() {
         item.dataset.motionPhase = "active";
         item.append(element("span", "timeline-marker", String(event.sequence ?? index + 1).slice(-3)));
         const copy = element("span", "timeline-copy");
-        copy.append(
+        const heading = element("span", "timeline-heading");
+        heading.append(
             element("strong", "", statusLabel(event.status)),
+            originChip(event.origin)
+        );
+        copy.append(
+            heading,
             element("p", "", event.message || event.title)
         );
         item.append(copy, element(
@@ -3187,11 +3548,28 @@ function renderSystemSettings(panel) {
     );
     panel.append(header);
     const fields = element("div", "settings-fields");
+    const planningDisabled = state.planningFeatureLoading
+        || state.planningFeatureSaving
+        || state.planBusy
+        || state.executing;
+    fields.append(settingRow(
+        "planningEnabled",
+        "计划功能",
+        state.planningFeatureLoading
+            ? "正在读取宿主功能状态。"
+            : "由本地宿主持久化；关闭后隐藏计划入口，模块与历史记录保持可用。",
+        state.planningEnabled,
+        (enabled, input) => void persistPlanningFeature(enabled, input),
+        planningDisabled,
+        "计划功能"
+    ));
     [
         ["计划器", "本地规则计划器 · 未连接外部模型"],
         ["文件边界", safeWorkspacePath()],
         ["删除策略", "仅移入 .orderly-data/trash，不提供物理删除"],
-        ["执行担保", "计划确认 → 快照 → 执行 → 审计 → 失败回滚"]
+        ["执行担保", state.planningEnabled
+            ? "计划确认 → 快照 → 执行 → 审计 → 失败回滚"
+            : "计划功能已关闭；模块浏览与历史记录仍可用"]
     ].forEach(([label, value]) => {
         const row = element("div", "setting-field");
         row.append(
@@ -3204,22 +3582,82 @@ function renderSystemSettings(panel) {
 }
 
 /**
+ * 将计划功能开关写入宿主；失败时恢复开关并保留错误提示。
+ *
+ * @param {boolean} enabled 目标状态
+ * @param {HTMLInputElement} input 开关控件
+ */
+async function persistPlanningFeature(enabled, input) {
+    if (state.planningFeatureSaving) {
+        return;
+    }
+    const previous = state.planningEnabled;
+    state.planningFeatureSaving = true;
+    input.disabled = true;
+    input.removeAttribute("aria-invalid");
+    setSettingsStatus("正在保存计划功能设置…");
+    try {
+        const payload = await api.setPlanningEnabled(enabled);
+        let authoritative = normalizePlanningFeature(
+            payload,
+            typeof enabled === "boolean" ? enabled : false
+        );
+        if (!payload || typeof payload.planningEnabled !== "boolean") {
+            const featurePayload = await api.getSystemFeatures();
+            authoritative = normalizePlanningFeature(featurePayload, authoritative);
+        }
+        state.planningFeatureLoading = false;
+        applyPlanningFeatureState(authoritative);
+        input.checked = authoritative;
+        setSettingsStatus(
+            authoritative
+                ? "计划功能已开启，由宿主保存。"
+                : "计划功能已关闭，由宿主保存。"
+        );
+        toast(authoritative ? "计划功能已开启。" : "计划功能已关闭。");
+    } catch (error) {
+        input.checked = previous;
+        input.setAttribute("aria-invalid", "true");
+        const message = `计划功能设置失败：${errorMessage(error)}`;
+        setSettingsStatus(message, { error: true });
+        toast(message, { error: true });
+    } finally {
+        state.planningFeatureSaving = false;
+        input.disabled = false;
+        input.focus({ preventScroll: true });
+    }
+}
+
+/**
  * 创建开关行。
  *
  * @param {string} key 设置键
  * @param {string} title 标题
  * @param {string} description 描述
  * @param {boolean} checked 当前值
+ * @param {(checked: boolean, input: HTMLInputElement) => void | null} onChange 变更回调
+ * @param {boolean} disabled 是否禁用
+ * @param {string} accessibleLabel 无障碍标签
  * @returns {HTMLElement} 行
  */
-function settingRow(key, title, description, checked) {
+function settingRow(
+    key,
+    title,
+    description,
+    checked,
+    onChange = null,
+    disabled = false,
+    accessibleLabel = title
+) {
     const row = element("div", "setting-field setting-field--row");
     const copy = element("div");
     copy.append(
         element("label", "", title),
         element("p", "", description)
     );
-    row.append(copy, switchControl(key, checked));
+    const control = switchControl(key, checked, onChange, accessibleLabel);
+    control.querySelector("input").disabled = disabled;
+    row.append(copy, control);
     return row;
 }
 
@@ -3228,18 +3666,20 @@ function settingRow(key, title, description, checked) {
  *
  * @param {string} key 设置键
  * @param {boolean} checked 当前值
+ * @param {(checked: boolean, input: HTMLInputElement) => void | null} onChange 变更回调
+ * @param {string} accessibleLabel 无障碍标签
  * @returns {HTMLElement} 控件
  */
-function switchControl(key, checked, onChange = null) {
+function switchControl(key, checked, onChange = null, accessibleLabel = key) {
     const label = element("label", "switch");
     const input = document.createElement("input");
     input.type = "checkbox";
     input.checked = checked;
     input.dataset.settingKey = key;
-    input.setAttribute("aria-label", key);
+    input.setAttribute("aria-label", accessibleLabel);
     input.addEventListener("change", () => {
         if (onChange) {
-            onChange(input.checked);
+            onChange(input.checked, input);
         } else {
             settingsStore.update({ [key]: input.checked });
         }

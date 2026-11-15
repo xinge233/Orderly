@@ -41,6 +41,8 @@
 
 模块入口通常从 `pom.xml`、`src/main/java/`、`src/main/resources/orderly-modules/`、`src/main/resources/orderly-ui/` 和模块测试开始定位。
 
+`Module/AGENTS.md` 是模块目录级规范，定义自包含、Action 契约、默认 AI 可调用、结构化输出引用和禁止模块直接互调。
+
 ## 应用入口
 
 | 区域 | 优先入口 |
@@ -50,6 +52,10 @@
 | 计划服务 | `app/host/src/main/java/com/orderly/host/plan/PlanService.java` |
 | 本地规则计划器 | `app/host/src/main/java/com/orderly/host/planner/LocalRulePlanner.java` |
 | 执行与回滚 | `app/host/src/main/java/com/orderly/host/execution/ExecutionService.java` |
+| 共享 Action 执行核心 | `app/host/src/main/java/com/orderly/host/execution/ActionExecutionCore.java` |
+| AI 直执入口 | `app/host/src/main/java/com/orderly/host/execution/AiActionService.java` |
+| 持久化执行记录 | `app/host/src/main/java/com/orderly/host/execution/ExecutionRecordStore.java` |
+| 系统功能开关 | `app/host/src/main/java/com/orderly/host/system/SystemFeatureService.java` |
 | 模块运行时 | `app/host/src/main/java/com/orderly/host/runtime/ModuleBootstrap.java` |
 | 模块治理 | `app/host/src/main/java/com/orderly/host/modulecontrol/` |
 | 主题目录 | `app/host/src/main/java/com/orderly/host/theme/` |
@@ -62,6 +68,7 @@
 | 契约 | 主要消费者 |
 |---|---|
 | `contracts/plan.schema.json` | 宿主计划校验、计划样例 |
+| `contracts/action-execution.schema.json` | 总体 AI 直执 Action 数组请求 |
 | `contracts/module.schema.json` | 模块 JAR 契约与模块测试 |
 | `contracts/module-ui.schema.json` | 模块 UI 清单与前端契约测试 |
 | `contracts/theme.schema.json` | 宿主主题加载与主题样例 |

@@ -178,7 +178,9 @@ src/main/resources/orderly-modules/example.json
 契约注意事项：
 
 - 写操作和删除操作必须设置 `confirmationRequired: true`。
-- 删除操作还必须声明非空 `confirmationPhrase`。
+- 删除操作不要求确认词，但必须经过用户勾选确认，并且只能进入项目回收站。
+- `aiCallable` 缺省为 `true`，只有不能由总体 AI 调用的动作才显式设为 `false`。
+- `outputSchema` 应声明动作输出；首版只接受契约允许的 JSON Schema 子集。
 - 参数类型目前支持 `string`、`boolean` 和 `integer`。
 - 计划规则的 `actionId` 必须指向同一模块中的动作。
 - `argumentGroups` 只能映射该动作已经声明的参数，捕获组编号必须有效。
@@ -186,6 +188,10 @@ src/main/resources/orderly-modules/example.json
 
 契约是动作、参数、风险等级、确认要求和计划规则的唯一真相源。不要在 Java 代码或
 前端代码中维护第二套冲突定义。
+
+总体 AI 通过宿主顺序执行 Action 数组。后一个 Action 可使用结构化引用读取此前已
+完成 Action 的 `output`。模块不得直接导入或调用其他模块，详细规则见
+[`AGENTS.md`](AGENTS.md)。
 
 ## 7. 添加模块 UI
 

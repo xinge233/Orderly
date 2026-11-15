@@ -2,6 +2,8 @@ package com.orderly.host;
 
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.runtime.WorkspaceRuntime;
+import com.orderly.host.system.SystemFeatureService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -42,6 +44,14 @@ class ZeroModuleIntegrationTest {
 
     @Autowired
     private WorkspaceRuntime runtime;
+
+    @Autowired
+    private SystemFeatureService features;
+
+    @BeforeEach
+    void enablePlanning() {
+        features.setPlanningEnabled(true);
+    }
 
     @Test
     void startsWithZeroModulesAndReturnsEmptyArray() throws Exception {

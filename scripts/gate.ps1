@@ -177,6 +177,31 @@ try {
         throw "docs/repo-map.md 不得包含代码围栏。"
     }
 
+    $moduleRulesPath = Join-Path $repoRoot "Module\AGENTS.md"
+    if (-not (Test-Path -LiteralPath $moduleRulesPath -PathType Leaf)) {
+        throw "缺少模块目录规范：Module/AGENTS.md"
+    }
+    $moduleRules = Get-Content -Raw -LiteralPath $moduleRulesPath
+    foreach ($requiredRule in @(
+        "aiCallable",
+        "`$fromAction",
+        "不得在编译期或运行期直接导入",
+        "逆序回滚"
+    )) {
+        if (-not $moduleRules.Contains($requiredRule)) {
+            throw "Module/AGENTS.md 缺少规则：$requiredRule"
+        }
+    }
+    foreach ($requiredContract in @(
+        "contracts\action-execution.schema.json",
+        "contracts\samples\valid\action-execution.json",
+        "contracts\samples\invalid\action-execution-empty.json"
+    )) {
+        if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $requiredContract) -PathType Leaf)) {
+            throw "缺少 Action 直执契约或样例：$requiredContract"
+        }
+    }
+
     $ignoreLines = @(Get-Content -LiteralPath (Join-Path $repoRoot ".gitignore") |
         ForEach-Object { $_.Trim() })
     foreach ($requiredIgnoreLine in @(

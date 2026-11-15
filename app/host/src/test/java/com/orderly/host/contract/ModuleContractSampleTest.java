@@ -28,6 +28,8 @@ class ModuleContractSampleTest {
 
             assertThat(module.moduleId()).isEqualTo("module_demo");
             assertThat(module.actions()).extracting(ActionContract::id).containsExactly("demo.read");
+            assertThat(module.actions().getFirst().aiCallable()).isFalse();
+            assertThat(module.actions().getFirst().outputSchema()).isNotNull();
             assertThat(module.queries()).extracting(QueryContract::id).containsExactly("demo.list");
             assertThat(module.plannerRules()).extracting(PlannerRuleContract::id).containsExactly("demo.read");
         }
@@ -71,6 +73,21 @@ class ModuleContractSampleTest {
             ))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("系统模块角色");
+        }
+    }
+
+    @Test
+    void unsupportedOutputSchemaFailsRuntimeValidation() throws Exception {
+        Path missingModules = Path.of("target", "sample-contract-" + UUID.randomUUID())
+                .toAbsolutePath();
+        try (ContractCatalog catalog = new ContractCatalog(objectMapper, missingModules.toString())) {
+            assertThatThrownBy(() -> catalog.parseAndValidateModule(
+                    objectMapper.readTree(
+                            samples.resolve("invalid/module-output-schema-unsupported.json").toFile()
+                    )
+            ))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("outputSchema");
         }
     }
 }

@@ -49,6 +49,9 @@ public class ExecutionJournal {
                     continue;
                 }
                 ExecutionEvent event = objectMapper.readValue(line, ExecutionEvent.class);
+                if (event.origin() == null || event.origin().isBlank()) {
+                    event = event.withOrigin("LEGACY");
+                }
                 events.add(event);
                 sequence.accumulateAndGet(event.seq(), Math::max);
             }
@@ -66,9 +69,23 @@ public class ExecutionJournal {
             String status,
             String message
     ) {
+        return append(type, "SYSTEM", planId, stepId, moduleId, actionId, status, message);
+    }
+
+    public synchronized ExecutionEvent append(
+            String type,
+            String origin,
+            String planId,
+            String stepId,
+            String moduleId,
+            String actionId,
+            String status,
+            String message
+    ) {
         ExecutionEvent event = new ExecutionEvent(
                 sequence.incrementAndGet(),
                 type,
+                origin,
                 planId,
                 stepId,
                 moduleId,

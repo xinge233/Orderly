@@ -13,6 +13,27 @@ if ([int]$health.javaVersion -ne 21) {
     throw "宿主未运行在 JDK 21：$($health.javaVersion)"
 }
 
+$features = Invoke-RestMethod -Uri "$BaseUrl/api/system/features" -Method Get
+if ($features.planningEnabled -isnot [bool]) {
+    throw "/api/system/features 缺少布尔 planningEnabled。"
+}
+$initialPlanningEnabled = [bool]$features.planningEnabled
+Invoke-RestMethod -Uri "$BaseUrl/api/system/features/planning" -Method Put `
+    -ContentType "application/json" `
+    -Body (@{ enabled = $false } | ConvertTo-Json) | Out-Null
+
+$disabledPlanStatus = $null
+try {
+    Invoke-RestMethod -Uri "$BaseUrl/api/plans" -Method Post `
+        -ContentType "application/json" `
+        -Body (@{ goal = "创建目录 planning-disabled-smoke" } | ConvertTo-Json) | Out-Null
+} catch {
+    $disabledPlanStatus = [int]$_.Exception.Response.StatusCode
+}
+if ($disabledPlanStatus -ne 409) {
+    throw "关闭计划功能后 /api/plans 未被 409 拒绝，实际状态：$disabledPlanStatus"
+}
+
 $modulesResponse = Invoke-RestMethod -Uri "$BaseUrl/api/modules" -Method Get
 $modules = @($modulesResponse | ForEach-Object { $_ })
 $moduleIds = @($modules | ForEach-Object { $_.moduleId })
@@ -181,6 +202,110 @@ foreach ($entry in $optionalStudyQueries.GetEnumerator()) {
     }
 }
 
+$aiExecutionId = $null
+if ($moduleIds -contains "module_fs") {
+    $smokeDirectory = "smoke-" + [guid]::NewGuid().ToString("N")
+
+    $unconfirmedAiStatus = $null
+    try {
+        Invoke-RestMethod -Uri "$BaseUrl/api/ai/actions/execute" -Method Post `
+            -ContentType "application/json" `
+            -Body (@{
+                confirmed = $false
+                actions = @(@{
+                    moduleId = "module_fs"
+                    actionId = "fs.mkdir"
+                    arguments = @{ path = $smokeDirectory }
+                })
+            } | ConvertTo-Json -Depth 12) | Out-Null
+    } catch {
+        $unconfirmedAiStatus = [int]$_.Exception.Response.StatusCode
+    }
+    if ($unconfirmedAiStatus -ne 409) {
+        throw "未确认 WRITE Action 未被 409 拒绝，实际状态：$unconfirmedAiStatus"
+    }
+
+    $blockedAiStatus = $null
+    try {
+        Invoke-RestMethod -Uri "$BaseUrl/api/ai/actions/execute" -Method Post `
+            -ContentType "application/json" `
+            -Body (@{
+                confirmed = $true
+                actions = @(@{
+                    moduleId = "module_fs"
+                    actionId = "fs.restore"
+                    arguments = @{ trashId = "smoke-not-used" }
+                })
+            } | ConvertTo-Json -Depth 12) | Out-Null
+    } catch {
+        $blockedAiStatus = [int]$_.Exception.Response.StatusCode
+    }
+    if ($blockedAiStatus -ne 409) {
+        throw "禁止 AI 调用的 Action 未被 409 拒绝，实际状态：$blockedAiStatus"
+    }
+
+    $aiResult = Invoke-RestMethod -Uri "$BaseUrl/api/ai/actions/execute" -Method Post `
+        -ContentType "application/json" `
+        -Body (@{
+            confirmed = $true
+            actions = @(
+                @{
+                    moduleId = "module_fs"
+                    actionId = "fs.mkdir"
+                    arguments = @{ path = $smokeDirectory }
+                },
+                @{
+                    moduleId = "module_fs"
+                    actionId = "fs.list"
+                    arguments = @{
+                        path = @{
+                            '$fromAction' = 0
+                            path = @("output", "path")
+                        }
+                    }
+                },
+                @{
+                    moduleId = "module_fs"
+                    actionId = "fs.trash"
+                    arguments = @{
+                        path = @{
+                            '$fromAction' = 0
+                            path = @("output", "path")
+                        }
+                    }
+                }
+            )
+        } | ConvertTo-Json -Depth 12)
+    if ($aiResult.origin -ne "AI_DIRECT" -or
+            $aiResult.status -ne "COMPLETED" -or
+            @($aiResult.steps).Count -ne 3) {
+        throw "AI 直执 Action 数组结果不符合预期：$($aiResult | ConvertTo-Json -Compress -Depth 12)"
+    }
+    $aiExecutionId = [string]$aiResult.executionId
+    if ([string]::IsNullOrWhiteSpace($aiExecutionId)) {
+        throw "AI 直执响应缺少 executionId。"
+    }
+    $persistedExecution = Invoke-RestMethod `
+        -Uri "$BaseUrl/api/executions/$([uri]::EscapeDataString($aiExecutionId))" -Method Get
+    if ($persistedExecution.origin -ne "AI_DIRECT" -or
+            $persistedExecution.status -ne "COMPLETED") {
+        throw "AI 直执记录未正确持久化。"
+    }
+    $executionList = @(Invoke-RestMethod -Uri "$BaseUrl/api/executions" -Method Get)
+    if (($executionList | ForEach-Object { $_.executionId }) -notcontains $aiExecutionId) {
+        throw "执行记录列表缺少 AI 直执记录。"
+    }
+    $rolledBackExecution = Invoke-RestMethod `
+        -Uri "$BaseUrl/api/executions/$([uri]::EscapeDataString($aiExecutionId))/rollback" -Method Post
+    if ($rolledBackExecution.status -ne "ROLLED_BACK") {
+        throw "AI 直执记录回滚未返回 ROLLED_BACK。"
+    }
+}
+
+Invoke-RestMethod -Uri "$BaseUrl/api/system/features/planning" -Method Put `
+    -ContentType "application/json" `
+    -Body (@{ enabled = $true } | ConvertTo-Json) | Out-Null
+
 $goal = if ($firstExample) { $firstExample } else { "当前没有可识别的模块目标" }
 $plan = Invoke-RestMethod -Uri "$BaseUrl/api/plans" -Method Post `
     -ContentType "application/json" `
@@ -206,13 +331,17 @@ if ($plan.kind -eq "PLAN") {
     }
 }
 
+Invoke-RestMethod -Uri "$BaseUrl/api/system/features/planning" -Method Put `
+    -ContentType "application/json" `
+    -Body (@{ enabled = $initialPlanningEnabled } | ConvertTo-Json) | Out-Null
+
 $refresh = Invoke-RestMethod -Uri "$BaseUrl/api/system/modules/refresh" -Method Post
 if ($null -eq $refresh.added -or $null -eq $refresh.issues -or
         [string]::IsNullOrWhiteSpace([string]$refresh.revision)) {
     throw "模块刷新响应缺少 added、issues 或 revision。"
 }
 
-Write-Host "HTTP 烟测通过：JDK 21、业务/系统模块目录、模块偏好、模块 UI、通用查询、目录主题 schemaVersion/详情/CSS 资源、安全回退字段、刷新响应和未执行计划确认；未产生业务数据变更。"
+Write-Host "HTTP 烟测通过：JDK 21、计划开关、AI Action 数组顺序执行与输出引用、风险确认、Action AI 调用限制、持久化记录与回滚、业务/系统模块目录、模块偏好、模块 UI、通用查询、目录主题、刷新响应和未执行计划确认；业务测试数据已回滚。"
 Write-Host "已执行无必填参数的通用查询数量：$queryCount"
 
 exit 0

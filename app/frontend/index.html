@@ -63,6 +63,11 @@
                 <strong id="mobile-view-title">总览</strong>
             </header>
 
+            <nav class="history-view-rail" id="history-view-rail" aria-label="历史记录视图" hidden>
+                <button type="button" data-history-view="timeline" aria-pressed="true">时间线</button>
+                <button type="button" data-history-view="summary" aria-pressed="false">运行摘要</button>
+            </nav>
+
             <main class="main-content" id="main-content" tabindex="-1" data-motion-scope="main" data-motion-state="loading" data-motion-phase="active">
                 <section class="loading-panel" aria-live="polite">
                     <span class="loading-orbit" aria-hidden="true"></span>

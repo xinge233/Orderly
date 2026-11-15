@@ -13,11 +13,13 @@ import com.orderly.host.modulecontrol.ModuleRefreshService;
 import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanView;
 import com.orderly.host.runtime.WorkspaceRuntime;
+import com.orderly.host.system.SystemFeatureService;
 import com.orderly.host.support.TestBusinessModule;
 import com.orderly.host.support.TestControlModule;
 import com.orderly.host.support.TestModuleArchives;
 import com.orderly.host.support.TestSecondBusinessModule;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -88,6 +90,14 @@ class ModuleControlIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private SystemFeatureService features;
+
+    @BeforeEach
+    void enablePlanning() {
+        features.setPlanningEnabled(true);
+    }
 
     @Test
     void splitsCatalogsAndPersistsActivationOrdersAndSettings() throws Exception {

@@ -1,0 +1,22 @@
+{
+  "moduleId": "module_demo",
+  "title": "非法输出契约模块",
+  "description": "用于验证宿主拒绝不支持的 JSON Schema 关键字。",
+  "order": 10,
+  "actions": [
+    {
+      "id": "demo.read",
+      "title": "读取演示值",
+      "description": "输出契约使用了首版不支持的组合关键字。",
+      "risk": "READ_ONLY",
+      "confirmationRequired": false,
+      "parameters": [],
+      "outputSchema": {
+        "type": "object",
+        "allOf": []
+      }
+    }
+  ],
+  "queries": [],
+  "plannerRules": []
+}

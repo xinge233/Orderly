@@ -190,6 +190,7 @@ public class ModuleRefreshService {
         String revision = preferences.revision();
         journal.append(
                 "MODULE_CONTROL",
+                "MODULE_CONTROL",
                 null,
                 null,
                 null,

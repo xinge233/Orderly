@@ -5,18 +5,35 @@ export const RISK_LABEL = Object.freeze({
 });
 
 export const STATUS_LABEL = Object.freeze({
+    PARTIAL: "部分完成",
     WAITING: "等待",
     PENDING: "等待",
     RUNNING: "执行中",
     EXECUTING: "执行中",
     COMPLETED: "成功",
     SUCCESS: "成功",
+    SUCCEEDED: "成功",
     FAILED: "失败",
     REJECTED: "已拒绝",
     ROLLED_BACK: "已回滚",
     ROLLBACK: "回滚中",
+    ROLLBACK_FAILED: "回滚失败",
     CANCELLED: "已取消",
     QUESTION: "需要澄清"
+});
+
+export const EVENT_ORIGIN = Object.freeze({
+    PLAN: "PLAN",
+    AI_DIRECT: "AI_DIRECT",
+    MODULE_CONTROL: "MODULE_CONTROL",
+    SYSTEM: "SYSTEM"
+});
+
+export const EVENT_ORIGIN_LABEL = Object.freeze({
+    [EVENT_ORIGIN.PLAN]: "计划",
+    [EVENT_ORIGIN.AI_DIRECT]: "AI 直接执行",
+    [EVENT_ORIGIN.MODULE_CONTROL]: "模块控制",
+    [EVENT_ORIGIN.SYSTEM]: "系统"
 });
 
 const LIST_KEYS = [
@@ -168,6 +185,7 @@ export function normalizeEvent(raw, fallbackIndex = 0) {
         sequence,
         planId: String(source.planId ?? source.runId ?? source.taskId ?? ""),
         stepId: String(source.stepId ?? source.step ?? ""),
+        origin: inferEventOrigin(source),
         title: String(
             source.title
             ?? source.message
@@ -178,6 +196,84 @@ export function normalizeEvent(raw, fallbackIndex = 0) {
         status: String(source.status ?? "COMPLETED").toUpperCase(),
         timestamp: timeText,
         timeValue: Number.isFinite(parsedTime) ? parsedTime : fallbackIndex
+    };
+}
+
+/**
+ * 兼容新事件来源字段，并为旧事件按类型或计划标识推断来源。
+ *
+ * @param {unknown} raw 原始事件或执行记录
+ * @returns {string} 规范化来源
+ */
+export function inferEventOrigin(raw) {
+    const source = raw && typeof raw === "object" ? raw : {};
+    const explicit = normalizeOrigin(source.origin);
+    if (explicit) {
+        return explicit;
+    }
+    const type = String(
+        source.type
+        ?? source.eventType
+        ?? source.category
+        ?? source.kind
+        ?? ""
+    ).toUpperCase();
+    if (type.includes("AI_DIRECT") || type === "DIRECT") {
+        return EVENT_ORIGIN.AI_DIRECT;
+    }
+    if (type.includes("MODULE_CONTROL")) {
+        return EVENT_ORIGIN.MODULE_CONTROL;
+    }
+    if (type.includes("SYSTEM")) {
+        return EVENT_ORIGIN.SYSTEM;
+    }
+    if (type.includes("PLAN") || source.planId) {
+        return EVENT_ORIGIN.PLAN;
+    }
+    return EVENT_ORIGIN.SYSTEM;
+}
+
+function normalizeOrigin(value) {
+    const normalized = String(value ?? "").trim().toUpperCase().replace(/[\s-]+/g, "_");
+    return Object.hasOwn(EVENT_ORIGIN, normalized) ? normalized : "";
+}
+
+/**
+ * 将执行记录规范化为历史摘要行。
+ *
+ * @param {unknown} raw 原始记录
+ * @param {number} fallbackIndex 缺省索引
+ * @returns {object} 执行记录
+ */
+export function normalizeExecutionRecord(raw, fallbackIndex = 0) {
+    const source = raw && typeof raw === "object" ? raw : {};
+    const status = String(source.status ?? "COMPLETED").toUpperCase();
+    const executionId = String(
+        source.executionId
+        ?? source.executionID
+        ?? source.id
+        ?? ""
+    );
+    const canRollbackValue = source.canRollback
+        ?? source.rollbackAvailable
+        ?? source.rollbackable;
+    return {
+        executionId,
+        displayId: String(source.executionId ?? source.id ?? source.planId ?? fallbackIndex + 1),
+        planId: String(source.planId ?? ""),
+        origin: inferEventOrigin(source),
+        goal: String(source.goal ?? source.title ?? source.message ?? "未命名执行"),
+        message: String(source.message ?? source.summary ?? ""),
+        status,
+        createdAt: String(source.createdAt ?? source.finishedAt ?? source.timestamp ?? source.time ?? ""),
+        canRollback: typeof canRollbackValue === "boolean"
+            ? canRollbackValue
+            : ["COMPLETED", "SUCCESS", "SUCCEEDED", "PARTIAL"].includes(status),
+        rollbackDisabledReason: String(
+            source.rollbackDisabledReason
+            ?? source.rollbackMessage
+            ?? ""
+        )
     };
 }
 

@@ -7,6 +7,7 @@ import java.time.Instant;
  *
  * @param seq 单调递增序号
  * @param type 事件类型
+ * @param origin 事件来源
  * @param planId 计划 ID
  * @param stepId 步骤 ID，可为空
  * @param moduleId 模块 ID，可为空
@@ -18,6 +19,7 @@ import java.time.Instant;
 public record ExecutionEvent(
         long seq,
         String type,
+        String origin,
         String planId,
         String stepId,
         String moduleId,
@@ -26,4 +28,18 @@ public record ExecutionEvent(
         String message,
         Instant timestamp
 ) {
+    public ExecutionEvent withOrigin(String value) {
+        return new ExecutionEvent(
+                seq,
+                type,
+                value,
+                planId,
+                stepId,
+                moduleId,
+                actionId,
+                status,
+                message,
+                timestamp
+        );
+    }
 }

@@ -1,0 +1,22 @@
+{
+  "confirmed": true,
+  "actions": [
+    {
+      "moduleId": "module_fs",
+      "actionId": "fs.mkdir",
+      "arguments": {
+        "path": "contract-smoke"
+      }
+    },
+    {
+      "moduleId": "module_fs",
+      "actionId": "fs.list",
+      "arguments": {
+        "path": {
+          "$fromAction": 0,
+          "path": ["output", "path"]
+        }
+      }
+    }
+  ]
+}

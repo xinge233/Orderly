@@ -35,6 +35,7 @@ class ModuleFolderServiceTest {
         assertThat(opened.get()).isEqualTo(source.toAbsolutePath().normalize());
         verify(journal).append(
                 eq("MODULE_CONTROL"),
+                eq("MODULE_CONTROL"),
                 isNull(),
                 isNull(),
                 isNull(),

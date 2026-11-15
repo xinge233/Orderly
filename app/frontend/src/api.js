@@ -187,8 +187,32 @@ export class OrderlyApi {
         return this.request("/api/runs", options);
     }
 
+    getExecutions(options) {
+        return this.request("/api/executions", options);
+    }
+
+    rollbackExecution(executionId, options = {}) {
+        return this.request(`/api/executions/${encodeURIComponent(executionId)}/rollback`, {
+            ...options,
+            method: "POST",
+            body: {}
+        });
+    }
+
     getEvents(options) {
         return this.request("/api/events", options);
+    }
+
+    getSystemFeatures(options) {
+        return this.request("/api/system/features", options);
+    }
+
+    setPlanningEnabled(enabled, options = {}) {
+        return this.request("/api/system/features/planning", {
+            ...options,
+            method: "PUT",
+            body: { enabled }
+        });
     }
 
     draftPlan(goal, options = {}) {

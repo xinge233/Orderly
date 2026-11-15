@@ -59,6 +59,7 @@ public class ModuleControlService {
             preferences.setEnabled(moduleId, enabled);
             journal.append(
                     "MODULE_CONTROL",
+                    "MODULE_CONTROL",
                     null,
                     null,
                     moduleId,
@@ -82,6 +83,7 @@ public class ModuleControlService {
             preferences.updateSidebarOrder(moduleIds);
             journal.append(
                     "MODULE_CONTROL",
+                    "MODULE_CONTROL",
                     null,
                     null,
                     null,
@@ -97,6 +99,7 @@ public class ModuleControlService {
         return coordinator.mutate(() -> {
             preferences.updateManagementOrder(moduleIds);
             journal.append(
+                    "MODULE_CONTROL",
                     "MODULE_CONTROL",
                     null,
                     null,
@@ -115,6 +118,7 @@ public class ModuleControlService {
             Map<String, Object> saved = preferences.updateSettings(moduleId, settings);
             journal.append(
                     "MODULE_CONTROL",
+                    "MODULE_CONTROL",
                     null,
                     null,
                     moduleId,
@@ -131,6 +135,7 @@ public class ModuleControlService {
         return coordinator.mutate(() -> {
             Map<String, Object> defaults = preferences.resetSettings(moduleId);
             journal.append(
+                    "MODULE_CONTROL",
                     "MODULE_CONTROL",
                     null,
                     null,
