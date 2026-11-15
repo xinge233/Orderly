@@ -80,6 +80,8 @@
 
     <div class="sidebar-count-layer" id="sidebar-count-layer" aria-hidden="true"></div>
 
+    <span class="ai-snap-target" id="ai-snap-target" aria-hidden="true"></span>
+
     <section
         class="ai-dock"
         id="ai-dock"
@@ -88,11 +90,20 @@
         data-motion-state="collapsed"
         data-motion-phase="active"
         data-mode="collapsed"
+        data-anchor="default"
+        data-composer="closed"
         data-panel="closed"
         data-popover="closed"
+        data-dragging="false"
         data-demo="true"
     >
-        <button class="ai-launcher" id="ai-launcher" type="button" aria-label="打开 AI 对话">
+        <button
+            class="ai-launcher"
+            id="ai-launcher"
+            type="button"
+            aria-label="打开 AI 对话；可拖动调整位置"
+            title="单击打开 AI 对话，拖动调整位置"
+        >
             <span class="ai-launcher__ring" aria-hidden="true"></span>
             <span class="ai-launcher__icon" id="ai-launcher-icon" data-icon="spark" aria-hidden="true"></span>
             <span class="ai-launcher__status" aria-hidden="true"></span>

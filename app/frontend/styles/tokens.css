@@ -39,11 +39,13 @@
         --sidebar-expanded-width: 272px;
         --sidebar-row-height: 48px;
         --sidebar-icon-size: 40px;
-        --ai-plan-width: 220px;
-        --ai-launcher-size: 44px;
-        --ai-composer-height: 44px;
-        --ai-action-height: 30px;
-        --ai-composer-radius: 12px;
+        --ai-plan-width: 288px;
+        --ai-launcher-size: 58px;
+        --ai-composer-width: 860px;
+        --ai-composer-free-width: 720px;
+        --ai-composer-height: 68px;
+        --ai-action-height: 32px;
+        --ai-composer-radius: 14px;
         --mobile-toolbar-height: 54px;
         --content-max: 1520px;
         --space-1: 4px;
@@ -69,7 +71,7 @@
         --duration-normal: 240ms;
         --duration-slow: 520ms;
         --duration-sidebar: 200ms;
-        --duration-ai-call: 620ms;
+        --duration-ai-call: 280ms;
         --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
         --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
     }
@@ -79,7 +81,7 @@
         --duration-normal: 110ms;
         --duration-slow: 150ms;
         --duration-sidebar: 110ms;
-        --duration-ai-call: 420ms;
+        --duration-ai-call: 180ms;
     }
 
     html[data-motion="none"] {

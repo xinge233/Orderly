@@ -629,12 +629,12 @@ test("desktop sidebar motion is clip-path-only and mobile keeps transform", asyn
     }
 });
 
-test("AI composer clears the expanded 272px sidebar between 821px and 1080px", async () => {
+test("AI composer stays anchored to the draggable dock instead of the sidebar", async () => {
     const appCss = await read("../styles/app.css");
     const desktopRule = between(
         appCss,
         ".ai-composer {",
-        ".ai-dock[data-mode=\"composing\"] .ai-composer {"
+        ".ai-dock[data-composer=\"open\"] .ai-composer {"
     );
     const compactRule = between(
         appCss,
@@ -644,10 +644,9 @@ test("AI composer clears the expanded 272px sidebar between 821px and 1080px", a
 
     assert.match(
         desktopRule,
-        /left:\s*calc\(var\(--sidebar-width\) \+ var\(--space-4\)\);/
+        /right:\s*0;/
     );
-    assert.match(
-        compactRule,
-        /left:\s*calc\(var\(--sidebar-width\) \+ var\(--space-3\)\);/
-    );
+    assert.match(desktopRule, /width:\s*min\(var\(--ai-composer-current-width\)/);
+    assert.doesNotMatch(desktopRule, /left:\s*calc/);
+    assert.doesNotMatch(compactRule, /\.ai-composer\s*\{[\s\S]*?left:/);
 });

@@ -14,8 +14,89 @@ const AI_RISK_LABEL = Object.freeze({
 
 const AI_PROGRESS_HIDE_DELAY_MS = 140;
 const AI_RUNNING_LEAVE_DELAY_MS = 120;
-const AI_COMPLETION_HOLD_MS = 2800;
-const AI_STEP_GAP_MS = 220;
+const AI_COMPLETION_HOLD_MS = 4000;
+const AI_STEP_GAP_MS = 120;
+const AI_DRAG_THRESHOLD_PX = 6;
+const AI_SNAP_DISTANCE_PX = 76;
+const AI_POSITION_STORAGE_KEY = "orderly.ai.dock.position.v1";
+const AI_VIEWPORT_MARGIN_PX = 12;
+
+export function resolveAiSurfaceLayout({
+    dockLeft,
+    dockTop,
+    dockWidth = 58,
+    dockHeight = 58,
+    viewportWidth,
+    viewportHeight,
+    margin = AI_VIEWPORT_MARGIN_PX,
+    gap = 12,
+    composerWidth = 720,
+    composerHeight = 68,
+    planWidth = 288,
+    planContentHeight = 420,
+    composerOpen = true
+}) {
+    const safeWidth = Math.max(1, viewportWidth - (margin * 2));
+    const dockRight = dockLeft + dockWidth;
+    const spaceOnRight = Math.max(0, viewportWidth - margin - dockLeft);
+    const spaceOnLeft = Math.max(0, dockRight - margin);
+    const horizontal = spaceOnRight >= spaceOnLeft ? "right" : "left";
+    const availableWidth = Math.max(
+        1,
+        Math.min(safeWidth, horizontal === "right" ? spaceOnRight : spaceOnLeft)
+    );
+    const resolvedComposerWidth = Math.min(composerWidth, availableWidth);
+    const resolvedPlanWidth = Math.min(planWidth, availableWidth);
+
+    const composerReserve = composerOpen ? composerHeight + gap : 0;
+    const spaceAbove = Math.max(
+        0,
+        dockTop - margin - gap - composerReserve
+    );
+    const spaceBelow = Math.max(
+        0,
+        viewportHeight - margin - dockTop - dockHeight - gap - composerReserve
+    );
+    const vertical = spaceAbove >= spaceBelow ? "above" : "below";
+    const maxPlanHeight = Math.max(
+        0,
+        Math.min(viewportHeight * 0.64, vertical === "above" ? spaceAbove : spaceBelow)
+    );
+    const visiblePlanHeight = Math.min(planContentHeight, maxPlanHeight);
+    const horizontalBox = (width) => horizontal === "right"
+        ? { left: dockLeft, right: dockLeft + width }
+        : { left: dockRight - width, right: dockRight };
+    const composerHorizontalBox = horizontalBox(resolvedComposerWidth);
+    const planHorizontalBox = horizontalBox(resolvedPlanWidth);
+    const composerTop = vertical === "above"
+        ? dockTop - gap - composerHeight
+        : dockTop + dockHeight + gap;
+    const composerBottom = composerTop + composerHeight;
+    const planTop = vertical === "above"
+        ? composerTop - gap - visiblePlanHeight
+        : composerBottom + gap;
+    const planBottom = planTop + visiblePlanHeight;
+
+    return {
+        horizontal,
+        vertical,
+        availableWidth,
+        composerWidth: resolvedComposerWidth,
+        composerHeight,
+        planWidth: resolvedPlanWidth,
+        maxPlanHeight,
+        composerBox: {
+            ...composerHorizontalBox,
+            top: composerTop,
+            bottom: composerBottom
+        },
+        planBox: {
+            ...planHorizontalBox,
+            top: planTop,
+            bottom: planBottom
+        }
+    };
+}
 
 /**
  * 选择更高的风险等级。
@@ -100,6 +181,7 @@ export function mountAiDialog({
         composerForm: dock.querySelector("#ai-composer-form"),
         composerInput: dock.querySelector("#ai-composer-input"),
         composerClose: dock.querySelector("#ai-composer-close"),
+        composerSend: dock.querySelector("#ai-send-button"),
         plan: dock.querySelector("#ai-plan-panel"),
         planClose: dock.querySelector("#ai-plan-close"),
         planTitle: dock.querySelector("#ai-plan-title"),
@@ -108,7 +190,8 @@ export function mountAiDialog({
         run: dock.querySelector("#ai-run-button"),
         progress: dock.querySelector("#ai-progress-popover"),
         progressTitle: dock.querySelector("#ai-progress-title"),
-        progressList: dock.querySelector("#ai-progress-list")
+        progressList: dock.querySelector("#ai-progress-list"),
+        snapTarget: document.querySelector("#ai-snap-target")
     };
     const missing = Object.entries(nodes).find(([, node]) => !node);
     if (missing) {
@@ -118,15 +201,20 @@ export function mountAiDialog({
     const timers = new Set();
     const invocationCleanups = new Set();
     const dialog = {
-        enabled: false,
+        enabled: true,
         mode: "collapsed",
+        composerOpen: false,
         panelOpen: false,
         popoverOpen: false,
         plan: null,
         runGeneration: 0,
         popoverTimer: null,
         collapseTimer: null,
-        completionTimer: null
+        completionTimer: null,
+        drag: null,
+        dragging: false,
+        suppressClickUntil: 0,
+        position: null
     };
 
     function later(callback, delay) {
@@ -164,17 +252,195 @@ export function mountAiDialog({
         callLayer.replaceChildren();
     }
 
+    function clamp(value, minimum, maximum) {
+        return Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
+    }
+
+    function cssPixels(value, fallback) {
+        const parsed = Number.parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function readStoredPosition() {
+        try {
+            const raw = window.localStorage.getItem(AI_POSITION_STORAGE_KEY);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!Number.isFinite(parsed?.x) || !Number.isFinite(parsed?.y)) {
+                return null;
+            }
+            return { x: parsed.x, y: parsed.y };
+        } catch {
+            return null;
+        }
+    }
+
+    function storePosition(position) {
+        try {
+            window.localStorage.setItem(
+                AI_POSITION_STORAGE_KEY,
+                JSON.stringify(position)
+            );
+        } catch {
+            // 本地存储不可用时仍允许本次会话拖动。
+        }
+    }
+
+    function clearStoredPosition() {
+        try {
+            window.localStorage.removeItem(AI_POSITION_STORAGE_KEY);
+        } catch {
+            // 本地存储不可用不影响吸附回默认位置。
+        }
+    }
+
+    function updateExpandedGeometry() {
+        const rect = dock.getBoundingClientRect();
+        if (!rect.width || !rect.height) {
+            return;
+        }
+        const free = dock.dataset.anchor === "free";
+        const style = getComputedStyle(dock);
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const baseComposerWidth = cssPixels(
+            style.getPropertyValue(free ? "--ai-composer-free-width" : "--ai-composer-width"),
+            free ? 720 : 860
+        );
+        const basePlanWidth = cssPixels(
+            style.getPropertyValue("--ai-plan-width"),
+            288
+        );
+        const composerHeight = nodes.composerForm.offsetHeight
+            || cssPixels(style.getPropertyValue("--ai-composer-height"), 68);
+        const gap = cssPixels(style.getPropertyValue("--space-3"), 12);
+        const layout = resolveAiSurfaceLayout({
+            dockLeft: rect.left,
+            dockTop: rect.top,
+            dockWidth: rect.width,
+            dockHeight: rect.height,
+            viewportWidth,
+            viewportHeight,
+            margin: AI_VIEWPORT_MARGIN_PX,
+            gap,
+            composerWidth: baseComposerWidth,
+            composerHeight,
+            planWidth: basePlanWidth,
+            planContentHeight: nodes.plan.scrollHeight || 420,
+            composerOpen: dialog.composerOpen
+        });
+        dock.dataset.surfaceX = layout.horizontal;
+        dock.dataset.surfaceY = layout.vertical;
+        dock.style.setProperty(
+            "--ai-composer-current-width",
+            `${layout.composerWidth}px`
+        );
+        nodes.plan.style.width = `${layout.planWidth}px`;
+        nodes.plan.style.maxHeight = `${layout.maxPlanHeight}px`;
+        nodes.progress.style.width = `${Math.min(280, layout.availableWidth)}px`;
+
+        const horizontalAxis = layout.horizontal === "right"
+            ? { left: "0px", right: "auto" }
+            : { left: "auto", right: "0px" };
+        const placeSurface = (node, offset) => {
+            node.style.left = horizontalAxis.left;
+            node.style.right = horizontalAxis.right;
+            if (layout.vertical === "above") {
+                node.style.top = "auto";
+                node.style.bottom = `${offset}px`;
+            } else {
+                node.style.top = `${offset}px`;
+                node.style.bottom = "auto";
+            }
+            node.style.transformOrigin = `${
+                layout.horizontal === "right" ? "left" : "right"
+            } ${layout.vertical === "above" ? "bottom" : "top"}`;
+        };
+        const composerOffset = rect.height + gap;
+        const planOffset = composerOffset
+            + (dialog.composerOpen ? composerHeight + gap : 0);
+        placeSurface(nodes.composer, composerOffset);
+        placeSurface(nodes.plan, planOffset);
+        placeSurface(nodes.progress, planOffset);
+    }
+
+    function setFreePosition(x, y, { persist = false } = {}) {
+        const rect = dock.getBoundingClientRect();
+        const width = rect.width || 58;
+        const height = rect.height || 58;
+        const position = {
+            x: clamp(x, AI_VIEWPORT_MARGIN_PX, window.innerWidth - width - AI_VIEWPORT_MARGIN_PX),
+            y: clamp(y, AI_VIEWPORT_MARGIN_PX, window.innerHeight - height - AI_VIEWPORT_MARGIN_PX)
+        };
+        dock.dataset.anchor = "free";
+        dock.style.setProperty("--ai-dock-left", `${position.x}px`);
+        dock.style.setProperty("--ai-dock-top", `${position.y}px`);
+        dialog.position = position;
+        if (persist) {
+            storePosition(position);
+        }
+        updateExpandedGeometry();
+    }
+
+    function resetToDefaultAnchor() {
+        dock.dataset.anchor = "default";
+        dock.style.removeProperty("--ai-dock-left");
+        dock.style.removeProperty("--ai-dock-top");
+        dialog.position = null;
+        clearStoredPosition();
+        updateExpandedGeometry();
+    }
+
+    function restoreStoredPosition() {
+        const position = readStoredPosition();
+        if (position) {
+            setFreePosition(position.x, position.y);
+        } else {
+            resetToDefaultAnchor();
+        }
+    }
+
+    function defaultSnapCenter() {
+        const rect = nodes.snapTarget.getBoundingClientRect();
+        return {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2
+        };
+    }
+
+    function defaultSnapDistance() {
+        const rect = dock.getBoundingClientRect();
+        const center = defaultSnapCenter();
+        const dockCenter = {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2
+        };
+        return Math.hypot(dockCenter.x - center.x, dockCenter.y - center.y);
+    }
+
+    function isNearDefaultSnap() {
+        return defaultSnapDistance() <= AI_SNAP_DISTANCE_PX;
+    }
+
+    function setSnapTargetState(visible, near = false) {
+        nodes.snapTarget.dataset.visible = String(visible);
+        nodes.snapTarget.dataset.near = String(visible && near);
+    }
+
     function updateSurfaces() {
-        const composerOpen = dialog.mode === "composing";
+        const composerOpen = dialog.composerOpen;
         const planOpen = dialog.panelOpen
             && ["planning", "running", "completed"].includes(dialog.mode);
-        const launcherVisible = !composerOpen && !planOpen;
+        const launcherVisible = true;
         const running = dialog.mode === "running";
         const completed = dialog.mode === "completed";
+        const busy = ["planning", "running", "completed"].includes(dialog.mode);
 
         dock.dataset.mode = dialog.mode;
+        dock.dataset.composer = composerOpen ? "open" : "closed";
         dock.dataset.panel = planOpen ? "open" : "closed";
         dock.dataset.popover = dialog.popoverOpen ? "open" : "closed";
+        dock.dataset.dragging = dialog.dragging ? "true" : "false";
         dock.dataset.demo = "true";
 
         nodes.composer.setAttribute("aria-hidden", String(!composerOpen));
@@ -183,7 +449,10 @@ export function mountAiDialog({
         nodes.plan.inert = !planOpen;
         nodes.launcher.setAttribute("aria-hidden", String(!launcherVisible));
         nodes.launcher.inert = !launcherVisible;
-        nodes.launcher.setAttribute("aria-expanded", String(planOpen));
+        nodes.launcher.setAttribute("aria-expanded", String(composerOpen || planOpen));
+        nodes.composerInput.disabled = busy;
+        nodes.composerSend.disabled = busy;
+        nodes.composerInput.setAttribute("aria-busy", String(busy));
         nodes.progress.setAttribute("aria-hidden", String(!dialog.popoverOpen));
 
         nodes.launcher.dataset.status = running
@@ -193,15 +462,15 @@ export function mountAiDialog({
                 : "idle";
         nodes.launcherIcon.innerHTML = icon(
             completed ? "check-plain" : running ? "spark" : "spark",
-            21
+            26
         );
         nodes.launcher.setAttribute(
             "aria-label",
             running
-                ? "AI 界面演示正在运行，查看执行进度"
+                ? "AI 界面演示正在运行，可拖动调整位置"
                 : completed
-                    ? "AI 界面演示已完成，查看完整计划"
-                    : "打开 AI 对话"
+                    ? "AI 界面演示已完成，点击开始新对话"
+                    : "打开 AI 对话；可拖动调整位置"
         );
         nodes.planClose.setAttribute(
             "aria-label",
@@ -209,6 +478,7 @@ export function mountAiDialog({
         );
         nodes.run.disabled = dialog.mode === "running" || !dialog.plan;
         nodes.run.innerHTML = `${icon("check-plain", 15)}<span>执行</span>`;
+        updateExpandedGeometry();
     }
 
     function riskLabel(risk) {
@@ -316,8 +586,14 @@ export function mountAiDialog({
         updateSurfaces();
     }
 
-    function setMode(mode, { panelOpen = false, focus = null } = {}) {
+    function setState({
+        mode = dialog.mode,
+        composerOpen = dialog.composerOpen,
+        panelOpen = dialog.panelOpen,
+        focus = null
+    } = {}) {
         dialog.mode = mode;
+        dialog.composerOpen = composerOpen;
         dialog.panelOpen = panelOpen;
         if (!["running", "completed"].includes(mode)) {
             dialog.popoverOpen = false;
@@ -338,40 +614,59 @@ export function mountAiDialog({
         clearInvocationLayer();
     }
 
-    function collapseAndReset() {
+    function collapseAndReset({ focusLauncher = true } = {}) {
         clearPlan();
         dialog.popoverOpen = false;
-        setMode("collapsed", { panelOpen: false });
-        window.requestAnimationFrame(() => nodes.launcher.focus({ preventScroll: true }));
+        nodes.composerInput.value = "";
+        setState({
+            mode: "collapsed",
+            composerOpen: false,
+            panelOpen: false
+        });
+        if (focusLauncher) {
+            window.requestAnimationFrame(() => nodes.launcher.focus({ preventScroll: true }));
+        }
     }
 
-    function collapseKeepingRun() {
-        if (!["planning", "running", "completed"].includes(dialog.mode)) {
-            return;
-        }
-        if (dialog.mode === "planning") {
-            collapseAndReset();
+    function collapsePlanOnly({ focusLauncher = false } = {}) {
+        if (!dialog.panelOpen) {
             return;
         }
         dialog.popoverOpen = false;
-        setMode(dialog.mode, { panelOpen: false });
-        window.requestAnimationFrame(() => nodes.launcher.focus({ preventScroll: true }));
+        setState({
+            mode: dialog.mode,
+            composerOpen: dialog.composerOpen,
+            panelOpen: false
+        });
+        if (focusLauncher) {
+            window.requestAnimationFrame(() => nodes.launcher.focus({ preventScroll: true }));
+        }
     }
 
     function openComposer() {
         if (!dialog.enabled) return;
         clearPlan();
         dialog.popoverOpen = false;
-        setMode("composing", { panelOpen: false, focus: nodes.composerInput });
+        setState({
+            mode: "composing",
+            composerOpen: true,
+            panelOpen: false,
+            focus: nodes.composerInput
+        });
     }
 
     function showPlanPanel() {
-        if (!dialog.plan || !["running", "completed"].includes(dialog.mode)) {
+        if (!dialog.plan || !["planning", "running", "completed"].includes(dialog.mode)) {
             return;
         }
         clearLater(dialog.collapseTimer);
         dialog.collapseTimer = null;
-        setMode(dialog.mode, { panelOpen: true, focus: nodes.planClose });
+        setState({
+            mode: dialog.mode,
+            composerOpen: true,
+            panelOpen: true,
+            focus: nodes.planClose
+        });
     }
 
     function scheduleRunningCollapse() {
@@ -381,7 +676,7 @@ export function mountAiDialog({
             if (dialog.mode === "running" && dialog.panelOpen
                 && !dock.matches(":hover")
                 && !dock.contains(document.activeElement)) {
-                collapseKeepingRun();
+                collapsePlanOnly({ focusLauncher: true });
             }
         }, AI_RUNNING_LEAVE_DELAY_MS);
     }
@@ -413,7 +708,12 @@ export function mountAiDialog({
         dialog.runGeneration += 1;
         clearInvocationLayer();
         dialog.plan = createAiDemoPlan(goal, getModules());
-        setMode("planning", { panelOpen: true, focus: nodes.run });
+        setState({
+            mode: "planning",
+            composerOpen: true,
+            panelOpen: true,
+            focus: nodes.run
+        });
     }
 
     function parseCssDuration(value, fallback) {
@@ -490,42 +790,53 @@ export function mountAiDialog({
         };
         const dx = destination.x - origin.x;
         const dy = destination.y - origin.y;
-        const distance = Math.hypot(dx, dy);
         const angle = Math.atan2(dy, dx);
-        const route = document.createElement("span");
-        route.className = "ai-call-route";
-        route.style.left = `${origin.x}px`;
-        route.style.top = `${origin.y}px`;
-        route.style.width = `${distance}px`;
-        route.style.transform = `rotate(${angle}rad)`;
 
         const dot = document.createElement("span");
         dot.className = "ai-call-dot";
         dot.style.left = `${origin.x}px`;
         dot.style.top = `${origin.y}px`;
-        callLayer.append(route, dot);
+        callLayer.append(dot);
         target.classList.add("is-ai-invocation-target");
 
         const duration = parseCssDuration(
             getComputedStyle(dock).getPropertyValue("--duration-ai-call"),
-            620
+            280
         );
         let animation = null;
         if (duration > 0 && typeof dot.animate === "function") {
             animation = dot.animate(
                 [
-                    { transform: "translate3d(0, 0, 0)", opacity: 0.55 },
-                    { transform: `translate3d(${dx}px, ${dy}px, 0)`, opacity: 1 }
+                    {
+                        transform: `translate3d(0, 0, 0) rotate(${angle}rad) scaleX(1)`,
+                        opacity: 0.55,
+                        offset: 0
+                    },
+                    {
+                        transform: `translate3d(${dx * 0.24}px, ${dy * 0.24}px, 0) rotate(${angle}rad) scaleX(1.45)`,
+                        opacity: 0.72,
+                        offset: 0.5
+                    },
+                    {
+                        transform: `translate3d(${dx * 0.7}px, ${dy * 0.7}px, 0) rotate(${angle}rad) scaleX(1.9)`,
+                        opacity: 0.9,
+                        offset: 0.8
+                    },
+                    {
+                        transform: `translate3d(${dx}px, ${dy}px, 0) rotate(${angle}rad) scaleX(2.15)`,
+                        opacity: 1,
+                        offset: 1
+                    }
                 ],
                 {
                     duration,
-                    easing: "linear",
+                    easing: "cubic-bezier(0.32, 0, 0.95, 0.2)",
                     fill: "forwards"
                 }
             );
             await animation.finished.catch(() => {});
         } else {
-            dot.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
+            dot.style.transform = `translate3d(${dx}px, ${dy}px, 0) rotate(${angle}rad) scaleX(2.15)`;
         }
 
         let cleaned = false;
@@ -534,12 +845,11 @@ export function mountAiDialog({
             cleaned = true;
             animation?.cancel();
             target.classList.remove("is-ai-invocation-target");
-            route.remove();
             dot.remove();
             invocationCleanups.delete(cleanup);
         };
         invocationCleanups.add(cleanup);
-        later(cleanup, 220);
+        later(cleanup, 160);
         return true;
     }
 
@@ -553,7 +863,11 @@ export function mountAiDialog({
         dialog.plan.actions.forEach((action) => {
             action.status = "pending";
         });
-        setMode("running", { panelOpen: true });
+        setState({
+            mode: "running",
+            composerOpen: true,
+            panelOpen: true
+        });
 
         for (const action of dialog.plan.actions) {
             if (generation !== dialog.runGeneration) return;
@@ -568,6 +882,7 @@ export function mountAiDialog({
 
         if (generation !== dialog.runGeneration) return;
         dialog.mode = "completed";
+        dialog.composerOpen = true;
         dialog.panelOpen = true;
         renderAll();
         onNotice("界面演示完成，未执行真实 AI 或模块动作。");
@@ -575,7 +890,7 @@ export function mountAiDialog({
         dialog.completionTimer = later(() => {
             dialog.completionTimer = null;
             if (dialog.mode === "completed") {
-                collapseKeepingRun();
+                collapseAndReset({ focusLauncher: false });
             }
         }, AI_COMPLETION_HOLD_MS);
     }
@@ -585,26 +900,46 @@ export function mountAiDialog({
         if (!dialog.enabled) {
             clearPlan();
             dialog.popoverOpen = false;
-            setMode("collapsed", { panelOpen: false });
+            setState({
+                mode: "collapsed",
+                composerOpen: false,
+                panelOpen: false
+            });
         }
     }
 
     function reset() {
         clearPlan();
         dialog.popoverOpen = false;
-        setMode("collapsed", { panelOpen: false });
+        setState({
+            mode: "collapsed",
+            composerOpen: false,
+            panelOpen: false
+        });
     }
 
     function onLauncherClick() {
-        if (dialog.mode === "running" || dialog.mode === "completed") {
+        if (Date.now() < dialog.suppressClickUntil || dialog.dragging) {
+            return;
+        }
+        if (dialog.mode === "completed") {
+            collapseAndReset({ focusLauncher: false });
+            openComposer();
+            return;
+        }
+        if (dialog.mode === "running" || dialog.mode === "planning") {
             showPlanPanel();
+            return;
+        }
+        if (dialog.composerOpen) {
+            nodes.composerInput.focus({ preventScroll: true });
             return;
         }
         openComposer();
     }
 
     function onPlanCloseClick() {
-        collapseKeepingRun();
+        collapsePlanOnly({ focusLauncher: true });
     }
 
     function onComposerSubmit(event) {
@@ -615,7 +950,11 @@ export function mountAiDialog({
     function onComposerKeyDown(event) {
         if (event.key === "Escape") {
             event.preventDefault();
-            collapseAndReset();
+            if (dialog.panelOpen) {
+                collapsePlanOnly({ focusLauncher: true });
+            } else {
+                collapseAndReset();
+            }
             return;
         }
         if (event.key === "Enter" && !event.shiftKey) {
@@ -628,14 +967,138 @@ export function mountAiDialog({
         if (event.key !== "Escape") return;
         if (dialog.mode === "collapsed") return;
         event.preventDefault();
-        if (dialog.mode === "composing" || dialog.mode === "planning") {
+        if (dialog.panelOpen) {
+            collapsePlanOnly({ focusLauncher: true });
+            return;
+        }
+        if (dialog.mode === "composing") {
             collapseAndReset();
-        } else {
-            collapseKeepingRun();
         }
     }
 
+    function collapseSurfacesForDrag() {
+        if (!dialog.composerOpen && !dialog.panelOpen) {
+            return;
+        }
+        dialog.composerOpen = false;
+        dialog.panelOpen = false;
+        dialog.popoverOpen = false;
+        if (dialog.mode === "composing") {
+            dialog.mode = "collapsed";
+        }
+        renderAll();
+    }
+
+    function onLauncherPointerDown(event) {
+        if (event.button !== 0 || !dialog.enabled) return;
+        const rect = dock.getBoundingClientRect();
+        dialog.drag = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            originX: rect.left,
+            originY: rect.top,
+            started: false
+        };
+        try {
+            nodes.launcher.setPointerCapture?.(event.pointerId);
+        } catch {
+            // 合成事件或已结束的指针仍可通过页面坐标完成拖动。
+        }
+    }
+
+    function onLauncherPointerMove(event) {
+        const drag = dialog.drag;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        const dx = event.clientX - drag.startX;
+        const dy = event.clientY - drag.startY;
+        if (!drag.started
+            && Math.hypot(dx, dy) < AI_DRAG_THRESHOLD_PX) {
+            return;
+        }
+        if (!drag.started) {
+            drag.started = true;
+            dialog.dragging = true;
+            collapseSurfacesForDrag();
+            setSnapTargetState(true, false);
+            setFreePosition(drag.originX, drag.originY);
+        }
+        event.preventDefault();
+        setFreePosition(drag.originX + dx, drag.originY + dy);
+        setSnapTargetState(true, isNearDefaultSnap());
+    }
+
+    function finishLauncherDrag(event) {
+        const drag = dialog.drag;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        if (drag.started) {
+            if (isNearDefaultSnap()) {
+                resetToDefaultAnchor();
+            } else if (dialog.position) {
+                setFreePosition(
+                    dialog.position.x,
+                    dialog.position.y,
+                    { persist: true }
+                );
+            }
+            dialog.suppressClickUntil = Date.now() + 250;
+        }
+        dialog.dragging = false;
+        dialog.drag = null;
+        dock.dataset.dragging = "false";
+        setSnapTargetState(false, false);
+        if (nodes.launcher.hasPointerCapture?.(event.pointerId)) {
+            try {
+                nodes.launcher.releasePointerCapture(event.pointerId);
+            } catch {
+                // 指针捕获可能已由浏览器自动释放。
+            }
+        }
+    }
+
+    function onLauncherKeyDown(event) {
+        if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+            return;
+        }
+        event.preventDefault();
+        const previousDistance = defaultSnapDistance();
+        const rect = dock.getBoundingClientRect();
+        const step = event.shiftKey ? 4 : 16;
+        const offset = {
+            ArrowLeft: [-step, 0],
+            ArrowRight: [step, 0],
+            ArrowUp: [0, -step],
+            ArrowDown: [0, step]
+        }[event.key];
+        collapseSurfacesForDrag();
+        setFreePosition(rect.left + offset[0], rect.top + offset[1], { persist: true });
+        const nextDistance = defaultSnapDistance();
+        if (nextDistance <= AI_SNAP_DISTANCE_PX && nextDistance < previousDistance) {
+            resetToDefaultAnchor();
+        }
+    }
+
+    function onDocumentPointerDown(event) {
+        if (!dialog.panelOpen || dock.contains(event.target)) {
+            return;
+        }
+        collapsePlanOnly();
+    }
+
+    function onWindowResize() {
+        if (!dialog.position) {
+            updateExpandedGeometry();
+            return;
+        }
+        setFreePosition(dialog.position.x, dialog.position.y, { persist: true });
+    }
+
     nodes.launcher.addEventListener("click", onLauncherClick);
+    nodes.launcher.addEventListener("pointerdown", onLauncherPointerDown);
+    nodes.launcher.addEventListener("pointermove", onLauncherPointerMove);
+    nodes.launcher.addEventListener("pointerup", finishLauncherDrag);
+    nodes.launcher.addEventListener("pointercancel", finishLauncherDrag);
+    nodes.launcher.addEventListener("keydown", onLauncherKeyDown);
     nodes.launcher.addEventListener("pointerenter", showProgressPopover);
     nodes.launcher.addEventListener("pointerleave", hideProgressPopover);
     nodes.launcher.addEventListener("focus", showProgressPopover);
@@ -664,13 +1127,20 @@ export function mountAiDialog({
     });
     nodes.run.addEventListener("click", () => void runDemoPlan());
     dock.addEventListener("keydown", onDockKeyDown);
+    document.addEventListener("pointerdown", onDocumentPointerDown);
+    window.addEventListener("resize", onWindowResize);
 
     const stop = () => {
         clearAllTimers();
         clearInvocationLayer();
     };
     window.addEventListener("pagehide", stop, { once: true });
-    setMode("collapsed", { panelOpen: false });
+    restoreStoredPosition();
+    setState({
+        mode: "collapsed",
+        composerOpen: false,
+        panelOpen: false
+    });
 
     return {
         setEnabled,
@@ -688,6 +1158,8 @@ export function mountAiDialog({
             dialog.runGeneration += 1;
             stop();
             window.removeEventListener("pagehide", stop);
+            window.removeEventListener("resize", onWindowResize);
+            document.removeEventListener("pointerdown", onDocumentPointerDown);
         }
     };
 }

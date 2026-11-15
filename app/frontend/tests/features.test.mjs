@@ -128,8 +128,8 @@ test("frontend gates plan surfaces with host state and keeps history independent
 
     assert.match(app, /const HISTORY_VIEWS = new Set\(\["timeline", "summary"\]\);/);
     assert.match(applyFeature, /document\.documentElement\.dataset\.planning/);
-    assert.match(applyFeature, /dialogRoot\.hidden = !next;/);
-    assert.match(applyFeature, /dialogRoot\.inert = !next;/);
+    assert.doesNotMatch(applyFeature, /#ai-dock|aiDialog/);
+    assert.doesNotMatch(app, /aiDialog\?\.setEnabled/);
     assert.match(overview, /const planningRegions = state\.planningEnabled/);
     assert.match(overview, /data-planning-region="plan"/);
     assert.match(overview, /data-planning-region="execution"/);

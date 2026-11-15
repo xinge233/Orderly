@@ -220,17 +220,6 @@ function applyPlanningFeatureState(enabled, { render = true, resetPlan = true } 
     const next = enabled === true;
     state.planningEnabled = next;
     document.documentElement.dataset.planning = next ? "enabled" : "disabled";
-    const dialogRoot = document.querySelector("#ai-dock");
-    if (dialogRoot) {
-        dialogRoot.hidden = !next;
-        dialogRoot.inert = !next;
-        dialogRoot.setAttribute("aria-hidden", String(!next));
-        if (!next) {
-            dialogRoot.dataset.motionState = "collapsed";
-            dialogRoot.dataset.motionPhase = "idle";
-        }
-    }
-    aiDialog?.setEnabled(next);
     if (!next && resetPlan) {
         state.plan = null;
         state.planBusy = false;
