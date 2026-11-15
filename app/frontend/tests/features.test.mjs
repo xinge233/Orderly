@@ -128,11 +128,18 @@ test("frontend gates plan surfaces with host state and keeps history independent
 
     assert.match(app, /const HISTORY_VIEWS = new Set\(\["timeline", "summary"\]\);/);
     assert.match(applyFeature, /document\.documentElement\.dataset\.planning/);
-    assert.match(applyFeature, /dock\.hidden = !next;/);
-    assert.match(applyFeature, /dock\.inert = !next;/);
+    assert.match(applyFeature, /dialogRoot\.hidden = !next;/);
+    assert.match(applyFeature, /dialogRoot\.inert = !next;/);
     assert.match(overview, /const planningRegions = state\.planningEnabled/);
     assert.match(overview, /data-planning-region="plan"/);
     assert.match(overview, /data-planning-region="execution"/);
+    assert.match(app, /input\.id = "plan-goal-input"/);
+    assert.match(app, /input\.setAttribute\("aria-label", "计划目标"\)/);
+    assert.match(app, /void draftGoal\(input\.value\)/);
+    const fillCommand = between(app, "function fillCommand", "function connectEventStream");
+    assert.match(fillCommand, /#plan-goal-input/);
+    assert.match(fillCommand, /navigate\("overview"\)/);
+    assert.doesNotMatch(fillCommand, /aiDialog/);
     assert.match(history, /Promise\.allSettled\(\[\s*api\.getExecutions\(\),\s*api\.getRuns\(\),\s*api\.getEvents\(\)/);
     assert.ok(history.indexOf("api.getExecutions()") < history.indexOf("api.getRuns()"));
     assert.match(settings, /api\.setPlanningEnabled\(enabled\)/);

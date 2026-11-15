@@ -451,7 +451,7 @@ test("module counts interpolate with parsed clip width through expansion and col
     );
     assert.ok(
         html.indexOf('id="sidebar-count-layer"')
-        < html.indexOf('class="command-dock"')
+        < html.indexOf('class="ai-dock"')
     );
     assert.match(
         html,
@@ -629,12 +629,12 @@ test("desktop sidebar motion is clip-path-only and mobile keeps transform", asyn
     }
 });
 
-test("command dock clears the expanded 272px sidebar between 821px and 1080px", async () => {
+test("AI composer clears the expanded 272px sidebar between 821px and 1080px", async () => {
     const appCss = await read("../styles/app.css");
     const desktopRule = between(
         appCss,
-        ".command-dock {",
-        ".command-dock__glow {"
+        ".ai-composer {",
+        ".ai-dock[data-mode=\"composing\"] .ai-composer {"
     );
     const compactRule = between(
         appCss,
@@ -644,10 +644,10 @@ test("command dock clears the expanded 272px sidebar between 821px and 1080px", 
 
     assert.match(
         desktopRule,
-        /width:\s*min\(620px, calc\(100vw - var\(--sidebar-width\) - 80px\)\);/
+        /left:\s*calc\(var\(--sidebar-width\) \+ var\(--space-4\)\);/
     );
     assert.match(
         compactRule,
-        /width:\s*clamp\(\s*320px,\s*calc\(100vw - var\(--sidebar-expanded-width\) - 48px\),\s*580px\s*\);/
+        /left:\s*calc\(var\(--sidebar-width\) \+ var\(--space-3\)\);/
     );
 });

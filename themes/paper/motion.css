@@ -37,10 +37,21 @@
             opacity var(--duration-fast) var(--ease-out);
     }
 
-    html[data-theme="paper"] [data-motion-scope="command-panel"] {
+    html[data-theme="paper"] [data-motion-scope="ai-dialog"] .ai-launcher,
+    html[data-theme="paper"] [data-motion-scope="ai-dialog"] .ai-composer,
+    html[data-theme="paper"] [data-motion-scope="ai-dialog"] .ai-plan-panel,
+    html[data-theme="paper"] [data-motion-scope="ai-dialog"] .ai-progress-popover {
         transition:
-            width var(--duration-normal) var(--ease-out),
+            opacity var(--duration-normal) var(--ease-out),
             transform var(--duration-normal) var(--ease-out);
+    }
+
+    html[data-theme="paper"] [data-motion-scope="ai-dialog"][data-mode="running"] .ai-launcher__ring {
+        animation: orderly-ai-running var(--duration-slow) var(--ease-out) infinite;
+    }
+
+    html[data-theme="paper"] [data-motion-scope="ai-dialog"][data-mode="running"] .ai-launcher__status {
+        animation: orderly-ai-status var(--duration-normal) var(--ease-out) infinite alternate;
     }
 
     html[data-theme="paper"] [data-motion-scope="feedback"] {
@@ -69,6 +80,19 @@
     @keyframes orderly-spin {
         to {
             transform: rotate(360deg);
+        }
+    }
+
+    @keyframes orderly-ai-running {
+        50% {
+            transform: scale(1.16);
+            opacity: 0.38;
+        }
+    }
+
+    @keyframes orderly-ai-status {
+        to {
+            opacity: 0.45;
         }
     }
 }

@@ -204,7 +204,7 @@ test("mobile Escape yields to an open settings dialog and restores its trigger f
     );
 });
 
-test("navigation rendering and the command intro keep current-view honesty visible", async () => {
+test("navigation rendering and the AI dock keep demo honesty visible", async () => {
     const html = await read("../index.html");
     const app = await read("../src/app.js");
     const appCss = await read("../styles/app.css");
@@ -216,23 +216,18 @@ test("navigation rendering and the command intro keep current-view honesty visib
         app.indexOf("function renderNavigation"),
         app.indexOf("function beginNavigationDrag")
     );
-    const intro = html.slice(
-        html.indexOf('<div class="command-intro">'),
-        html.indexOf('<div class="command-examples"')
+    const aiDialog = html.slice(
+        html.indexOf('class="ai-dock"'),
+        html.indexOf('class="ai-call-layer"')
     );
 
     assert.match(renderNavigation, /button\.setAttribute\("aria-current", "page"\)/);
     assert.match(navigate, /#mobile-view-title/);
     assert.doesNotMatch(app, /#breadcrumb/);
-    assert.match(
-        intro,
-        /id="planner-badge">本地规则计划器 · 未连接外部模型<\/small>/
-    );
-    assert.match(appCss, /padding-bottom:\s*210px;/);
-    assert.doesNotMatch(
-        appCss,
-        /\.command-intro small\s*\{[^}]*display:\s*none;/s
-    );
+    assert.match(aiDialog, /界面演示 · 未接入 AI/);
+    assert.match(aiDialog, /id="ai-plan-close"/);
+    assert.match(appCss, /padding-bottom:\s*128px;/);
+    assert.doesNotMatch(app, /#command-dock/);
 });
 
 test("sidebar labels stay single-line and internal count badges are never rendered", async () => {
@@ -258,7 +253,7 @@ test("sidebar labels stay single-line and internal count badges are never render
     assert.match(renderNavigation, /item\.moduleId \? navigationCount\(item\.moduleId\) : null/);
 });
 
-test("mobile navigation layers scrim above the dock and sidebar above both", async () => {
+test("mobile navigation layers scrim above the AI dock and sidebar above both", async () => {
     const appCss = await read("../styles/app.css");
     const mobileStart = appCss.indexOf("@media (max-width: 820px)");
     const mobileEnd = appCss.indexOf("@media (max-width: 620px)", mobileStart);
@@ -266,7 +261,7 @@ test("mobile navigation layers scrim above the dock and sidebar above both", asy
 
     assert.match(
         mobileCss,
-        /\.command-dock\s*\{[\s\S]*?z-index:\s*30;/
+        /\.ai-dock\s*\{[\s\S]*?z-index:\s*35;/
     );
     assert.match(
         mobileCss,

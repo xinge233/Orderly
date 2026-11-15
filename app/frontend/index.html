@@ -80,34 +80,87 @@
 
     <div class="sidebar-count-layer" id="sidebar-count-layer" aria-hidden="true"></div>
 
-    <aside class="command-dock" id="command-dock" aria-label="计划指令入口" data-motion-scope="command-panel" data-motion-state="collapsed" data-motion-phase="active">
-        <div class="command-dock__glow" aria-hidden="true"></div>
-        <div class="command-intro">
-            <span class="command-spark" data-icon="spark" aria-hidden="true"></span>
-            <span>
-                <strong>告诉归序你想完成什么</strong>
-                <small class="planner-disclosure" id="planner-badge">本地规则计划器 · 未连接外部模型</small>
-            </span>
-            <button class="dock-toggle" id="dock-toggle" type="button" aria-expanded="false">
-                展开
-            </button>
-        </div>
-        <div class="command-examples" id="command-examples" aria-label="示例指令"></div>
-        <form class="command-form" id="command-form">
-            <label class="sr-only" for="command-input">输入工作流目标</label>
-            <textarea
-                id="command-input"
-                rows="1"
-                maxlength="600"
-                placeholder="请输入已安装模块提供的示例指令"
-            ></textarea>
-            <button class="send-button" id="send-command" type="submit">
-                <span data-icon="arrow-up" aria-hidden="true"></span>
-                <span>生成计划</span>
-            </button>
-        </form>
-        <p class="dock-footnote" id="command-note">未连接外部模型；当前使用可审计的本地规则计划器。</p>
-    </aside>
+    <section
+        class="ai-dock"
+        id="ai-dock"
+        aria-label="AI 对话框"
+        data-motion-scope="ai-dialog"
+        data-motion-state="collapsed"
+        data-motion-phase="active"
+        data-mode="collapsed"
+        data-panel="closed"
+        data-popover="closed"
+        data-demo="true"
+    >
+        <button class="ai-launcher" id="ai-launcher" type="button" aria-label="打开 AI 对话">
+            <span class="ai-launcher__ring" aria-hidden="true"></span>
+            <span class="ai-launcher__icon" id="ai-launcher-icon" data-icon="spark" aria-hidden="true"></span>
+            <span class="ai-launcher__status" aria-hidden="true"></span>
+        </button>
+
+        <section class="ai-composer" id="ai-composer" aria-label="AI 输入框" aria-hidden="true">
+            <form class="ai-composer__form" id="ai-composer-form">
+                <span class="ai-composer__spark" data-icon="spark" aria-hidden="true"></span>
+                <label class="sr-only" for="ai-composer-input">输入 AI 指令</label>
+                <textarea
+                    id="ai-composer-input"
+                    rows="1"
+                    maxlength="600"
+                    placeholder="告诉 AI 你想整理什么；当前仅演示界面，不会执行操作"
+                ></textarea>
+                <span class="ai-demo-badge">
+                    <span class="ai-demo-badge__full">界面演示 · 未接入 AI</span>
+                    <span class="ai-demo-badge__compact">未接入 AI</span>
+                </span>
+                <button class="ai-icon-button" id="ai-composer-close" type="button" aria-label="收起 AI 输入框">
+                    <span data-icon="close" aria-hidden="true"></span>
+                </button>
+                <button class="ai-send-button" id="ai-send-button" type="submit">
+                    <span data-icon="arrow-up" aria-hidden="true"></span>
+                    <span>生成</span>
+                </button>
+            </form>
+        </section>
+
+        <section class="ai-plan-panel" id="ai-plan-panel" aria-label="AI 计划栏" aria-hidden="true">
+            <header class="ai-plan-panel__head">
+                <div>
+                    <span class="ai-plan-panel__eyebrow">界面演示 · 未接入 AI</span>
+                    <h2 id="ai-plan-title">尚未生成计划</h2>
+                </div>
+                <button class="ai-icon-button" id="ai-plan-close" type="button" aria-label="关闭计划">
+                    <span data-icon="close" aria-hidden="true"></span>
+                </button>
+            </header>
+            <ol class="ai-plan-list" id="ai-plan-list" aria-live="polite"></ol>
+            <footer class="ai-plan-actions">
+                <span class="ai-risk-indicator" id="ai-risk-indicator" data-risk="READ_ONLY">
+                    <span data-icon="shield" aria-hidden="true"></span>
+                    <span>风险等级：只读</span>
+                </span>
+                <button class="ai-run-button" id="ai-run-button" type="button">
+                    <span data-icon="check-plain" aria-hidden="true"></span>
+                    <span>执行</span>
+                </button>
+            </footer>
+        </section>
+
+        <aside
+            class="ai-progress-popover"
+            id="ai-progress-popover"
+            aria-label="AI 运行进度"
+            aria-hidden="true"
+        >
+            <header>
+                <strong id="ai-progress-title">界面演示 · 未接入 AI</strong>
+                <span>执行进度</span>
+            </header>
+            <ol id="ai-progress-list" aria-live="polite"></ol>
+            <p>当前仅展示状态变化，不会调用模块或修改文件。</p>
+        </aside>
+    </section>
+
+    <div class="ai-call-layer" id="ai-call-layer" aria-hidden="true"></div>
 
     <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title" data-motion-scope="settings-dialog" data-motion-state="closed" data-motion-phase="idle">
         <div class="settings-frame">

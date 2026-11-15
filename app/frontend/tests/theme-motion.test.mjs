@@ -135,30 +135,21 @@ test("base component CSS contains no hardcoded keyframes, animations or transiti
     assert.doesNotMatch(appCss, /(^|[\s;])transition\s*:/m);
 });
 
-test("collapsed compact command dock hides controls but keeps planner disclosure visible", async () => {
+test("AI dock hides inactive surfaces and keeps demo disclosure visible", async () => {
     const appCss = await read("../styles/app.css");
     const html = await read("../index.html");
-    const intro = html.slice(
-        html.indexOf('<div class="command-intro">'),
-        html.indexOf('<div class="command-examples"')
+    const dialog = html.slice(
+        html.indexOf('class="ai-dock"'),
+        html.indexOf('class="ai-call-layer"')
     );
 
     assert.match(
         appCss,
-        /\.command-dock:not\(\.is-expanded\) \.command-form,[\s\S]*\.command-dock:not\(\.is-expanded\) \.command-examples,[\s\S]*\.command-dock:not\(\.is-expanded\) \.dock-footnote\s*\{\s*display:\s*none;/
+        /\.ai-dock \.ai-composer\[aria-hidden="true"\][\s\S]*?visibility:\s*hidden;/
     );
-    assert.match(
-        intro,
-        /id="planner-badge">本地规则计划器 · 未连接外部模型<\/small>/
-    );
-    assert.doesNotMatch(
-        appCss,
-        /\.command-intro small\s*\{[^}]*display:\s*none;/s
-    );
-    assert.doesNotMatch(
-        appCss,
-        /\.planner-disclosure\s*\{[^}]*display:\s*none;/s
-    );
+    assert.match(dialog, /界面演示 · 未接入 AI/);
+    assert.match(dialog, /aria-label="关闭计划"/);
+    assert.doesNotMatch(appCss, /\.planner-disclosure\s*\{[^}]*display:\s*none;/s);
 });
 
 test("each directory theme owns layered tokens and motion CSS", async () => {
@@ -246,7 +237,7 @@ test("framework motion scopes cover only the public shell contract", async () =>
         "overview",
         "module-card",
         "settings-dialog",
-        "command-panel",
+        "ai-dialog",
         "feedback"
     ];
 

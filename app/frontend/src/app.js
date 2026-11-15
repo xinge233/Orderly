@@ -1,4 +1,5 @@
 import { ApiError, OrderlyApi } from "./api.js";
+import { mountAiDialog } from "./ai-dialog.js";
 import { hydrateIcons, icon } from "./icons.js";
 import {
     EVENT_ORIGIN,
@@ -120,6 +121,7 @@ let sidebarCountTrackingFrame = null;
 let sidebarCountTrackingHandler = null;
 let sidebarCountRefreshTimer = null;
 let sidebarCountTransitionHandler = null;
+let aiDialog = null;
 const desktopSidebar = {
     active: false,
     expanded: false,
@@ -218,18 +220,17 @@ function applyPlanningFeatureState(enabled, { render = true, resetPlan = true } 
     const next = enabled === true;
     state.planningEnabled = next;
     document.documentElement.dataset.planning = next ? "enabled" : "disabled";
-    const dock = document.querySelector("#command-dock");
-    if (dock) {
-        dock.hidden = !next;
-        dock.inert = !next;
-        dock.setAttribute("aria-hidden", String(!next));
+    const dialogRoot = document.querySelector("#ai-dock");
+    if (dialogRoot) {
+        dialogRoot.hidden = !next;
+        dialogRoot.inert = !next;
+        dialogRoot.setAttribute("aria-hidden", String(!next));
         if (!next) {
-            dock.classList.remove("is-expanded");
-            dock.dataset.motionState = "collapsed";
-            dock.dataset.motionPhase = "idle";
-            document.querySelector("#dock-toggle")?.setAttribute("aria-expanded", "false");
+            dialogRoot.dataset.motionState = "collapsed";
+            dialogRoot.dataset.motionPhase = "idle";
         }
     }
+    aiDialog?.setEnabled(next);
     if (!next && resetPlan) {
         state.plan = null;
         state.planBusy = false;
@@ -239,7 +240,6 @@ function applyPlanningFeatureState(enabled, { render = true, resetPlan = true } 
         state.currentRun = null;
     }
     if (render) {
-        renderCommandExamples();
         if (state.activeView === "overview"
             && !document.querySelector(".loading-panel")) {
             renderOverview();
@@ -269,6 +269,12 @@ async function bootstrap() {
     applyPlanningFeatureState(false, { render: false, resetPlan: false });
     hydrateIcons();
     bindGlobalControls();
+    aiDialog = mountAiDialog({
+        dock: document.querySelector("#ai-dock"),
+        callLayer: document.querySelector("#ai-call-layer"),
+        getModules: () => state.modules.filter(isModuleVisible),
+        onNotice: (message, options) => toast(message, options)
+    });
     bindSettingsDialog();
 
     const [
@@ -323,7 +329,6 @@ async function bootstrap() {
     settingsStore.subscribe(applySettings);
     applySettings(settingsStore.getSnapshot());
     renderSettings();
-    renderCommandExamples();
     if (document.querySelector("#settings-dialog")?.open) {
         renderSettings();
     }
@@ -503,7 +508,6 @@ function activeViewBecameUnavailable() {
 
 function refreshVisibleFrameworkViews() {
     renderNavigation(document.querySelector("#nav-search")?.value ?? "");
-    renderCommandExamples();
     if (state.activeView === "overview" && document.querySelector("#module-card-grid")) {
         void loadOverviewCounts();
         renderModuleCards();
@@ -711,18 +715,6 @@ function bindGlobalControls() {
     document.querySelector("#open-settings")?.addEventListener("click", openSettings);
     document.querySelector("#mobile-menu")?.addEventListener("click", openMobileNav);
     document.querySelector("#mobile-scrim")?.addEventListener("click", () => closeMobileNav());
-    document.querySelector("#dock-toggle")?.addEventListener("click", () => {
-        const dock = document.querySelector("#command-dock");
-        const expanded = dock?.classList.toggle("is-expanded") ?? false;
-        if (dock) {
-            dock.dataset.motionState = expanded ? "expanded" : "collapsed";
-            dock.dataset.motionPhase = "active";
-        }
-        document.querySelector("#dock-toggle")?.setAttribute("aria-expanded", String(expanded));
-        if (expanded) {
-            document.querySelector("#command-input")?.focus();
-        }
-    });
 
     const search = document.querySelector("#nav-search");
     search?.addEventListener("pointerdown", () => expandDesktopSidebarImmediately());
@@ -742,22 +734,6 @@ function bindGlobalControls() {
             renderNavigation("");
             search.blur();
             reconcileDesktopSidebar();
-        }
-    });
-
-    document.querySelector("#command-form")?.addEventListener("submit", (event) => {
-        event.preventDefault();
-        if (!state.planningEnabled) {
-            return;
-        }
-        const input = document.querySelector("#command-input");
-        void draftGoal(input?.value ?? "");
-    });
-
-    document.querySelector("#command-input")?.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            document.querySelector("#command-form")?.requestSubmit();
         }
     });
 
@@ -2045,13 +2021,13 @@ function renderOverview() {
     const planningCopy = state.planningEnabled
         ? `
             <p>
-                已安装模块通过统一契约接入，并在一条可审查的流程中协作。
-                本版本只操作应用自管沙箱，先生成计划，确认之后才会写入。
+                计划功能已开启。下方计划预览仍使用本地规则计划器；
+                右下角 AI 对话框当前仅演示界面，尚未接入真实 AI。
             </p>
             <div class="hero-tags">
                 <span>${icon("shield")} 本地优先</span>
                 <span>${icon("route")} 计划先于执行</span>
-                <span>${icon("history")} 回收站与回滚</span>
+                <span>${icon("spark")} AI 对话框仅演示</span>
             </div>
         `
         : `
@@ -2073,7 +2049,7 @@ function renderOverview() {
                         <div>
                             <p class="eyebrow">PLAN PREVIEW</p>
                             <h2>计划预览</h2>
-                            <p>确认之前不会产生任何真实变更。</p>
+                            <p>使用本地规则计划器生成计划；确认之前不会产生真实变更。</p>
                         </div>
                         <span class="status-chip" id="plan-mode-chip">等待指令</span>
                     </header>
@@ -2091,7 +2067,7 @@ function renderOverview() {
                         <li>写入计划需要明确勾选确认。</li>
                         <li>删除还需键入“删除”，且只会移入项目回收站。</li>
                         <li>中途失败时，宿主会逆序回滚已经完成的步骤。</li>
-                        <li>当前位置是本地规则计划器，不连接外部模型。</li>
+                        <li>计划预览不连接外部模型；右下角 AI 对话框仅作界面演示。</li>
                     </ul>
                 </aside>
             </div>
@@ -2306,7 +2282,7 @@ function renderPlan() {
             .flatMap((module) => state.moduleUi[module.moduleId]?.examples ?? []);
         empty.append(
             signal,
-            element("h3", "", "从右下角告诉归序你想完成什么"),
+            element("h3", "", "使用本地规则计划器"),
             element(
                 "p",
                 "",
@@ -2315,6 +2291,51 @@ function renderPlan() {
                     : "当前没有已安装模块提供可用指令；添加 Module/module_* 并重新构建后再试。"
             )
         );
+
+        const form = element("form", "plan-launch__form");
+        const examplesBar = element("div", "plan-launch__examples");
+        examples.slice(0, 4).forEach((example) => {
+            const button = element("button", "example-chip", example.label);
+            button.type = "button";
+            button.title = example.text;
+            button.addEventListener("click", () => {
+                input.value = example.text;
+                input.focus();
+                input.setSelectionRange(input.value.length, input.value.length);
+            });
+            examplesBar.append(button);
+        });
+        const input = document.createElement("textarea");
+        input.id = "plan-goal-input";
+        input.rows = 1;
+        input.maxLength = 600;
+        input.setAttribute("aria-label", "计划目标");
+        input.placeholder = examples.length
+            ? `例如：${examples[0].text}`
+            : "请输入已安装模块提供的示例指令";
+        const row = element("div", "plan-launch__row");
+        const submit = element("button", "primary-button", "生成计划");
+        submit.type = "submit";
+        submit.id = "plan-goal-submit";
+        row.append(input, submit);
+        const note = element(
+            "p",
+            "plan-launch__note",
+            "本地规则计划器 · 未连接外部模型"
+        );
+        note.id = "plan-goal-note";
+        form.append(...(examples.length ? [examplesBar] : []), row, note);
+        form.addEventListener("submit", (event) => {
+            event.preventDefault();
+            void draftGoal(input.value);
+        });
+        input.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                form.requestSubmit();
+            }
+        });
+        empty.append(form);
         slot.append(empty);
         return;
     }
@@ -2475,7 +2496,7 @@ async function draftGoal(goal) {
     const cleanGoal = String(goal ?? "").trim();
     if (!cleanGoal) {
         toast("请先输入一条工作流目标。");
-        document.querySelector("#command-input")?.focus();
+        document.querySelector("#plan-goal-input")?.focus();
         return;
     }
     if (state.planBusy) {
@@ -2484,8 +2505,8 @@ async function draftGoal(goal) {
 
     state.planBusy = true;
     document.querySelector(".app-shell")?.setAttribute("data-motion-state", "busy");
-    const send = document.querySelector("#send-command");
-    const note = document.querySelector("#command-note");
+    const send = document.querySelector("#plan-goal-submit");
+    const note = document.querySelector("#plan-goal-note");
     if (send) {
         send.disabled = true;
     }
@@ -3154,52 +3175,25 @@ function emptyState(title, text) {
  * @param {string} command 指令
  */
 function fillCommand(command) {
-    const input = document.querySelector("#command-input");
-    const dock = document.querySelector("#command-dock");
-    if (input) {
-        input.value = command;
-        input.focus();
-        input.setSelectionRange(command.length, command.length);
-    }
-    dock?.classList.add("is-expanded");
-    if (dock) {
-        dock.dataset.motionState = "expanded";
-        dock.dataset.motionPhase = "active";
-    }
-    document.querySelector("#dock-toggle")?.setAttribute("aria-expanded", "true");
-}
-
-/**
- * 渲染快捷示例。
- */
-function renderCommandExamples() {
-    const container = document.querySelector("#command-examples");
-    const examples = state.modules
-        .filter(isModuleVisible)
-        .flatMap((module) => state.moduleUi[module.moduleId]?.examples ?? [])
-        .slice(0, 4);
-    const input = document.querySelector("#command-input");
-    if (input) {
-        input.placeholder = examples.length
-            ? `例如：${examples[0].text}`
-            : "请输入已安装模块提供的示例指令";
-    }
-    if (!container) {
+    if (!state.planningEnabled) {
+        toast("计划功能已关闭，请在系统设置中开启。", { error: true });
         return;
     }
-    container.replaceChildren();
-    if (!examples.length) {
-        container.hidden = true;
+    const apply = () => {
+        const input = document.querySelector("#plan-goal-input");
+        if (!input) {
+            return;
+        }
+        input.value = String(command ?? "");
+        input.focus({ preventScroll: true });
+        input.setSelectionRange(input.value.length, input.value.length);
+        input.scrollIntoView({ block: "center" });
+    };
+    if (state.activeView !== "overview" || !document.querySelector("#plan-goal-input")) {
+        void navigate("overview").then(() => window.requestAnimationFrame(apply));
         return;
     }
-    container.hidden = false;
-    examples.forEach((example) => {
-        const button = element("button", "example-chip", example.label);
-        button.type = "button";
-        button.title = example.text;
-        button.addEventListener("click", () => fillCommand(example.text));
-        container.append(button);
-    });
+    window.requestAnimationFrame(apply);
 }
 
 /**
