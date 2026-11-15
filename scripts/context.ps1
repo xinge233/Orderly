@@ -493,22 +493,53 @@ function Test-ConfigEntry {
     return [regex]::Matches($Text, $pattern).Count -eq 1
 }
 
+function Get-ConfigKeyCount {
+    param(
+        [Parameter(Mandatory = $true)][string]$Text,
+        [Parameter(Mandatory = $true)][string]$Key
+    )
+
+    $pattern = "(?m)^\s*" + [regex]::Escape($Key) + "\s*="
+    return [regex]::Matches($Text, $pattern).Count
+}
+
 function Invoke-AuditMode {
     $issues = [System.Collections.Generic.List[string]]::new()
 
     try {
         $config = Read-TrackedText -RelativePath ".codex/config.toml"
-        $expectedConfig = [ordered]@{
+        $requiredConfig = [ordered]@{
             web_search = '"live"'
             sandbox_mode = '"danger-full-access"'
             approval_policy = '"never"'
+        }
+        $optionalConfig = [ordered]@{
             tool_output_token_limit = "10000"
             model_auto_compact_token_limit = "90000"
             model_auto_compact_token_limit_scope = '"total"'
         }
-        foreach ($entry in $expectedConfig.GetEnumerator()) {
-            if (-not (Test-ConfigEntry -Text $config -Key $entry.Key -Value $entry.Value)) {
-                $issues.Add("配置键缺失、重复或取值不符：$($entry.Key)")
+        foreach ($entry in $requiredConfig.GetEnumerator()) {
+            $keyCount = Get-ConfigKeyCount -Text $config -Key $entry.Key
+            if ($keyCount -eq 0) {
+                $issues.Add("必需配置键缺失：$($entry.Key)")
+            }
+            elseif ($keyCount -gt 1) {
+                $issues.Add("必需配置键重复：$($entry.Key)")
+            }
+            elseif (-not (Test-ConfigEntry -Text $config -Key $entry.Key -Value $entry.Value)) {
+                $issues.Add("必需配置键取值不符：$($entry.Key)")
+            }
+        }
+        foreach ($entry in $optionalConfig.GetEnumerator()) {
+            $keyCount = Get-ConfigKeyCount -Text $config -Key $entry.Key
+            if ($keyCount -eq 0) {
+                continue
+            }
+            if ($keyCount -ne 1) {
+                $issues.Add("可选配置键重复：$($entry.Key)")
+            }
+            elseif (-not (Test-ConfigEntry -Text $config -Key $entry.Key -Value $entry.Value)) {
+                $issues.Add("可选配置键取值不符：$($entry.Key)")
             }
         }
     }
@@ -589,7 +620,7 @@ function Invoke-AuditMode {
         exit 1
     }
 
-    Write-Output "AUDIT PASS config=6 repo-map=true ignore=4 scan=tracked-only"
+    Write-Output "AUDIT PASS config=required-exact,optional-when-present repo-map=true ignore=4 scan=tracked-only"
 }
 
 try {
