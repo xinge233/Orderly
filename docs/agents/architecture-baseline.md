@@ -133,7 +133,7 @@ docs/                       产品与协作文档
 
 `GET /api/themes` 返回 `{items, issues, builtInFallbackActive}`，`GET /api/themes/{id}` 返回完整清单元数据，`GET /api/themes/{id}/assets/{asset}` 提供白名单资源。版本不支持、清单损坏、资源缺失或路径非法只隔离对应主题；重复 id 和多个默认主题仍阻止启动。前端不得保存第二套静态主题列表，回退顺序固定为当前可用主题、可用默认主题、内置安全外观。
 
-主题只支持语义变量、目录内 CSS、关键帧和复杂动效；不得携带 JavaScript，不得侵入模块内部 DOM，也不支持运行中热加载。`motion: none` 与 `prefers-reduced-motion` 由框架安全 cascade layer 强制关闭动画、过渡和滚动行为。
+主题只支持语义变量、目录内 CSS、关键帧和复杂动效；不得携带 JavaScript，不得侵入模块内部 DOM，也不支持运行中热加载。动效只由程序内 `gentle`、`minimal`、`none` 三档控制，系统 `prefers-reduced-motion` 完全不参与。仅程序的 `motion: none` 档会由框架安全 cascade layer 强制关闭动画、过渡和滚动行为。
 
 ## 6. 最低可用界面基线
 

@@ -599,10 +599,7 @@ test("desktop sidebar motion is clip-path-only and mobile keeps transform", asyn
         tokens,
         /html\[data-motion="none"\]\s*\{[\s\S]*?--duration-sidebar:\s*0ms;/
     );
-    assert.match(
-        tokens,
-        /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?--duration-sidebar:\s*0ms;/
-    );
+    assert.doesNotMatch(tokens, /prefers-reduced-motion/);
     assert.match(tokens, /@layer orderly\.safety/);
     assert.match(tokens, /transition: none !important/);
     for (const id of ["paper", "moss", "night"]) {

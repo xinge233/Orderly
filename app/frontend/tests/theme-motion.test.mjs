@@ -1,13 +1,69 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
 
 async function read(relativePath) {
     return readFile(new URL(relativePath, import.meta.url), "utf8");
 }
 
-test("theme safety layer wins before theme declarations and disables all motion", async () => {
+async function collectCss(relativeDirectory) {
+    const files = [];
+
+    async function visit(directoryUrl, relativePath) {
+        const entries = await readdir(directoryUrl, { withFileTypes: true });
+        for (const entry of entries) {
+            if (entry.name === "target" || entry.name === "node_modules") {
+                continue;
+            }
+
+            const childRelativePath = `${relativePath}/${entry.name}`;
+            const childUrl = new URL(
+                `${entry.name}${entry.isDirectory() ? "/" : ""}`,
+                directoryUrl
+            );
+            if (entry.isDirectory()) {
+                await visit(childUrl, childRelativePath);
+            } else if (entry.isFile() && entry.name.endsWith(".css")) {
+                files.push({ relativePath: childRelativePath, url: childUrl });
+            }
+        }
+    }
+
+    await visit(
+        new URL(relativeDirectory, import.meta.url),
+        relativeDirectory.replace(/\/$/, "")
+    );
+    return files;
+}
+
+function between(source, startMarker, endMarker) {
+    const start = source.indexOf(startMarker);
+    const end = source.indexOf(endMarker, start + startMarker.length);
+    assert.notEqual(start, -1, `缺少起始标记：${startMarker}`);
+    assert.notEqual(end, -1, `缺少结束标记：${endMarker}`);
+    return source.slice(start, end);
+}
+
+test("program motion tiers and the none safety layer disable all motion", async () => {
     const tokens = await read("../styles/tokens.css");
+    const gentle = between(
+        tokens,
+        ":root {",
+        'html[data-motion="minimal"]'
+    );
+    const minimal = between(
+        tokens,
+        'html[data-motion="minimal"]',
+        'html[data-motion="none"]'
+    );
+    const none = between(
+        tokens,
+        'html[data-motion="none"] {',
+        "@layer orderly.safety"
+    );
+    const safetyStart = tokens.indexOf("@layer orderly.safety");
+    assert.notEqual(safetyStart, -1, "缺少 orderly.safety 层");
+    const safety = tokens.slice(safetyStart);
     const hostileTheme = `
         @layer orderly.theme {
             html[data-motion="none"] #main-content *,
@@ -21,11 +77,50 @@ test("theme safety layer wins before theme declarations and disables all motion"
 
     assert.match(tokens, /^@layer orderly\.safety, orderly\.reset, orderly\.base, orderly\.theme;/);
     assert.match(tokens, /html\[data-motion="none"\] \*/);
-    assert.match(tokens, /@media \(prefers-reduced-motion: reduce\)/);
-    assert.match(tokens, /animation: none !important/);
-    assert.match(tokens, /transition: none !important/);
-    assert.match(tokens, /scroll-behavior: auto !important/);
+    assert.match(gentle, /--duration-fast:\s*140ms;/);
+    assert.match(gentle, /--duration-normal:\s*240ms;/);
+    assert.match(gentle, /--duration-slow:\s*520ms;/);
+    assert.match(gentle, /--duration-sidebar:\s*200ms;/);
+    assert.match(minimal, /--duration-fast:\s*80ms;/);
+    assert.match(minimal, /--duration-normal:\s*110ms;/);
+    assert.match(minimal, /--duration-slow:\s*150ms;/);
+    assert.match(minimal, /--duration-sidebar:\s*110ms;/);
+    assert.match(none, /--duration-fast:\s*0ms;/);
+    assert.match(none, /--duration-normal:\s*0ms;/);
+    assert.match(none, /--duration-slow:\s*0ms;/);
+    assert.match(none, /--duration-sidebar:\s*0ms;/);
+    assert.match(safety, /animation:\s*none !important/);
+    assert.match(safety, /transition:\s*none !important/);
+    assert.match(safety, /scroll-behavior:\s*auto !important/);
+    assert.doesNotMatch(tokens, /prefers-reduced-motion/);
     assert.match(hostileTheme, /!important/);
+});
+
+test("framework, module and theme CSS never consult the system motion preference", async () => {
+    const cssFiles = (
+        await Promise.all([
+            collectCss("../styles/"),
+            collectCss("../../../Module/"),
+            collectCss("../../../themes/")
+        ])
+    ).flat();
+    const moduleControl = await read(
+        "../../../Module/module_control/src/main/resources/orderly-ui/module.css"
+    );
+
+    assert.ok(cssFiles.length > 0);
+    for (const file of cssFiles) {
+        const source = await readFile(file.url, "utf8");
+        assert.doesNotMatch(
+            source,
+            /\bprefers-reduced-motion\b/,
+            `${file.relativePath} 不得响应系统动效偏好`
+        );
+    }
+    assert.match(
+        moduleControl,
+        /\[data-motion="none"\] \.module-control-ui-button,[\s\S]*?transition:\s*none;/
+    );
 });
 
 test("base component CSS contains no hardcoded keyframes, animations or transitions", async () => {

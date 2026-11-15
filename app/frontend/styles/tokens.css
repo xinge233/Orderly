@@ -87,15 +87,6 @@
             --mobile-toolbar-height: 48px;
         }
     }
-
-    @media (prefers-reduced-motion: reduce) {
-        :root {
-            --duration-fast: 0ms;
-            --duration-normal: 0ms;
-            --duration-slow: 0ms;
-            --duration-sidebar: 0ms;
-        }
-    }
 }
 
 @layer orderly.safety {
@@ -107,17 +98,5 @@
         scroll-behavior: auto !important;
         animation: none !important;
         transition: none !important;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-        :root,
-        :root *,
-        :root *::before,
-        :root *::after,
-        :root *::backdrop {
-            scroll-behavior: auto !important;
-            animation: none !important;
-            transition: none !important;
-        }
     }
 }

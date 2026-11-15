@@ -612,11 +612,3 @@
         grid-template-columns: minmax(0, 1fr);
     }
 }
-
-@media (prefers-reduced-motion: reduce) {
-    .fs-ui-button,
-    .fs-ui-chip,
-    .fs-ui-table tbody tr {
-        transition: none;
-    }
-}

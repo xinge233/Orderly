@@ -415,17 +415,6 @@
     }
 }
 
-@media (prefers-reduced-motion: reduce) {
-    .module-control-ui-button,
-    .module-control-ui-square,
-    .module-control-ui-drag,
-    .module-control-ui-row,
-    .module-control-ui-switch__track,
-    .module-control-ui-switch__track::after {
-        transition: none;
-    }
-}
-
 [data-motion="none"] .module-control-ui-button,
 [data-motion="none"] .module-control-ui-square,
 [data-motion="none"] .module-control-ui-drag,
