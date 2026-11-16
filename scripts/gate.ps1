@@ -1,10 +1,13 @@
 ﻿[CmdletBinding()]
-param()
+param(
+    [switch]$DocumentOnly
+)
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $frontendRoot = Join-Path $repoRoot "app\frontend"
 $contextScript = Join-Path $PSScriptRoot "context.ps1"
+$docGateScript = Join-Path $PSScriptRoot "doc-gate.ps1"
 $powerShellExecutable = (Get-Process -Id $PID).Path
 
 function Invoke-ContextProcess {
@@ -119,8 +122,150 @@ function Assert-ContextBinaryTailRejected {
     }
 }
 
+function Get-GateChangeSet {
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $statusOutput = (& git -C $repoRoot `
+            status `
+            --porcelain=v1 `
+            -z `
+            --untracked-files=all `
+            --ignore-submodules=none 2>&1) | Out-String
+        $gitExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($gitExitCode -ne 0) {
+        throw "读取 Git 变更集失败，退出码：$gitExitCode`n$($statusOutput.Trim())"
+    }
+
+    $trimmed = $statusOutput.TrimEnd([char[]]@([char]0, [char]13, [char]10))
+    if ([string]::IsNullOrEmpty($trimmed)) {
+        return [pscustomobject]@{
+            Paths = @()
+            ClassificationUncertain = $false
+        }
+    }
+
+    $tokens = @($trimmed -split "`0")
+    $paths = [System.Collections.Generic.List[string]]::new()
+    $classificationUncertain = $false
+    $index = 0
+    while ($index -lt $tokens.Count) {
+        $entry = $tokens[$index]
+        $index++
+        if ([string]::IsNullOrEmpty($entry)) {
+            continue
+        }
+        if ($entry.Length -lt 4 -or $entry[2] -ne [char]32) {
+            $classificationUncertain = $true
+            continue
+        }
+
+        $xStatus = [char]$entry[0]
+        $yStatus = [char]$entry[1]
+        $knownStatuses = @(
+            [char]32,
+            [char]"M",
+            [char]"A",
+            [char]"D",
+            [char]"R",
+            [char]"C",
+            [char]"U",
+            [char]"?",
+            [char]"!",
+            [char]"T"
+        )
+        if ($knownStatuses -notcontains $xStatus -or
+                $knownStatuses -notcontains $yStatus) {
+            $classificationUncertain = $true
+        }
+        $path = $entry.Substring(3).Replace("\", "/")
+        $paths.Add($path)
+
+        if ($xStatus -eq [char]"R" -or
+                $xStatus -eq [char]"C" -or
+                $yStatus -eq [char]"R" -or
+                $yStatus -eq [char]"C") {
+            if ($index -ge $tokens.Count -or [string]::IsNullOrEmpty($tokens[$index])) {
+                $classificationUncertain = $true
+            }
+            else {
+                $paths.Add($tokens[$index].Replace("\", "/"))
+                $index++
+            }
+        }
+
+        if ($xStatus -eq [char]"T" -or $yStatus -eq [char]"T" -or
+                $xStatus -eq [char]"U" -or $yStatus -eq [char]"U") {
+            $classificationUncertain = $true
+        }
+    }
+
+    return [pscustomobject]@{
+        Paths = @($paths | Sort-Object -Unique)
+        ClassificationUncertain = $classificationUncertain
+    }
+}
+
 Push-Location $repoRoot
 try {
+    $docGateResult = Invoke-ContextProcess `
+        -Arguments @() `
+        -ScriptPath $docGateScript
+    if (-not [string]::IsNullOrWhiteSpace($docGateResult.Output)) {
+        Write-Host $docGateResult.Output.TrimEnd()
+    }
+    if ($docGateResult.ExitCode -ne 0) {
+        throw "快速文档门禁失败，退出码：$($docGateResult.ExitCode)"
+    }
+
+    $changeSet = Get-GateChangeSet
+    $changePaths = @($changeSet.Paths)
+    $isNonEmptyPureMarkdown = $changePaths.Count -gt 0 -and
+        -not $changeSet.ClassificationUncertain -and
+        @($changePaths | Where-Object {
+            [System.IO.Path]::GetExtension($_).Equals(
+                ".md",
+                [System.StringComparison]::OrdinalIgnoreCase
+            )
+        }).Count -eq $changePaths.Count
+
+    if ($DocumentOnly) {
+        if (-not $isNonEmptyPureMarkdown) {
+            $reason = if ($changePaths.Count -eq 0) {
+                "变更集为空"
+            }
+            elseif ($changeSet.ClassificationUncertain) {
+                "变更分类不确定"
+            }
+            else {
+                "变更集包含非 Markdown 文件"
+            }
+            throw "-DocumentOnly 要求非空纯 Markdown 变更集；当前$reason。"
+        }
+        Write-Host "门禁通过：-DocumentOnly 检测到 $($changePaths.Count) 个纯 Markdown 变更；未运行 Maven/前端测试。"
+        exit 0
+    }
+
+    if ($isNonEmptyPureMarkdown) {
+        Write-Host "门禁通过：纯文档分支，检测到 $($changePaths.Count) 个纯 Markdown 变更；未运行 Maven/前端测试。"
+        exit 0
+    }
+
+    $fullGateReason = if ($changePaths.Count -eq 0) {
+        "变更集为空"
+    }
+    elseif ($changeSet.ClassificationUncertain) {
+        "变更分类不确定"
+    }
+    else {
+        "变更集包含非 Markdown 文件"
+    }
+    Write-Host "完整门禁：$fullGateReason，继续执行 Maven、前端和边界检查。"
+
     $tokens = $null
     $parseErrors = $null
     [System.Management.Automation.Language.Parser]::ParseFile(
