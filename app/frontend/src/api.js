@@ -169,6 +169,89 @@ export class OrderlyApi {
         return `${this.#baseUrl}/api/modules/${encodeURIComponent(moduleId)}/ui/${encodeURIComponent(asset)}`;
     }
 
+    moduleDataUrl(moduleId, relativePath) {
+        const encoded = String(relativePath ?? "")
+            .split("/")
+            .filter(Boolean)
+            .map((segment) => encodeURIComponent(segment))
+            .join("/");
+        return `${this.#baseUrl}/api/modules/${encodeURIComponent(moduleId)}/data/${encoded}`;
+    }
+
+    async executeModuleActionWithFile(
+        moduleId,
+        actionId,
+        argumentsValue,
+        file,
+        confirmed = true,
+        options = {}
+    ) {
+        const body = new FormData();
+        body.append("request", new Blob([JSON.stringify({
+            confirmed: confirmed === true,
+            arguments: argumentsValue && typeof argumentsValue === "object"
+                ? argumentsValue
+                : {}
+        })], { type: "application/json" }));
+        body.append("file", file);
+        let response;
+        try {
+            response = await this.#fetch(
+                `${this.#baseUrl}/api/modules/${encodeURIComponent(moduleId)}/actions/${encodeURIComponent(actionId)}/upload`,
+                {
+                method: "POST",
+                signal: options.signal,
+                headers: {
+                    Accept: "application/json"
+                },
+                body
+            }
+            );
+        } catch (error) {
+            if (error?.name === "AbortError") {
+                throw error;
+            }
+            throw new ApiError("模块动作上传失败，请确认本地服务仍在运行。", {
+                payload: error
+            });
+        }
+        const text = await response.text();
+        let payload = null;
+        if (text) {
+            try {
+                payload = JSON.parse(text);
+            } catch {
+                payload = text;
+            }
+        }
+        if (!response.ok) {
+            const message = payload && typeof payload === "object"
+                ? payload.message ?? payload.error ?? `上传失败（${response.status}）`
+                : String(payload || `上传失败（${response.status}）`);
+            throw new ApiError(String(message), {
+                status: response.status,
+                payload
+            });
+        }
+        return payload;
+    }
+
+    executeModuleAction(moduleId, actionId, argumentsValue = {}, confirmed = true, options = {}) {
+        return this.request(
+            `/api/modules/${encodeURIComponent(moduleId)}/actions/${encodeURIComponent(actionId)}`,
+            {
+                ...options,
+                method: "POST",
+                body: {
+                    confirmed: confirmed === true,
+                    arguments: argumentsValue && typeof argumentsValue === "object"
+                        ? argumentsValue
+                        : {}
+                }
+            }
+        );
+    }
+
     queryModule(moduleId, queryId, parameters = {}, options) {
         const search = new URLSearchParams();
         Object.entries(parameters).forEach(([key, value]) => {

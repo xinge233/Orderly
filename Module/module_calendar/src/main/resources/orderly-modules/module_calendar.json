@@ -1,18 +1,48 @@
 {
   "moduleId": "module_calendar",
   "title": "日程安排",
-  "description": "查看和调整本地日程，并保留可回滚的前后版本。",
+  "description": "日程、独立待办与模块自管空间的本地工作区。",
   "order": 30,
   "actions": [
     {
-      "id": "calendar.reschedule",
-      "title": "修改日程时间",
-      "description": "按日程标题修改开始时间。",
+      "id": "calendar.event.create",
+      "title": "创建日程",
+      "description": "创建一条本地日程。",
       "risk": "WRITE",
       "confirmationRequired": true,
       "parameters": [
         { "name": "title", "type": "string", "required": true, "description": "日程标题" },
-        { "name": "newStartAt", "type": "string", "required": true, "description": "新的 ISO-8601 时间" }
+        { "name": "startAt", "type": "string", "required": true, "description": "开始时间" },
+        { "name": "endAt", "type": "string", "required": false, "description": "结束时间" }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["event"],
+        "properties": {
+          "event": {
+            "type": "object",
+            "required": ["id", "title", "startAt", "endAt", "status"],
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "startAt": { "type": "string" },
+              "endAt": { "type": "string" },
+              "status": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "calendar.event.reschedule",
+      "title": "修改日程时间",
+      "description": "按稳定 ID 修改日程时间。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "eventId", "type": "string", "required": true, "description": "日程 ID" },
+        { "name": "newStartAt", "type": "string", "required": true, "description": "新的开始时间" },
+        { "name": "newEndAt", "type": "string", "required": false, "description": "新的结束时间" }
       ],
       "outputSchema": {
         "type": "object",
@@ -20,6 +50,177 @@
         "properties": {
           "before": { "type": "object" },
           "after": { "type": "object" }
+        }
+      }
+    },
+    {
+      "id": "calendar.event.cancel",
+      "title": "取消日程",
+      "description": "将日程状态改为已取消。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "eventId", "type": "string", "required": true, "description": "日程 ID" }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["before", "after"],
+        "properties": {
+          "before": { "type": "object" },
+          "after": { "type": "object" }
+        }
+      }
+    },
+    {
+      "id": "calendar.reschedule",
+      "title": "按标题修改日程时间",
+      "description": "本地规则计划器兼容动作，仅用于唯一标题匹配。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "title", "type": "string", "required": true, "description": "日程标题" },
+        { "name": "newStartAt", "type": "string", "required": true, "description": "新的开始时间" }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["before", "after"],
+        "properties": {
+          "before": { "type": "object" },
+          "after": { "type": "object" }
+        }
+      }
+    },
+    {
+      "id": "calendar.todo.create",
+      "title": "创建日历待办",
+      "description": "在日历模块内创建独立待办。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "title", "type": "string", "required": true, "description": "待办标题" },
+        { "name": "dueAt", "type": "string", "required": false, "description": "截止时间" },
+        { "name": "category", "type": "string", "required": false, "description": "分类" },
+        { "name": "annotation", "type": "string", "required": false, "description": "批注" }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["item"],
+        "properties": {
+          "item": {
+            "type": "object",
+            "required": ["id", "title", "status"],
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "status": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "calendar.todo.update",
+      "title": "更新日历待办",
+      "description": "修改日历模块待办的标题、截止时间、分类或批注。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "id", "type": "string", "required": true, "description": "待办 ID" },
+        { "name": "title", "type": "string", "required": false, "description": "新标题" },
+        { "name": "dueAt", "type": "string", "required": false, "description": "新截止时间" },
+        { "name": "category", "type": "string", "required": false, "description": "新分类" },
+        { "name": "annotation", "type": "string", "required": false, "description": "新批注" }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["before", "after"],
+        "properties": {
+          "before": { "type": "object" },
+          "after": { "type": "object" }
+        }
+      }
+    },
+    {
+      "id": "calendar.todo.complete",
+      "title": "完成日历待办",
+      "description": "将日历模块待办标记为已完成。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "id", "type": "string", "required": true, "description": "待办 ID" }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["before", "after"],
+        "properties": {
+          "before": { "type": "object" },
+          "after": { "type": "object" }
+        }
+      }
+    },
+    {
+      "id": "calendar.todo.reopen",
+      "title": "重开日历待办",
+      "description": "将已完成待办恢复为待处理。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "id", "type": "string", "required": true, "description": "待办 ID" }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["before", "after"],
+        "properties": {
+          "before": { "type": "object" },
+          "after": { "type": "object" }
+        }
+      }
+    },
+    {
+      "id": "calendar.space.create",
+      "title": "创建自定义空间",
+      "description": "创建纯文本、图片或视频空间；不允许 AI 调用。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "aiCallable": false,
+      "parameters": [
+        { "name": "type", "type": "string", "required": true, "description": "text、image 或 video" },
+        { "name": "text", "type": "string", "required": false, "description": "文本内容" },
+        { "name": "uploadPath", "type": "string", "required": false, "description": "宿主临时上传路径" },
+        { "name": "contentType", "type": "string", "required": false, "description": "媒体类型" }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["space"],
+        "properties": {
+          "space": {
+            "type": "object",
+            "required": ["id", "type", "createdAt"],
+            "properties": {
+              "id": { "type": "string" },
+              "type": { "type": "string" },
+              "createdAt": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "calendar.space.delete",
+      "title": "删除自定义空间",
+      "description": "将空间整体移入项目回收站；不允许 AI 调用。",
+      "risk": "DELETE",
+      "confirmationRequired": true,
+      "aiCallable": false,
+      "parameters": [
+        { "name": "spaceId", "type": "string", "required": true, "description": "空间 ID" }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["space", "trashId"],
+        "properties": {
+          "space": { "type": "object" },
+          "trashId": { "type": "string" }
         }
       }
     }
@@ -30,6 +231,33 @@
       "title": "日程列表",
       "description": "只读读取模块自有日程集合。",
       "parameters": []
+    },
+    {
+      "id": "calendar.todo.list",
+      "title": "日历待办列表",
+      "description": "只读读取日历模块独立待办。",
+      "parameters": [
+        { "name": "status", "type": "string", "required": false, "description": "状态筛选" },
+        { "name": "category", "type": "string", "required": false, "description": "分类筛选" },
+        { "name": "keyword", "type": "string", "required": false, "description": "标题或批注关键词" },
+        { "name": "from", "type": "string", "required": false, "description": "截止时间范围起点" },
+        { "name": "to", "type": "string", "required": false, "description": "截止时间范围终点" }
+      ]
+    },
+    {
+      "id": "calendar.space.list",
+      "title": "自定义空间列表",
+      "description": "只读读取模块自管空间元数据。",
+      "parameters": []
+    },
+    {
+      "id": "calendar.agenda",
+      "title": "日程与待办时间线",
+      "description": "只读合并日程和待办截止时间，不建立数据关联。",
+      "parameters": [
+        { "name": "from", "type": "string", "required": false, "description": "时间线起点" },
+        { "name": "to", "type": "string", "required": false, "description": "时间线终点" }
+      ]
     }
   ],
   "plannerRules": [
@@ -40,6 +268,14 @@
       "argumentGroups": { "title": 1, "newStartAt": 2 },
       "pathArguments": [],
       "wholeGoal": false
+    },
+    {
+      "id": "calendar.rule.todo.create",
+      "actionId": "calendar.todo.create",
+      "pattern": "^创建日历待办\\s+(.+)$",
+      "argumentGroups": { "title": 1 },
+      "pathArguments": [],
+      "wholeGoal": true
     }
   ]
 }

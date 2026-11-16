@@ -35,6 +35,37 @@ public class AiActionService {
     }
 
     public ExecutionRecord execute(boolean confirmed, List<ActionCall> actions) {
+        return executeBatch("AI_DIRECT", confirmed, actions, true);
+    }
+
+    /** 模块自有 UI 发起的单动作入口，使用 MODULE_CONTROL 来源并复用同一执行核心。 */
+    public ExecutionRecord executeModuleControl(
+            String moduleId,
+            String actionId,
+            Map<String, Object> arguments,
+            boolean confirmed
+    ) {
+        if (moduleId == null || moduleId.isBlank() || actionId == null || actionId.isBlank()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_ACTIONS",
+                    "moduleId 与 actionId 不能为空"
+            );
+        }
+        return executeBatch(
+                "MODULE_CONTROL",
+                confirmed,
+                List.of(new ActionCall(moduleId, actionId, arguments)),
+                false
+        );
+    }
+
+    private ExecutionRecord executeBatch(
+            String origin,
+            boolean confirmed,
+            List<ActionCall> actions,
+            boolean aiOnly
+    ) {
         if (actions == null || actions.isEmpty()) {
             throw new ApiException(
                     HttpStatus.BAD_REQUEST,
@@ -57,10 +88,9 @@ public class AiActionService {
                         "每个 action 必须声明 moduleId 和 actionId"
                 );
             }
-            ActionExecutionCore.ResolvedAction target = core.requireAiTarget(
-                    action.moduleId(),
-                    action.actionId()
-            );
+            ActionExecutionCore.ResolvedAction target = aiOnly
+                    ? core.requireAiTarget(action.moduleId(), action.actionId())
+                    : core.requirePlanTarget(action.moduleId(), action.actionId());
             targets.add(target);
             if (target.risk().ordinal() > highestRisk.ordinal()) {
                 highestRisk = target.risk();
@@ -96,7 +126,7 @@ public class AiActionService {
             }
             ExecutionRecord record = new ExecutionRecord(
                     executionId,
-                    "AI_DIRECT",
+                    origin,
                     "RUNNING",
                     steps,
                     ExecutionRecord.aggregate(steps, ExecutionRecord.StepPart.ARGUMENTS),
@@ -111,7 +141,7 @@ public class AiActionService {
             records.save(record);
             journal.append(
                     "EXECUTION",
-                    "AI_DIRECT",
+                    origin,
                     executionId,
                     null,
                     null,
@@ -168,7 +198,7 @@ public class AiActionService {
                                 running.moduleId(),
                                 running.actionId(),
                                 resolvedArguments,
-                                "AI_DIRECT"
+                                origin
                         );
                         ExecutionRecordStep completedStep = withStep(
                                 running,
@@ -209,7 +239,7 @@ public class AiActionService {
 
                 journal.append(
                         "EXECUTION",
-                        "AI_DIRECT",
+                        origin,
                         executionId,
                         null,
                         null,
@@ -228,7 +258,7 @@ public class AiActionService {
                 String message = safeMessage(exception);
                 journal.append(
                         "EXECUTION",
-                        "AI_DIRECT",
+                        origin,
                         executionId,
                         null,
                         null,
@@ -236,7 +266,7 @@ public class AiActionService {
                         "FAILED",
                         message
                 );
-                boolean rolledBack = rollbackCompleted(executionId, steps, completed);
+                boolean rolledBack = rollbackCompleted(origin, executionId, steps, completed);
                 String status = rolledBack
                         ? "FAILED_ROLLED_BACK"
                         : "FAILED_PARTIALLY_ROLLED_BACK";
@@ -252,6 +282,7 @@ public class AiActionService {
     }
 
     private boolean rollbackCompleted(
+            String origin,
             String executionId,
             List<ExecutionRecordStep> steps,
             List<ExecutionRecordStep> completed
@@ -259,7 +290,7 @@ public class AiActionService {
         boolean allSucceeded = true;
         journal.append(
                 "ROLLBACK",
-                "AI_DIRECT",
+                origin,
                 executionId,
                 null,
                 null,
@@ -278,7 +309,7 @@ public class AiActionService {
                         completedStep.arguments(),
                         completedStep.snapshot(),
                         completedStep.output(),
-                        "AI_DIRECT"
+                        origin
                 );
                 replace(
                         steps,
@@ -310,7 +341,7 @@ public class AiActionService {
         }
         journal.append(
                 "ROLLBACK",
-                "AI_DIRECT",
+                origin,
                 executionId,
                 null,
                 null,

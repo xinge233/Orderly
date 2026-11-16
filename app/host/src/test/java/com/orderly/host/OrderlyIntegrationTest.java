@@ -24,6 +24,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -290,6 +292,200 @@ class OrderlyIntegrationTest {
     }
 
     @Test
+    void moduleControlActionsUseAuditedSourceAndCanRunNonAiCallableActions() throws Exception {
+        clearCalendarSpaces();
+        mockMvc.perform(post("/api/modules/module_calendar/actions/calendar.space.create")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "confirmed": true,
+                                  "arguments": {
+                                    "type": "text",
+                                    "text": "这是一个模块控制创建的空间"
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.origin").value("MODULE_CONTROL"))
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.events").isArray());
+
+        MvcResult spacesResult = mockMvc.perform(
+                        get("/api/modules/module_calendar/query/calendar.space.list")
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(1))
+                .andExpect(jsonPath("$.items[0].type").value("text"))
+                .andReturn();
+        String spaceId = objectMapper.readTree(spacesResult.getResponse().getContentAsString())
+                .path("items")
+                .get(0)
+                .path("id")
+                .asText();
+
+        mockMvc.perform(post("/api/modules/module_calendar/actions/calendar.space.delete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "confirmed": true,
+                                  "arguments": {"spaceId": "%s"}
+                                }
+                                """.formatted(spaceId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.origin").value("MODULE_CONTROL"))
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+
+        mockMvc.perform(get("/api/modules/module_calendar/query/calendar.space.list"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(0));
+        assertThat(runtime.listTrash()).anyMatch(entry ->
+                entry.originalPath().startsWith("modules/module_calendar/spaces/"));
+    }
+
+    @Test
+    void moduleControlRejectsUnconfirmedWriteAndAiCannotOperateSpaces() throws Exception {
+        mockMvc.perform(post("/api/modules/module_calendar/actions/calendar.space.create")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "confirmed": false,
+                                  "arguments": {"type": "text", "text": "拒绝写入"}
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFIRMATION_REQUIRED"));
+
+        mockMvc.perform(post("/api/ai/actions/execute")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "confirmed": true,
+                                  "actions": [{
+                                    "moduleId": "module_calendar",
+                                    "actionId": "calendar.space.create",
+                                    "arguments": {"type": "text", "text": "AI 不允许创建"}
+                                  }]
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ACTION_NOT_AI_CALLABLE"));
+    }
+
+    @Test
+    void moduleControlUploadStagesMediaAndServesItFromModuleData() throws Exception {
+        clearCalendarSpaces();
+        byte[] png = new byte[]{(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a};
+        MockMultipartFile request = new MockMultipartFile(
+                "request",
+                "",
+                MediaType.APPLICATION_JSON_VALUE,
+                """
+                        {
+                          "confirmed": true,
+                          "arguments": {
+                            "type": "image",
+                            "uploadPath": "uploads/integration.png",
+                            "contentType": "image/png"
+                          }
+                        }
+                        """.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "integration.png",
+                "image/png",
+                png
+        );
+        mockMvc.perform(multipart(
+                                "/api/modules/module_calendar/actions/calendar.space.create/upload"
+                        )
+                        .file(request)
+                        .file(file))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.origin").value("MODULE_CONTROL"))
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+
+        MvcResult spacesResult = mockMvc.perform(
+                        get("/api/modules/module_calendar/query/calendar.space.list")
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(1))
+                .andExpect(jsonPath("$.items[0].type").value("image"))
+                .andReturn();
+        String mediaPath = objectMapper.readTree(spacesResult.getResponse().getContentAsString())
+                .path("items")
+                .get(0)
+                .path("mediaPath")
+                .asText();
+
+        mockMvc.perform(get("/api/modules/module_calendar/data/" + mediaPath))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.IMAGE_PNG))
+                .andExpect(content().bytes(png));
+    }
+
+    @Test
+    void moduleControlUploadRejectsTraversalAndUnsupportedMedia() throws Exception {
+        MockMultipartFile traversalRequest = new MockMultipartFile(
+                "request",
+                "",
+                MediaType.APPLICATION_JSON_VALUE,
+                """
+                        {
+                          "confirmed": true,
+                          "arguments": {
+                            "type": "image",
+                            "uploadPath": "../escape.png",
+                            "contentType": "image/png"
+                          }
+                        }
+                        """.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+        MockMultipartFile png = new MockMultipartFile(
+                "file",
+                "escape.png",
+                "image/png",
+                new byte[]{(byte) 0x89, 0x50, 0x4e, 0x47}
+        );
+        mockMvc.perform(multipart(
+                                "/api/modules/module_calendar/actions/calendar.space.create/upload"
+                        )
+                        .file(traversalRequest)
+                        .file(png))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_MODULE_DATA_PATH"));
+
+        MockMultipartFile textRequest = new MockMultipartFile(
+                "request",
+                "",
+                MediaType.APPLICATION_JSON_VALUE,
+                """
+                        {
+                          "confirmed": true,
+                          "arguments": {
+                            "type": "image",
+                            "uploadPath": "uploads/unsupported.txt",
+                            "contentType": "text/plain"
+                          }
+                        }
+                        """.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+        MockMultipartFile text = new MockMultipartFile(
+                "file",
+                "unsupported.txt",
+                "text/plain",
+                "not-media".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+        mockMvc.perform(multipart(
+                                "/api/modules/module_calendar/actions/calendar.space.create/upload"
+                        )
+                        .file(textRequest)
+                        .file(text))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.code").value("MODULE_DATA_TYPE_UNSUPPORTED"));
+    }
+
+    @Test
     void executesAiActionsWithStructuredReferenceAndRollsBackRecord() throws Exception {
         int before = runtime.readItems("todos").size();
         MvcResult result = mockMvc.perform(post("/api/ai/actions/execute")
@@ -462,5 +658,19 @@ class OrderlyIntegrationTest {
         List<Long> sequences = journal.snapshot().stream().map(event -> event.seq()).toList();
         assertThat(sequences).isSorted();
         assertThat(sequences).doesNotHaveDuplicates();
+    }
+
+    private void clearCalendarSpaces() {
+        var root = runtime.resolveWorkspacePath("modules/module_calendar/spaces");
+        if (!runtime.exists(root)) {
+            return;
+        }
+        for (var entry : runtime.listDirectory(root)) {
+            runtime.moveToTrash(
+                    runtime.resolveWorkspacePath("modules/module_calendar/spaces/" + entry.name()),
+                    "test-cleanup",
+                    entry.name()
+            );
+        }
     }
 }

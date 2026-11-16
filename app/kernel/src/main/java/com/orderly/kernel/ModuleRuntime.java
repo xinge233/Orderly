@@ -30,6 +30,9 @@ public interface ModuleRuntime {
     /** 创建一个 UTF-8 文本文件；已存在的对象不会被覆盖。 */
     Path createTextFile(Path file, String content);
 
+    /** 读取工作区内 UTF-8 文本文件。 */
+    String readTextFile(Path file);
+
     /** 在工作区内部移动文件或目录，不覆盖目标。 */
     void move(Path source, Path target);
 

@@ -158,6 +158,37 @@ public class WorkspaceRuntime implements ModuleRuntime {
     }
 
     @Override
+    public String readTextFile(Path file) {
+        requireInsideWorkspace(file);
+        ensureExistingAncestorIsSafe(file);
+        if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalArgumentException("目标不是普通文件");
+        }
+        try {
+            return Files.readString(file, StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new IllegalStateException("读取文本文件失败", exception);
+        }
+    }
+
+    /**
+     * 创建模块二进制资源。该方法仅供宿主模块数据接口使用，不暴露给模块执行器。
+     */
+    public Path createBinaryFile(Path file, byte[] content) {
+        requireInsideWorkspace(file);
+        ensureExistingAncestorIsSafe(file);
+        if (Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalArgumentException("目标已存在，拒绝覆盖");
+        }
+        try {
+            Files.createDirectories(file.getParent());
+            return Files.write(file, Objects.requireNonNull(content));
+        } catch (IOException exception) {
+            throw new IllegalStateException("创建二进制文件失败", exception);
+        }
+    }
+
+    @Override
     public void move(Path source, Path target) {
         requireInsideWorkspace(source);
         requireInsideWorkspace(target);

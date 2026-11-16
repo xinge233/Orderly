@@ -156,3 +156,34 @@ test("API client addresses module UI and generic queries", async () => {
         "/api/modules/module%20demo/ui/module.js"
     );
 });
+
+test("API client addresses module data and control actions", async () => {
+    const requests = [];
+    const api = new OrderlyApi({
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url, options });
+            return new Response("{}", { status: 200 });
+        }
+    });
+
+    assert.equal(
+        api.moduleDataUrl("module_calendar", "spaces/one/media.png"),
+        "/api/modules/module_calendar/data/spaces/one/media.png"
+    );
+    await api.executeModuleAction(
+        "module_calendar",
+        "calendar.todo.complete",
+        { id: "todo-1" },
+        true
+    );
+
+    assert.equal(
+        requests[0].url,
+        "/api/modules/module_calendar/actions/calendar.todo.complete"
+    );
+    assert.equal(requests[0].options.method, "POST");
+    assert.deepEqual(JSON.parse(requests[0].options.body), {
+        confirmed: true,
+        arguments: { id: "todo-1" }
+    });
+});

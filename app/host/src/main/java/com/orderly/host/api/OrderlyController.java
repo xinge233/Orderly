@@ -19,6 +19,7 @@ import com.orderly.host.modulecontrol.ModuleFolderService;
 import com.orderly.host.modulecontrol.ModulePreferences;
 import com.orderly.host.modulecontrol.ModuleRefreshResult;
 import com.orderly.host.modulecontrol.ModuleRefreshService;
+import com.orderly.host.moduledata.ModuleDataService;
 import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanView;
 import com.orderly.host.runtime.WorkspaceRuntime;
@@ -27,7 +28,10 @@ import com.orderly.host.theme.ThemeAsset;
 import com.orderly.host.theme.ThemeCatalog;
 import com.orderly.host.theme.ThemeCatalogSnapshot;
 import com.orderly.host.theme.ThemeDefinition;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,9 +43,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -60,6 +67,7 @@ public class OrderlyController {
     private final ModuleControlService moduleControl;
     private final ModuleRefreshService moduleRefresh;
     private final ModuleFolderService moduleFolder;
+    private final ModuleDataService moduleData;
     private final SystemFeatureService features;
     private final AiActionService aiActions;
     private final ExecutionRecordStore records;
@@ -74,6 +82,7 @@ public class OrderlyController {
             ModuleControlService moduleControl,
             ModuleRefreshService moduleRefresh,
             ModuleFolderService moduleFolder,
+            ModuleDataService moduleData,
             SystemFeatureService features,
             AiActionService aiActions,
             ExecutionRecordStore records
@@ -87,6 +96,7 @@ public class OrderlyController {
         this.moduleControl = moduleControl;
         this.moduleRefresh = moduleRefresh;
         this.moduleFolder = moduleFolder;
+        this.moduleData = moduleData;
         this.features = features;
         this.aiActions = aiActions;
         this.records = records;
@@ -200,6 +210,81 @@ public class OrderlyController {
                 .contentType(MediaType.parseMediaType(resource.contentType()))
                 .header("Cache-Control", "no-cache")
                 .body(resource.content());
+    }
+
+    @GetMapping("/modules/{moduleId}/data/{*asset}")
+    public ResponseEntity<Resource> moduleData(
+            @PathVariable String moduleId,
+            @PathVariable("asset") String asset
+    ) {
+        ModuleDataService.ModuleDataAsset resource = moduleData.open(moduleId, asset);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(resource.contentType()))
+                .contentLength(resource.size())
+                .header(HttpHeaders.CACHE_CONTROL, "no-cache")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(new FileSystemResource(resource.file()));
+    }
+
+    @PostMapping(
+            value = "/modules/{moduleId}/actions/{actionId}/upload",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
+    public ExecutionRecord executeModuleActionWithUpload(
+            @PathVariable String moduleId,
+            @PathVariable String actionId,
+            @RequestPart("request") ModuleActionRequest request,
+            @RequestPart("file") MultipartFile file
+    ) throws IOException {
+        Object rawUploadPath = request.arguments().get("uploadPath");
+        String uploadPath = rawUploadPath == null ? "" : rawUploadPath.toString();
+        if (uploadPath.isBlank() || file == null || file.isEmpty()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_MODULE_UPLOAD",
+                    "上传动作必须包含 uploadPath 与非空文件"
+            );
+        }
+        moduleData.stage(
+                moduleId,
+                uploadPath,
+                file.getContentType(),
+                file.getBytes()
+        );
+        try {
+            ExecutionRecord record = aiActions.executeModuleControl(
+                    moduleId,
+                    actionId,
+                    request.arguments(),
+                    request.confirmed()
+            );
+            moduleData.cleanup(moduleId, uploadPath, record.executionId(), "upload-cleanup");
+            return record;
+        } catch (RuntimeException exception) {
+            moduleData.cleanup(moduleId, uploadPath, "module-upload-failed", "upload-cleanup");
+            throw exception;
+        }
+    }
+
+    @PostMapping("/modules/{moduleId}/actions/{actionId}")
+    public ExecutionRecord executeModuleAction(
+            @PathVariable String moduleId,
+            @PathVariable String actionId,
+            @RequestBody ModuleActionRequest request
+    ) {
+        if (request == null) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_REQUEST",
+                    "模块动作请求体不能为空"
+            );
+        }
+        return aiActions.executeModuleControl(
+                moduleId,
+                actionId,
+                request.arguments(),
+                request.confirmed()
+        );
     }
 
     @PostMapping("/plans")
@@ -343,6 +428,12 @@ public class OrderlyController {
     }
 
     public record PlanningFeatureRequest(Boolean enabled) {
+    }
+
+    public record ModuleActionRequest(boolean confirmed, Map<String, Object> arguments) {
+        public ModuleActionRequest {
+            arguments = arguments == null ? Map.of() : Map.copyOf(arguments);
+        }
     }
 
     public record AiActionsRequest(boolean confirmed, List<AiActionService.ActionCall> actions) {

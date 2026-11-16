@@ -3,16 +3,16 @@
   "view": {
     "id": "calendar",
     "icon": "calendar",
-    "caption": "当前日程"
+    "caption": "日历工作区"
   },
   "card": {
-    "title": "日程安排",
-    "description": "查看模块自有日程，并通过可回滚计划调整时间。",
-    "badge": "可撤销改期",
+    "title": "日历工作区",
+    "description": "日程、独立待办与自定义空间。",
+    "badge": "本地工作区",
     "icon": "calendar",
-    "queryId": "calendar.list",
+    "queryId": "calendar.todo.list",
     "countKey": "count",
-    "unit": "项日程"
+    "unit": "项待办"
   },
   "settings": [
     {
@@ -20,10 +20,35 @@
       "title": "显示结束时间",
       "type": "boolean",
       "default": true
+    },
+    {
+      "key": "hourFormat",
+      "title": "时间制式",
+      "type": "select",
+      "default": "24",
+      "options": [
+        { "value": "24", "label": "24 小时" },
+        { "value": "12", "label": "12 小时（上午/下午）" }
+      ]
+    },
+    {
+      "key": "spaceRotationEnabled",
+      "title": "自动轮播空间",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "spaceRotationSeconds",
+      "title": "空间轮播间隔",
+      "type": "integer",
+      "default": 15,
+      "min": 5,
+      "max": 120
     }
   ],
   "examples": [
-    { "label": "调整项目评审", "text": "把日程 项目评审 改到 2026-11-20 15:00" }
+    { "label": "调整项目评审", "text": "把日程 项目评审 改到 2026-11-20 15:00" },
+    { "label": "创建日历待办", "text": "创建日历待办 整理评审结论" }
   ],
   "script": "module.js",
   "style": "module.css"

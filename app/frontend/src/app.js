@@ -1884,6 +1884,22 @@ async function mountModule(module) {
                 queryId,
                 parameters
             ),
+            executeAction: (actionId, argumentsValue = {}, confirmed = true) =>
+                api.executeModuleAction(
+                    module.moduleId,
+                    actionId,
+                    argumentsValue,
+                    confirmed
+                ),
+            moduleDataUrl: (relativePath) => api.moduleDataUrl(module.moduleId, relativePath),
+            executeActionWithFile: (actionId, argumentsValue, file, confirmed = true) =>
+                api.executeModuleActionWithFile(
+                    module.moduleId,
+                    actionId,
+                    argumentsValue,
+                    file,
+                    confirmed
+                ),
             element,
             icon,
             toast,
