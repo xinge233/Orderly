@@ -1,3 +1,4 @@
+import { normalizeAiIcon } from "./icons.js";
 import { reconcileModuleOrder } from "./modules.js";
 
 export const MOTION_OPTIONS = Object.freeze([
@@ -9,6 +10,7 @@ export const MOTION_OPTIONS = Object.freeze([
 const DEFAULTS = Object.freeze({
     theme: "",
     motion: "gentle",
+    aiIcon: "spark",
     notifications: true,
     moduleOrderIds: []
 });
@@ -54,6 +56,7 @@ export function normalizeSettings(input) {
     return {
         theme: typeof source.theme === "string" ? source.theme.trim() : DEFAULTS.theme,
         motion: MOTIONS.has(source.motion) ? source.motion : DEFAULTS.motion,
+        aiIcon: normalizeAiIcon(source.aiIcon),
         notifications: typeof source.notifications === "boolean"
             ? source.notifications
             : DEFAULTS.notifications,

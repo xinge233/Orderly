@@ -1,4 +1,4 @@
-import { icon } from "./icons.js";
+import { icon, normalizeAiIcon } from "./icons.js";
 
 const AI_RISK_ORDER = Object.freeze({
     READ_ONLY: 0,
@@ -38,24 +38,40 @@ export function resolveAiSurfaceLayout({
 }) {
     const safeWidth = Math.max(1, viewportWidth - (margin * 2));
     const dockRight = dockLeft + dockWidth;
+    const dockBottom = dockTop + dockHeight;
     const spaceOnRight = Math.max(0, viewportWidth - margin - dockLeft);
     const spaceOnLeft = Math.max(0, dockRight - margin);
-    const horizontal = spaceOnRight >= spaceOnLeft ? "right" : "left";
+    const horizontal = spaceOnRight > spaceOnLeft ? "right" : "left";
     const availableWidth = Math.max(
         1,
         Math.min(safeWidth, horizontal === "right" ? spaceOnRight : spaceOnLeft)
     );
     const resolvedComposerWidth = Math.min(composerWidth, availableWidth);
     const resolvedPlanWidth = Math.min(planWidth, availableWidth);
-
-    const composerReserve = composerOpen ? composerHeight + gap : 0;
-    const spaceAbove = Math.max(
-        0,
-        dockTop - margin - gap - composerReserve
-    );
+    const roomAbove = Math.max(0, dockTop - margin);
+    const roomBelow = Math.max(0, viewportHeight - margin - dockBottom);
+    const surfaceY = roomAbove >= roomBelow ? "above" : "below";
+    const composerTop = surfaceY === "above"
+        ? dockBottom - composerHeight
+        : dockTop;
+    const composerBottom = composerTop + composerHeight;
+    const composerBox = horizontal === "right"
+        ? {
+            left: dockLeft,
+            right: dockLeft + resolvedComposerWidth,
+            top: composerTop,
+            bottom: composerBottom
+        }
+        : {
+            left: dockRight - resolvedComposerWidth,
+            right: dockRight,
+            top: composerTop,
+            bottom: composerBottom
+        };
+    const spaceAbove = Math.max(0, composerBox.top - margin - gap);
     const spaceBelow = Math.max(
         0,
-        viewportHeight - margin - dockTop - dockHeight - gap - composerReserve
+        viewportHeight - margin - composerBox.bottom - gap
     );
     const vertical = spaceAbove >= spaceBelow ? "above" : "below";
     const maxPlanHeight = Math.max(
@@ -63,38 +79,63 @@ export function resolveAiSurfaceLayout({
         Math.min(viewportHeight * 0.64, vertical === "above" ? spaceAbove : spaceBelow)
     );
     const visiblePlanHeight = Math.min(planContentHeight, maxPlanHeight);
-    const horizontalBox = (width) => horizontal === "right"
-        ? { left: dockLeft, right: dockLeft + width }
-        : { left: dockRight - width, right: dockRight };
-    const composerHorizontalBox = horizontalBox(resolvedComposerWidth);
-    const planHorizontalBox = horizontalBox(resolvedPlanWidth);
-    const composerTop = vertical === "above"
-        ? dockTop - gap - composerHeight
-        : dockTop + dockHeight + gap;
-    const composerBottom = composerTop + composerHeight;
+    const planHorizontalBox = horizontal === "right"
+        ? { left: dockLeft, right: dockLeft + resolvedPlanWidth }
+        : { left: dockRight - resolvedPlanWidth, right: dockRight };
     const planTop = vertical === "above"
-        ? composerTop - gap - visiblePlanHeight
-        : composerBottom + gap;
+        ? composerBox.top - gap - visiblePlanHeight
+        : composerBox.bottom + gap;
     const planBottom = planTop + visiblePlanHeight;
 
     return {
         horizontal,
         vertical,
+        surfaceY,
         availableWidth,
+        composerOpen,
         composerWidth: resolvedComposerWidth,
         composerHeight,
         planWidth: resolvedPlanWidth,
         maxPlanHeight,
-        composerBox: {
-            ...composerHorizontalBox,
-            top: composerTop,
-            bottom: composerBottom
-        },
+        composerBox,
         planBox: {
             ...planHorizontalBox,
             top: planTop,
             bottom: planBottom
         }
+    };
+}
+
+/**
+ * 只有完全收起且没有形变/吸附动画时才允许移动 dock。
+ *
+ * @param {{mode?: string, composerOpen?: boolean, panelOpen?: boolean, morphing?: boolean, snapAnimating?: boolean}} state dock 状态
+ * @returns {boolean} 是否允许拖动
+ */
+export function canDragAiDock({
+    mode = "collapsed",
+    composerOpen = false,
+    panelOpen = false,
+    morphing = false,
+    snapAnimating = false
+} = {}) {
+    return mode === "collapsed"
+        && composerOpen !== true
+        && panelOpen !== true
+        && morphing !== true
+        && snapAnimating !== true;
+}
+
+/**
+ * 计算 dock 左上角需要滑动到的默认吸附位置。
+ *
+ * @param {{dockWidth: number, dockHeight: number, snapCenter: {x: number, y: number}}} input 几何
+ * @returns {{x: number, y: number}} 目标左上角
+ */
+export function resolveAiSnapPosition({ dockWidth, dockHeight, snapCenter }) {
+    return {
+        x: snapCenter.x - (dockWidth / 2),
+        y: snapCenter.y - (dockHeight / 2)
     };
 }
 
@@ -182,6 +223,7 @@ export function mountAiDialog({
         composerInput: dock.querySelector("#ai-composer-input"),
         composerClose: dock.querySelector("#ai-composer-close"),
         composerSend: dock.querySelector("#ai-send-button"),
+        sendIcon: dock.querySelector("#ai-send-icon"),
         plan: dock.querySelector("#ai-plan-panel"),
         planClose: dock.querySelector("#ai-plan-close"),
         planTitle: dock.querySelector("#ai-plan-title"),
@@ -211,8 +253,15 @@ export function mountAiDialog({
         popoverTimer: null,
         collapseTimer: null,
         completionTimer: null,
+        morphAnimation: null,
+        iconAnimation: null,
+        contentAnimation: null,
+        snapAnimation: null,
         drag: null,
         dragging: false,
+        morphing: false,
+        snapAnimating: false,
+        aiIcon: "spark",
         suppressClickUntil: 0,
         position: null
     };
@@ -242,6 +291,10 @@ export function mountAiDialog({
         dialog.popoverTimer = null;
         dialog.collapseTimer = null;
         dialog.completionTimer = null;
+        dialog.morphAnimation = null;
+        dialog.iconAnimation = null;
+        dialog.contentAnimation = null;
+        dialog.snapAnimation = null;
     }
 
     function clearInvocationLayer() {
@@ -331,6 +384,7 @@ export function mountAiDialog({
         });
         dock.dataset.surfaceX = layout.horizontal;
         dock.dataset.surfaceY = layout.vertical;
+        dock.dataset.expandY = layout.surfaceY;
         dock.style.setProperty(
             "--ai-composer-current-width",
             `${layout.composerWidth}px`
@@ -342,6 +396,9 @@ export function mountAiDialog({
         const horizontalAxis = layout.horizontal === "right"
             ? { left: "0px", right: "auto" }
             : { left: "auto", right: "0px" };
+        const verticalAxis = layout.surfaceY === "above"
+            ? { top: "auto", bottom: "0px" }
+            : { top: "0px", bottom: "auto" };
         const placeSurface = (node, offset) => {
             node.style.left = horizontalAxis.left;
             node.style.right = horizontalAxis.right;
@@ -356,10 +413,22 @@ export function mountAiDialog({
                 layout.horizontal === "right" ? "left" : "right"
             } ${layout.vertical === "above" ? "bottom" : "top"}`;
         };
-        const composerOffset = rect.height + gap;
-        const planOffset = composerOffset
-            + (dialog.composerOpen ? composerHeight + gap : 0);
-        placeSurface(nodes.composer, composerOffset);
+        nodes.launcher.style.left = horizontalAxis.left;
+        nodes.launcher.style.right = horizontalAxis.right;
+        nodes.launcher.style.top = verticalAxis.top;
+        nodes.launcher.style.bottom = verticalAxis.bottom;
+        nodes.composer.style.left = horizontalAxis.left;
+        nodes.composer.style.right = horizontalAxis.right;
+        nodes.composer.style.top = verticalAxis.top;
+        nodes.composer.style.bottom = verticalAxis.bottom;
+        nodes.composer.style.transformOrigin = `${
+            layout.horizontal === "right" ? "left" : "right"
+        } ${layout.surfaceY === "above" ? "bottom" : "top"}`;
+        const composerTopOffset = layout.composerBox.top - rect.top;
+        const composerBottomOffset = layout.composerBox.bottom - rect.top;
+        const planOffset = layout.vertical === "above"
+            ? rect.height - composerTopOffset + gap
+            : composerBottomOffset + gap;
         placeSurface(nodes.plan, planOffset);
         placeSurface(nodes.progress, planOffset);
     }
@@ -427,11 +496,77 @@ export function mountAiDialog({
         nodes.snapTarget.dataset.near = String(visible && near);
     }
 
+    function animateSnapToDefault() {
+        if (dialog.snapAnimating
+            || !canDragAiDock({
+                mode: dialog.mode,
+                composerOpen: dialog.composerOpen,
+                panelOpen: dialog.panelOpen,
+                morphing: dialog.morphing
+            })) {
+            return;
+        }
+        const rect = dock.getBoundingClientRect();
+        const target = resolveAiSnapPosition({
+            dockWidth: rect.width,
+            dockHeight: rect.height,
+            snapCenter: defaultSnapCenter()
+        });
+        const dx = target.x - rect.left;
+        const dy = target.y - rect.top;
+        const style = getComputedStyle(dock);
+        const duration = parseCssDuration(
+            style.getPropertyValue("--duration-normal"),
+            240
+        );
+        const easing = style.getPropertyValue("--ease-out").trim()
+            || "cubic-bezier(0.22, 1, 0.36, 1)";
+        dialog.snapAnimating = true;
+        dock.dataset.snapAnimating = "true";
+        dock.dataset.draggable = "false";
+        setSnapTargetState(true, true);
+        dialog.suppressClickUntil = Date.now() + duration + 250;
+
+        const finish = () => {
+            dialog.snapAnimation = null;
+            dialog.snapAnimating = false;
+            dock.dataset.snapAnimating = "false";
+            dock.dataset.draggable = String(canDragAiDock(dialog));
+            setSnapTargetState(false, false);
+        };
+        if (duration <= 0 || typeof dock.animate !== "function") {
+            resetToDefaultAnchor();
+            finish();
+            return;
+        }
+
+        const animation = dock.animate(
+            [
+                { transform: "translate3d(0, 0, 0)" },
+                { transform: `translate3d(${dx}px, ${dy}px, 0)` }
+            ],
+            { duration, easing, fill: "forwards" }
+        );
+        dialog.snapAnimation = animation;
+        void animation.finished.then(() => {
+            if (dialog.snapAnimation !== animation) return;
+            resetToDefaultAnchor();
+            animation.cancel();
+            finish();
+        }).catch(() => {});
+    }
+
+    function renderAiIcon() {
+        const inSendButton = nodes.sendIcon.contains(nodes.launcherIcon);
+        nodes.launcherIcon.dataset.aiIcon = dialog.aiIcon;
+        nodes.launcherIcon.innerHTML = icon(dialog.aiIcon, inSendButton ? 16 : 26);
+    }
+
     function updateSurfaces() {
         const composerOpen = dialog.composerOpen;
         const planOpen = dialog.panelOpen
             && ["planning", "running", "completed"].includes(dialog.mode);
-        const launcherVisible = true;
+        const expanded = composerOpen || planOpen;
         const running = dialog.mode === "running";
         const completed = dialog.mode === "completed";
         const busy = ["planning", "running", "completed"].includes(dialog.mode);
@@ -441,15 +576,20 @@ export function mountAiDialog({
         dock.dataset.panel = planOpen ? "open" : "closed";
         dock.dataset.popover = dialog.popoverOpen ? "open" : "closed";
         dock.dataset.dragging = dialog.dragging ? "true" : "false";
+        dock.dataset.expanded = expanded ? "true" : "false";
+        dock.dataset.morphing = dialog.morphing ? "true" : "false";
+        dock.dataset.snapAnimating = dialog.snapAnimating ? "true" : "false";
+        dock.dataset.draggable = String(canDragAiDock(dialog));
         dock.dataset.demo = "true";
 
         nodes.composer.setAttribute("aria-hidden", String(!composerOpen));
         nodes.composer.inert = !composerOpen;
         nodes.plan.setAttribute("aria-hidden", String(!planOpen));
         nodes.plan.inert = !planOpen;
-        nodes.launcher.setAttribute("aria-hidden", String(!launcherVisible));
-        nodes.launcher.inert = !launcherVisible;
-        nodes.launcher.setAttribute("aria-expanded", String(composerOpen || planOpen));
+        nodes.launcher.setAttribute("aria-hidden", String(expanded));
+        nodes.launcher.inert = expanded;
+        nodes.launcher.tabIndex = expanded ? -1 : 0;
+        nodes.launcher.setAttribute("aria-expanded", String(expanded));
         nodes.composerInput.disabled = busy;
         nodes.composerSend.disabled = busy;
         nodes.composerInput.setAttribute("aria-busy", String(busy));
@@ -460,10 +600,7 @@ export function mountAiDialog({
             : completed
                 ? "completed"
                 : "idle";
-        nodes.launcherIcon.innerHTML = icon(
-            completed ? "check-plain" : running ? "spark" : "spark",
-            26
-        );
+        renderAiIcon();
         nodes.launcher.setAttribute(
             "aria-label",
             running
@@ -586,12 +723,139 @@ export function mountAiDialog({
         updateSurfaces();
     }
 
+    function animateDockTransition({
+        expanded,
+        beforeRect,
+        beforeStyle,
+        beforeIconRect
+    }) {
+        dialog.morphAnimation?.cancel();
+        dialog.iconAnimation?.cancel();
+        dialog.contentAnimation?.cancel();
+        dialog.morphAnimation = null;
+        dialog.iconAnimation = null;
+        dialog.contentAnimation = null;
+        const iconInSendButton = nodes.sendIcon.contains(nodes.launcherIcon);
+        if (expanded && !iconInSendButton) {
+            nodes.sendIcon.append(nodes.launcherIcon);
+        } else if (!expanded && iconInSendButton) {
+            nodes.launcher.append(nodes.launcherIcon);
+        }
+        renderAiIcon();
+
+        const style = getComputedStyle(dock);
+        const duration = parseCssDuration(
+            style.getPropertyValue("--duration-normal"),
+            240
+        );
+        if (duration <= 0
+            || typeof nodes.launcher.animate !== "function"
+            || typeof nodes.launcherIcon.animate !== "function") {
+            dialog.morphing = false;
+            dock.dataset.morphing = "false";
+            dock.dataset.draggable = String(canDragAiDock(dialog));
+            delete dock.dataset.morph;
+            return;
+        }
+
+        const afterRect = nodes.launcher.getBoundingClientRect();
+        const afterStyle = getComputedStyle(nodes.launcher);
+        const afterIconRect = nodes.launcherIcon.getBoundingClientRect();
+        if (!beforeRect.width || !afterRect.width
+            || !beforeIconRect.width || !afterIconRect.width) {
+            dialog.morphing = false;
+            dock.dataset.morphing = "false";
+            delete dock.dataset.morph;
+            return;
+        }
+        const easing = style.getPropertyValue("--ease-out").trim()
+            || "cubic-bezier(0.22, 1, 0.36, 1)";
+        const iconDx = (beforeIconRect.left + (beforeIconRect.width / 2))
+            - (afterIconRect.left + (afterIconRect.width / 2));
+        const iconDy = (beforeIconRect.top + (beforeIconRect.height / 2))
+            - (afterIconRect.top + (afterIconRect.height / 2));
+        const iconScale = beforeIconRect.width / afterIconRect.width;
+
+        dialog.morphing = true;
+        dock.dataset.morphing = "true";
+        dock.dataset.draggable = "false";
+        dock.dataset.morph = expanded ? "opening" : "closing";
+        const morphAnimation = nodes.launcher.animate(
+            [
+                {
+                    width: `${beforeRect.width}px`,
+                    height: `${beforeRect.height}px`,
+                    borderColor: beforeStyle.borderColor,
+                    borderWidth: beforeStyle.borderWidth,
+                    borderRadius: beforeStyle.borderRadius,
+                    backgroundColor: beforeStyle.backgroundColor,
+                    color: beforeStyle.color
+                },
+                {
+                    width: `${afterRect.width}px`,
+                    height: `${afterRect.height}px`,
+                    borderColor: afterStyle.borderColor,
+                    borderWidth: afterStyle.borderWidth,
+                    borderRadius: afterStyle.borderRadius,
+                    backgroundColor: afterStyle.backgroundColor,
+                    color: afterStyle.color
+                }
+            ],
+            { duration, easing, fill: "none" }
+        );
+        const iconAnimation = nodes.launcherIcon.animate(
+            [
+                {
+                    transform: `translate3d(${iconDx}px, ${iconDy}px, 0) scale(${iconScale})`
+                },
+                { transform: "translate3d(0, 0, 0) scale(1)" }
+            ],
+            { duration, easing, fill: "none" }
+        );
+        const contentAnimation = nodes.composer.animate(
+            expanded
+                ? [
+                    { opacity: 0, offset: 0 },
+                    { opacity: 0, offset: 0.42 },
+                    { opacity: 1, offset: 1 }
+                ]
+                : [
+                    { opacity: 1, offset: 0 },
+                    { opacity: 0.12, offset: 0.58 },
+                    { opacity: 0, offset: 1 }
+                ],
+            { duration, easing, fill: "forwards" }
+        );
+        dialog.morphAnimation = morphAnimation;
+        dialog.iconAnimation = iconAnimation;
+        dialog.contentAnimation = contentAnimation;
+        void Promise.allSettled([
+            morphAnimation.finished,
+            iconAnimation.finished,
+            contentAnimation.finished
+        ])
+            .then(() => {
+                if (dialog.morphAnimation !== morphAnimation) return;
+                dialog.morphAnimation = null;
+                dialog.iconAnimation = null;
+                dialog.contentAnimation = null;
+                dialog.morphing = false;
+                dock.dataset.morphing = "false";
+                dock.dataset.draggable = String(canDragAiDock(dialog));
+                delete dock.dataset.morph;
+            });
+    }
+
     function setState({
         mode = dialog.mode,
         composerOpen = dialog.composerOpen,
         panelOpen = dialog.panelOpen,
         focus = null
     } = {}) {
+        const wasComposerOpen = dialog.composerOpen;
+        const beforeRect = nodes.launcher.getBoundingClientRect();
+        const beforeStyle = getComputedStyle(nodes.launcher);
+        const beforeIconRect = nodes.launcherIcon.getBoundingClientRect();
         dialog.mode = mode;
         dialog.composerOpen = composerOpen;
         dialog.panelOpen = panelOpen;
@@ -599,6 +863,14 @@ export function mountAiDialog({
             dialog.popoverOpen = false;
         }
         renderAll();
+        if (wasComposerOpen !== composerOpen) {
+            animateDockTransition({
+                expanded: composerOpen,
+                beforeRect,
+                beforeStyle,
+                beforeIconRect
+            });
+        }
         if (focus) {
             window.requestAnimationFrame(() => focus.focus({ preventScroll: true }));
         }
@@ -919,7 +1191,10 @@ export function mountAiDialog({
     }
 
     function onLauncherClick() {
-        if (Date.now() < dialog.suppressClickUntil || dialog.dragging) {
+        if (Date.now() < dialog.suppressClickUntil
+            || dialog.dragging
+            || dialog.morphing
+            || dialog.snapAnimating) {
             return;
         }
         if (dialog.mode === "completed") {
@@ -950,11 +1225,7 @@ export function mountAiDialog({
     function onComposerKeyDown(event) {
         if (event.key === "Escape") {
             event.preventDefault();
-            if (dialog.panelOpen) {
-                collapsePlanOnly({ focusLauncher: true });
-            } else {
-                collapseAndReset();
-            }
+            collapseAndReset();
             return;
         }
         if (event.key === "Enter" && !event.shiftKey) {
@@ -967,30 +1238,15 @@ export function mountAiDialog({
         if (event.key !== "Escape") return;
         if (dialog.mode === "collapsed") return;
         event.preventDefault();
-        if (dialog.panelOpen) {
-            collapsePlanOnly({ focusLauncher: true });
-            return;
-        }
-        if (dialog.mode === "composing") {
-            collapseAndReset();
-        }
-    }
-
-    function collapseSurfacesForDrag() {
-        if (!dialog.composerOpen && !dialog.panelOpen) {
-            return;
-        }
-        dialog.composerOpen = false;
-        dialog.panelOpen = false;
-        dialog.popoverOpen = false;
-        if (dialog.mode === "composing") {
-            dialog.mode = "collapsed";
-        }
-        renderAll();
+        collapseAndReset();
     }
 
     function onLauncherPointerDown(event) {
-        if (event.button !== 0 || !dialog.enabled) return;
+        if (event.button !== 0
+            || !dialog.enabled
+            || !canDragAiDock(dialog)) {
+            return;
+        }
         const rect = dock.getBoundingClientRect();
         dialog.drag = {
             pointerId: event.pointerId,
@@ -1017,9 +1273,12 @@ export function mountAiDialog({
             return;
         }
         if (!drag.started) {
+            if (!canDragAiDock(dialog)) {
+                dialog.drag = null;
+                return;
+            }
             drag.started = true;
             dialog.dragging = true;
-            collapseSurfacesForDrag();
             setSnapTargetState(true, false);
             setFreePosition(drag.originX, drag.originY);
         }
@@ -1031,22 +1290,10 @@ export function mountAiDialog({
     function finishLauncherDrag(event) {
         const drag = dialog.drag;
         if (!drag || drag.pointerId !== event.pointerId) return;
-        if (drag.started) {
-            if (isNearDefaultSnap()) {
-                resetToDefaultAnchor();
-            } else if (dialog.position) {
-                setFreePosition(
-                    dialog.position.x,
-                    dialog.position.y,
-                    { persist: true }
-                );
-            }
-            dialog.suppressClickUntil = Date.now() + 250;
-        }
+        const shouldSnap = drag.started && isNearDefaultSnap();
         dialog.dragging = false;
         dialog.drag = null;
         dock.dataset.dragging = "false";
-        setSnapTargetState(false, false);
         if (nodes.launcher.hasPointerCapture?.(event.pointerId)) {
             try {
                 nodes.launcher.releasePointerCapture(event.pointerId);
@@ -1054,10 +1301,30 @@ export function mountAiDialog({
                 // 指针捕获可能已由浏览器自动释放。
             }
         }
+        if (!drag.started) {
+            setSnapTargetState(false, false);
+            return;
+        }
+        if (shouldSnap) {
+            animateSnapToDefault();
+            return;
+        }
+        if (dialog.position) {
+            setFreePosition(
+                dialog.position.x,
+                dialog.position.y,
+                { persist: true }
+            );
+        }
+        dialog.suppressClickUntil = Date.now() + 250;
+        setSnapTargetState(false, false);
     }
 
     function onLauncherKeyDown(event) {
         if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+            return;
+        }
+        if (!canDragAiDock(dialog)) {
             return;
         }
         event.preventDefault();
@@ -1070,11 +1337,10 @@ export function mountAiDialog({
             ArrowUp: [0, -step],
             ArrowDown: [0, step]
         }[event.key];
-        collapseSurfacesForDrag();
         setFreePosition(rect.left + offset[0], rect.top + offset[1], { persist: true });
         const nextDistance = defaultSnapDistance();
         if (nextDistance <= AI_SNAP_DISTANCE_PX && nextDistance < previousDistance) {
-            resetToDefaultAnchor();
+            animateSnapToDefault();
         }
     }
 
@@ -1086,6 +1352,9 @@ export function mountAiDialog({
     }
 
     function onWindowResize() {
+        if (dialog.snapAnimating) {
+            return;
+        }
         if (!dialog.position) {
             updateExpandedGeometry();
             return;
@@ -1103,6 +1372,20 @@ export function mountAiDialog({
     nodes.launcher.addEventListener("pointerleave", hideProgressPopover);
     nodes.launcher.addEventListener("focus", showProgressPopover);
     nodes.launcher.addEventListener("blur", hideProgressPopover);
+    nodes.composer.addEventListener("pointerenter", showProgressPopover);
+    nodes.composer.addEventListener("pointerleave", hideProgressPopover);
+    nodes.composer.addEventListener("focusin", showProgressPopover);
+    nodes.composer.addEventListener("focusout", hideProgressPopover);
+    nodes.progress.addEventListener("pointerenter", () => {
+        clearLater(dialog.popoverTimer);
+        dialog.popoverTimer = null;
+    });
+    nodes.progress.addEventListener("pointerleave", hideProgressPopover);
+    nodes.progress.addEventListener("focusin", () => {
+        clearLater(dialog.popoverTimer);
+        dialog.popoverTimer = null;
+    });
+    nodes.progress.addEventListener("focusout", hideProgressPopover);
     nodes.composerClose.addEventListener("click", collapseAndReset);
     nodes.composerForm.addEventListener("submit", onComposerSubmit);
     nodes.composerInput.addEventListener("keydown", onComposerKeyDown);
@@ -1131,6 +1414,16 @@ export function mountAiDialog({
     window.addEventListener("resize", onWindowResize);
 
     const stop = () => {
+        dialog.morphAnimation?.cancel();
+        dialog.iconAnimation?.cancel();
+        dialog.contentAnimation?.cancel();
+        dialog.snapAnimation?.cancel();
+        dialog.morphing = false;
+        dialog.snapAnimating = false;
+        dialog.morphAnimation = null;
+        dialog.iconAnimation = null;
+        dialog.contentAnimation = null;
+        dialog.snapAnimation = null;
         clearAllTimers();
         clearInvocationLayer();
     };
@@ -1145,6 +1438,10 @@ export function mountAiDialog({
     return {
         setEnabled,
         reset,
+        setIcon(name) {
+            dialog.aiIcon = normalizeAiIcon(name);
+            renderAiIcon();
+        },
         openWithText(text = "") {
             if (!dialog.enabled) return;
             openComposer();

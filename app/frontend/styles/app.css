@@ -1844,12 +1844,17 @@ body.is-navigation-dragging * {
     display: none;
 }
 
-.ai-dock .ai-launcher[aria-hidden="true"],
 .ai-dock .ai-composer[aria-hidden="true"],
 .ai-dock .ai-plan-panel[aria-hidden="true"],
 .ai-dock .ai-progress-popover[aria-hidden="true"] {
     visibility: hidden;
     opacity: 0;
+    pointer-events: none;
+}
+
+.ai-dock[data-morph="closing"] .ai-composer[aria-hidden="true"] {
+    visibility: visible;
+    opacity: 1;
     pointer-events: none;
 }
 
@@ -1879,7 +1884,6 @@ body.is-navigation-dragging * {
     user-select: none;
 }
 
-.ai-launcher__icon,
 .ai-launcher__ring,
 .ai-launcher__status {
     position: absolute;
@@ -1888,6 +1892,18 @@ body.is-navigation-dragging * {
 .ai-launcher__icon {
     display: grid;
     place-items: center;
+}
+
+.ai-dock[data-composer="open"] .ai-launcher {
+    width: var(--ai-composer-current-width);
+    height: var(--ai-composer-height);
+    border-width: 1px;
+    border-color: color-mix(in srgb, var(--color-accent) 34%, var(--color-line));
+    border-radius: var(--ai-composer-radius);
+    background: color-mix(in srgb, var(--color-surface-raised) 96%, transparent);
+    color: var(--color-text);
+    cursor: default;
+    pointer-events: none;
 }
 
 .ai-launcher__ring {
@@ -1914,39 +1930,37 @@ body.is-navigation-dragging * {
     background: var(--color-safe);
 }
 
+.ai-dock[data-composer="open"] .ai-launcher__ring,
+.ai-dock[data-composer="open"] .ai-launcher__status {
+    visibility: hidden;
+    opacity: 0;
+}
+
 .ai-composer {
     right: 0;
-    bottom: calc(var(--ai-launcher-size) + var(--space-3));
+    bottom: 0;
     width: min(var(--ai-composer-current-width), calc(100vw - var(--space-6)));
-    transform: translateY(16px) scale(0.985);
+    transform: none;
     transform-origin: right bottom;
 }
 
 .ai-dock[data-composer="open"] .ai-composer {
     visibility: visible;
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: none;
     pointer-events: auto;
 }
 
 .ai-composer__form {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
     align-items: center;
     gap: var(--space-2);
     min-height: var(--ai-composer-height);
     padding: 5px 6px 5px var(--space-3);
-    border: 1px solid color-mix(in srgb, var(--color-accent) 34%, var(--color-line));
+    border: 0;
     border-radius: var(--ai-composer-radius);
-    background: color-mix(in srgb, var(--color-surface-raised) 96%, transparent);
-    box-shadow: var(--shadow-soft);
-    backdrop-filter: blur(20px);
-}
-
-.ai-composer__spark {
-    display: grid;
-    place-items: center;
-    color: var(--color-accent-strong);
+    background: transparent;
 }
 
 .ai-composer__form textarea {
@@ -2012,9 +2026,20 @@ body.is-navigation-dragging * {
     font-weight: 750;
 }
 
+.ai-send-button__icon {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+}
+
+.ai-send-button__icon .ai-launcher__icon {
+    position: static;
+}
+
 .ai-plan-panel {
     right: 0;
-    bottom: calc(var(--ai-launcher-size) + var(--space-3));
+    bottom: calc(var(--ai-composer-height) + var(--space-3));
     display: flex;
     width: min(var(--ai-plan-width), calc(100vw - var(--space-6)));
     max-height: min(64vh, calc(100vh - var(--ai-launcher-size) - var(--ai-composer-height) - 64px));
@@ -2030,10 +2055,6 @@ body.is-navigation-dragging * {
     transform-origin: right bottom;
     backdrop-filter: blur(20px);
     overflow-y: auto;
-}
-
-.ai-dock[data-composer="open"] .ai-plan-panel {
-    bottom: calc(var(--ai-launcher-size) + var(--ai-composer-height) + (var(--space-3) * 2));
 }
 
 .ai-dock[data-panel="open"] .ai-plan-panel {
@@ -2201,7 +2222,7 @@ body.is-navigation-dragging * {
 
 .ai-progress-popover {
     right: 0;
-    bottom: calc(var(--ai-launcher-size) + var(--space-3));
+    bottom: calc(var(--ai-composer-height) + var(--space-3));
     display: grid;
     width: min(280px, calc(100vw - 24px));
     gap: var(--space-2);
@@ -2213,10 +2234,6 @@ body.is-navigation-dragging * {
     transform: translateY(8px) scale(0.985);
     transform-origin: right bottom;
     backdrop-filter: blur(18px);
-}
-
-.ai-dock[data-composer="open"] .ai-progress-popover {
-    bottom: calc(var(--ai-launcher-size) + var(--ai-composer-height) + (var(--space-3) * 2));
 }
 
 .ai-dock[data-popover="open"] .ai-progress-popover {
@@ -2494,6 +2511,56 @@ body.is-navigation-dragging * {
 
 .theme-option strong {
     font-size: var(--font-size-small);
+}
+
+.ai-icon-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+}
+
+.ai-icon-option {
+    cursor: pointer;
+}
+
+.ai-icon-option input {
+    position: absolute;
+    opacity: 0;
+}
+
+.ai-icon-option__card {
+    display: grid;
+    place-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-2);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text-soft);
+    font-size: var(--font-size-small);
+}
+
+.ai-icon-option input:checked + .ai-icon-option__card {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+    color: var(--color-accent-strong);
+    box-shadow: 0 0 0 2px var(--color-accent-soft);
+}
+
+.ai-icon-option input:focus-visible + .ai-icon-option__card {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+.ai-icon-option__icon {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--color-surface-muted);
+    color: var(--color-accent-strong);
 }
 
 .segmented {
@@ -2802,7 +2869,7 @@ body.is-navigation-dragging * {
 
     .ai-composer {
         right: 0;
-        bottom: calc(var(--ai-launcher-size) + var(--space-3));
+        bottom: 0;
         left: auto;
     }
 
@@ -2853,7 +2920,8 @@ body.is-navigation-dragging * {
     .surface-grid,
     .plan-meta-grid,
     .summary-stats,
-    .theme-grid {
+    .theme-grid,
+    .ai-icon-grid {
         grid-template-columns: 1fr;
     }
 
@@ -2916,7 +2984,7 @@ body.is-navigation-dragging * {
     }
 
     .ai-composer__form {
-        grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+        grid-template-columns: minmax(0, 1fr) auto auto auto;
     }
 
     .ai-plan-panel {

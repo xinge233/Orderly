@@ -1,6 +1,6 @@
 import { ApiError, OrderlyApi } from "./api.js";
 import { mountAiDialog } from "./ai-dialog.js";
-import { hydrateIcons, icon } from "./icons.js";
+import { AI_ICON_OPTIONS, hydrateIcons, icon } from "./icons.js";
 import {
     EVENT_ORIGIN,
     EVENT_ORIGIN_LABEL,
@@ -1329,6 +1329,7 @@ function cancelSidebarCountRefresh() {
  */
 function applySettings(settings) {
     document.documentElement.dataset.motion = settings.motion;
+    aiDialog?.setIcon(settings.aiIcon);
     syncSettingControls(settings);
     void applyThemeSelection(settings.theme);
     renderNavigation(document.querySelector("#nav-search")?.value ?? "");
@@ -1430,6 +1431,9 @@ function syncSettingControls(settings) {
     });
     document.querySelectorAll('#settings-panel input[name="motion"]').forEach((input) => {
         input.checked = input.value === settings.motion;
+    });
+    document.querySelectorAll('#settings-panel input[name="aiIcon"]').forEach((input) => {
+        input.checked = input.value === settings.aiIcon;
     });
     document.querySelectorAll("#settings-panel input[data-setting-key]").forEach((input) => {
         const key = input.dataset.settingKey;
@@ -3479,6 +3483,33 @@ function renderAppearanceSettings(panel) {
     themeField.append(themeGrid);
     fields.append(themeField);
 
+    const aiIconField = element("fieldset", "setting-field");
+    aiIconField.append(
+        element("legend", "", "AI 图标"),
+        element("p", "", "用于收起态入口与展开后的生成按钮；选择仅保存在当前浏览器。")
+    );
+    const aiIconGrid = element("div", "ai-icon-grid");
+    AI_ICON_OPTIONS.forEach((option) => {
+        const label = element("label", "ai-icon-option");
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = "aiIcon";
+        input.value = option.value;
+        input.checked = settings.aiIcon === option.value;
+        const card = element("span", "ai-icon-option__card");
+        const iconPreview = element("span", "ai-icon-option__icon");
+        iconPreview.innerHTML = icon(option.value, 20);
+        card.append(iconPreview, element("strong", "", option.label));
+        label.append(input, card);
+        input.addEventListener("change", () => {
+            if (input.checked) {
+                settingsStore.update({ aiIcon: option.value });
+            }
+        });
+        aiIconGrid.append(label);
+    });
+    aiIconField.append(aiIconGrid);
+
     const motionField = element("fieldset", "setting-field");
     motionField.append(
         element("legend", "", "交互动效"),
@@ -3513,7 +3544,7 @@ function renderAppearanceSettings(panel) {
         "notifications",
         settings.notifications
     ));
-    fields.append(motionField, notifications);
+    fields.append(aiIconField, motionField, notifications);
     panel.append(fields);
 }
 

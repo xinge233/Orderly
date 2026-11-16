@@ -152,6 +152,21 @@ test("AI dock hides inactive surfaces and keeps demo disclosure visible", async 
     assert.doesNotMatch(appCss, /\.planner-disclosure\s*\{[^}]*display:\s*none;/s);
 });
 
+test("AI dock morph and snap use program duration tokens and honor none immediately", async () => {
+    const appCss = await read("../styles/app.css");
+    const tokens = await read("../styles/tokens.css");
+    const dialog = await read("../src/ai-dialog.js");
+
+    assert.match(dialog, /getPropertyValue\("--duration-normal"\)/);
+    assert.doesNotMatch(dialog, /prefers-reduced-motion/);
+    assert.doesNotMatch(appCss, /prefers-reduced-motion/);
+    assert.match(
+        tokens,
+        /html\[data-motion="none"\]\s*\{[\s\S]*?--duration-normal:\s*0ms;/
+    );
+    assert.match(tokens, /html\[data-motion="none"\] \*,[\s\S]*?animation:\s*none !important/);
+});
+
 test("each directory theme owns layered tokens and motion CSS", async () => {
     for (const id of ["paper", "moss", "night"]) {
         const tokens = await read(`../../../themes/${id}/tokens.css`);

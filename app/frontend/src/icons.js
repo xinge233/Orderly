@@ -26,6 +26,25 @@ const ICONS = {
     notification: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"></path>'
 };
 
+export const AI_ICON_OPTIONS = Object.freeze([
+    { value: "spark", label: "星芒" },
+    { value: "route", label: "路径" },
+    { value: "shield", label: "防护" },
+    { value: "modules", label: "模块" }
+]);
+
+const AI_ICONS = new Set(AI_ICON_OPTIONS.map((item) => item.value));
+
+/**
+ * 将 AI 图标限制为前端内置选项；非法值统一回退星芒。
+ *
+ * @param {unknown} value 原始值
+ * @returns {"spark" | "route" | "shield" | "modules"} 合法图标名
+ */
+export function normalizeAiIcon(value) {
+    return AI_ICONS.has(value) ? value : "spark";
+}
+
 /**
  * 仅渲染内置图标路径，不接受外部 SVG 字符串。
  *

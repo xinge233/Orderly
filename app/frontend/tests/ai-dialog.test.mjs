@@ -3,8 +3,10 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+    canDragAiDock,
     createAiDemoPlan,
     higherAiRisk,
+    resolveAiSnapPosition,
     resolveAiSurfaceLayout
 } from "../src/ai-dialog.js";
 
@@ -40,6 +42,11 @@ test("AI demo plan stays local and selects the highest action risk", () => {
 test("AI dialog component never calls host planning or execution APIs", async () => {
     const component = await read("../src/ai-dialog.js");
 
+    assert.match(
+        component,
+        /import \{ icon, normalizeAiIcon \} from "\.\/icons\.js"/
+    );
+    assert.doesNotMatch(component, /from "\.\/settings\.js"/);
     assert.doesNotMatch(component, /\bfetch\s*\(/);
     assert.doesNotMatch(component, /OrderlyApi|draftPlan|confirmPlan|executeAi|confirmPlan/);
     assert.match(component, /界面演示/);
@@ -129,11 +136,76 @@ test("AI dock supports persistent dragging, snapping and viewport clamping", asy
     assert.match(component, /AI_SNAP_DISTANCE_PX = 76/);
     assert.match(component, /setPointerCapture/);
     assert.match(component, /\.dataset\.visible/);
-    assert.match(component, /collapseSurfacesForDrag/);
+    assert.match(component, /canDragAiDock/);
+    assert.match(component, /animateSnapToDefault/);
+    assert.match(component, /getPropertyValue\("--duration-normal"\)/);
+    assert.match(component, /dock\.animate\(/);
+    assert.match(component, /snapAnimating/);
+    assert.doesNotMatch(component, /collapseSurfacesForDrag/);
     assert.match(component, /setFreePosition/);
     assert.match(component, /localStorage/);
     assert.match(css, /\.ai-snap-target\[data-visible="true"\]/);
     assert.match(css, /\.ai-dock\[data-anchor="free"\]/);
+});
+
+test("only a fully collapsed dock accepts pointer or keyboard movement", () => {
+    assert.equal(canDragAiDock({}), true);
+    assert.equal(canDragAiDock({ composerOpen: true }), false);
+    assert.equal(canDragAiDock({ mode: "composing" }), false);
+    assert.equal(canDragAiDock({ panelOpen: true }), false);
+    assert.equal(canDragAiDock({ morphing: true }), false);
+    assert.equal(canDragAiDock({ snapAnimating: true }), false);
+    assert.deepEqual(
+        resolveAiSnapPosition({
+            dockWidth: 58,
+            dockHeight: 58,
+            snapCenter: { x: 1200, y: 800 }
+        }),
+        { x: 1171, y: 771 }
+    );
+});
+
+test("expanded composer keeps running progress reachable", async () => {
+    const component = await read("../src/ai-dialog.js");
+
+    assert.match(
+        component,
+        /nodes\.composer\.addEventListener\("pointerenter", showProgressPopover\)/
+    );
+    assert.match(
+        component,
+        /nodes\.composer\.addEventListener\("focusin", showProgressPopover\)/
+    );
+    assert.match(
+        component,
+        /nodes\.progress\.addEventListener\("pointerenter"[\s\S]*?clearLater\(dialog\.popoverTimer\)/
+    );
+});
+
+test("launcher surface morphs into the composer and reuses its icon in Generate", async () => {
+    const html = await read("../index.html");
+    const css = await read("../styles/app.css");
+    const component = await read("../src/ai-dialog.js");
+    const dialog = html.slice(
+        html.indexOf('class="ai-dock"'),
+        html.indexOf('class="ai-call-layer"')
+    );
+
+    assert.match(dialog, /id="ai-send-icon"/);
+    assert.match(dialog, /<span>生成<\/span>/);
+    assert.match(
+        css,
+        /\.ai-dock\[data-composer="open"\] \.ai-launcher\s*\{[\s\S]*?width:\s*var\(--ai-composer-current-width\);[\s\S]*?height:\s*var\(--ai-composer-height\);[\s\S]*?border-radius:\s*var\(--ai-composer-radius\);/
+    );
+    assert.match(
+        css,
+        /\.ai-dock\[data-morph="closing"\] \.ai-composer\[aria-hidden="true"\]/
+    );
+    assert.match(component, /nodes\.sendIcon\.append\(nodes\.launcherIcon\)/);
+    assert.match(component, /nodes\.launcher\.append\(nodes\.launcherIcon\)/);
+    assert.match(component, /nodes\.launcher\.animate\(/);
+    assert.match(component, /nodes\.launcherIcon\.animate\(/);
+    assert.match(component, /dock\.dataset\.morph = expanded \? "opening" : "closing"/);
 });
 
 test("AI surfaces stay inside four viewport corners without overlapping", () => {

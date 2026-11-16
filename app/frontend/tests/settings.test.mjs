@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { AI_ICON_OPTIONS, normalizeAiIcon } from "../src/icons.js";
 import {
     normalizeSettings,
     normalizeThemeCatalog,
@@ -136,9 +137,23 @@ test("invalid settings fall back to safe defaults", () => {
     }), {
         theme: "unknown",
         motion: "gentle",
+        aiIcon: "spark",
         notifications: true,
         moduleOrderIds: []
     });
+});
+
+test("AI icon options are built in and invalid stored values fall back to spark", () => {
+    assert.deepEqual(
+        AI_ICON_OPTIONS.map((option) => option.value),
+        ["spark", "route", "shield", "modules"]
+    );
+    for (const option of AI_ICON_OPTIONS) {
+        assert.equal(normalizeAiIcon(option.value), option.value);
+        assert.equal(normalizeSettings({ aiIcon: option.value }).aiIcon, option.value);
+    }
+    assert.equal(normalizeAiIcon("upload"), "spark");
+    assert.equal(normalizeAiIcon(null), "spark");
 });
 
 test("legacy visibility and sidebar settings are discarded", () => {
@@ -169,6 +184,18 @@ test("settings store persists only local presentation and card order", () => {
     assert.equal("hiddenModuleIds" in store.getSnapshot(), false);
     assert.equal("sidebarModuleOrderIds" in store.getSnapshot(), false);
     assert.doesNotMatch(storage.getItem(), /hiddenModuleIds|sidebarModuleOrderIds/);
+});
+
+test("settings store persists the selected AI icon locally", () => {
+    const storage = memoryStorage();
+    const store = new SettingsStore({ storage, storageKey: "ai-icon-test" });
+
+    store.update({ aiIcon: "route" });
+    assert.equal(store.getSnapshot().aiIcon, "route");
+    assert.match(storage.getItem(), /"aiIcon":"route"/);
+
+    store.update({ aiIcon: "not-built-in" });
+    assert.equal(store.getSnapshot().aiIcon, "spark");
 });
 
 test("theme fallback selects only an available default and never the first item", () => {
@@ -390,6 +417,27 @@ test("frontend source contains no static theme option list", async () => {
     const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
     assert.doesNotMatch(settings, /THEME_OPTIONS/);
     assert.doesNotMatch(app, /THEME_OPTIONS/);
+});
+
+test("appearance applies AI icon options live without a second icon list", async () => {
+    const icons = await readFile(new URL("../src/icons.js", import.meta.url), "utf8");
+    const settings = await readFile(new URL("../src/settings.js", import.meta.url), "utf8");
+    const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
+
+    assert.match(icons, /export const AI_ICON_OPTIONS = Object\.freeze/);
+    assert.match(icons, /export function normalizeAiIcon/);
+    assert.match(settings, /import \{ normalizeAiIcon \} from "\.\/icons\.js"/);
+    assert.doesNotMatch(settings, /export const AI_ICON_OPTIONS/);
+    assert.match(
+        app,
+        /import \{ AI_ICON_OPTIONS, hydrateIcons, icon \} from "\.\/icons\.js"/
+    );
+    assert.match(app, /AI_ICON_OPTIONS/);
+    assert.match(app, /aiDialog\?\.setIcon\(settings\.aiIcon\)/);
+    assert.match(app, /input\.name = "aiIcon"/);
+    assert.match(app, /settingsStore\.update\(\{ aiIcon: option\.value \}\)/);
+    assert.match(app, /input\.value === settings\.aiIcon/);
+    assert.doesNotMatch(app, /const AI_ICON_OPTIONS =/);
 });
 
 test("component CSS contains no literal color values", async () => {
