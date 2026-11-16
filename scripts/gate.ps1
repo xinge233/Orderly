@@ -134,7 +134,7 @@ function Test-DocumentFastPath {
     }
     if (-not [System.IO.Path]::GetExtension($normalizedPath).Equals(
             ".md",
-            [System.StringComparison]::OrdinalIgnoreCase
+            [System.StringComparison]::Ordinal
         )) {
         return $false
     }
@@ -144,13 +144,13 @@ function Test-DocumentFastPath {
         "README.md",
         "Module/AGENTS.md",
         "Module/README.md"
-    ) -contains $normalizedPath) {
+    ) -ccontains $normalizedPath) {
         return $true
     }
-    if ($normalizedPath.StartsWith("docs/", [System.StringComparison]::OrdinalIgnoreCase) -or
+    if ($normalizedPath.StartsWith("docs/", [System.StringComparison]::Ordinal) -or
             $normalizedPath.StartsWith(
                 ".codex/agents/",
-                [System.StringComparison]::OrdinalIgnoreCase
+                [System.StringComparison]::Ordinal
             )) {
         return $true
     }
@@ -268,13 +268,13 @@ try {
     $nonMarkdownPaths = @($changePaths | Where-Object {
         -not [System.IO.Path]::GetExtension($_).Equals(
             ".md",
-            [System.StringComparison]::OrdinalIgnoreCase
+            [System.StringComparison]::Ordinal
         )
     })
     $nonWhitelistedMarkdownPaths = @($changePaths | Where-Object {
         [System.IO.Path]::GetExtension($_).Equals(
             ".md",
-            [System.StringComparison]::OrdinalIgnoreCase
+            [System.StringComparison]::Ordinal
         ) -and -not (Test-DocumentFastPath -Path $_)
     })
     $isNonEmptyFastPathMarkdown = $changePaths.Count -gt 0 -and
