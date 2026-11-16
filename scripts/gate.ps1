@@ -152,6 +152,7 @@ function Get-GateChangeSet {
     $tokens = @($trimmed -split "`0")
     $paths = [System.Collections.Generic.List[string]]::new()
     $classificationUncertain = $false
+    $conflictPairs = @("DD", "AU", "UD", "UA", "DU", "AA", "UU")
     $index = 0
     while ($index -lt $tokens.Count) {
         $entry = $tokens[$index]
@@ -184,6 +185,11 @@ function Get-GateChangeSet {
         }
         $path = $entry.Substring(3).Replace("\", "/")
         $paths.Add($path)
+
+        $statusPair = "$xStatus$yStatus"
+        if ($conflictPairs -contains $statusPair) {
+            $classificationUncertain = $true
+        }
 
         if ($xStatus -eq [char]"R" -or
                 $xStatus -eq [char]"C" -or
