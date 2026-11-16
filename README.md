@@ -69,9 +69,11 @@
 .\scripts\modularity.ps1
 ```
 
-`scripts/doc-gate.ps1` 是只读快速门禁，不访问网络，不启动 Java、Maven 或 Node，也不写运行数据。它解析 `scripts/*.ps1` 的 PowerShell AST，检查关键规则、契约样例、上下文配置、仓库地图脚本引用，以及所有 Git 跟踪 Markdown 的合并冲突标记和本地相对链接；因此它是纯 Markdown 变更的最低验证。快速门禁不适用于代码变更。
+`scripts/doc-gate.ps1` 是只读快速门禁，不访问网络，不启动 Java、Maven 或 Node，也不写运行数据。它解析 `scripts/*.ps1` 的 PowerShell AST，检查关键规则、契约样例、上下文配置、仓库地图脚本引用，以及 Git 跟踪和未跟踪未忽略 Markdown 的合并冲突标记和本地相对链接。已跟踪但工作区删除的普通 Markdown 会跳过正文读取，但其他文档指向它的本地链接仍会失败，关键文件仍必须存在。
 
-`gate.ps1` 会先无条件调用 `scripts/doc-gate.ps1`。当变更集非空且全部为 `.md` 时，`gate.ps1` 自动走纯文档分支并直接成功退出；空变更集、任何非 Markdown 文件或分类不确定的变更都继续完整门禁。完整分支执行模块化 Maven 测试与打包、框架与模块 UI 语法、前端 Node 测试，并检查物理删除调用、业务样式硬编码色值、固定模块映射和固定业务端点。`-DocumentOnly` 可用于要求变更集必须是非空纯 Markdown，否则失败且不启动构建。`modularity.ps1` 通过移动源码和重启宿主，验证全业务模块、移除单模块、零业务模块（保留 `module_control`）、恢复、临时模块自动发现与可逆移出、模块 UI/查询/计划规则、动态主题与已选主题失效回退；结束后恢复原生模块源码，并清理 `target` 验收临时目录。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
+快速路径只接受明确的快速白名单 Markdown 文档：根 `AGENTS.md`、`README.md`、`Module/AGENTS.md`、`Module/README.md`、`docs/**/*.md` 和 `.codex/agents/**/*.md`。`themes/**`、`contracts/**`、`Module/module_*` 以及任意未知根目录中的 `.md` 即使扩展名为 Markdown，也不得使用快速路径。
+
+`gate.ps1` 会先无条件调用 `scripts/doc-gate.ps1`。当变更集非空且每一项都属于快速白名单 Markdown 时，`gate.ps1` 自动走快速文档分支并直接成功退出；空变更集、任何非 Markdown 文件、快速白名单外 Markdown 或分类不确定的变更都继续完整门禁。完整分支执行模块化 Maven 测试与打包、框架与模块 UI 语法、前端 Node 测试，并检查物理删除调用、业务样式硬编码色值、固定模块映射和固定业务端点。`-DocumentOnly` 要求变更集必须是非空快速白名单 Markdown，否则失败且不启动构建。`modularity.ps1` 通过移动源码和重启宿主，验证全业务模块、移除单模块、零业务模块（保留 `module_control`）、恢复、临时模块自动发现与可逆移出、模块 UI/查询/计划规则、动态主题与已选主题失效回退；结束后恢复原生模块源码，并清理 `target` 验收临时目录。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
 
 ## 低 token 读取
 

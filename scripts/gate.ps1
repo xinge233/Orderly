@@ -122,6 +122,41 @@ function Assert-ContextBinaryTailRejected {
     }
 }
 
+function Test-DocumentFastPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $normalizedPath = $Path.Replace("\", "/")
+    $pathSegments = @($normalizedPath -split "/")
+    if (@($pathSegments | Where-Object {
+        [string]::IsNullOrEmpty($_) -or $_ -eq "." -or $_ -eq ".."
+    }).Count -gt 0) {
+        return $false
+    }
+    if (-not [System.IO.Path]::GetExtension($normalizedPath).Equals(
+            ".md",
+            [System.StringComparison]::OrdinalIgnoreCase
+        )) {
+        return $false
+    }
+
+    if (@(
+        "AGENTS.md",
+        "README.md",
+        "Module/AGENTS.md",
+        "Module/README.md"
+    ) -contains $normalizedPath) {
+        return $true
+    }
+    if ($normalizedPath.StartsWith("docs/", [System.StringComparison]::OrdinalIgnoreCase) -or
+            $normalizedPath.StartsWith(
+                ".codex/agents/",
+                [System.StringComparison]::OrdinalIgnoreCase
+            )) {
+        return $true
+    }
+    return $false
+}
+
 function Get-GateChangeSet {
     $previousErrorActionPreference = $ErrorActionPreference
     try {
@@ -230,34 +265,45 @@ try {
 
     $changeSet = Get-GateChangeSet
     $changePaths = @($changeSet.Paths)
-    $isNonEmptyPureMarkdown = $changePaths.Count -gt 0 -and
+    $nonMarkdownPaths = @($changePaths | Where-Object {
+        -not [System.IO.Path]::GetExtension($_).Equals(
+            ".md",
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+    })
+    $nonWhitelistedMarkdownPaths = @($changePaths | Where-Object {
+        [System.IO.Path]::GetExtension($_).Equals(
+            ".md",
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -and -not (Test-DocumentFastPath -Path $_)
+    })
+    $isNonEmptyFastPathMarkdown = $changePaths.Count -gt 0 -and
         -not $changeSet.ClassificationUncertain -and
-        @($changePaths | Where-Object {
-            [System.IO.Path]::GetExtension($_).Equals(
-                ".md",
-                [System.StringComparison]::OrdinalIgnoreCase
-            )
-        }).Count -eq $changePaths.Count
+        $nonMarkdownPaths.Count -eq 0 -and
+        $nonWhitelistedMarkdownPaths.Count -eq 0
 
     if ($DocumentOnly) {
-        if (-not $isNonEmptyPureMarkdown) {
+        if (-not $isNonEmptyFastPathMarkdown) {
             $reason = if ($changePaths.Count -eq 0) {
                 "变更集为空"
             }
             elseif ($changeSet.ClassificationUncertain) {
                 "变更分类不确定"
             }
-            else {
+            elseif ($nonMarkdownPaths.Count -gt 0) {
                 "变更集包含非 Markdown 文件"
             }
-            throw "-DocumentOnly 要求非空纯 Markdown 变更集；当前$reason。"
+            else {
+                "变更集包含不在快速白名单中的 Markdown 文件"
+            }
+            throw "-DocumentOnly 要求非空快速白名单 Markdown 变更集；当前$reason。"
         }
-        Write-Host "门禁通过：-DocumentOnly 检测到 $($changePaths.Count) 个纯 Markdown 变更；未运行 Maven/前端测试。"
+        Write-Host "门禁通过：-DocumentOnly 检测到 $($changePaths.Count) 个快速白名单 Markdown 变更；未运行 Maven/前端测试。"
         exit 0
     }
 
-    if ($isNonEmptyPureMarkdown) {
-        Write-Host "门禁通过：纯文档分支，检测到 $($changePaths.Count) 个纯 Markdown 变更；未运行 Maven/前端测试。"
+    if ($isNonEmptyFastPathMarkdown) {
+        Write-Host "门禁通过：快速白名单 Markdown 分支，检测到 $($changePaths.Count) 个变更；未运行 Maven/前端测试。"
         exit 0
     }
 
@@ -267,8 +313,11 @@ try {
     elseif ($changeSet.ClassificationUncertain) {
         "变更分类不确定"
     }
-    else {
+    elseif ($nonMarkdownPaths.Count -gt 0) {
         "变更集包含非 Markdown 文件"
+    }
+    else {
+        "变更集包含不在快速白名单中的 Markdown 文件"
     }
     Write-Host "完整门禁：$fullGateReason，继续执行 Maven、前端和边界检查。"
 

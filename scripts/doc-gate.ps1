@@ -104,14 +104,43 @@ function Invoke-GitText {
     return $output
 }
 
-function Get-TrackedMarkdownPaths {
+function Test-TrackedPath {
+    param([Parameter(Mandatory = $true)][string]$RelativePath)
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = (& git -C $repoRoot `
+            --literal-pathspecs `
+            ls-files `
+            --error-unmatch `
+            -- `
+            $RelativePath 2>&1) | Out-String
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($exitCode -eq 0) {
+        return $true
+    }
+    if ($exitCode -eq 1) {
+        return $false
+    }
+    throw "无法检查 Markdown 跟踪状态：$RelativePath`n$($output.Trim())"
+}
+
+function Get-MarkdownPaths {
     $output = Invoke-GitText `
-        -Purpose "读取 Git 跟踪 Markdown 清单" `
+        -Purpose "读取 Git 跟踪及未跟踪未忽略 Markdown 清单" `
         -Arguments @(
             "-c",
             "core.quotepath=false",
             "ls-files",
             "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
             "--",
             "*.md"
         )
@@ -122,7 +151,7 @@ function Get-TrackedMarkdownPaths {
     return @($trimmed -split "`0" |
         Where-Object { -not [string]::IsNullOrEmpty($_) } |
         ForEach-Object { $_.Replace("\", "/") } |
-        Sort-Object)
+        Sort-Object -Unique)
 }
 
 function Assert-NoMergeConflictMarkers {
@@ -414,15 +443,34 @@ try {
         Add-Check
     }
 
-    $markdownPaths = @(Get-TrackedMarkdownPaths)
+    $markdownPaths = @(Get-MarkdownPaths)
     if ($markdownPaths.Count -eq 0) {
-        throw "Git 跟踪 Markdown 清单为空。"
+        throw "Git Markdown 清单为空。"
     }
     $linkCount = 0
+    $deletedMarkdownCount = 0
     foreach ($markdownPath in $markdownPaths) {
+        $markdownFullPath = [System.IO.Path]::GetFullPath(
+            (Join-Path $repoRoot $markdownPath)
+        )
+        if (-not $markdownFullPath.StartsWith(
+                $repoRootPrefix,
+                [System.StringComparison]::OrdinalIgnoreCase
+            )) {
+            throw "Markdown 路径越出仓库：$markdownPath"
+        }
+        if (-not (Test-Path -LiteralPath $markdownFullPath -PathType Leaf)) {
+            if (Test-TrackedPath -RelativePath $markdownPath) {
+                $deletedMarkdownCount++
+                Add-Check
+                continue
+            }
+            throw "Markdown 清单中的未跟踪文件不存在：$markdownPath"
+        }
+
         $markdownText = Read-TextFile `
             -RelativePath $markdownPath `
-            -Purpose "Git 跟踪 Markdown"
+            -Purpose "Markdown"
         Assert-NoMergeConflictMarkers `
             -Text $markdownText `
             -RelativePath $markdownPath
@@ -445,6 +493,7 @@ try {
         "keyFiles=$($requiredFiles.Count) " +
         "rules=7 " +
         "markdownFiles=$($markdownPaths.Count) " +
+        "deletedMarkdownSkipped=$deletedMarkdownCount " +
         "localLinks=$linkCount " +
         "repoMapScripts=$($repoMapScriptReferences.Count) " +
         "contextAudit=exit0"
