@@ -33,7 +33,7 @@
 - 物理删除永不出现，删除进入项目回收站。
 - 框架提供授权、快照、回滚和审计担保，模块不得绕过。
 - 模型只输出结构化 Action 数组或可选计划，不直接接触文件或业务状态。
-- 真实模型接入使用 OpenAI 兼容 Chat Completions；DeepSeek 模式固定官方 URL 与 `DeepSeek-V4.1-Flash`，自定义模式使用 HTTPS Base URL 与 Model。
+- 真实模型接入使用 OpenAI 兼容 Chat Completions；DeepSeek 模式固定官方 URL 与 API 模型标识 `deepseek-flash`，自定义模式使用 HTTPS Base URL 与 Model。
 - API Key 只临时保存在宿主进程内，不进入仓库、日志、浏览器存储或普通配置文件。
 
 ## 3. 首版实现结构

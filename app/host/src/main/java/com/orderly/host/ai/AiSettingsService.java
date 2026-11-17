@@ -13,7 +13,7 @@ import java.util.Locale;
 public class AiSettingsService {
 
     public static final String DEEPSEEK_BASE_URL = "https://api.deepseek.com";
-    public static final String DEEPSEEK_MODEL = "DeepSeek-V4.1-Flash";
+    public static final String DEEPSEEK_MODEL = "deepseek-flash";
 
     private final AiProviderClient client;
     private final boolean allowLocalProvider;

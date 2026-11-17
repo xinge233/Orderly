@@ -209,7 +209,7 @@ if ($aiSettings.PSObject.Properties.Name -contains "apiKey") {
 }
 if ($aiSettings.mode -ne "DEEPSEEK" -or
         $aiSettings.baseUrl -ne "https://api.deepseek.com" -or
-        $aiSettings.model -ne "DeepSeek-V4.1-Flash") {
+        $aiSettings.model -ne "deepseek-flash") {
     throw "AI 设置未返回 DeepSeek 固定默认值。"
 }
 

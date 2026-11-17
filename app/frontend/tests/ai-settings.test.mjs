@@ -16,7 +16,7 @@ test("AI settings never trust or require a returned API key", () => {
     const settings = normalizeAiSettings({
         mode: "DEEPSEEK",
         baseUrl: "https://api.deepseek.com",
-        model: "DeepSeek-V4.1-Flash",
+        model: "deepseek-flash",
         configured: true,
         allowDeleteDirect: false,
         allowLocalProvider: false,
