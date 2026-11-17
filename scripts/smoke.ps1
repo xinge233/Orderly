@@ -17,6 +17,9 @@ $features = Invoke-RestMethod -Uri "$BaseUrl/api/system/features" -Method Get
 if ($features.planningEnabled -isnot [bool]) {
     throw "/api/system/features 缺少布尔 planningEnabled。"
 }
+if ($features.aiPlanEnabled -isnot [bool]) {
+    throw "/api/system/features 缺少布尔 aiPlanEnabled。"
+}
 $initialPlanningEnabled = [bool]$features.planningEnabled
 Invoke-RestMethod -Uri "$BaseUrl/api/system/features/planning" -Method Put `
     -ContentType "application/json" `

@@ -341,6 +341,14 @@ export class OrderlyApi {
         });
     }
 
+    setAiPlanEnabled(enabled, options = {}) {
+        return this.request("/api/system/features/ai-plan", {
+            ...options,
+            method: "PUT",
+            body: { enabled }
+        });
+    }
+
     draftPlan(goal, options = {}) {
         return this.request("/api/plans", {
             ...options,

@@ -8,7 +8,11 @@ import {
     inferEventOrigin,
     normalizeExecutionRecord
 } from "../src/models.js";
-import { normalizePlanningFeature, SettingsStore } from "../src/settings.js";
+import {
+    normalizeAiPlanFeature,
+    normalizePlanningFeature,
+    SettingsStore
+} from "../src/settings.js";
 
 function read(relativePath) {
     return readFile(new URL(relativePath, import.meta.url), "utf8");
@@ -48,12 +52,14 @@ test("feature and execution API calls use the host contract", async () => {
 
     await api.getSystemFeatures();
     await api.setPlanningEnabled(true);
+    await api.setAiPlanEnabled(false);
     await api.getExecutions();
     await api.rollbackExecution("execution/a?b");
 
     assert.deepEqual(requests.map(({ url }) => url), [
         "/api/system/features",
         "/api/system/features/planning",
+        "/api/system/features/ai-plan",
         "/api/executions",
         "/api/executions/execution%2Fa%3Fb/rollback"
     ]);
@@ -64,6 +70,7 @@ test("feature and execution API calls use the host contract", async () => {
         ]),
         [
             ["PUT", { enabled: true }],
+            ["PUT", { enabled: false }],
             ["GET", null],
             ["POST", {}]
         ]
@@ -74,13 +81,18 @@ test("planning features default to disabled and never enter local appearance sto
     assert.equal(normalizePlanningFeature(undefined), false);
     assert.equal(normalizePlanningFeature({ planningEnabled: true }), true);
     assert.equal(normalizePlanningFeature({ planningEnabled: "yes" }), false);
+    assert.equal(normalizeAiPlanFeature(undefined), true);
+    assert.equal(normalizeAiPlanFeature({ aiPlanEnabled: false }), false);
+    assert.equal(normalizeAiPlanFeature({ aiPlanEnabled: "no" }), true);
 
     const storage = memoryStorage();
     const store = new SettingsStore({ storage, storageKey: "features" });
-    store.update({ planningEnabled: true, motion: "minimal" });
+    store.update({ planningEnabled: true, aiPlanEnabled: false, motion: "minimal" });
 
     assert.equal("planningEnabled" in store.getSnapshot(), false);
+    assert.equal("aiPlanEnabled" in store.getSnapshot(), false);
     assert.doesNotMatch(storage.getItem(), /planningEnabled/);
+    assert.doesNotMatch(storage.getItem(), /aiPlanEnabled/);
 });
 
 test("event origins are explicit or inferred from legacy type and plan id", () => {
@@ -125,6 +137,11 @@ test("frontend gates plan surfaces with host state and keeps history independent
     const overview = between(app, "function renderOverview", "async function loadOverviewCounts");
     const history = between(app, "async function loadHistory", "function renderHistory");
     const settings = between(app, "function persistPlanningFeature", "function settingRow");
+    const aiExecutionPolicy = between(
+        app,
+        "function persistAiPlanFeature",
+        "function renderSystemSettings"
+    );
 
     assert.match(app, /const HISTORY_VIEWS = new Set\(\["timeline", "summary"\]\);/);
     assert.match(applyFeature, /document\.documentElement\.dataset\.planning/);
@@ -146,6 +163,11 @@ test("frontend gates plan surfaces with host state and keeps history independent
     assert.match(settings, /normalizePlanningFeature/);
     assert.match(settings, /input\.checked = previous;/);
     assert.match(settings, /setSettingsStatus\(message, \{ error: true \}\)/);
+    assert.match(aiExecutionPolicy, /api\.setAiPlanEnabled\(enabled\)/);
+    assert.match(aiExecutionPolicy, /normalizeAiPlanFeature/);
+    assert.match(aiExecutionPolicy, /input\.checked = previous;/);
+    assert.match(aiExecutionPolicy, /setSettingsStatus\(message, \{ error: true \}\)/);
+    assert.match(app, /"aiPlanEnabled",\s*"允许 AI 生成计划"/);
     assert.doesNotMatch(app, /api\.rollbackPlan\(/);
     assert.match(app, /api\.rollbackExecution\(/);
     assert.match(html, /id="history-view-rail"[\s\S]*?data-history-view="timeline"[\s\S]*?data-history-view="summary"/);

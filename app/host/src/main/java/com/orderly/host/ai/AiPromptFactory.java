@@ -24,12 +24,29 @@ public class AiPromptFactory {
     }
 
     public String systemPrompt(List<ModuleContract> modules, boolean allowDeleteDirect) {
-        return systemPrompt(modules, allowDeleteDirect, ZonedDateTime.now());
+        return systemPrompt(modules, allowDeleteDirect, true, ZonedDateTime.now());
+    }
+
+    public String systemPrompt(
+            List<ModuleContract> modules,
+            boolean allowDeleteDirect,
+            boolean aiPlanEnabled
+    ) {
+        return systemPrompt(modules, allowDeleteDirect, aiPlanEnabled, ZonedDateTime.now());
     }
 
     String systemPrompt(
             List<ModuleContract> modules,
             boolean allowDeleteDirect,
+            ZonedDateTime now
+    ) {
+        return systemPrompt(modules, allowDeleteDirect, true, now);
+    }
+
+    String systemPrompt(
+            List<ModuleContract> modules,
+            boolean allowDeleteDirect,
+            boolean aiPlanEnabled,
             ZonedDateTime now
     ) {
         String catalog;
@@ -39,6 +56,39 @@ public class AiPromptFactory {
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("无法生成 AI 工具卡", exception);
         }
+        String kindConstraint = aiPlanEnabled
+                ? "kind 只能是 ACTIONS、PLAN、QUESTION。"
+                : "kind 只能是 ACTIONS、QUESTION；当前禁止返回 PLAN。";
+        String planExample = aiPlanEnabled
+                ? """
+
+                PLAN 示例：
+                {"kind":"PLAN","message":"请审查计划","actions":[{"moduleId":"<moduleId>","actionId":"<actionId>","arguments":{}}]}
+                """
+                : "";
+        String decisionRules = aiPlanEnabled
+                ? """
+                决策规则：
+                1. 默认返回 PLAN，让用户审查后再执行。
+                2. 只有用户指令和参数都非常明确、无需假设时，才可以返回 ACTIONS。
+                3. 目标指代不明、缺少参数、存在多个候选或工具能力不足时，返回 QUESTION。
+                4. QUESTION 必须给出具体问题和可选项。
+                5. 时间参数必须结合当前本地日期、时间和时区转换为带偏移量的 ISO-8601，例如 2026-11-17T21:00:00+08:00；用户无需手工填写技术格式，日期或时间含义不明确时必须返回 QUESTION。
+                6. DELETE 动作默认进入 PLAN；只有当前删除直执策略明确允许时才可放入 ACTIONS。当前直执删除策略：%s。
+                7. 多步 ACTIONS 按顺序执行，后续动作不能直接调用模块，只能由宿主执行。
+                8. 不要输出工具卡之外的字段。
+                """.formatted(allowDeleteDirect ? "允许明确意图直执" : "禁止直执")
+                : """
+                决策规则：
+                1. 用户指令和参数都明确、无需假设时，返回 ACTIONS。
+                2. 目标指代不明、缺少参数、存在多个候选或工具能力不足时，返回 QUESTION。
+                3. 当前禁止返回 PLAN，也不能生成需要用户审查的计划。
+                4. QUESTION 必须给出具体问题和可选项。
+                5. 时间参数必须结合当前本地日期、时间和时区转换为带偏移量的 ISO-8601，例如 2026-11-17T21:00:00+08:00；用户无需手工填写技术格式，日期或时间含义不明确时必须返回 QUESTION。
+                6. 当前删除直执策略：%s。若删除直执未开启，不得直接执行删除，必须返回 QUESTION，请用户开启删除直执或取消删除。
+                7. 多步 ACTIONS 按顺序执行，后续动作不能直接调用模块，只能由宿主执行。
+                8. 不要输出工具卡之外的字段。
+                """.formatted(allowDeleteDirect ? "允许明确意图直执" : "禁止直执");
         return """
                 你是归序 Orderly 的受控工作流意图解释器。
                 你只能把用户的自然语言目标转换为结构化结果，不生成文章、说明文或闲聊内容。
@@ -50,26 +100,15 @@ public class AiPromptFactory {
                 当前时区：%s
 
                 返回必须是一个 JSON 对象，不要 Markdown，不要代码围栏。
-                kind 只能是 ACTIONS、PLAN、QUESTION。
+                %s
 
                 ACTIONS 示例：
                 {"kind":"ACTIONS","message":"执行明确操作","actions":[{"moduleId":"<moduleId>","actionId":"<actionId>","arguments":{}}]}
-
-                PLAN 示例：
-                {"kind":"PLAN","message":"请审查计划","actions":[{"moduleId":"<moduleId>","actionId":"<actionId>","arguments":{}}]}
-
+                %s
                 QUESTION 示例：
                 {"kind":"QUESTION","message":"需要补充目标","question":{"prompt":"要整理哪个目录？","options":["下载目录","桌面"]}}
 
-                决策规则：
-                1. 默认返回 PLAN，让用户审查后再执行。
-                2. 只有用户指令和参数都非常明确、无需假设时，才可以返回 ACTIONS。
-                3. 目标指代不明、缺少参数、存在多个候选或工具能力不足时，返回 QUESTION。
-                4. QUESTION 必须给出具体问题和可选项。
-                5. 时间参数必须结合当前本地日期、时间和时区转换为带偏移量的 ISO-8601，例如 2026-11-17T21:00:00+08:00；用户无需手工填写技术格式，日期或时间含义不明确时必须返回 QUESTION。
-                6. DELETE 动作默认只能放进 PLAN；当前直执删除策略：%s。
-                7. 多步 ACTIONS 按顺序执行，后续动作不能直接调用模块，只能由宿主执行。
-                8. 不要输出工具卡之外的字段。
+                %s
 
                 可用工具卡：
                 %s
@@ -77,7 +116,9 @@ public class AiPromptFactory {
                 now.toLocalDate(),
                 now.toOffsetDateTime(),
                 now.getZone(),
-                allowDeleteDirect ? "允许明确意图直执" : "禁止直执",
+                kindConstraint,
+                planExample,
+                decisionRules,
                 catalog
         );
     }

@@ -16,14 +16,14 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Map;
 
-/** 宿主级功能开关。当前只包含本地规则计划生成能力。 */
+/** 宿主级持久功能开关。 */
 @Service
 public class SystemFeatureService {
 
     private final ObjectMapper objectMapper;
     private final ExecutionJournal journal;
     private final Path settingsFile;
-    private volatile FeatureSettings settings = new FeatureSettings(false);
+    private volatile FeatureSettings settings = new FeatureSettings(false, true);
 
     public SystemFeatureService(
             ObjectMapper objectMapper,
@@ -40,7 +40,7 @@ public class SystemFeatureService {
         try {
             Files.createDirectories(settingsFile.getParent());
             if (!Files.exists(settingsFile, LinkOption.NOFOLLOW_LINKS)) {
-                settings = new FeatureSettings(false);
+                settings = new FeatureSettings(false, true);
                 persist(settings);
                 return;
             }
@@ -48,7 +48,7 @@ public class SystemFeatureService {
                 throw new IllegalStateException("系统功能设置必须是普通本地文件：" + settingsFile);
             }
             FeatureSettings loaded = objectMapper.readValue(settingsFile.toFile(), FeatureSettings.class);
-            settings = new FeatureSettings(loaded.planningEnabled());
+            settings = new FeatureSettings(loaded.planningEnabled(), loaded.aiPlanEnabled());
         } catch (IOException exception) {
             throw new IllegalStateException(
                     "读取系统功能设置失败：" + settingsFile + "；原因：" + exception.getMessage(),
@@ -61,12 +61,19 @@ public class SystemFeatureService {
         return settings.planningEnabled();
     }
 
+    public boolean aiPlansEnabled() {
+        return settings.aiPlanEnabled() == null || settings.aiPlanEnabled();
+    }
+
     public Map<String, Object> features() {
-        return Map.of("planningEnabled", planningEnabled());
+        return Map.of(
+                "planningEnabled", planningEnabled(),
+                "aiPlanEnabled", aiPlansEnabled()
+        );
     }
 
     public synchronized Map<String, Object> setPlanningEnabled(boolean enabled) {
-        FeatureSettings next = new FeatureSettings(enabled);
+        FeatureSettings next = new FeatureSettings(enabled, aiPlansEnabled());
         persist(next);
         settings = next;
         journal.append(
@@ -78,6 +85,23 @@ public class SystemFeatureService {
                 "planning",
                 enabled ? "ENABLED" : "DISABLED",
                 enabled ? "计划生成功能已启用" : "计划生成功能已停用"
+        );
+        return features();
+    }
+
+    public synchronized Map<String, Object> setAiPlanEnabled(boolean enabled) {
+        FeatureSettings next = new FeatureSettings(planningEnabled(), enabled);
+        persist(next);
+        settings = next;
+        journal.append(
+                "SYSTEM_FEATURE",
+                "SYSTEM",
+                null,
+                null,
+                null,
+                "ai-plan",
+                enabled ? "ENABLED" : "DISABLED",
+                enabled ? "AI 计划返回已启用" : "AI 计划返回已停用"
         );
         return features();
     }
@@ -111,6 +135,6 @@ public class SystemFeatureService {
         }
     }
 
-    public record FeatureSettings(boolean planningEnabled) {
+    public record FeatureSettings(boolean planningEnabled, Boolean aiPlanEnabled) {
     }
 }

@@ -41,6 +41,7 @@ import {
 } from "./modules.js";
 import {
     MOTION_OPTIONS,
+    normalizeAiPlanFeature,
     normalizeThemeCatalog,
     normalizePlanningFeature,
     reconcileAppliedTheme,
@@ -90,6 +91,9 @@ const state = {
     planningEnabled: false,
     planningFeatureLoading: true,
     planningFeatureSaving: false,
+    aiPlanEnabled: true,
+    aiPlanFeatureLoading: true,
+    aiPlanFeatureSaving: false,
     aiSettings: normalizeAiSettings({}),
     aiSettingsLoading: true,
     aiSettingsSaving: false,
@@ -327,6 +331,7 @@ async function bootstrap() {
     state.builtInFallbackActive = themeCatalog.builtInFallbackActive;
     themeManager.setCatalog(themeCatalog);
     state.planningFeatureLoading = false;
+    state.aiPlanFeatureLoading = false;
     state.aiSettingsLoading = false;
     if (aiSettingsResult.status === "fulfilled") {
         state.aiSettings = normalizeAiSettings(aiSettingsResult.value);
@@ -340,6 +345,10 @@ async function bootstrap() {
             false
         ),
         { render: false }
+    );
+    state.aiPlanEnabled = normalizeAiPlanFeature(
+        featureResult.status === "fulfilled" ? featureResult.value : {},
+        true
     );
 
     await loadModuleUis();
@@ -3731,6 +3740,21 @@ function renderAiSettings(panel) {
     deleteInput.setAttribute("aria-label", "允许明确意图直执删除");
     deleteRow.append(deleteCopy, deleteInput);
 
+    const planRow = settingRow(
+        "aiPlanEnabled",
+        "允许 AI 生成计划",
+        state.aiPlanFeatureLoading
+            ? "正在读取宿主执行策略。"
+            : "默认开启。关闭后 AI 只返回直接动作或澄清问题，不再生成需要确认的计划。",
+        state.aiPlanEnabled,
+        (enabled, input) => void persistAiPlanFeature(enabled, input),
+        state.aiPlanFeatureLoading
+            || state.aiPlanFeatureSaving
+            || state.aiSettingsSaving
+            || state.aiSettingsTesting,
+        "允许 AI 生成计划"
+    );
+
     const actions = element("div", "settings-actions");
     const saveButton = element("button", "primary-button", "保存临时设置");
     saveButton.type = "button";
@@ -3758,7 +3782,7 @@ function renderAiSettings(panel) {
     testButton.addEventListener("click", () => void persistAiSettings(panel, { test: true }));
     clearButton.addEventListener("click", () => void clearAiSettings(panel));
 
-    fields.append(modeField, keyField, customFields, deleteRow, actions);
+    fields.append(modeField, keyField, customFields, deleteRow, planRow, actions);
     panel.append(fields);
     updateModeFields();
 }
@@ -3868,6 +3892,53 @@ async function clearAiSettings(panel) {
         buttons.forEach((button) => {
             button.disabled = false;
         });
+    }
+}
+
+/**
+ * 将 AI 计划返回开关写入宿主；失败时恢复开关并保留错误提示。
+ *
+ * @param {boolean} enabled 目标状态
+ * @param {HTMLInputElement} input 开关控件
+ */
+async function persistAiPlanFeature(enabled, input) {
+    if (state.aiPlanFeatureSaving) {
+        return;
+    }
+    const previous = state.aiPlanEnabled;
+    state.aiPlanFeatureSaving = true;
+    input.disabled = true;
+    input.removeAttribute("aria-invalid");
+    setSettingsStatus("正在保存 AI 执行策略…");
+    try {
+        const payload = await api.setAiPlanEnabled(enabled);
+        let authoritative = normalizeAiPlanFeature(
+            payload,
+            typeof enabled === "boolean" ? enabled : true
+        );
+        if (!payload || typeof payload.aiPlanEnabled !== "boolean") {
+            const featurePayload = await api.getSystemFeatures();
+            authoritative = normalizeAiPlanFeature(featurePayload, authoritative);
+        }
+        state.aiPlanFeatureLoading = false;
+        state.aiPlanEnabled = authoritative;
+        input.checked = authoritative;
+        setSettingsStatus(
+            authoritative
+                ? "AI 可以生成计划，由宿主保存。"
+                : "AI 已禁止生成计划，只返回动作或澄清问题。"
+        );
+        toast(authoritative ? "AI 计划返回已开启。" : "AI 计划返回已关闭。");
+    } catch (error) {
+        input.checked = previous;
+        input.setAttribute("aria-invalid", "true");
+        const message = `AI 执行策略设置失败：${errorMessage(error)}`;
+        setSettingsStatus(message, { error: true });
+        toast(message, { error: true });
+    } finally {
+        state.aiPlanFeatureSaving = false;
+        input.disabled = false;
+        input.focus({ preventScroll: true });
     }
 }
 

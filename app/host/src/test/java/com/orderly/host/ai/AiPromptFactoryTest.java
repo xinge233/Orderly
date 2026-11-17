@@ -34,4 +34,28 @@ class AiPromptFactoryTest {
                 .contains("2026-11-17T21:00:00+08:00")
                 .contains("日期或时间含义不明确时必须返回 QUESTION");
     }
+
+    @Test
+    void forbidsPlanWhenAiPlanOutputIsDisabled() {
+        AiPromptFactory factory = new AiPromptFactory(new ObjectMapper());
+        ZonedDateTime now = ZonedDateTime.of(
+                2026,
+                11,
+                17,
+                21,
+                30,
+                0,
+                0,
+                ZoneId.of("Asia/Shanghai")
+        );
+
+        String prompt = factory.systemPrompt(List.of(), false, false, now);
+
+        assertThat(prompt)
+                .contains("kind 只能是 ACTIONS、QUESTION；当前禁止返回 PLAN")
+                .contains("1. 用户指令和参数都明确、无需假设时，返回 ACTIONS")
+                .contains("当前禁止返回 PLAN，也不能生成需要用户审查的计划")
+                .doesNotContain("默认返回 PLAN")
+                .doesNotContain("PLAN 示例");
+    }
 }

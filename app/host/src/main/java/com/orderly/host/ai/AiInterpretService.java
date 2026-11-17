@@ -10,6 +10,7 @@ import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.execution.AiActionService;
 import com.orderly.host.execution.ExecutionRecord;
 import com.orderly.host.modulecontrol.ModuleControlService;
+import com.orderly.host.system.SystemFeatureService;
 import com.orderly.kernel.RiskLevel;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -44,6 +45,7 @@ public class AiInterpretService {
     private final ModuleControlService moduleControl;
     private final AiActionService actions;
     private final AiPlanService plans;
+    private final SystemFeatureService systemFeatures;
     private final ObjectMapper objectMapper;
     private final AiContextEpoch contextEpoch;
     private final Map<String, Conversation> conversations = new ConcurrentHashMap<>();
@@ -58,6 +60,7 @@ public class AiInterpretService {
             ModuleControlService moduleControl,
             AiActionService actions,
             AiPlanService plans,
+            SystemFeatureService systemFeatures,
             ObjectMapper objectMapper,
             AiContextEpoch contextEpoch
     ) {
@@ -68,6 +71,7 @@ public class AiInterpretService {
         this.moduleControl = moduleControl;
         this.actions = actions;
         this.plans = plans;
+        this.systemFeatures = systemFeatures;
         this.objectMapper = objectMapper;
         this.contextEpoch = contextEpoch;
     }
@@ -180,12 +184,14 @@ public class AiInterpretService {
 
         List<AiChatMessage> messages = new ArrayList<>(previous.messages());
         messages.add(new AiChatMessage("user", goal));
+        boolean aiPlanEnabled = systemFeatures.aiPlansEnabled();
         String systemPrompt = prompts.systemPrompt(
                 enabledModules(),
-                config.allowDeleteDirect()
+                config.allowDeleteDirect(),
+                aiPlanEnabled
         );
-        String raw = completeWithRepair(config, systemPrompt, messages);
-        AiContracts.ModelDecision decision = parseDecision(raw);
+        String raw = completeWithRepair(config, systemPrompt, messages, aiPlanEnabled);
+        AiContracts.ModelDecision decision = parseDecision(raw, aiPlanEnabled);
         List<AiChatMessage> nextMessages = new ArrayList<>(messages);
         nextMessages.add(new AiChatMessage("assistant", raw));
         if (nextMessages.size() > MAX_HISTORY_MESSAGES) {
@@ -211,8 +217,19 @@ public class AiInterpretService {
                     );
                     return switch (decision.kind()) {
             case "QUESTION" -> questionResponse(conversationId, decision);
-            case "PLAN" -> planResponse(conversationId, goal, decision);
-            case "ACTIONS" -> actionResponse(conversationId, goal, decision, config);
+            case "PLAN" -> {
+                if (!aiPlanEnabled) {
+                    throw invalidResponse("AI 计划返回已关闭");
+                }
+                yield planResponse(conversationId, goal, decision);
+            }
+            case "ACTIONS" -> actionResponse(
+                    conversationId,
+                    goal,
+                    decision,
+                    config,
+                    aiPlanEnabled
+            );
             default -> throw invalidResponse("模型返回了未知 kind");
                     };
                 }
@@ -273,13 +290,17 @@ public class AiInterpretService {
             String conversationId,
             String goal,
             AiContracts.ModelDecision decision,
-            AiProviderConfig config
+            AiProviderConfig config,
+            boolean aiPlanEnabled
     ) {
         requireActions(decision);
         List<AiActionService.ActionCall> calls = toCalls(decision.actions());
         AiActionService.Preview preview = actions.preview(calls);
 
         if (preview.highestRisk() == RiskLevel.DELETE && !config.allowDeleteDirect()) {
+            if (!aiPlanEnabled) {
+                return deleteConfirmationQuestion(conversationId);
+            }
             AiContracts.Plan plan = plans.create(goal, decision.actions());
             return new AiContracts.TurnResponse(
                     "PLAN",
@@ -308,10 +329,28 @@ public class AiInterpretService {
         );
     }
 
+    private AiContracts.TurnResponse deleteConfirmationQuestion(String conversationId) {
+        return new AiContracts.TurnResponse(
+                "QUESTION",
+                UUID.randomUUID().toString(),
+                conversationId,
+                "删除直执未开启，本次没有执行删除。",
+                null,
+                null,
+                null,
+                new AiContracts.Question(
+                        "删除直执未开启。请先开启删除直执，或取消删除动作。",
+                        List.of("取消删除", "开启删除直执")
+                ),
+                null
+        );
+    }
+
     private String completeWithRepair(
             AiProviderConfig config,
             String systemPrompt,
-            List<AiChatMessage> messages
+            List<AiChatMessage> messages,
+            boolean aiPlanEnabled
     ) {
         String raw;
         try {
@@ -320,29 +359,36 @@ public class AiInterpretService {
             throw providerUnavailable(exception);
         }
         try {
-            parseDecision(raw);
+            parseDecision(raw, aiPlanEnabled);
             return raw;
         } catch (RuntimeException firstFailure) {
             List<AiChatMessage> repairMessages = new ArrayList<>(messages);
             repairMessages.add(new AiChatMessage("assistant", raw));
+            String allowedKinds = aiPlanEnabled
+                    ? "ACTIONS、PLAN 或 QUESTION"
+                    : "ACTIONS 或 QUESTION";
+            String planConstraint = aiPlanEnabled ? "" : "，也不要返回计划";
             repairMessages.add(new AiChatMessage(
                     "user",
-                    "上一条输出不是合法结构。请只返回一个 JSON 对象，"
-                            + "kind 只能是 ACTIONS、PLAN 或 QUESTION，不要 Markdown。"
+                    "上一条输出不符合当前执行策略。请只返回一个 JSON 对象，"
+                            + "kind 只能是 " + allowedKinds + "，不要 Markdown"
+                            + planConstraint + "。"
             ));
             try {
                 String repaired = client.complete(config, systemPrompt, repairMessages);
-                parseDecision(repaired);
+                parseDecision(repaired, aiPlanEnabled);
                 return repaired;
             } catch (AiProviderException exception) {
                 throw providerUnavailable(exception);
             } catch (RuntimeException ignored) {
-                throw invalidResponse("模型返回无法解析为受控结构，请重试");
+                throw invalidResponse(aiPlanEnabled
+                        ? "模型返回无法解析为受控结构，请重试"
+                        : "AI 计划返回已关闭，模型仍未返回 ACTIONS 或 QUESTION");
             }
         }
     }
 
-    private AiContracts.ModelDecision parseDecision(String raw) {
+    private AiContracts.ModelDecision parseDecision(String raw, boolean aiPlanEnabled) {
         JsonNode root;
         try {
             root = objectMapper.readTree(stripCodeFence(raw));
@@ -352,6 +398,9 @@ public class AiInterpretService {
         String kind = root.path("kind").asText("").trim().toUpperCase(Locale.ROOT);
         if (!List.of("ACTIONS", "PLAN", "QUESTION").contains(kind)) {
             throw invalidResponse("模型输出 kind 非法");
+        }
+        if ("PLAN".equals(kind) && !aiPlanEnabled) {
+            throw invalidResponse("AI 计划返回已关闭");
         }
         String message = root.path("message").asText("");
         List<AiContracts.Action> actions = parseActions(root.path("actions"));

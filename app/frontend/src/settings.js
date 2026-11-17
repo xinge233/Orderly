@@ -36,6 +36,21 @@ export function normalizePlanningFeature(payload, fallback = false) {
         : fallback;
 }
 
+/**
+ * 读取 AI 是否允许返回计划；缺失或损坏时按默认开启处理。
+ *
+ * @param {unknown} payload /api/system/features 响应
+ * @param {boolean} fallback 缺省值
+ * @returns {boolean} 是否允许 AI 返回计划
+ */
+export function normalizeAiPlanFeature(payload, fallback = true) {
+    return payload
+        && typeof payload === "object"
+        && typeof payload.aiPlanEnabled === "boolean"
+        ? payload.aiPlanEnabled
+        : fallback;
+}
+
 function normalizeModuleOrder(source, key) {
     if (!Array.isArray(source[key])) {
         return [];

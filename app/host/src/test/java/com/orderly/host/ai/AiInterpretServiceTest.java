@@ -6,6 +6,7 @@ import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.execution.AiActionService;
 import com.orderly.host.execution.ExecutionRecord;
 import com.orderly.host.modulecontrol.ModuleControlService;
+import com.orderly.host.system.SystemFeatureService;
 import com.orderly.kernel.RiskLevel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -46,6 +48,8 @@ class AiInterpretServiceTest {
     private AiActionService actions;
     @Mock
     private AiPlanService plans;
+    @Mock
+    private SystemFeatureService systemFeatures;
 
     private final AiContextEpoch contextEpoch = new AiContextEpoch();
     private AiInterpretService service;
@@ -60,6 +64,7 @@ class AiInterpretServiceTest {
                 moduleControl,
                 actions,
                 plans,
+                systemFeatures,
                 new ObjectMapper(),
                 contextEpoch
         );
@@ -70,7 +75,9 @@ class AiInterpretServiceTest {
                 "temporary-key",
                 false
         ));
-        lenient().when(prompts.systemPrompt(anyList(), anyBoolean())).thenReturn("system");
+        lenient().when(systemFeatures.aiPlansEnabled()).thenReturn(true);
+        lenient().when(prompts.systemPrompt(anyList(), anyBoolean(), anyBoolean()))
+                .thenReturn("system");
         lenient().when(catalog.businessModules()).thenReturn(List.of());
     }
 
@@ -132,6 +139,7 @@ class AiInterpretServiceTest {
 
     @Test
     void executesWriteActionsWhenIntentIsExplicit() {
+        when(systemFeatures.aiPlansEnabled()).thenReturn(false);
         when(client.complete(any(), any(), anyList())).thenReturn("""
                 {"kind":"ACTIONS","message":"创建","actions":[{"moduleId":"module_fs","actionId":"fs.mkdir","arguments":{"path":"归档"}}]}
                 """);
@@ -159,6 +167,64 @@ class AiInterpretServiceTest {
         assertThat(response.kind()).isEqualTo("ACTIONS");
         assertThat(response.highestRisk()).isEqualTo(RiskLevel.WRITE);
         assertThat(response.execution()).isSameAs(record);
+    }
+
+    @Test
+    void rejectsPlanAfterOneRepairWhenAiPlansAreDisabled() {
+        when(systemFeatures.aiPlansEnabled()).thenReturn(false);
+        when(client.complete(any(), any(), anyList())).thenReturn("""
+                {"kind":"PLAN","message":"请审查","actions":[{"moduleId":"module_fs","actionId":"fs.mkdir","arguments":{"path":"归档"}}]}
+                """);
+
+        assertThatThrownBy(() -> service.interpret(new AiContracts.TurnRequest(
+                "整理目录",
+                null,
+                "disabled-plan-request"
+        )))
+                .isInstanceOfSatisfying(ApiException.class, exception -> {
+                    assertThat(exception.status().value()).isEqualTo(502);
+                    assertThat(exception.code()).isEqualTo("AI_INVALID_RESPONSE");
+                    assertThat(exception.getMessage()).contains("ACTIONS 或 QUESTION");
+                });
+
+        verify(client, times(2)).complete(any(), any(), anyList());
+        verifyNoInteractions(actions, plans);
+    }
+
+    @Test
+    void disabledAiPlansTurnUndeletedDeleteIntoQuestion() {
+        when(systemFeatures.aiPlansEnabled()).thenReturn(false);
+        when(client.complete(any(), any(), anyList())).thenReturn("""
+                {"kind":"ACTIONS","message":"删除","actions":[{"moduleId":"module_fs","actionId":"fs.trash","arguments":{"path":"旧文件.txt"}}]}
+                """);
+        when(actions.preview(anyList())).thenReturn(new AiActionService.Preview(
+                List.of(new AiActionService.ActionCall(
+                        "module_fs",
+                        "fs.trash",
+                        Map.of("path", "旧文件.txt")
+                )),
+                List.of(new AiActionService.PreviewStep(
+                        "module_fs",
+                        "fs.trash",
+                        "移入回收站",
+                        "将对象移入项目回收站",
+                        RiskLevel.DELETE,
+                        Map.of("path", "旧文件.txt")
+                )),
+                RiskLevel.DELETE
+        ));
+
+        AiContracts.TurnResponse response = service.interpret(new AiContracts.TurnRequest(
+                "删除旧文件.txt",
+                null,
+                "delete-question-request"
+        ));
+
+        assertThat(response.kind()).isEqualTo("QUESTION");
+        assertThat(response.question().prompt()).contains("删除直执未开启");
+        assertThat(response.execution()).isNull();
+        verify(actions, never()).executeAiDirect(anyList());
+        verifyNoInteractions(plans);
     }
 
     @Test

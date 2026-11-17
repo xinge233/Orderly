@@ -142,6 +142,20 @@ public class OrderlyController {
         return features.setPlanningEnabled(request.enabled());
     }
 
+    @PutMapping("/system/features/ai-plan")
+    public Map<String, Object> updateAiPlanFeature(
+            @RequestBody PlanningFeatureRequest request
+    ) {
+        if (request == null || request.enabled() == null) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_REQUEST",
+                    "enabled 必须是布尔值"
+            );
+        }
+        return features.setAiPlanEnabled(request.enabled());
+    }
+
     @GetMapping("/modules")
     public List<ModuleEntry> modules() {
         return moduleControl.businessModules();

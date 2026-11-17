@@ -12,11 +12,14 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -51,7 +54,8 @@ class SystemFeatureIntegrationTest {
     void planningDefaultsOffAndPersistsAcrossServiceReload() throws Exception {
         mockMvc.perform(get("/api/system/features"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.planningEnabled").value(false));
+                .andExpect(jsonPath("$.planningEnabled").value(false))
+                .andExpect(jsonPath("$.aiPlanEnabled").value(true));
         mockMvc.perform(post("/api/plans")
                         .contentType("application/json")
                         .content("{\"goal\":\"创建目录 默认关闭\"}"))
@@ -61,12 +65,39 @@ class SystemFeatureIntegrationTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("FEATURE_DISABLED"));
 
+        mockMvc.perform(put("/api/system/features/ai-plan")
+                        .contentType("application/json")
+                        .content("{\"enabled\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aiPlanEnabled").value(false));
+        mockMvc.perform(put("/api/system/features/ai-plan")
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
         features.setPlanningEnabled(true);
         SystemFeatureService reloaded = new SystemFeatureService(objectMapper, runtime, journal);
         reloaded.initialize();
         assertThat(reloaded.planningEnabled()).isTrue();
+        assertThat(reloaded.aiPlansEnabled()).isFalse();
+
+        Files.writeString(
+                runtime.dataRoot().resolve("system-features.json"),
+                "{\"planningEnabled\":true}",
+                StandardCharsets.UTF_8
+        );
+        SystemFeatureService legacyReloaded = new SystemFeatureService(
+                objectMapper,
+                runtime,
+                journal
+        );
+        legacyReloaded.initialize();
+        assertThat(legacyReloaded.planningEnabled()).isTrue();
+        assertThat(legacyReloaded.aiPlansEnabled()).isTrue();
         assertThat(journal.snapshot()).anyMatch(event ->
                 "SYSTEM_FEATURE".equals(event.type())
-                        && "SYSTEM".equals(event.origin()));
+                        && "SYSTEM".equals(event.origin())
+                        && "ai-plan".equals(event.actionId()));
     }
 }
