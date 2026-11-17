@@ -319,6 +319,9 @@ try {
         "contracts/action-execution.schema.json",
         "contracts/samples/valid/action-execution.json",
         "contracts/samples/invalid/action-execution-empty.json",
+        "contracts/ai-settings.schema.json",
+        "contracts/ai-turn-request.schema.json",
+        "contracts/ai-turn-response.schema.json",
         ".gitignore"
     )
     foreach ($requiredFile in $requiredFiles) {

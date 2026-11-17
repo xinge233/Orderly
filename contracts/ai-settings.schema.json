@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/ai-settings.schema.json",
+  "title": "Orderly AI Provider Settings Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mode", "allowDeleteDirect"],
+  "properties": {
+    "mode": {
+      "enum": ["DEEPSEEK", "CUSTOM"]
+    },
+    "apiKey": {
+      "description": "临时凭据；留空或省略时保留当前进程内已有的 Key。",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "null" }
+      ],
+      "writeOnly": true
+    },
+    "baseUrl": {
+      "oneOf": [
+        { "type": "string", "format": "uri" },
+        { "type": "null" }
+      ]
+    },
+    "model": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "allowDeleteDirect": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["mode"],
+        "properties": {
+          "mode": { "const": "CUSTOM" }
+        }
+      },
+      "then": {
+        "required": ["baseUrl", "model"],
+        "properties": {
+          "baseUrl": {
+            "type": "string",
+            "format": "uri",
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ]
+}

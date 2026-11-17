@@ -1,5 +1,10 @@
 import { ApiError, OrderlyApi } from "./api.js";
 import { mountAiDialog } from "./ai-dialog.js";
+import {
+    AI_MODES,
+    normalizeAiSettings,
+    validateAiSettingsDraft
+} from "./ai-settings.js";
 import { AI_ICON_OPTIONS, hydrateIcons, icon } from "./icons.js";
 import {
     EVENT_ORIGIN,
@@ -73,7 +78,11 @@ const NAV_SECTIONS = Object.freeze([
 ]);
 
 const HISTORY_VIEWS = new Set(["timeline", "summary"]);
-const ROLLBACK_ORIGINS = new Set([EVENT_ORIGIN.PLAN, EVENT_ORIGIN.AI_DIRECT]);
+const ROLLBACK_ORIGINS = new Set([
+    EVENT_ORIGIN.PLAN,
+    EVENT_ORIGIN.AI_DIRECT,
+    EVENT_ORIGIN.AI_PLAN
+]);
 
 const state = {
     activeView: "overview",
@@ -81,6 +90,11 @@ const state = {
     planningEnabled: false,
     planningFeatureLoading: true,
     planningFeatureSaving: false,
+    aiSettings: normalizeAiSettings({}),
+    aiSettingsLoading: true,
+    aiSettingsSaving: false,
+    aiSettingsTesting: false,
+    aiSettingsError: "",
     modules: [],
     modulePreferences: normalizeModulePreferences({}),
     moduleCatalogIssues: [],
@@ -262,6 +276,16 @@ async function bootstrap() {
         dock: document.querySelector("#ai-dock"),
         callLayer: document.querySelector("#ai-call-layer"),
         getModules: () => state.modules.filter(isModuleVisible),
+        getAiSettings: () => state.aiSettings,
+        saveAiSettings: (settings) => api.saveAiSettings(settings),
+        clearAiSettings: () => api.clearAiSettings(),
+        testAiSettings: () => api.testAiSettings(),
+        interpretGoal: (payload) => api.interpretAiTurn(payload),
+        confirmAiPlan: (planId) => api.confirmAiPlan(planId),
+        onAiSettingsChanged: (settings) => {
+            state.aiSettings = normalizeAiSettings(settings);
+            state.aiSettingsError = "";
+        },
         onNotice: (message, options) => toast(message, options)
     });
     bindSettingsDialog();
@@ -271,13 +295,15 @@ async function bootstrap() {
         systemModuleResult,
         preferenceResult,
         themeResult,
-        featureResult
+        featureResult,
+        aiSettingsResult
     ] = await Promise.allSettled([
         api.getModules(),
         api.getSystemModules(),
         api.getModulePreferences(),
         api.getThemes(),
-        api.getSystemFeatures()
+        api.getSystemFeatures(),
+        api.getAiSettings()
     ]);
     const catalogs = normalizeModuleCatalogs(
         moduleResult.status === "fulfilled" ? moduleResult.value : [],
@@ -300,6 +326,13 @@ async function bootstrap() {
     state.builtInFallbackActive = themeCatalog.builtInFallbackActive;
     themeManager.setCatalog(themeCatalog);
     state.planningFeatureLoading = false;
+    state.aiSettingsLoading = false;
+    if (aiSettingsResult.status === "fulfilled") {
+        state.aiSettings = normalizeAiSettings(aiSettingsResult.value);
+        state.aiSettingsError = "";
+    } else {
+        state.aiSettingsError = errorMessage(aiSettingsResult.reason);
+    }
     applyPlanningFeatureState(
         normalizePlanningFeature(
             featureResult.status === "fulfilled" ? featureResult.value : {},
@@ -2076,7 +2109,7 @@ function renderOverview() {
                         <li>写入计划需要明确勾选确认。</li>
                         <li>删除还需键入“删除”，且只会移入项目回收站。</li>
                         <li>中途失败时，宿主会逆序回滚已经完成的步骤。</li>
-                        <li>计划预览不连接外部模型；右下角 AI 对话框仅作界面演示。</li>
+                        <li>旧版计划预览与独立 AI 计划分离；右下角 AI 对话框连接当前进程内配置的模型。</li>
                     </ul>
                 </aside>
             </div>
@@ -3370,11 +3403,12 @@ function renderSettings({ focusPanel = false } = {}) {
     if (!nav || !panel) {
         return;
     }
-    if (!["appearance", "system"].includes(state.settingsSection)) {
+    if (!["appearance", "ai", "system"].includes(state.settingsSection)) {
         state.settingsSection = "appearance";
     }
     const sections = [
         { id: "appearance", label: "外观", note: "主题与动效", icon: "palette" },
+        { id: "ai", label: "AI 接入", note: "模型与临时凭据", icon: "spark" },
         { id: "system", label: "系统设置", note: "本地运行边界", icon: "shield" }
     ];
     nav.replaceChildren();
@@ -3405,6 +3439,8 @@ function renderSettings({ focusPanel = false } = {}) {
     panel.replaceChildren();
     if (state.settingsSection === "appearance") {
         renderAppearanceSettings(panel);
+    } else if (state.settingsSection === "ai") {
+        renderAiSettings(panel);
     } else {
         renderSystemSettings(panel);
     }
@@ -3562,6 +3598,259 @@ function renderAppearanceSettings(panel) {
     ));
     fields.append(aiIconField, motionField, notifications);
     panel.append(fields);
+}
+
+/**
+ * 渲染独立的 AI 接入设置分区。
+ *
+ * @param {HTMLElement} panel 面板
+ */
+function renderAiSettings(panel) {
+    const settings = state.aiSettings;
+    const header = element("header", "settings-panel__header");
+    header.append(
+        element("p", "eyebrow", "AI PROVIDER"),
+        element("h3", "", "AI 接入"),
+        element(
+            "p",
+            "",
+            "API Key 只保存在当前宿主进程内，刷新或退出后失效；不会写入仓库、日志或浏览器存储。"
+        )
+    );
+    panel.append(header);
+
+    if (state.aiSettingsLoading) {
+        panel.append(element("p", "settings-note", "正在读取 AI 接入状态…"));
+    }
+    if (state.aiSettingsError) {
+        const issue = element("section", "theme-issues");
+        issue.append(
+            element("h4", "", "AI 设置不可用"),
+            element("p", "", state.aiSettingsError)
+        );
+        panel.append(issue);
+    }
+
+    const fields = element("div", "settings-fields");
+    const modeField = element("fieldset", "setting-field");
+    modeField.append(
+        element("legend", "", "接入模式"),
+        element("p", "", "DeepSeek 使用固定官方地址和模型；自定义模式需要完整连接信息。")
+    );
+    const modeSelect = document.createElement("select");
+    modeSelect.id = "ai-settings-mode";
+    modeSelect.className = "settings-input";
+    AI_MODES.forEach((option) => {
+        const item = document.createElement("option");
+        item.value = option.value;
+        item.textContent = option.label;
+        item.selected = settings.mode === option.value;
+        modeSelect.append(item);
+    });
+    modeField.append(modeSelect);
+
+    const keyField = element("fieldset", "setting-field");
+    keyField.append(
+        element("legend", "", "API Key"),
+        element(
+            "p",
+            "",
+            settings.configured
+                ? "当前进程已有临时凭据。输入新 Key 可替换，留空则保留当前值。"
+                : "输入后将立即用于当前进程；不会写入磁盘。"
+        )
+    );
+    const keyInput = document.createElement("input");
+    keyInput.id = "ai-settings-api-key";
+    keyInput.className = "settings-input";
+    keyInput.type = "password";
+    keyInput.autocomplete = "off";
+    keyInput.spellcheck = false;
+    keyInput.placeholder = settings.configured ? "已配置，输入新 Key 可替换" : "输入 API Key";
+    keyField.append(keyInput);
+
+    const customFields = element("fieldset", "setting-field ai-settings-custom");
+    customFields.append(
+        element("legend", "", "自定义连接"),
+        element("p", "", "仅自定义模式使用；默认只允许 HTTPS。")
+    );
+    const baseUrlInput = document.createElement("input");
+    baseUrlInput.id = "ai-settings-base-url";
+    baseUrlInput.className = "settings-input";
+    baseUrlInput.type = "url";
+    baseUrlInput.autocomplete = "off";
+    baseUrlInput.placeholder = "https://api.example.com";
+    baseUrlInput.value = settings.baseUrl || "";
+    const modelInput = document.createElement("input");
+    modelInput.id = "ai-settings-model";
+    modelInput.className = "settings-input";
+    modelInput.type = "text";
+    modelInput.autocomplete = "off";
+    modelInput.placeholder = "模型标识";
+    modelInput.value = settings.model || "";
+    const customGrid = element("div", "settings-input-grid");
+    const baseUrlLabel = element("label", "settings-input-label");
+    baseUrlLabel.append(element("span", "", "API Base URL"), baseUrlInput);
+    const modelLabel = element("label", "settings-input-label");
+    modelLabel.append(element("span", "", "Model"), modelInput);
+    customGrid.append(baseUrlLabel, modelLabel);
+    customFields.append(customGrid);
+
+    const deleteRow = element("div", "setting-field setting-field--row ai-danger-setting");
+    const deleteCopy = element("div");
+    deleteCopy.append(
+        element("label", "", "允许明确意图直执删除"),
+        element(
+            "p",
+            "",
+            "默认关闭。开启后删除仍只进入项目回收站，并保留快照、审计和回滚。"
+        )
+    );
+    const deleteInput = document.createElement("input");
+    deleteInput.type = "checkbox";
+    deleteInput.checked = settings.allowDeleteDirect === true;
+    deleteInput.dataset.settingKey = "allowDeleteDirect";
+    deleteInput.setAttribute("aria-label", "允许明确意图直执删除");
+    deleteRow.append(deleteCopy, deleteInput);
+
+    const actions = element("div", "settings-actions");
+    const saveButton = element("button", "primary-button", "保存临时设置");
+    saveButton.type = "button";
+    const testButton = element("button", "text-button", "保存并测试连接");
+    testButton.type = "button";
+    const clearButton = element("button", "text-button", "清除临时凭据");
+    clearButton.type = "button";
+    actions.append(saveButton, testButton, clearButton);
+
+    const updateModeFields = () => {
+        const custom = modeSelect.value === "CUSTOM";
+        customFields.hidden = !custom;
+        baseUrlInput.disabled = !custom;
+        modelInput.disabled = !custom;
+    };
+    modeSelect.addEventListener("change", updateModeFields);
+    deleteInput.addEventListener("change", () => {
+        if (deleteInput.checked && !window.confirm(
+            "开启后，明确意图的删除可能直接进入回收站。仍会保留快照、审计和回滚。确认开启？"
+        )) {
+            deleteInput.checked = false;
+        }
+    });
+    saveButton.addEventListener("click", () => void persistAiSettings(panel));
+    testButton.addEventListener("click", () => void persistAiSettings(panel, { test: true }));
+    clearButton.addEventListener("click", () => void clearAiSettings(panel));
+
+    fields.append(modeField, keyField, customFields, deleteRow, actions);
+    panel.append(fields);
+    updateModeFields();
+}
+
+/**
+ * 保存当前进程内 AI 设置；测试按钮会先保存再测试。
+ *
+ * @param {HTMLElement} panel 设置面板
+ * @param {{test?: boolean}} options 选项
+ */
+async function persistAiSettings(panel, { test = false } = {}) {
+    if (state.aiSettingsSaving || state.aiSettingsTesting) {
+        return;
+    }
+    const modeSelect = panel.querySelector("#ai-settings-mode");
+    const keyInput = panel.querySelector("#ai-settings-api-key");
+    const baseUrlInput = panel.querySelector("#ai-settings-base-url");
+    const modelInput = panel.querySelector("#ai-settings-model");
+    const deleteInput = panel.querySelector('[data-setting-key="allowDeleteDirect"]');
+    if (!modeSelect || !keyInput || !baseUrlInput || !modelInput || !deleteInput) {
+        return;
+    }
+    const draft = {
+        mode: modeSelect.value,
+        apiKey: keyInput.value,
+        baseUrl: baseUrlInput.value,
+        model: modelInput.value
+    };
+    const validation = validateAiSettingsDraft(draft, {
+        configured: state.aiSettings.configured,
+        allowLocalProvider: state.aiSettings.allowLocalProvider
+    });
+    if (validation) {
+        setSettingsStatus(validation, { error: true });
+        keyInput.focus({ preventScroll: true });
+        return;
+    }
+
+    state.aiSettingsSaving = true;
+    const buttons = [...panel.querySelectorAll("button")];
+    buttons.forEach((button) => {
+        button.disabled = true;
+    });
+    setSettingsStatus(test ? "正在保存并测试模型连接…" : "正在保存临时 AI 设置…");
+    try {
+        const saved = await api.saveAiSettings({
+            mode: draft.mode,
+            apiKey: draft.apiKey.trim(),
+            baseUrl: draft.mode === "CUSTOM" ? draft.baseUrl.trim() : null,
+            model: draft.mode === "CUSTOM" ? draft.model.trim() : null,
+            allowDeleteDirect: deleteInput.checked
+        });
+        state.aiSettings = normalizeAiSettings(saved);
+        state.aiSettingsError = "";
+        aiDialog?.setAiSettings?.(state.aiSettings);
+        if (test) {
+            state.aiSettingsTesting = true;
+            const result = await api.testAiSettings();
+            setSettingsStatus(result?.message || "模型连接成功");
+            toast(result?.message || "模型连接成功");
+        } else {
+            setSettingsStatus("AI 临时设置已保存；API Key 不会写入磁盘。");
+            toast("AI 临时设置已保存。");
+        }
+        renderSettings({ focusPanel: true });
+    } catch (error) {
+        const message = `AI 设置失败：${errorMessage(error)}`;
+        setSettingsStatus(message, { error: true });
+        toast(message, { error: true });
+    } finally {
+        state.aiSettingsSaving = false;
+        state.aiSettingsTesting = false;
+        buttons.forEach((button) => {
+            button.disabled = false;
+        });
+    }
+}
+
+/**
+ * 清除当前进程内 AI 凭据。
+ *
+ * @param {HTMLElement} panel 设置面板
+ */
+async function clearAiSettings(panel) {
+    if (state.aiSettingsSaving || state.aiSettingsTesting) {
+        return;
+    }
+    state.aiSettingsSaving = true;
+    const buttons = [...panel.querySelectorAll("button")];
+    buttons.forEach((button) => {
+        button.disabled = true;
+    });
+    try {
+        const cleared = await api.clearAiSettings();
+        state.aiSettings = normalizeAiSettings(cleared);
+        state.aiSettingsError = "";
+        aiDialog?.setAiSettings?.(state.aiSettings);
+        setSettingsStatus("AI 临时凭据已清除。");
+        toast("AI 临时凭据已清除。");
+        renderSettings({ focusPanel: true });
+    } catch (error) {
+        const message = `清除 AI 凭据失败：${errorMessage(error)}`;
+        setSettingsStatus(message, { error: true });
+        toast(message, { error: true });
+    } finally {
+        state.aiSettingsSaving = false;
+        buttons.forEach((button) => {
+            button.disabled = false;
+        });
+    }
 }
 
 /**

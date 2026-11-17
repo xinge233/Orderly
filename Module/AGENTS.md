@@ -169,6 +169,7 @@ orderly-modules/<module>.json
 - `WRITE` 和 `DELETE` 必须设置 `confirmationRequired: true`。
 - `DELETE` 只要求宿主规定的明确确认，不额外要求确认词，并且只能把对象移入项目回收站。
 - `aiCallable` 缺省为 `true`；只有确实禁止总体 AI 调用时才显式设为 `false`。
+- 总体 AI 的直执策略由宿主决定：`READ_ONLY` 与 `WRITE` 可在明确意图下直执；`DELETE` 默认必须进入确认流程，只有宿主设置显式允许删除直执时才可直执。
 - `outputSchema` 应声明输出 JSON 结构，且只能使用当前契约允许的 JSON Schema 子集。
 - 参数类型当前只支持 `string`、`boolean` 和 `integer`。
 
@@ -248,10 +249,11 @@ Action 数组约束：
 
 ## 7. 来源、审计与诚实性
 
-Action 来源由宿主设置，至少区分 `PLAN`、`AI_DIRECT`、`MODULE_CONTROL` 和
+Action 来源由宿主设置，至少区分 `PLAN`、`AI_DIRECT`、`AI_PLAN`、`MODULE_CONTROL` 和
 `SYSTEM`。模块不得接受、覆盖或伪造来源。
 
 - 每一步的输入、输出、状态、快照和结果由宿主持久化和审计，模块不得另建跨模块历史。
+- AI 删除直执即使由设置开启，也只能通过项目回收站执行，并保留快照、审计和回滚。
 - 模块返回的摘要必须准确描述实际结果，不得声称未发生的操作。
 - 错误应抛出带明确原因的异常，由宿主记录失败与回滚状态。
 - 未实现能力必须标为“占位”或“尚未接入”，不得伪装成真实 AI、安全隔离、来源验证、

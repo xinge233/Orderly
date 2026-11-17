@@ -203,6 +203,16 @@ foreach ($entry in $optionalStudyQueries.GetEnumerator()) {
 }
 
 $aiExecutionId = $null
+$aiSettings = Invoke-RestMethod -Uri "$BaseUrl/api/ai/settings" -Method Get
+if ($aiSettings.PSObject.Properties.Name -contains "apiKey") {
+    throw "AI 设置响应泄露了 API Key。"
+}
+if ($aiSettings.mode -ne "DEEPSEEK" -or
+        $aiSettings.baseUrl -ne "https://api.deepseek.com" -or
+        $aiSettings.model -ne "DeepSeek-V4.1-Flash") {
+    throw "AI 设置未返回 DeepSeek 固定默认值。"
+}
+
 if ($moduleIds -contains "module_fs") {
     $smokeDirectory = "smoke-" + [guid]::NewGuid().ToString("N")
 

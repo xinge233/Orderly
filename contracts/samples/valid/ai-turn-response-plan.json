@@ -1,0 +1,28 @@
+{
+  "kind": "PLAN",
+  "requestId": "sample-response-1",
+  "conversationId": "sample-conversation-1",
+  "message": "已生成计划，请确认后执行。",
+  "highestRisk": "WRITE",
+  "plan": {
+    "planId": "sample-plan-1",
+    "goal": "创建归档目录",
+    "status": "PREVIEW",
+    "highestRisk": "WRITE",
+    "createdAt": "2026-11-17T00:00:00Z",
+    "expiresAt": "2026-11-17T00:30:00Z",
+    "steps": [
+      {
+        "id": "s1",
+        "moduleId": "module_fs",
+        "actionId": "fs.mkdir",
+        "title": "创建目录",
+        "description": "在工作区创建目录。",
+        "risk": "WRITE",
+        "arguments": {
+          "path": "归档"
+        }
+      }
+    ]
+  }
+}

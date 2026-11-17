@@ -6,6 +6,9 @@ import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.contract.ModuleEntry;
 import com.orderly.host.contract.ParameterContract;
 import com.orderly.host.contract.QueryContract;
+import com.orderly.host.ai.AiContracts;
+import com.orderly.host.ai.AiInterpretService;
+import com.orderly.host.ai.AiSettingsService;
 import com.orderly.host.event.ExecutionEvent;
 import com.orderly.host.event.ExecutionJournal;
 import com.orderly.host.execution.ExecutionRunResult;
@@ -35,6 +38,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -70,6 +74,8 @@ public class OrderlyController {
     private final ModuleDataService moduleData;
     private final SystemFeatureService features;
     private final AiActionService aiActions;
+    private final AiSettingsService aiSettings;
+    private final AiInterpretService aiInterpret;
     private final ExecutionRecordStore records;
 
     public OrderlyController(
@@ -85,6 +91,8 @@ public class OrderlyController {
             ModuleDataService moduleData,
             SystemFeatureService features,
             AiActionService aiActions,
+            AiSettingsService aiSettings,
+            AiInterpretService aiInterpret,
             ExecutionRecordStore records
     ) {
         this.catalog = catalog;
@@ -99,6 +107,8 @@ public class OrderlyController {
         this.moduleData = moduleData;
         this.features = features;
         this.aiActions = aiActions;
+        this.aiSettings = aiSettings;
+        this.aiInterpret = aiInterpret;
         this.records = records;
     }
 
@@ -107,6 +117,7 @@ public class OrderlyController {
         return Map.of(
                 "status", "UP",
                 "planner", "LOCAL_RULES",
+                "aiConfigured", aiSettings.view().configured(),
                 "workspace", runtime.workspaceLabel(),
                 "javaVersion", Runtime.version().feature()
         );
@@ -315,6 +326,39 @@ public class OrderlyController {
             );
         }
         return aiActions.execute(request.confirmed(), request.actions());
+    }
+
+    @GetMapping("/ai/settings")
+    public AiContracts.SettingsView aiSettings() {
+        return aiSettings.view();
+    }
+
+    @PutMapping("/ai/settings")
+    public AiContracts.SettingsView updateAiSettings(
+            @RequestBody AiContracts.SettingsRequest request
+    ) {
+        return aiSettings.configure(request);
+    }
+
+    @DeleteMapping("/ai/settings")
+    public AiContracts.SettingsView clearAiSettings() {
+        aiSettings.clear();
+        return aiSettings.view();
+    }
+
+    @PostMapping("/ai/settings/test")
+    public AiContracts.ConnectionTest testAiSettings() {
+        return aiSettings.testConnection();
+    }
+
+    @PostMapping("/ai/turns")
+    public AiContracts.TurnResponse aiTurn(@RequestBody AiContracts.TurnRequest request) {
+        return aiInterpret.interpret(request);
+    }
+
+    @PostMapping("/ai/plans/{planId}/confirm")
+    public ExecutionRecord confirmAiPlan(@PathVariable String planId) {
+        return aiInterpret.confirmPlan(planId);
     }
 
     @GetMapping("/executions")

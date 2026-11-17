@@ -224,7 +224,8 @@ test("navigation rendering and the AI dock keep demo honesty visible", async () 
     assert.match(renderNavigation, /button\.setAttribute\("aria-current", "page"\)/);
     assert.match(navigate, /#mobile-view-title/);
     assert.doesNotMatch(app, /#breadcrumb/);
-    assert.match(aiDialog, /界面演示 · 未接入 AI/);
+    assert.match(aiDialog, /输入 DeepSeek API Key 接入/);
+    assert.match(aiDialog, /AI 执行进度/);
     assert.match(aiDialog, /id="ai-plan-close"/);
     assert.match(appCss, /padding-bottom:\s*128px;/);
     assert.doesNotMatch(app, /#command-dock/);

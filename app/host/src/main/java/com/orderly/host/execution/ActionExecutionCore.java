@@ -75,7 +75,7 @@ public class ActionExecutionCore {
             Map<String, Object> arguments,
             String origin
     ) {
-        ResolvedAction target = "AI_DIRECT".equals(origin)
+        ResolvedAction target = isAiOrigin(origin)
                 ? requireAiTarget(moduleId, actionId)
                 : requireEnabledTarget(moduleId, actionId);
         validateArguments(target.action(), arguments);
@@ -319,6 +319,10 @@ public class ActionExecutionCore {
     private String safeMessage(RuntimeException exception) {
         String message = exception.getMessage();
         return message == null || message.isBlank() ? "执行失败" : message;
+    }
+
+    private boolean isAiOrigin(String origin) {
+        return "AI_DIRECT".equals(origin) || "AI_PLAN".equals(origin);
     }
 
     private Map<String, Object> normalizeObject(Map<String, Object> value, String label) {

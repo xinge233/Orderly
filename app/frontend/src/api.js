@@ -290,6 +290,49 @@ export class OrderlyApi {
         return this.request("/api/system/features", options);
     }
 
+    getAiSettings(options) {
+        return this.request("/api/ai/settings", options);
+    }
+
+    saveAiSettings(settings, options = {}) {
+        return this.request("/api/ai/settings", {
+            ...options,
+            method: "PUT",
+            body: settings
+        });
+    }
+
+    clearAiSettings(options = {}) {
+        return this.request("/api/ai/settings", {
+            ...options,
+            method: "DELETE"
+        });
+    }
+
+    testAiSettings(options = {}) {
+        return this.request("/api/ai/settings/test", {
+            ...options,
+            method: "POST",
+            body: {}
+        });
+    }
+
+    interpretAiTurn(payload, options = {}) {
+        return this.request("/api/ai/turns", {
+            ...options,
+            method: "POST",
+            body: payload
+        });
+    }
+
+    confirmAiPlan(planId, options = {}) {
+        return this.request(`/api/ai/plans/${encodeURIComponent(planId)}/confirm`, {
+            ...options,
+            method: "POST",
+            body: {}
+        });
+    }
+
     setPlanningEnabled(enabled, options = {}) {
         return this.request("/api/system/features/planning", {
             ...options,

@@ -111,6 +111,15 @@
 
         <section class="ai-composer" id="ai-composer" aria-label="AI 输入框" aria-hidden="true">
             <form class="ai-composer__form" id="ai-composer-form">
+                <input
+                    class="ai-inline-api-key"
+                    id="ai-inline-api-key"
+                    type="password"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="输入 DeepSeek API Key 接入"
+                    aria-label="输入 DeepSeek API Key"
+                />
                 <label class="sr-only" for="ai-composer-input">输入 AI 指令</label>
                 <textarea
                     id="ai-composer-input"
@@ -119,8 +128,8 @@
                     placeholder="告诉 AI 你想整理什么；当前仅演示界面，不会执行操作"
                 ></textarea>
                 <span class="ai-demo-badge">
-                    <span class="ai-demo-badge__full">界面演示 · 未接入 AI</span>
-                    <span class="ai-demo-badge__compact">未接入 AI</span>
+                    <span class="ai-demo-badge__full">输入 API Key 接入</span>
+                    <span class="ai-demo-badge__compact">接入 AI</span>
                 </span>
                 <button class="ai-icon-button" id="ai-composer-close" type="button" aria-label="收起 AI 输入框">
                     <span data-icon="close" aria-hidden="true"></span>
@@ -135,7 +144,7 @@
         <section class="ai-plan-panel" id="ai-plan-panel" aria-label="AI 计划栏" aria-hidden="true">
             <header class="ai-plan-panel__head">
                 <div>
-                    <span class="ai-plan-panel__eyebrow">界面演示 · 未接入 AI</span>
+                    <span class="ai-plan-panel__eyebrow">AI 工作流</span>
                     <h2 id="ai-plan-title">尚未生成计划</h2>
                 </div>
                 <button class="ai-icon-button" id="ai-plan-close" type="button" aria-label="关闭计划">
@@ -162,11 +171,11 @@
             aria-hidden="true"
         >
             <header>
-                <strong id="ai-progress-title">界面演示 · 未接入 AI</strong>
+                <strong id="ai-progress-title">AI 执行进度</strong>
                 <span>执行进度</span>
             </header>
             <ol id="ai-progress-list" aria-live="polite"></ol>
-            <p>当前仅展示状态变化，不会调用模块或修改文件。</p>
+            <p>执行状态来自宿主记录；写入与删除仍由宿主统一担保。</p>
         </aside>
     </section>
 

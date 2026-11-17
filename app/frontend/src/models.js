@@ -25,6 +25,7 @@ export const STATUS_LABEL = Object.freeze({
 export const EVENT_ORIGIN = Object.freeze({
     PLAN: "PLAN",
     AI_DIRECT: "AI_DIRECT",
+    AI_PLAN: "AI_PLAN",
     MODULE_CONTROL: "MODULE_CONTROL",
     SYSTEM: "SYSTEM"
 });
@@ -32,6 +33,7 @@ export const EVENT_ORIGIN = Object.freeze({
 export const EVENT_ORIGIN_LABEL = Object.freeze({
     [EVENT_ORIGIN.PLAN]: "计划",
     [EVENT_ORIGIN.AI_DIRECT]: "AI 直接执行",
+    [EVENT_ORIGIN.AI_PLAN]: "AI 计划",
     [EVENT_ORIGIN.MODULE_CONTROL]: "模块控制",
     [EVENT_ORIGIN.SYSTEM]: "系统"
 });
@@ -220,6 +222,9 @@ export function inferEventOrigin(raw) {
     ).toUpperCase();
     if (type.includes("AI_DIRECT") || type === "DIRECT") {
         return EVENT_ORIGIN.AI_DIRECT;
+    }
+    if (type.includes("AI_PLAN")) {
+        return EVENT_ORIGIN.AI_PLAN;
     }
     if (type.includes("MODULE_CONTROL")) {
         return EVENT_ORIGIN.MODULE_CONTROL;

@@ -147,7 +147,8 @@ test("AI dock hides inactive surfaces and keeps demo disclosure visible", async 
         appCss,
         /\.ai-dock \.ai-composer\[aria-hidden="true"\][\s\S]*?visibility:\s*hidden;/
     );
-    assert.match(dialog, /界面演示 · 未接入 AI/);
+    assert.match(dialog, /AI 执行进度/);
+    assert.match(dialog, /输入 API Key 接入/);
     assert.match(dialog, /aria-label="关闭计划"/);
     assert.doesNotMatch(appCss, /\.planner-disclosure\s*\{[^}]*display:\s*none;/s);
 });

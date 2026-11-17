@@ -14,12 +14,20 @@ const AI_RISK_LABEL = Object.freeze({
 
 const AI_PROGRESS_HIDE_DELAY_MS = 140;
 const AI_RUNNING_LEAVE_DELAY_MS = 120;
-const AI_COMPLETION_HOLD_MS = 4000;
-const AI_STEP_GAP_MS = 120;
 const AI_DRAG_THRESHOLD_PX = 6;
 const AI_SNAP_DISTANCE_PX = 76;
 const AI_POSITION_STORAGE_KEY = "orderly.ai.dock.position.v1";
 const AI_VIEWPORT_MARGIN_PX = 12;
+
+function normalizeSettings(value) {
+    return {
+        configured: value?.configured === true,
+        mode: value?.mode === "CUSTOM" ? "CUSTOM" : "DEEPSEEK",
+        allowDeleteDirect: value?.allowDeleteDirect === true,
+        baseUrl: typeof value?.baseUrl === "string" ? value.baseUrl : "",
+        model: typeof value?.model === "string" ? value.model : ""
+    };
+}
 
 export function resolveAiSurfaceLayout({
     dockLeft,
@@ -153,49 +161,6 @@ export function higherAiRisk(left, right) {
 }
 
 /**
- * 构造仅用于界面演示的计划。此函数不会调用宿主或执行任何动作。
- *
- * @param {string} goal 用户输入
- * @param {Array<object>} modules 可见业务模块
- * @returns {object} 演示计划
- */
-export function createAiDemoPlan(goal, modules = []) {
-    const visibleModules = modules
-        .filter((module) => module?.moduleId && module.enabled !== false)
-        .slice(0, 3);
-    const riskPattern = ["READ_ONLY", "WRITE", "READ_ONLY"];
-    const verbs = ["读取", "更新", "检查"];
-    const actions = visibleModules.length
-        ? visibleModules.map((module, index) => ({
-            id: `ai-demo-${index + 1}`,
-            moduleId: module.moduleId,
-            moduleTitle: module.title || module.moduleId,
-            title: `${verbs[index] ?? "检查"}「${module.title || module.moduleId}」`,
-            risk: riskPattern[index] ?? "READ_ONLY",
-            status: "pending"
-        }))
-        : [{
-            id: "ai-demo-target-unavailable",
-            moduleId: "",
-            moduleTitle: "",
-            title: "检查当前工作区",
-            risk: "READ_ONLY",
-            status: "pending"
-        }];
-    const risk = actions.reduce(
-        (highest, action) => higherAiRisk(highest, action.risk),
-        "READ_ONLY"
-    );
-
-    return {
-        id: `ai-demo-${Date.now()}`,
-        title: String(goal ?? "").trim() || "整理当前工作区",
-        risk,
-        actions
-    };
-}
-
-/**
  * 挂载 AI 对话框。组件只负责界面状态、演示进度和调用轨迹。
  *
  * @param {object} options 配置
@@ -209,6 +174,19 @@ export function mountAiDialog({
     dock,
     callLayer,
     getModules,
+    getAiSettings = () => ({}),
+    saveAiSettings = async () => {
+        throw new Error("AI 设置接口未配置。");
+    },
+    clearAiSettings = async () => ({}),
+    testAiSettings = async () => ({ ok: true, message: "连接成功" }),
+    interpretGoal = async () => {
+        throw new Error("AI 自然语言接口未配置。");
+    },
+    confirmAiPlan = async () => {
+        throw new Error("AI 计划确认接口未配置。");
+    },
+    onAiSettingsChanged = () => {},
     onNotice = () => {}
 }) {
     if (!dock || !callLayer) {
@@ -220,11 +198,13 @@ export function mountAiDialog({
         launcherIcon: dock.querySelector("#ai-launcher-icon"),
         composer: dock.querySelector("#ai-composer"),
         composerForm: dock.querySelector("#ai-composer-form"),
+        inlineKey: dock.querySelector("#ai-inline-api-key"),
         composerInput: dock.querySelector("#ai-composer-input"),
         composerClose: dock.querySelector("#ai-composer-close"),
         composerSend: dock.querySelector("#ai-send-button"),
         sendIcon: dock.querySelector("#ai-send-icon"),
         plan: dock.querySelector("#ai-plan-panel"),
+        planEyebrow: dock.querySelector(".ai-plan-panel__eyebrow"),
         planClose: dock.querySelector("#ai-plan-close"),
         planTitle: dock.querySelector("#ai-plan-title"),
         planList: dock.querySelector("#ai-plan-list"),
@@ -233,7 +213,9 @@ export function mountAiDialog({
         progress: dock.querySelector("#ai-progress-popover"),
         progressTitle: dock.querySelector("#ai-progress-title"),
         progressList: dock.querySelector("#ai-progress-list"),
-        snapTarget: document.querySelector("#ai-snap-target")
+        snapTarget: document.querySelector("#ai-snap-target"),
+        demoBadgeFull: dock.querySelector(".ai-demo-badge__full"),
+        demoBadgeCompact: dock.querySelector(".ai-demo-badge__compact")
     };
     const missing = Object.entries(nodes).find(([, node]) => !node);
     if (missing) {
@@ -249,6 +231,13 @@ export function mountAiDialog({
         panelOpen: false,
         popoverOpen: false,
         plan: null,
+        question: null,
+        execution: null,
+        conversationId: "",
+        settings: normalizeSettings(getAiSettings()),
+        requestGeneration: 0,
+        busy: false,
+        error: "",
         runGeneration: 0,
         popoverTimer: null,
         collapseTimer: null,
@@ -565,11 +554,12 @@ export function mountAiDialog({
     function updateSurfaces() {
         const composerOpen = dialog.composerOpen;
         const planOpen = dialog.panelOpen
-            && ["planning", "running", "completed"].includes(dialog.mode);
+            && ["planning", "running", "completed", "question", "error"].includes(dialog.mode);
         const expanded = composerOpen || planOpen;
         const running = dialog.mode === "running";
         const completed = dialog.mode === "completed";
-        const busy = ["planning", "running", "completed"].includes(dialog.mode);
+        const busy = dialog.busy === true;
+        const configured = dialog.settings.configured === true;
 
         dock.dataset.mode = dialog.mode;
         dock.dataset.composer = composerOpen ? "open" : "closed";
@@ -580,7 +570,8 @@ export function mountAiDialog({
         dock.dataset.morphing = dialog.morphing ? "true" : "false";
         dock.dataset.snapAnimating = dialog.snapAnimating ? "true" : "false";
         dock.dataset.draggable = String(canDragAiDock(dialog));
-        dock.dataset.demo = "true";
+        dock.dataset.demo = configured ? "false" : "true";
+        dock.dataset.aiConfigured = String(configured);
 
         nodes.composer.setAttribute("aria-hidden", String(!composerOpen));
         nodes.composer.inert = !composerOpen;
@@ -590,10 +581,23 @@ export function mountAiDialog({
         nodes.launcher.inert = expanded;
         nodes.launcher.tabIndex = expanded ? -1 : 0;
         nodes.launcher.setAttribute("aria-expanded", String(expanded));
-        nodes.composerInput.disabled = busy;
+        nodes.composerInput.disabled = busy || !configured;
+        nodes.inlineKey.disabled = busy || configured;
         nodes.composerSend.disabled = busy;
         nodes.composerInput.setAttribute("aria-busy", String(busy));
+        nodes.inlineKey.setAttribute("aria-busy", String(busy));
         nodes.progress.setAttribute("aria-hidden", String(!dialog.popoverOpen));
+        nodes.inlineKey.hidden = configured;
+        nodes.composerInput.hidden = !configured;
+        if (nodes.demoBadgeFull) {
+            nodes.demoBadgeFull.textContent = configured ? "AI 已接入" : "输入 API Key";
+        }
+        if (nodes.demoBadgeCompact) {
+            nodes.demoBadgeCompact.textContent = configured ? "已接入" : "接入 AI";
+        }
+        if (nodes.composerSend.lastElementChild) {
+            nodes.composerSend.lastElementChild.textContent = configured ? "生成" : "接入";
+        }
 
         nodes.launcher.dataset.status = running
             ? "running"
@@ -604,9 +608,9 @@ export function mountAiDialog({
         nodes.launcher.setAttribute(
             "aria-label",
             running
-                ? "AI 界面演示正在运行，可拖动调整位置"
+                ? "AI 正在执行，可拖动调整位置"
                 : completed
-                    ? "AI 界面演示已完成，点击开始新对话"
+                    ? "AI 执行已完成，点击开始新对话"
                     : "打开 AI 对话；可拖动调整位置"
         );
         nodes.planClose.setAttribute(
@@ -614,7 +618,7 @@ export function mountAiDialog({
             running ? "收起运行中的计划" : "关闭计划"
         );
         nodes.run.disabled = dialog.mode === "running" || !dialog.plan;
-        nodes.run.innerHTML = `${icon("check-plain", 15)}<span>执行</span>`;
+        nodes.run.innerHTML = `${icon("check-plain", 15)}<span>确认执行</span>`;
         updateExpandedGeometry();
     }
 
@@ -624,26 +628,72 @@ export function mountAiDialog({
 
     function statusLabel(status) {
         if (status === "running") return "运行中";
-        if (status === "completed") return "演示完成";
+        if (status === "completed") return "已完成";
+        if (status === "failed") return "失败";
         return "等待";
     }
 
     function renderPlan() {
+        if (dialog.error && !dialog.plan && !dialog.question) {
+            nodes.planEyebrow.textContent = "AI 暂不可用";
+            nodes.planTitle.textContent = dialog.error;
+            nodes.planList.replaceChildren();
+            nodes.risk.dataset.risk = "READ_ONLY";
+            nodes.risk.innerHTML = `${icon("alert", 14)}<span>未执行任何动作</span>`;
+            nodes.run.disabled = true;
+            updateSurfaces();
+            return;
+        }
+        if (dialog.question) {
+            nodes.planEyebrow.textContent = "AI 需要澄清";
+            nodes.planTitle.textContent = dialog.question.prompt || "请补充信息";
+            nodes.planList.replaceChildren();
+            const options = Array.isArray(dialog.question.options)
+                ? dialog.question.options
+                : [];
+            options.forEach((option) => {
+                const item = document.createElement("li");
+                item.className = "ai-plan-step ai-plan-step--question";
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "text-button";
+                button.textContent = option;
+                button.addEventListener("click", () => {
+                    nodes.composerInput.value = option;
+                    submitGoal();
+                });
+                item.append(button);
+                nodes.planList.append(item);
+            });
+            nodes.risk.dataset.risk = "READ_ONLY";
+            nodes.risk.innerHTML = `${icon("shield", 14)}<span>尚未执行</span>`;
+            nodes.run.disabled = true;
+            updateSurfaces();
+            return;
+        }
         if (!dialog.plan) {
-            nodes.planTitle.textContent = "尚未生成计划";
+            nodes.planEyebrow.textContent = dialog.settings.configured
+                ? "AI 工作流"
+                : "AI 未接入";
+            nodes.planTitle.textContent = dialog.settings.configured
+                ? "尚未生成计划"
+                : "请先输入 API Key";
             nodes.planList.replaceChildren();
             nodes.risk.dataset.risk = "READ_ONLY";
             nodes.risk.innerHTML = `${icon("shield", 14)}<span>风险等级：只读</span>`;
+            nodes.run.disabled = true;
             updateSurfaces();
             return;
         }
 
-        nodes.planTitle.textContent = dialog.plan.title;
+        nodes.planEyebrow.textContent = "AI 计划 · 请确认";
+        nodes.planTitle.textContent = dialog.plan.goal || "AI 计划";
         nodes.planList.replaceChildren();
-        dialog.plan.actions.forEach((action, index) => {
+        const steps = Array.isArray(dialog.plan.steps) ? dialog.plan.steps : [];
+        steps.forEach((action, index) => {
             const item = document.createElement("li");
             item.className = "ai-plan-step";
-            item.dataset.status = action.status;
+            item.dataset.status = action.status || "waiting";
 
             const indexNode = document.createElement("span");
             indexNode.className = "ai-plan-step__index";
@@ -652,20 +702,15 @@ export function mountAiDialog({
             const copy = document.createElement("span");
             copy.className = "ai-plan-step__copy";
             const title = document.createElement("strong");
-            title.textContent = action.title;
+            title.textContent = action.title || action.actionId;
             const meta = document.createElement("small");
-            meta.textContent = `${action.moduleTitle || "目标模块不可见"} · ${riskLabel(action.risk)}`;
+            meta.textContent = `${action.moduleId || "未知模块"} · ${riskLabel(action.risk)}`;
             copy.append(title, meta);
 
             const status = document.createElement("span");
             status.className = "ai-plan-step__status";
-            status.dataset.status = action.status;
-            if (action.status === "completed") {
-                status.innerHTML = icon("check-plain", 14);
-                status.setAttribute("aria-label", "演示完成");
-            } else {
-                status.textContent = statusLabel(action.status);
-            }
+            status.dataset.status = action.status || "waiting";
+            status.textContent = statusLabel(action.status);
 
             const risk = document.createElement("span");
             risk.className = "ai-risk-chip";
@@ -676,25 +721,42 @@ export function mountAiDialog({
             nodes.planList.append(item);
         });
 
-        nodes.risk.dataset.risk = dialog.plan.risk;
-        nodes.risk.innerHTML = `${icon("alert", 14)}<span>风险等级：${riskLabel(dialog.plan.risk)}</span>`;
+        const highestRisk = dialog.plan.highestRisk || "READ_ONLY";
+        nodes.risk.dataset.risk = highestRisk;
+        nodes.risk.innerHTML = `${icon("alert", 14)}<span>风险等级：${riskLabel(highestRisk)}</span>`;
+        nodes.run.disabled = dialog.busy || !dialog.plan
+            || (dialog.plan.status && dialog.plan.status !== "PREVIEW");
         updateSurfaces();
     }
 
     function renderProgress() {
-        if (!dialog.plan) {
-            nodes.progressTitle.textContent = "界面演示 · 未接入 AI";
+        const executionSteps = Array.isArray(dialog.execution?.steps)
+            ? dialog.execution.steps
+            : [];
+        if (executionSteps.length === 0 && !dialog.plan) {
+            nodes.progressTitle.textContent = dialog.settings.configured
+                ? "AI 执行进度"
+                : "AI 未接入";
             nodes.progressList.replaceChildren();
             return;
         }
-        const completed = dialog.plan.actions.filter(
-            (action) => action.status === "completed"
-        ).length;
+        const steps = executionSteps.length
+            ? executionSteps.map((step) => ({
+                title: step.title || step.actionId,
+                moduleTitle: step.moduleId,
+                status: String(step.status || "waiting").toLowerCase()
+            }))
+            : (dialog.plan.steps || []).map((step) => ({
+                title: step.title || step.actionId,
+                moduleTitle: step.moduleId,
+                status: step.status || "waiting"
+            }));
+        const completed = steps.filter((step) => step.status === "completed").length;
         nodes.progressTitle.textContent = dialog.mode === "completed"
-            ? `演示完成 · ${completed}/${dialog.plan.actions.length}`
-            : `运行进度 · ${completed}/${dialog.plan.actions.length}`;
+            ? `执行完成 · ${completed}/${steps.length}`
+            : `运行进度 · ${completed}/${steps.length}`;
         nodes.progressList.replaceChildren();
-        dialog.plan.actions.forEach((action) => {
+        steps.forEach((action) => {
             const item = document.createElement("li");
             item.dataset.status = action.status;
             const copy = document.createElement("span");
@@ -708,7 +770,7 @@ export function mountAiDialog({
             state.className = "ai-progress-state";
             if (action.status === "completed") {
                 state.innerHTML = icon("check-plain", 15);
-                state.setAttribute("aria-label", "演示完成");
+                state.setAttribute("aria-label", "已完成");
             } else {
                 state.textContent = statusLabel(action.status);
             }
@@ -878,7 +940,12 @@ export function mountAiDialog({
 
     function clearPlan() {
         dialog.runGeneration += 1;
+        dialog.requestGeneration += 1;
         dialog.plan = null;
+        dialog.question = null;
+        dialog.execution = null;
+        dialog.error = "";
+        dialog.busy = false;
         clearLater(dialog.collapseTimer);
         clearLater(dialog.completionTimer);
         dialog.collapseTimer = null;
@@ -918,17 +985,20 @@ export function mountAiDialog({
     function openComposer() {
         if (!dialog.enabled) return;
         clearPlan();
+        dialog.conversationId = "";
         dialog.popoverOpen = false;
+        const configured = dialog.settings.configured === true;
         setState({
-            mode: "composing",
+            mode: configured ? "composing" : "unconfigured",
             composerOpen: true,
             panelOpen: false,
-            focus: nodes.composerInput
+            focus: configured ? nodes.composerInput : nodes.inlineKey
         });
     }
 
     function showPlanPanel() {
-        if (!dialog.plan || !["planning", "running", "completed"].includes(dialog.mode)) {
+        if ((!dialog.plan && !dialog.question && !dialog.error)
+            || !["planning", "running", "completed", "question", "error"].includes(dialog.mode)) {
             return;
         }
         clearLater(dialog.collapseTimer);
@@ -975,17 +1045,148 @@ export function mountAiDialog({
         }, AI_PROGRESS_HIDE_DELAY_MS);
     }
 
-    function submitGoal() {
-        const goal = nodes.composerInput.value.trim();
-        dialog.runGeneration += 1;
-        clearInvocationLayer();
-        dialog.plan = createAiDemoPlan(goal, getModules());
+    async function connectTemporaryApi() {
+        const apiKey = nodes.inlineKey.value.trim();
+        if (!apiKey) {
+            onNotice("请输入 API Key。", { error: true });
+            nodes.inlineKey.focus({ preventScroll: true });
+            return;
+        }
+        dialog.busy = true;
         setState({
-            mode: "planning",
+            mode: "unconfigured",
             composerOpen: true,
-            panelOpen: true,
-            focus: nodes.run
+            panelOpen: false
         });
+        try {
+            const saved = await saveAiSettings({
+                mode: "DEEPSEEK",
+                apiKey,
+                baseUrl: null,
+                model: null,
+                allowDeleteDirect: dialog.settings.allowDeleteDirect
+            });
+            const test = await testAiSettings();
+            if (test?.ok === false) {
+                throw new Error(test.message || "模型连接测试失败");
+            }
+            dialog.settings = normalizeSettings(saved);
+            onAiSettingsChanged(saved);
+            nodes.inlineKey.value = "";
+            dialog.busy = false;
+            setState({
+                mode: "composing",
+                composerOpen: true,
+                panelOpen: false,
+                focus: nodes.composerInput
+            });
+            onNotice("DeepSeek 已临时接入；API Key 只保存在当前进程。");
+        } catch (error) {
+            try {
+                const cleared = await clearAiSettings();
+                dialog.settings = normalizeSettings(cleared);
+                onAiSettingsChanged(cleared);
+            } catch {
+                // 保留原始连接错误，清除失败不覆盖用户可见原因。
+            }
+            dialog.busy = false;
+            dialog.error = error?.message || "AI 接入失败";
+            setState({
+                mode: "unconfigured",
+                composerOpen: true,
+                panelOpen: false
+            });
+            onNotice(dialog.error, { error: true });
+        }
+    }
+
+    async function submitGoal() {
+        if (!dialog.settings.configured) {
+            await connectTemporaryApi();
+            return;
+        }
+        const goal = nodes.composerInput.value.trim();
+        if (!goal) {
+            onNotice("请输入自然语言指令。", { error: true });
+            nodes.composerInput.focus({ preventScroll: true });
+            return;
+        }
+        const generation = ++dialog.requestGeneration;
+        dialog.busy = true;
+        dialog.error = "";
+        clearInvocationLayer();
+        setState({
+            mode: "sending",
+            composerOpen: true,
+            panelOpen: false
+        });
+        try {
+            const response = await interpretGoal({
+                goal,
+                conversationId: dialog.conversationId || null,
+                clientRequestId: globalThis.crypto?.randomUUID?.()
+                    ?? `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`
+            });
+            if (generation !== dialog.requestGeneration) return;
+            dialog.conversationId = response?.conversationId || dialog.conversationId;
+            dialog.busy = false;
+            if (response?.kind === "QUESTION") {
+                dialog.plan = null;
+                dialog.execution = null;
+                dialog.question = response.question || {
+                    prompt: response.message || "请补充信息。",
+                    options: []
+                };
+                setState({
+                    mode: "question",
+                    composerOpen: true,
+                    panelOpen: true,
+                    focus: nodes.planClose
+                });
+                onNotice(response.message || "AI 需要补充信息。");
+                return;
+            }
+            if (response?.kind === "PLAN") {
+                dialog.question = null;
+                dialog.execution = null;
+                dialog.plan = response.plan;
+                setState({
+                    mode: "planning",
+                    composerOpen: true,
+                    panelOpen: true,
+                    focus: nodes.run
+                });
+                onNotice(response.message || "已生成 AI 计划，请确认。");
+                return;
+            }
+            if (response?.kind === "ACTIONS") {
+                dialog.question = null;
+                dialog.plan = null;
+                dialog.execution = response.execution || null;
+                setState({
+                    mode: "completed",
+                    composerOpen: true,
+                    panelOpen: true,
+                    focus: nodes.planClose
+                });
+                onNotice(response.message || "动作已执行。");
+                return;
+            }
+            throw new Error("AI 返回了未知结果类型。");
+        } catch (error) {
+            if (generation !== dialog.requestGeneration) return;
+            dialog.busy = false;
+            dialog.error = error?.message || "AI 请求失败";
+            dialog.plan = null;
+            dialog.question = null;
+            setState({
+                mode: "error",
+                composerOpen: true,
+                panelOpen: true,
+                focus: nodes.planClose
+            });
+            onNotice(dialog.error, { error: true });
+        }
     }
 
     function parseCssDuration(value, fallback) {
@@ -1125,46 +1326,50 @@ export function mountAiDialog({
         return true;
     }
 
-    async function runDemoPlan() {
-        if (!dialog.plan || dialog.mode === "running") {
+    async function confirmPlan() {
+        if (!dialog.plan?.planId || dialog.busy) {
             return;
         }
-        const generation = ++dialog.runGeneration;
-        clearLater(dialog.completionTimer);
-        dialog.completionTimer = null;
-        dialog.plan.actions.forEach((action) => {
-            action.status = "pending";
-        });
+        const generation = ++dialog.requestGeneration;
+        dialog.busy = true;
         setState({
             mode: "running",
             composerOpen: true,
             panelOpen: true
         });
-
-        for (const action of dialog.plan.actions) {
-            if (generation !== dialog.runGeneration) return;
-            action.status = "running";
-            renderAll();
-            await animateInvocation(action.moduleId);
-            if (generation !== dialog.runGeneration) return;
-            action.status = "completed";
-            renderAll();
-            await new Promise((resolve) => window.setTimeout(resolve, AI_STEP_GAP_MS));
-        }
-
-        if (generation !== dialog.runGeneration) return;
-        dialog.mode = "completed";
-        dialog.composerOpen = true;
-        dialog.panelOpen = true;
-        renderAll();
-        onNotice("界面演示完成，未执行真实 AI 或模块动作。");
-        clearLater(dialog.completionTimer);
-        dialog.completionTimer = later(() => {
-            dialog.completionTimer = null;
-            if (dialog.mode === "completed") {
-                collapseAndReset({ focusLauncher: false });
+        try {
+            const steps = Array.isArray(dialog.plan.steps) ? dialog.plan.steps : [];
+            for (const step of steps) {
+                if (generation !== dialog.requestGeneration) return;
+                await animateInvocation(step.moduleId);
             }
-        }, AI_COMPLETION_HOLD_MS);
+            const record = await confirmAiPlan(dialog.plan.planId);
+            if (generation !== dialog.requestGeneration) return;
+            dialog.execution = record;
+            dialog.busy = false;
+            dialog.plan = {
+                ...dialog.plan,
+                status: record?.status || "COMPLETED"
+            };
+            setState({
+                mode: "completed",
+                composerOpen: true,
+                panelOpen: true,
+                focus: nodes.planClose
+            });
+            onNotice(record?.status === "COMPLETED" ? "AI 计划执行完成。" : "AI 计划执行结束，请检查结果。");
+        } catch (error) {
+            if (generation !== dialog.requestGeneration) return;
+            dialog.busy = false;
+            dialog.error = error?.message || "AI 计划执行失败";
+            setState({
+                mode: "error",
+                composerOpen: true,
+                panelOpen: true,
+                focus: nodes.planClose
+            });
+            onNotice(dialog.error, { error: true });
+        }
     }
 
     function setEnabled(enabled) {
@@ -1202,12 +1407,15 @@ export function mountAiDialog({
             openComposer();
             return;
         }
-        if (dialog.mode === "running" || dialog.mode === "planning") {
+        if (["running", "planning", "question", "error"].includes(dialog.mode)) {
             showPlanPanel();
             return;
         }
         if (dialog.composerOpen) {
-            nodes.composerInput.focus({ preventScroll: true });
+            const target = dialog.settings.configured
+                ? nodes.composerInput
+                : nodes.inlineKey;
+            target.focus({ preventScroll: true });
             return;
         }
         openComposer();
@@ -1408,7 +1616,7 @@ export function mountAiDialog({
             scheduleRunningCollapse();
         }
     });
-    nodes.run.addEventListener("click", () => void runDemoPlan());
+    nodes.run.addEventListener("click", () => void confirmPlan());
     dock.addEventListener("keydown", onDockKeyDown);
     document.addEventListener("pointerdown", onDocumentPointerDown);
     window.addEventListener("resize", onWindowResize);
@@ -1438,6 +1646,18 @@ export function mountAiDialog({
     return {
         setEnabled,
         reset,
+        setAiSettings(settings) {
+            dialog.settings = normalizeSettings(settings);
+            if (!dialog.settings.configured && dialog.mode !== "collapsed") {
+                setState({
+                    mode: "unconfigured",
+                    composerOpen: true,
+                    panelOpen: false
+                });
+                return;
+            }
+            updateSurfaces();
+        },
         setIcon(name) {
             dialog.aiIcon = normalizeAiIcon(name);
             renderAiIcon();

@@ -1,0 +1,7 @@
+{
+  "mode": "CUSTOM",
+  "apiKey": "temporary-test-key",
+  "baseUrl": null,
+  "model": "custom-model",
+  "allowDeleteDirect": false
+}

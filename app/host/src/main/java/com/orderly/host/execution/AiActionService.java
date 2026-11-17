@@ -38,6 +38,66 @@ public class AiActionService {
         return executeBatch("AI_DIRECT", confirmed, actions, true);
     }
 
+    /** 校验并汇总 Action 数组，不产生任何执行副作用。 */
+    public Preview preview(List<ActionCall> actions) {
+        if (actions == null || actions.isEmpty()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_ACTIONS",
+                    "actions 必须是非空数组"
+            );
+        }
+        if (actions.size() > 50) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "TOO_MANY_ACTIONS",
+                    "单次最多允许 50 个 Action"
+            );
+        }
+        List<PreviewStep> steps = new ArrayList<>();
+        RiskLevel highestRisk = RiskLevel.READ_ONLY;
+        for (ActionCall action : actions) {
+            if (action == null
+                    || action.moduleId() == null
+                    || action.moduleId().isBlank()
+                    || action.actionId() == null
+                    || action.actionId().isBlank()) {
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        "INVALID_ACTIONS",
+                        "每个 action 必须声明 moduleId 和 actionId"
+                );
+            }
+            ActionExecutionCore.ResolvedAction target = core.requireAiTarget(
+                    action.moduleId(),
+                    action.actionId()
+            );
+            core.validateArguments(target.action(), action.arguments());
+            if (target.risk().ordinal() > highestRisk.ordinal()) {
+                highestRisk = target.risk();
+            }
+            steps.add(new PreviewStep(
+                    action.moduleId(),
+                    action.actionId(),
+                    target.action().title(),
+                    target.action().description(),
+                    target.risk(),
+                    action.arguments()
+            ));
+        }
+        return new Preview(List.copyOf(actions), List.copyOf(steps), highestRisk);
+    }
+
+    /** 用户明确要求直执时由宿主调用；仍经过统一确认和风险策略。 */
+    public ExecutionRecord executeAiDirect(List<ActionCall> actions) {
+        return executeBatch("AI_DIRECT", true, actions, true);
+    }
+
+    /** 独立 AI 计划确认后由宿主调用。 */
+    public ExecutionRecord executeAiPlan(List<ActionCall> actions) {
+        return executeBatch("AI_PLAN", true, actions, true);
+    }
+
     /** 模块自有 UI 发起的单动作入口，使用 MODULE_CONTROL 来源并复用同一执行核心。 */
     public ExecutionRecord executeModuleControl(
             String moduleId,
@@ -71,6 +131,13 @@ public class AiActionService {
                     HttpStatus.BAD_REQUEST,
                     "INVALID_ACTIONS",
                     "actions 必须是非空数组"
+            );
+        }
+        if (actions.size() > 50) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "TOO_MANY_ACTIONS",
+                    "单次最多允许 50 个 Action"
             );
         }
 
@@ -147,7 +214,7 @@ public class AiActionService {
                     null,
                     null,
                     "RUNNING",
-                    "AI 直执动作数组开始执行"
+                    actionSourceLabel(origin) + "动作数组开始执行"
             );
 
             List<Map<String, Object>> completedOutputs = new ArrayList<>();
@@ -245,7 +312,7 @@ public class AiActionService {
                         null,
                         null,
                         "COMPLETED",
-                        "AI 直执动作数组执行完成"
+                        actionSourceLabel(origin) + "动作数组执行完成"
                 );
                 return records.save(record.withChanges(
                         "COMPLETED",
@@ -398,6 +465,10 @@ public class AiActionService {
         return message == null || message.isBlank() ? "执行失败" : message;
     }
 
+    private String actionSourceLabel(String origin) {
+        return "AI_PLAN".equals(origin) ? "AI 计划" : "AI 直执";
+    }
+
     public record ActionCall(
             String moduleId,
             String actionId,
@@ -405,6 +476,30 @@ public class AiActionService {
     ) {
         public ActionCall {
             arguments = arguments == null ? Map.of() : Map.copyOf(arguments);
+        }
+    }
+
+    public record PreviewStep(
+            String moduleId,
+            String actionId,
+            String title,
+            String description,
+            RiskLevel risk,
+            Map<String, Object> arguments
+    ) {
+        public PreviewStep {
+            arguments = arguments == null ? Map.of() : Map.copyOf(arguments);
+        }
+    }
+
+    public record Preview(
+            List<ActionCall> actions,
+            List<PreviewStep> steps,
+            RiskLevel highestRisk
+    ) {
+        public Preview {
+            actions = List.copyOf(actions);
+            steps = List.copyOf(steps);
         }
     }
 }

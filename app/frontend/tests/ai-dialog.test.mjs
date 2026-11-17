@@ -4,7 +4,6 @@ import test from "node:test";
 
 import {
     canDragAiDock,
-    createAiDemoPlan,
     higherAiRisk,
     resolveAiSnapPosition,
     resolveAiSurfaceLayout
@@ -22,24 +21,12 @@ function between(source, startMarker, endMarker) {
     return source.slice(start, end);
 }
 
-test("AI demo plan stays local and selects the highest action risk", () => {
+test("AI risk ordering selects the highest action risk", () => {
     assert.equal(higherAiRisk("READ_ONLY", "WRITE"), "WRITE");
     assert.equal(higherAiRisk("WRITE", "DELETE"), "DELETE");
-
-    const plan = createAiDemoPlan("整理本周资料", [
-        { moduleId: "module_fs", title: "资料管理", enabled: true },
-        { moduleId: "module_todo", title: "待办事项", enabled: true }
-    ]);
-
-    assert.equal(plan.title, "整理本周资料");
-    assert.equal(plan.actions.length, 2);
-    assert.equal(plan.actions[0].risk, "READ_ONLY");
-    assert.equal(plan.actions[1].risk, "WRITE");
-    assert.equal(plan.risk, "WRITE");
-    assert.ok(plan.actions.every((action) => action.status === "pending"));
 });
 
-test("AI dialog component never calls host planning or execution APIs", async () => {
+test("AI dialog delegates model work through injected callbacks", async () => {
     const component = await read("../src/ai-dialog.js");
 
     assert.match(
@@ -48,11 +35,11 @@ test("AI dialog component never calls host planning or execution APIs", async ()
     );
     assert.doesNotMatch(component, /from "\.\/settings\.js"/);
     assert.doesNotMatch(component, /\bfetch\s*\(/);
-    assert.doesNotMatch(component, /OrderlyApi|draftPlan|confirmPlan|executeAi|confirmPlan/);
-    assert.match(component, /界面演示/);
-    assert.match(component, /未接入 AI/);
-    assert.match(component, /AI_COMPLETION_HOLD_MS = 4000/);
-    assert.match(component, /AI_STEP_GAP_MS = 120/);
+    assert.doesNotMatch(component, /OrderlyApi|draftPlan|executeAiActions/);
+    assert.match(component, /interpretGoal/);
+    assert.match(component, /confirmAiPlan/);
+    assert.match(component, /clientRequestId:/);
+    assert.match(component, /API Key/);
 });
 
 test("AI dock exposes the required themed surfaces and states", async () => {
@@ -73,8 +60,9 @@ test("AI dock exposes the required themed surfaces and states", async () => {
     assert.match(dialog, /id="ai-progress-list" aria-live="polite"/);
     assert.match(dialog, /id="ai-risk-indicator"/);
     assert.match(dialog, /id="ai-run-button"/);
-    assert.match(dialog, /界面演示 · 未接入 AI/);
-    assert.match(dialog, /class="ai-demo-badge__compact">未接入 AI/);
+    assert.match(dialog, /id="ai-inline-api-key"/);
+    assert.match(dialog, /输入 DeepSeek API Key 接入/);
+    assert.match(dialog, /class="ai-demo-badge__compact">接入 AI/);
     assert.match(html, /id="ai-snap-target"/);
     assert.match(dialog, /data-anchor="default"/);
     assert.match(dialog, /data-composer="closed"/);
@@ -280,8 +268,9 @@ test("AI composer and plan panel coexist while outside clicks only close the pla
     const outside = between(component, "function onDocumentPointerDown", "function onWindowResize");
 
     assert.match(surfaces, /const composerOpen = dialog\.composerOpen;/);
-    assert.match(surfaces, /const busy = \["planning", "running", "completed"\]\.includes\(dialog\.mode\);/);
-    assert.match(surfaces, /nodes\.composerInput\.disabled = busy;/);
+    assert.match(surfaces, /const busy = dialog\.busy === true;/);
+    assert.match(surfaces, /nodes\.composerInput\.disabled = busy \|\| !configured;/);
+    assert.match(surfaces, /nodes\.inlineKey\.disabled = busy \|\| configured;/);
     assert.match(surfaces, /nodes\.composerSend\.disabled = busy;/);
     assert.match(outside, /collapsePlanOnly\(\)/);
     assert.match(outside, /dock\.contains\(event\.target\)/);

@@ -395,10 +395,33 @@ try {
     foreach ($requiredContract in @(
         "contracts\action-execution.schema.json",
         "contracts\samples\valid\action-execution.json",
-        "contracts\samples\invalid\action-execution-empty.json"
+        "contracts\samples\invalid\action-execution-empty.json",
+        "contracts\ai-settings.schema.json",
+        "contracts\samples\valid\ai-settings-deepseek.json",
+        "contracts\samples\valid\ai-settings-custom.json",
+        "contracts\samples\invalid\ai-settings-custom-missing-base.json",
+        "contracts\samples\invalid\ai-settings-custom-missing-model.json",
+        "contracts\ai-turn-request.schema.json",
+        "contracts\ai-turn-response.schema.json"
     )) {
         if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $requiredContract) -PathType Leaf)) {
             throw "缺少 Action 直执契约或样例：$requiredContract"
+        }
+    }
+    foreach ($contractCase in @(
+        @{ Schema = "contracts\ai-settings.schema.json"; Sample = "contracts\samples\valid\ai-settings-deepseek.json"; Expected = $true },
+        @{ Schema = "contracts\ai-settings.schema.json"; Sample = "contracts\samples\valid\ai-settings-custom.json"; Expected = $true },
+        @{ Schema = "contracts\ai-settings.schema.json"; Sample = "contracts\samples\invalid\ai-settings-custom-missing-base.json"; Expected = $false },
+        @{ Schema = "contracts\ai-settings.schema.json"; Sample = "contracts\samples\invalid\ai-settings-custom-missing-model.json"; Expected = $false },
+        @{ Schema = "contracts\ai-turn-request.schema.json"; Sample = "contracts\samples\valid\ai-turn-request.json"; Expected = $true },
+        @{ Schema = "contracts\ai-turn-request.schema.json"; Sample = "contracts\samples\invalid\ai-turn-request-empty.json"; Expected = $false },
+        @{ Schema = "contracts\ai-turn-response.schema.json"; Sample = "contracts\samples\valid\ai-turn-response-plan.json"; Expected = $true }
+    )) {
+        $actual = (Get-Content -LiteralPath (Join-Path $repoRoot $contractCase.Sample) -Raw) |
+            Test-Json -SchemaFile (Join-Path $repoRoot $contractCase.Schema) `
+                -ErrorAction SilentlyContinue
+        if ($actual -ne $contractCase.Expected) {
+            throw "契约样例校验失败：$($contractCase.Sample) 期望 $($contractCase.Expected)，实际 $actual"
         }
     }
 
@@ -422,7 +445,7 @@ try {
         throw "模块化构建失败，退出码：$LASTEXITCODE"
     }
 
-    $sourceFiles = @("app.js", "api.js", "models.js", "modules.js", "settings.js")
+    $sourceFiles = @("app.js", "ai-dialog.js", "ai-settings.js", "api.js", "models.js", "modules.js", "settings.js")
     foreach ($sourceFile in $sourceFiles) {
         & node --check (Join-Path $frontendRoot "src\$sourceFile")
         if ($LASTEXITCODE -ne 0) {

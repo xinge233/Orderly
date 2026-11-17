@@ -187,3 +187,46 @@ test("API client addresses module data and control actions", async () => {
         arguments: { id: "todo-1" }
     });
 });
+
+test("API client uses independent AI settings, turns and plan confirmation endpoints", async () => {
+    const requests = [];
+    const api = new OrderlyApi({
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url, options });
+            return new Response("{}", { status: 200 });
+        }
+    });
+
+    await api.getAiSettings();
+    await api.saveAiSettings({
+        mode: "DEEPSEEK",
+        apiKey: "temporary-key",
+        baseUrl: null,
+        model: null,
+        allowDeleteDirect: false
+    });
+    await api.testAiSettings();
+    await api.interpretAiTurn({
+        goal: "创建归档目录",
+        conversationId: null
+    });
+    await api.confirmAiPlan("ai/plan?1");
+    await api.clearAiSettings();
+
+    assert.deepEqual(requests.map(({ url }) => url), [
+        "/api/ai/settings",
+        "/api/ai/settings",
+        "/api/ai/settings/test",
+        "/api/ai/turns",
+        "/api/ai/plans/ai%2Fplan%3F1/confirm",
+        "/api/ai/settings"
+    ]);
+    assert.deepEqual(
+        requests.map(({ options }) => options.method),
+        ["GET", "PUT", "POST", "POST", "POST", "DELETE"]
+    );
+    assert.deepEqual(JSON.parse(requests[3].options.body), {
+        goal: "创建归档目录",
+        conversationId: null
+    });
+});
