@@ -8,6 +8,8 @@ import com.orderly.kernel.TrashEntry;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -120,6 +122,36 @@ class CalendarModuleTest {
         module.rollback(create, createSnapshot, created.output(), runtime);
         assertThat(runtime.readItems("calendar"))
                 .noneMatch(item -> id.equals(item.get("id")));
+    }
+
+    @Test
+    void acceptsLocalIsoDateTimeWithoutOffsetAndUsesSystemZone() {
+        module.initialize(runtime);
+
+        ModuleResult created = module.execute(invocation(
+                "calendar.event.create",
+                Map.of(
+                        "title", "本地 ISO 日程",
+                        "startAt", "2026-12-04T10:30",
+                        "endAt", "2026-12-04T11:30"
+                )
+        ), runtime);
+
+        Map<String, Object> event = nested(created.output(), "event");
+        String startAt = String.valueOf(event.get("startAt"));
+        String endAt = String.valueOf(event.get("endAt"));
+        OffsetDateTime normalizedStart = OffsetDateTime.parse(startAt);
+        assertThat(normalizedStart.getOffset())
+                .isEqualTo(ZoneId.systemDefault().getRules().getOffset(normalizedStart.toLocalDateTime()));
+        assertThat(startAt).startsWith("2026-12-04T10:30");
+        assertThat(endAt).startsWith("2026-12-04T11:30");
+
+        ModuleResult todo = module.execute(invocation(
+                "calendar.todo.create",
+                Map.of("title", "本地 ISO 待办", "dueAt", "2026-12-05T09:15")
+        ), runtime);
+        assertThat(String.valueOf(nested(todo.output(), "item").get("dueAt")))
+                .startsWith("2026-12-05T09:15");
     }
 
     @Test

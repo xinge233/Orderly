@@ -161,6 +161,101 @@ export function higherAiRisk(left, right) {
 }
 
 /**
+ * 规范化执行状态。
+ *
+ * @param {unknown} value 原始状态
+ * @returns {string} 小写状态
+ */
+export function normalizeExecutionStatus(value) {
+    return String(value ?? "").trim().toLowerCase();
+}
+
+/**
+ * 判断执行是否已经成功完成。
+ *
+ * @param {object | null} execution 执行记录
+ * @returns {boolean} 是否成功
+ */
+export function executionSucceeded(execution) {
+    if (!["completed", "success", "succeeded"].includes(
+        normalizeExecutionStatus(execution?.status)
+    )) {
+        return false;
+    }
+    const steps = Array.isArray(execution?.steps) ? execution.steps : [];
+    return !steps.some((step) =>
+        [
+            "failed",
+            "failed_partially_rolled_back",
+            "failed_rolled_back",
+            "partially_rolled_back",
+            "rejected",
+            "rollback_failed",
+            "rolled_back"
+        ].includes(
+            normalizeExecutionStatus(step?.status)
+        )
+    );
+}
+
+/**
+ * 从执行记录提取真实失败原因。
+ *
+ * @param {object | null} execution 执行记录
+ * @returns {string} 可展示原因
+ */
+export function executionFailureMessage(execution) {
+    const steps = Array.isArray(execution?.steps) ? execution.steps : [];
+    const failed = steps.find((step) =>
+        [
+            "failed",
+            "failed_partially_rolled_back",
+            "failed_rolled_back",
+            "partially_rolled_back",
+            "rejected",
+            "rollback_failed"
+        ].includes(normalizeExecutionStatus(step?.status))
+    );
+    if (failed?.message) {
+        return String(failed.message);
+    }
+    const labels = {
+        failed: "执行失败",
+        failed_partially_rolled_back: "执行失败，部分动作未能回滚",
+        failed_rolled_back: "执行失败，已完成自动回滚",
+        partial: "部分动作未完成",
+        partially_rolled_back: "执行仅部分回滚",
+        rejected: "执行被拒绝",
+        rollback_failed: "执行失败且回滚失败",
+        rolled_back: "执行已回滚"
+    };
+    return labels[normalizeExecutionStatus(execution?.status)]
+        ?? "宿主未返回成功执行记录";
+}
+
+/**
+ * 获取需要重新读取数据的已完成模块。
+ *
+ * @param {object | null} execution 执行记录
+ * @returns {string[]} 模块 id
+ */
+export function executionCompletedModules(execution) {
+    const status = normalizeExecutionStatus(execution?.status);
+    if (!["completed", "partial", "success", "succeeded"].includes(status)) {
+        return [];
+    }
+    const steps = Array.isArray(execution?.steps) ? execution.steps : [];
+    if (["completed", "success", "succeeded"].includes(status)
+        && !executionSucceeded(execution)) {
+        return [];
+    }
+    return [...new Set(steps
+        .filter((step) => normalizeExecutionStatus(step?.status) === "completed")
+        .map((step) => String(step?.moduleId ?? "").trim())
+        .filter(Boolean))];
+}
+
+/**
  * 挂载 AI 对话框。组件只负责界面状态、演示进度和调用轨迹。
  *
  * @param {object} options 配置
@@ -187,6 +282,7 @@ export function mountAiDialog({
         throw new Error("AI 计划确认接口未配置。");
     },
     onAiSettingsChanged = () => {},
+    onExecutionFinished = () => {},
     onNotice = () => {}
 }) {
     if (!dock || !callLayer) {
@@ -292,6 +388,12 @@ export function mountAiDialog({
         }
         invocationCleanups.clear();
         callLayer.replaceChildren();
+    }
+
+    function notifyExecutionFinished(execution) {
+        void Promise.resolve()
+            .then(() => onExecutionFinished(execution))
+            .catch(() => {});
     }
 
     function clamp(value, minimum, maximum) {
@@ -554,10 +656,11 @@ export function mountAiDialog({
     function updateSurfaces() {
         const composerOpen = dialog.composerOpen;
         const planOpen = dialog.panelOpen
-            && ["planning", "running", "completed", "question", "error"].includes(dialog.mode);
+            && ["planning", "running", "completed", "failed", "question", "error"].includes(dialog.mode);
         const expanded = composerOpen || planOpen;
         const running = dialog.mode === "running";
         const completed = dialog.mode === "completed";
+        const failed = dialog.mode === "failed";
         const busy = dialog.busy === true;
         const configured = dialog.settings.configured === true;
 
@@ -603,7 +706,9 @@ export function mountAiDialog({
             ? "running"
             : completed
                 ? "completed"
-                : "idle";
+                : failed
+                    ? "failed"
+                    : "idle";
         renderAiIcon();
         nodes.launcher.setAttribute(
             "aria-label",
@@ -611,7 +716,9 @@ export function mountAiDialog({
                 ? "AI 正在执行，可拖动调整位置"
                 : completed
                     ? "AI 执行已完成，点击开始新对话"
-                    : "打开 AI 对话；可拖动调整位置"
+                    : failed
+                        ? "AI 执行未成功，点击查看结果"
+                        : "打开 AI 对话；可拖动调整位置"
         );
         nodes.planClose.setAttribute(
             "aria-label",
@@ -627,10 +734,86 @@ export function mountAiDialog({
     }
 
     function statusLabel(status) {
-        if (status === "running") return "运行中";
-        if (status === "completed") return "已完成";
-        if (status === "failed") return "失败";
-        return "等待";
+        const normalized = normalizeExecutionStatus(status);
+        const labels = {
+            completed: "已完成",
+            failed: "失败",
+            failed_partially_rolled_back: "失败，部分回滚",
+            failed_rolled_back: "失败并已回滚",
+            partial: "部分完成",
+            partially_rolled_back: "部分回滚",
+            rejected: "已拒绝",
+            rollback_failed: "回滚失败",
+            rolled_back: "已回滚",
+            running: "运行中",
+            success: "已完成",
+            succeeded: "已完成",
+            waiting: "等待"
+        };
+        return labels[normalized] ?? "等待";
+    }
+
+    function renderExecutionResult() {
+        const execution = dialog.execution;
+        const steps = Array.isArray(execution?.steps) ? execution.steps : [];
+        const succeeded = executionSucceeded(execution);
+        const completed = steps.filter((step) =>
+            normalizeExecutionStatus(step?.status) === "completed"
+        ).length;
+        nodes.planEyebrow.textContent = succeeded ? "AI 执行结果" : "AI 执行失败";
+        nodes.planTitle.textContent = succeeded
+            ? `已执行 ${completed}/${steps.length} 个动作`
+            : executionFailureMessage(execution);
+        nodes.planList.replaceChildren();
+
+        let highestRisk = "READ_ONLY";
+        steps.forEach((action, index) => {
+            const status = normalizeExecutionStatus(action?.status) || "waiting";
+            const risk = action?.risk || "READ_ONLY";
+            highestRisk = higherAiRisk(highestRisk, risk);
+
+            const item = document.createElement("li");
+            item.className = "ai-plan-step";
+            item.dataset.status = status;
+
+            const indexNode = document.createElement("span");
+            indexNode.className = "ai-plan-step__index";
+            indexNode.textContent = String(index + 1).padStart(2, "0");
+
+            const copy = document.createElement("span");
+            copy.className = "ai-plan-step__copy";
+            const title = document.createElement("strong");
+            title.textContent = action?.title || action?.actionId || "未命名动作";
+            const meta = document.createElement("small");
+            meta.textContent = `${action?.moduleId || "未知模块"} · ${riskLabel(risk)}`;
+            copy.append(title, meta);
+            if (action?.message) {
+                const message = document.createElement("small");
+                message.className = "ai-plan-step__message";
+                message.textContent = String(action.message);
+                copy.append(message);
+            }
+
+            const state = document.createElement("span");
+            state.className = "ai-plan-step__status";
+            state.dataset.status = status;
+            state.textContent = statusLabel(status);
+
+            const riskNode = document.createElement("span");
+            riskNode.className = "ai-risk-chip";
+            riskNode.dataset.risk = risk;
+            riskNode.textContent = riskLabel(risk);
+
+            item.append(indexNode, copy, state, riskNode);
+            nodes.planList.append(item);
+        });
+
+        nodes.risk.dataset.risk = highestRisk;
+        nodes.risk.innerHTML = succeeded
+            ? `${icon("check-plain", 14)}<span>执行完成</span>`
+            : `${icon("alert", 14)}<span>执行未成功</span>`;
+        nodes.run.disabled = true;
+        updateSurfaces();
     }
 
     function renderPlan() {
@@ -669,6 +852,10 @@ export function mountAiDialog({
             nodes.risk.innerHTML = `${icon("shield", 14)}<span>尚未执行</span>`;
             nodes.run.disabled = true;
             updateSurfaces();
+            return;
+        }
+        if (dialog.execution) {
+            renderExecutionResult();
             return;
         }
         if (!dialog.plan) {
@@ -744,17 +931,22 @@ export function mountAiDialog({
             ? executionSteps.map((step) => ({
                 title: step.title || step.actionId,
                 moduleTitle: step.moduleId,
-                status: String(step.status || "waiting").toLowerCase()
+                status: normalizeExecutionStatus(step.status) || "waiting",
+                message: step.message ? String(step.message) : ""
             }))
             : (dialog.plan.steps || []).map((step) => ({
                 title: step.title || step.actionId,
                 moduleTitle: step.moduleId,
-                status: step.status || "waiting"
+                status: normalizeExecutionStatus(step.status) || "waiting",
+                message: step.message ? String(step.message) : ""
             }));
         const completed = steps.filter((step) => step.status === "completed").length;
+        const succeeded = executionSucceeded(dialog.execution);
         nodes.progressTitle.textContent = dialog.mode === "completed"
             ? `执行完成 · ${completed}/${steps.length}`
-            : `运行进度 · ${completed}/${steps.length}`;
+            : dialog.mode === "failed"
+                ? `执行未成功 · ${completed}/${steps.length}`
+                : `运行进度 · ${completed}/${steps.length}`;
         nodes.progressList.replaceChildren();
         steps.forEach((action) => {
             const item = document.createElement("li");
@@ -766,6 +958,12 @@ export function mountAiDialog({
             const meta = document.createElement("small");
             meta.textContent = `${action.moduleTitle || "目标模块不可见"} · ${statusLabel(action.status)}`;
             copy.append(title, meta);
+            if (action.message && !succeeded) {
+                const detail = document.createElement("small");
+                detail.className = "ai-progress-detail";
+                detail.textContent = action.message;
+                copy.append(detail);
+            }
             const state = document.createElement("span");
             state.className = "ai-progress-state";
             if (action.status === "completed") {
@@ -1160,16 +1358,25 @@ export function mountAiDialog({
                 return;
             }
             if (response?.kind === "ACTIONS") {
+                const execution = response.execution || null;
+                const succeeded = executionSucceeded(execution);
                 dialog.question = null;
                 dialog.plan = null;
-                dialog.execution = response.execution || null;
+                dialog.execution = execution;
+                dialog.error = "";
                 setState({
-                    mode: "completed",
+                    mode: succeeded ? "completed" : "failed",
                     composerOpen: true,
                     panelOpen: true,
                     focus: nodes.planClose
                 });
-                onNotice(response.message || "动作已执行。");
+                onNotice(
+                    succeeded
+                        ? response.message || "动作已执行。"
+                        : `执行失败：${executionFailureMessage(execution)}`,
+                    { error: !succeeded }
+                );
+                notifyExecutionFinished(execution);
                 return;
             }
             throw new Error("AI 返回了未知结果类型。");
@@ -1346,18 +1553,25 @@ export function mountAiDialog({
             const record = await confirmAiPlan(dialog.plan.planId);
             if (generation !== dialog.requestGeneration) return;
             dialog.execution = record;
+            const succeeded = executionSucceeded(record);
             dialog.busy = false;
             dialog.plan = {
                 ...dialog.plan,
                 status: record?.status || "COMPLETED"
             };
             setState({
-                mode: "completed",
+                mode: succeeded ? "completed" : "failed",
                 composerOpen: true,
                 panelOpen: true,
                 focus: nodes.planClose
             });
-            onNotice(record?.status === "COMPLETED" ? "AI 计划执行完成。" : "AI 计划执行结束，请检查结果。");
+            onNotice(
+                succeeded
+                    ? "AI 计划执行完成。"
+                    : `AI 计划执行失败：${executionFailureMessage(record)}`,
+                { error: !succeeded }
+            );
+            notifyExecutionFinished(record);
         } catch (error) {
             if (generation !== dialog.requestGeneration) return;
             dialog.busy = false;
@@ -1407,7 +1621,7 @@ export function mountAiDialog({
             openComposer();
             return;
         }
-        if (["running", "planning", "question", "error"].includes(dialog.mode)) {
+        if (["running", "planning", "failed", "question", "error"].includes(dialog.mode)) {
             showPlanPanel();
             return;
         }

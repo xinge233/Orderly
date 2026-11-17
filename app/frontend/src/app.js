@@ -1,5 +1,5 @@
 import { ApiError, OrderlyApi } from "./api.js";
-import { mountAiDialog } from "./ai-dialog.js";
+import { executionCompletedModules, mountAiDialog } from "./ai-dialog.js";
 import {
     AI_MODES,
     normalizeAiSettings,
@@ -286,6 +286,7 @@ async function bootstrap() {
             state.aiSettings = normalizeAiSettings(settings);
             state.aiSettingsError = "";
         },
+        onExecutionFinished: refreshAfterAiExecution,
         onNotice: (message, options) => toast(message, options)
     });
     bindSettingsDialog();
@@ -536,6 +537,23 @@ function refreshVisibleFrameworkViews() {
     }
     if (document.querySelector("#settings-dialog")?.open) {
         renderSettings();
+    }
+}
+
+/**
+ * 在 AI 动作完成后刷新受影响数据，不绑定具体业务模块。
+ *
+ * @param {object | null} execution 执行记录
+ */
+function refreshAfterAiExecution(execution) {
+    const changedModules = executionCompletedModules(execution);
+    if (changedModules.length === 0) {
+        return;
+    }
+    void loadOverviewCounts();
+    const activeModule = moduleForView(state.activeView);
+    if (activeModule && changedModules.includes(activeModule.moduleId)) {
+        void navigate(state.activeView);
     }
 }
 

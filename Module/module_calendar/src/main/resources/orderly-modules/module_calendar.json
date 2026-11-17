@@ -12,8 +12,8 @@
       "confirmationRequired": true,
       "parameters": [
         { "name": "title", "type": "string", "required": true, "description": "日程标题" },
-        { "name": "startAt", "type": "string", "required": true, "description": "开始时间" },
-        { "name": "endAt", "type": "string", "required": false, "description": "结束时间" }
+        { "name": "startAt", "type": "string", "required": true, "description": "开始时间；优先使用带时区 ISO-8601，例如 2026-11-17T23:00:00+08:00，也接受本地时间 2026-11-17T23:00 或 2026-11-17 23:00" },
+        { "name": "endAt", "type": "string", "required": false, "description": "结束时间；格式与开始时间相同" }
       ],
       "outputSchema": {
         "type": "object",
@@ -41,8 +41,8 @@
       "confirmationRequired": true,
       "parameters": [
         { "name": "eventId", "type": "string", "required": true, "description": "日程 ID" },
-        { "name": "newStartAt", "type": "string", "required": true, "description": "新的开始时间" },
-        { "name": "newEndAt", "type": "string", "required": false, "description": "新的结束时间" }
+        { "name": "newStartAt", "type": "string", "required": true, "description": "新的开始时间；格式同 startAt" },
+        { "name": "newEndAt", "type": "string", "required": false, "description": "新的结束时间；格式同 startAt" }
       ],
       "outputSchema": {
         "type": "object",
@@ -79,7 +79,7 @@
       "confirmationRequired": true,
       "parameters": [
         { "name": "title", "type": "string", "required": true, "description": "日程标题" },
-        { "name": "newStartAt", "type": "string", "required": true, "description": "新的开始时间" }
+        { "name": "newStartAt", "type": "string", "required": true, "description": "新的开始时间；格式同 startAt" }
       ],
       "outputSchema": {
         "type": "object",
@@ -98,7 +98,7 @@
       "confirmationRequired": true,
       "parameters": [
         { "name": "title", "type": "string", "required": true, "description": "待办标题" },
-        { "name": "dueAt", "type": "string", "required": false, "description": "截止时间" },
+        { "name": "dueAt", "type": "string", "required": false, "description": "截止时间；格式同 startAt" },
         { "name": "category", "type": "string", "required": false, "description": "分类" },
         { "name": "annotation", "type": "string", "required": false, "description": "批注" }
       ],
@@ -127,7 +127,7 @@
       "parameters": [
         { "name": "id", "type": "string", "required": true, "description": "待办 ID" },
         { "name": "title", "type": "string", "required": false, "description": "新标题" },
-        { "name": "dueAt", "type": "string", "required": false, "description": "新截止时间" },
+        { "name": "dueAt", "type": "string", "required": false, "description": "新截止时间；格式同 startAt" },
         { "name": "category", "type": "string", "required": false, "description": "新分类" },
         { "name": "annotation", "type": "string", "required": false, "description": "新批注" }
       ],
@@ -240,8 +240,8 @@
         { "name": "status", "type": "string", "required": false, "description": "状态筛选" },
         { "name": "category", "type": "string", "required": false, "description": "分类筛选" },
         { "name": "keyword", "type": "string", "required": false, "description": "标题或批注关键词" },
-        { "name": "from", "type": "string", "required": false, "description": "截止时间范围起点" },
-        { "name": "to", "type": "string", "required": false, "description": "截止时间范围终点" }
+        { "name": "from", "type": "string", "required": false, "description": "截止时间范围起点；格式同 startAt" },
+        { "name": "to", "type": "string", "required": false, "description": "截止时间范围终点；格式同 startAt" }
       ]
     },
     {
@@ -255,8 +255,8 @@
       "title": "日程与待办时间线",
       "description": "只读合并日程和待办截止时间，不建立数据关联。",
       "parameters": [
-        { "name": "from", "type": "string", "required": false, "description": "时间线起点" },
-        { "name": "to", "type": "string", "required": false, "description": "时间线终点" }
+        { "name": "from", "type": "string", "required": false, "description": "时间线起点；格式同 startAt" },
+        { "name": "to", "type": "string", "required": false, "description": "时间线终点；格式同 startAt" }
       ]
     }
   ],

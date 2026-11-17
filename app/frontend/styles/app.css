@@ -1935,6 +1935,10 @@ body.is-navigation-dragging * {
     background: var(--color-safe);
 }
 
+.ai-dock[data-mode="failed"] .ai-launcher__status {
+    background: var(--color-danger);
+}
+
 .ai-dock[data-composer="open"] .ai-launcher__ring,
 .ai-dock[data-composer="open"] .ai-launcher__status {
     visibility: hidden;
@@ -2190,6 +2194,29 @@ body.is-navigation-dragging * {
     color: var(--color-safe);
 }
 
+.ai-plan-step__status[data-status="failed"],
+.ai-plan-step__status[data-status="failed_partially_rolled_back"],
+.ai-plan-step__status[data-status="failed_rolled_back"],
+.ai-plan-step__status[data-status="partially_rolled_back"],
+.ai-plan-step__status[data-status="rejected"],
+.ai-plan-step__status[data-status="rollback_failed"],
+.ai-plan-step__status[data-status="rolled_back"] {
+    color: var(--color-danger);
+}
+
+.ai-plan-step__message {
+    padding-top: var(--space-1);
+}
+
+.ai-plan-step[data-status="failed"] .ai-plan-step__message,
+.ai-plan-step[data-status="failed_partially_rolled_back"] .ai-plan-step__message,
+.ai-plan-step[data-status="failed_rolled_back"] .ai-plan-step__message,
+.ai-plan-step[data-status="partially_rolled_back"] .ai-plan-step__message,
+.ai-plan-step[data-status="rejected"] .ai-plan-step__message,
+.ai-plan-step[data-status="rollback_failed"] .ai-plan-step__message {
+    color: var(--color-danger);
+}
+
 .ai-risk-chip {
     grid-column: 2;
     justify-self: start;
@@ -2320,6 +2347,20 @@ body.is-navigation-dragging * {
 
 .ai-progress-popover li[data-status="completed"] .ai-progress-state {
     color: var(--color-safe);
+}
+
+.ai-progress-popover li[data-status="failed"] .ai-progress-state,
+.ai-progress-popover li[data-status="failed_partially_rolled_back"] .ai-progress-state,
+.ai-progress-popover li[data-status="failed_rolled_back"] .ai-progress-state,
+.ai-progress-popover li[data-status="partially_rolled_back"] .ai-progress-state,
+.ai-progress-popover li[data-status="rejected"] .ai-progress-state,
+.ai-progress-popover li[data-status="rollback_failed"] .ai-progress-state,
+.ai-progress-popover li[data-status="rolled_back"] .ai-progress-state {
+    color: var(--color-danger);
+}
+
+.ai-progress-detail {
+    color: var(--color-danger);
 }
 
 .ai-call-layer {

@@ -4,6 +4,9 @@ import test from "node:test";
 
 import {
     canDragAiDock,
+    executionCompletedModules,
+    executionFailureMessage,
+    executionSucceeded,
     higherAiRisk,
     resolveAiSnapPosition,
     resolveAiSurfaceLayout
@@ -26,6 +29,75 @@ test("AI risk ordering selects the highest action risk", () => {
     assert.equal(higherAiRisk("WRITE", "DELETE"), "DELETE");
 });
 
+test("AI execution status uses the host result instead of the model message", () => {
+    const failed = {
+        status: "FAILED_ROLLED_BACK",
+        steps: [{
+            moduleId: "module_calendar",
+            status: "FAILED",
+            message: "时间格式不合法"
+        }]
+    };
+    const completed = {
+        status: "COMPLETED",
+        steps: [{
+            moduleId: "module_calendar",
+            status: "COMPLETED",
+            message: "已创建日程"
+        }]
+    };
+    const inconsistent = {
+        status: "COMPLETED",
+        steps: [{
+            moduleId: "module_calendar",
+            status: "FAILED",
+            message: "步骤失败"
+        }]
+    };
+    const partial = {
+        status: "PARTIAL",
+        steps: [
+            { moduleId: "module_calendar", status: "COMPLETED" },
+            { moduleId: "module_fs", status: "FAILED", message: "目录不可用" }
+        ]
+    };
+    const partialRollback = {
+        status: "FAILED_PARTIALLY_ROLLED_BACK",
+        steps: [{
+            moduleId: "module_calendar",
+            status: "ROLLBACK_FAILED",
+            message: "回滚时文件被占用"
+        }]
+    };
+    const rollbackFailed = {
+        status: "ROLLBACK_FAILED",
+        steps: []
+    };
+    const partiallyRolledBack = {
+        status: "PARTIALLY_ROLLED_BACK",
+        steps: []
+    };
+
+    assert.equal(executionSucceeded(failed), false);
+    assert.equal(executionFailureMessage(failed), "时间格式不合法");
+    assert.deepEqual(executionCompletedModules(failed), []);
+    assert.equal(executionSucceeded(completed), true);
+    assert.deepEqual(executionCompletedModules(completed), ["module_calendar"]);
+    assert.equal(executionSucceeded(inconsistent), false);
+    assert.deepEqual(executionCompletedModules(inconsistent), []);
+    assert.equal(executionSucceeded(partial), false);
+    assert.deepEqual(executionCompletedModules(partial), ["module_calendar"]);
+    assert.equal(executionSucceeded(partialRollback), false);
+    assert.equal(executionFailureMessage(partialRollback), "回滚时文件被占用");
+    assert.deepEqual(executionCompletedModules(partialRollback), []);
+    assert.equal(executionSucceeded(rollbackFailed), false);
+    assert.equal(executionFailureMessage(rollbackFailed), "执行失败且回滚失败");
+    assert.deepEqual(executionCompletedModules(rollbackFailed), []);
+    assert.equal(executionSucceeded(partiallyRolledBack), false);
+    assert.equal(executionFailureMessage(partiallyRolledBack), "执行仅部分回滚");
+    assert.deepEqual(executionCompletedModules(partiallyRolledBack), []);
+});
+
 test("AI dialog delegates model work through injected callbacks", async () => {
     const component = await read("../src/ai-dialog.js");
 
@@ -40,6 +112,26 @@ test("AI dialog delegates model work through injected callbacks", async () => {
     assert.match(component, /confirmAiPlan/);
     assert.match(component, /clientRequestId:/);
     assert.match(component, /API Key/);
+});
+
+test("AI actions surface host failures and notify the framework after execution", async () => {
+    const component = await read("../src/ai-dialog.js");
+    const app = await read("../src/app.js");
+    const refreshStart = app.indexOf("function refreshAfterAiExecution");
+    const refreshEnd = app.indexOf("\n}", refreshStart);
+    const refresh = app.slice(refreshStart, refreshEnd + 2);
+
+    assert.match(component, /mode: succeeded \? "completed" : "failed"/);
+    assert.match(component, /executionFailureMessage\(execution\)/);
+    assert.match(component, /notifyExecutionFinished\(execution\)/);
+    assert.match(component, /onExecutionFinished = \(\) => \{\}/);
+    assert.match(component, /rollback_failed: "回滚失败"/);
+    assert.match(component, /failed_partially_rolled_back: "执行失败，部分动作未能回滚"/);
+    assert.match(app, /onExecutionFinished: refreshAfterAiExecution/);
+    assert.match(refresh, /executionCompletedModules\(execution\)/);
+    assert.match(refresh, /moduleForView\(state\.activeView\)/);
+    assert.match(refresh, /navigate\(state\.activeView\)/);
+    assert.doesNotMatch(refresh, /module_calendar/);
 });
 
 test("AI dock exposes the required themed surfaces and states", async () => {

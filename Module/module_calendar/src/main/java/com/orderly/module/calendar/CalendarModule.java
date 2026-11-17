@@ -554,15 +554,20 @@ public final class CalendarModule implements OrderlyModule {
             OffsetDateTime.parse(input);
             return input;
         } catch (DateTimeParseException ignored) {
-            try {
-                LocalDateTime local = LocalDateTime.parse(input, LOCAL_INPUT);
-                return local.atZone(ZoneId.systemDefault()).toOffsetDateTime().toString();
-            } catch (DateTimeParseException exception) {
-                throw new IllegalArgumentException(
-                        "时间必须为 ISO-8601 或 yyyy-MM-dd HH:mm：" + input,
-                        exception
-                );
+            for (DateTimeFormatter formatter : List.of(
+                    DateTimeFormatter.ISO_LOCAL_DATE_TIME,
+                    LOCAL_INPUT
+            )) {
+                try {
+                    LocalDateTime local = LocalDateTime.parse(input, formatter);
+                    return local.atZone(ZoneId.systemDefault()).toOffsetDateTime().toString();
+                } catch (DateTimeParseException ignoredLocal) {
+                    // 尝试下一种受支持的本地时间格式。
+                }
             }
+            throw new IllegalArgumentException(
+                    "时间必须为带时区 ISO-8601、本地 ISO-8601 或 yyyy-MM-dd HH:mm：" + input
+            );
         }
     }
 
