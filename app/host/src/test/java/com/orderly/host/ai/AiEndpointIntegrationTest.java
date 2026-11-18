@@ -2,7 +2,6 @@ package com.orderly.host.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,10 +11,13 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.Instant;
+import java.util.List;
+
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -32,10 +34,29 @@ class AiEndpointIntegrationTest {
     private ObjectMapper objectMapper;
 
     @MockBean
-    private AiProviderClient client;
+    private AiServiceClient aiService;
 
     @BeforeEach
-    void configureTemporaryKey() throws Exception {
+    void configureGateway() {
+        AiContracts.SettingsView settings = settings(false);
+        when(aiService.settings()).thenReturn(settings);
+        when(aiService.settings(any())).thenReturn(settings);
+        when(aiService.beginTurn()).thenReturn(
+                new AiServiceClient.TurnBudget(Instant.now().plusSeconds(60))
+        );
+        when(aiService.updateSettings(any())).thenReturn(settings);
+        when(aiService.clearSettings()).thenReturn(settings(false));
+        when(aiService.testSettings()).thenReturn(new AiContracts.ConnectionTest(true, "连接成功"));
+        when(aiService.health()).thenReturn("UP");
+        when(aiService.configured()).thenReturn(true);
+    }
+
+    @Test
+    void settingsAndTurnsAreProxiedWithoutJavaProviderState() throws Exception {
+        mockMvc.perform(get("/api/ai/settings"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.configured").value(true))
+                .andExpect(jsonPath("$.allowSendQueryResultsToModel").value(false));
         mockMvc.perform(put("/api/ai/settings")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -44,32 +65,40 @@ class AiEndpointIntegrationTest {
                                   "apiKey": "temporary-integration-key",
                                   "baseUrl": null,
                                   "model": null,
-                                  "allowDeleteDirect": false
+                                  "allowDeleteDirect": false,
+                                  "allowSendQueryResultsToModel": true
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.configured").value(true))
                 .andExpect(jsonPath("$.apiKey").doesNotExist());
-    }
-
-    @AfterEach
-    void clearTemporaryKey() throws Exception {
+        mockMvc.perform(post("/api/ai/settings/test"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("连接成功"));
         mockMvc.perform(delete("/api/ai/settings"))
                 .andExpect(status().isOk());
     }
 
     @Test
+    void healthExposesOnlyNonSensitiveAiServiceStatus() throws Exception {
+        mockMvc.perform(get("/api/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aiService").value("UP"))
+                .andExpect(jsonPath("$.aiConfigured").value(true));
+    }
+
+    @Test
     void naturalLanguageQuestionDoesNotExecuteAnything() throws Exception {
-        when(client.complete(any(), any(), anyList())).thenReturn("""
-                {
-                  "kind": "QUESTION",
-                  "message": "需要选择目录",
-                  "question": {
-                    "prompt": "要整理哪个目录？",
-                    "options": ["下载目录", "桌面"]
-                  }
-                }
-                """);
+        when(aiService.createTurn(any(), any())).thenReturn(new AiContracts.ServiceDecision(
+                "QUESTION",
+                "integration-conversation",
+                "需要选择目录",
+                null,
+                null,
+                new AiContracts.Question(
+                        "要整理哪个目录？",
+                        List.of("下载目录", "桌面")
+                )
+        ));
 
         mockMvc.perform(post("/api/ai/turns")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -88,19 +117,18 @@ class AiEndpointIntegrationTest {
 
     @Test
     void defaultPlanUsesIndependentAiPlanShape() throws Exception {
-        when(client.complete(any(), any(), anyList())).thenReturn("""
-                {
-                  "kind": "PLAN",
-                  "message": "请审查计划",
-                  "actions": [
-                    {
-                      "moduleId": "module_fs",
-                      "actionId": "fs.mkdir",
-                      "arguments": {"path": "AI集成验收目录"}
-                    }
-                  ]
-                }
-                """);
+        when(aiService.createTurn(any(), any())).thenReturn(new AiContracts.ServiceDecision(
+                "PLAN",
+                "integration-plan-conversation",
+                "请审查计划",
+                List.of(new AiContracts.Action(
+                        "module_fs",
+                        "fs.mkdir",
+                        java.util.Map.of("path", "AI集成验收目录")
+                )),
+                null,
+                null
+        ));
 
         mockMvc.perform(post("/api/ai/turns")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -119,38 +147,20 @@ class AiEndpointIntegrationTest {
     }
 
     @Test
-    void customHttpUrlIsRejectedWithoutDevelopmentSwitch() throws Exception {
-        mockMvc.perform(put("/api/ai/settings")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "mode": "CUSTOM",
-                                  "apiKey": "temporary-integration-key",
-                                  "baseUrl": "http://example.com/v1",
-                                  "model": "custom-model",
-                                  "allowDeleteDirect": false
-                                }
-                                """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("AI_INVALID_BASE_URL"));
-    }
-
-    @Test
     void confirmedAiPlanExecutesAndRollsBackThroughTheHostCore() throws Exception {
         String directory = "ai-plan-" + java.util.UUID.randomUUID();
-        when(client.complete(any(), any(), anyList())).thenReturn("""
-                {
-                  "kind": "PLAN",
-                  "message": "请审查计划",
-                  "actions": [
-                    {
-                      "moduleId": "module_fs",
-                      "actionId": "fs.mkdir",
-                      "arguments": {"path": "%s"}
-                    }
-                  ]
-                }
-                """.formatted(directory));
+        when(aiService.createTurn(any(), any())).thenReturn(new AiContracts.ServiceDecision(
+                "PLAN",
+                "integration-execution-conversation",
+                "请审查计划",
+                List.of(new AiContracts.Action(
+                        "module_fs",
+                        "fs.mkdir",
+                        java.util.Map.of("path", directory)
+                )),
+                null,
+                null
+        ));
 
         String planBody = mockMvc.perform(post("/api/ai/turns")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -177,10 +187,25 @@ class AiEndpointIntegrationTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        String executionId = objectMapper.readTree(executionBody).path("executionId").asText();
+        String executionId = objectMapper.readTree(executionBody)
+                .path("executionId")
+                .asText();
 
         mockMvc.perform(post("/api/executions/{executionId}/rollback", executionId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ROLLED_BACK"));
+    }
+
+    private AiContracts.SettingsView settings(boolean allowSendQueryResultsToModel) {
+        return new AiContracts.SettingsView(
+                AiContracts.Mode.DEEPSEEK,
+                "https://api.deepseek.com",
+                "deepseek-flash",
+                true,
+                false,
+                allowSendQueryResultsToModel,
+                false,
+                0
+        );
     }
 }

@@ -1,0 +1,48 @@
+{
+  "kind": "QUERY",
+  "requestId": "sample-query-response-1",
+  "conversationId": "sample-conversation-query",
+  "message": "已在本地完成查询，未执行任何动作。",
+  "highestRisk": "READ_ONLY",
+  "queries": [
+    {
+      "moduleId": "module_todo",
+      "queryId": "todo.list",
+      "arguments": {}
+    },
+    {
+      "moduleId": "module_fs",
+      "queryId": "fs.materials",
+      "arguments": {}
+    },
+    {
+      "moduleId": "module_calendar",
+      "queryId": "calendar.list",
+      "arguments": {}
+    }
+  ],
+  "queryResults": [
+    {
+      "moduleId": "module_todo",
+      "queryId": "todo.list",
+      "status": "OK",
+      "payload": {
+        "items": []
+      },
+      "message": "查询完成"
+    },
+    {
+      "moduleId": "module_fs",
+      "queryId": "fs.materials",
+      "status": "FAILED",
+      "message": "查询未授权给 AI 调用"
+    },
+    {
+      "moduleId": "module_calendar",
+      "queryId": "calendar.list",
+      "status": "TRUNCATED",
+      "payload": null,
+      "message": "查询结果超过单条 16 KiB 限制，已省略 payload"
+    }
+  ]
+}

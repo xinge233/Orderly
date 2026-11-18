@@ -31,6 +31,11 @@
     },
     "allowDeleteDirect": {
       "type": "boolean"
+    },
+    "allowSendQueryResultsToModel": {
+      "type": "boolean",
+      "default": false,
+      "description": "默认关闭；开启后宿主才可把有上限的本地查询结果发送给模型。"
     }
   },
   "allOf": [

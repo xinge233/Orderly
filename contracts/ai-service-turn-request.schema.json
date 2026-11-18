@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/ai-service-turn-request.schema.json",
+  "title": "Orderly Java to Python AI Turn Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["goal", "clientRequestId", "aiPlanEnabled", "modules"],
+  "properties": {
+    "goal": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "conversationId": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "clientRequestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "aiPlanEnabled": {
+      "type": "boolean"
+    },
+    "modules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/module" }
+    }
+  },
+  "$defs": {
+    "parameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "required", "description"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["string", "boolean", "integer"] },
+        "required": { "type": "boolean" },
+        "description": { "type": "string" }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actionId", "title", "description", "risk", "parameters"],
+      "properties": {
+        "actionId": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "risk": { "enum": ["READ_ONLY", "WRITE", "DELETE"] },
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/parameter" }
+        }
+      }
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["queryId", "title", "description", "parameters"],
+      "properties": {
+        "queryId": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/parameter" }
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["moduleId", "title", "description", "actions", "queries"],
+      "properties": {
+        "moduleId": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/action" }
+        },
+        "queries": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/query" }
+        }
+      }
+    }
+  }
+}

@@ -95,6 +95,27 @@ test("planning features default to disabled and never enter local appearance sto
     assert.doesNotMatch(storage.getItem(), /aiPlanEnabled/);
 });
 
+test("AI query-result sharing stays in host settings instead of appearance storage", async () => {
+    const app = await read("../src/app.js");
+    const settings = await read("../src/settings.js");
+    const aiSettings = between(
+        app,
+        "function renderAiSettings",
+        "function renderSystemSettings"
+    );
+    const persist = between(
+        app,
+        "async function persistAiSettings",
+        "async function clearAiSettings"
+    );
+
+    assert.match(aiSettings, /默认不把本地查询结果发送给模型/);
+    assert.match(aiSettings, /\[data-setting-key="allowSendQueryResultsToModel"\]/);
+    assert.match(persist, /allowSendQueryResultsToModel: queryResultsInput\.checked/);
+    assert.doesNotMatch(persist, /localStorage|settingsStore/);
+    assert.doesNotMatch(settings, /allowSendQueryResultsToModel/);
+});
+
 test("event origins are explicit or inferred from legacy type and plan id", () => {
     assert.equal(inferEventOrigin({ origin: "module-control" }), EVENT_ORIGIN.MODULE_CONTROL);
     assert.equal(inferEventOrigin({ type: "AI_DIRECT_EXECUTION" }), EVENT_ORIGIN.AI_DIRECT);

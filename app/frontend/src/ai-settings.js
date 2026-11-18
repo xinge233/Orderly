@@ -9,7 +9,7 @@ const AI_MODE_VALUES = new Set(AI_MODES.map((item) => item.value));
  * 清洗宿主返回的 AI 设置；响应永远不会包含 API Key。
  *
  * @param {unknown} payload /api/ai/settings 响应
- * @returns {{mode: string, baseUrl: string, model: string, configured: boolean, allowDeleteDirect: boolean, allowLocalProvider: boolean}} 设置
+ * @returns {{mode: string, baseUrl: string, model: string, configured: boolean, allowDeleteDirect: boolean, allowSendQueryResultsToModel: boolean, allowLocalProvider: boolean}} 设置
  */
 export function normalizeAiSettings(payload) {
     const source = payload && typeof payload === "object" ? payload : {};
@@ -19,6 +19,7 @@ export function normalizeAiSettings(payload) {
         model: typeof source.model === "string" ? source.model : "",
         configured: source.configured === true,
         allowDeleteDirect: source.allowDeleteDirect === true,
+        allowSendQueryResultsToModel: source.allowSendQueryResultsToModel === true,
         allowLocalProvider: source.allowLocalProvider === true
     };
 }

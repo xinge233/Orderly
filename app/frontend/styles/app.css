@@ -2194,6 +2194,14 @@ body.is-navigation-dragging * {
     color: var(--color-safe);
 }
 
+.ai-plan-step__status[data-status="truncated"] {
+    color: var(--color-warning);
+}
+
+.ai-plan-step[data-status="truncated"] .ai-plan-step__message {
+    color: var(--color-warning);
+}
+
 .ai-plan-step__status[data-status="failed"],
 .ai-plan-step__status[data-status="failed_partially_rolled_back"],
 .ai-plan-step__status[data-status="failed_rolled_back"],

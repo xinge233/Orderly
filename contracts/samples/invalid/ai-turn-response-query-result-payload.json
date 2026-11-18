@@ -1,0 +1,18 @@
+{
+  "kind": "QUERY",
+  "requestId": "sample-query-invalid-payload",
+  "conversationId": "sample-conversation-query",
+  "message": "非法查询响应",
+  "queries": [
+    {"moduleId": "module_todo", "queryId": "todo.list", "arguments": {}}
+  ],
+  "queryResults": [
+    {
+      "moduleId": "module_todo",
+      "queryId": "todo.list",
+      "status": "FAILED",
+      "payload": {},
+      "message": "失败结果不得携带 payload"
+    }
+  ]
+}

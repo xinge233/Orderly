@@ -8,6 +8,8 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $frontendRoot = Join-Path $repoRoot "app\frontend"
 $contextScript = Join-Path $PSScriptRoot "context.ps1"
 $docGateScript = Join-Path $PSScriptRoot "doc-gate.ps1"
+$aiRoot = Join-Path $repoRoot "ai"
+$aiEnvScript = Join-Path $aiRoot "scripts\ensure-env.ps1"
 $powerShellExecutable = (Get-Process -Id $PID).Path
 
 function Invoke-ContextProcess {
@@ -402,7 +404,15 @@ try {
         "contracts\samples\invalid\ai-settings-custom-missing-base.json",
         "contracts\samples\invalid\ai-settings-custom-missing-model.json",
         "contracts\ai-turn-request.schema.json",
-        "contracts\ai-turn-response.schema.json"
+        "contracts\ai-turn-response.schema.json",
+        "contracts\ai-service-turn-request.schema.json",
+        "contracts\ai-service-decision.schema.json",
+        "contracts\ai-query-continuation-request.schema.json",
+        "contracts\samples\valid\ai-service-turn-request.json",
+        "contracts\samples\valid\ai-service-decision-query.json",
+        "contracts\samples\valid\ai-query-continuation-request.json",
+        "contracts\samples\invalid\ai-query-continuation-request-failed-payload.json",
+        "contracts\samples\invalid\ai-service-decision-query-with-actions.json"
     )) {
         if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $requiredContract) -PathType Leaf)) {
             throw "缺少 Action 直执契约或样例：$requiredContract"
@@ -415,7 +425,14 @@ try {
         @{ Schema = "contracts\ai-settings.schema.json"; Sample = "contracts\samples\invalid\ai-settings-custom-missing-model.json"; Expected = $false },
         @{ Schema = "contracts\ai-turn-request.schema.json"; Sample = "contracts\samples\valid\ai-turn-request.json"; Expected = $true },
         @{ Schema = "contracts\ai-turn-request.schema.json"; Sample = "contracts\samples\invalid\ai-turn-request-empty.json"; Expected = $false },
-        @{ Schema = "contracts\ai-turn-response.schema.json"; Sample = "contracts\samples\valid\ai-turn-response-plan.json"; Expected = $true }
+        @{ Schema = "contracts\ai-turn-response.schema.json"; Sample = "contracts\samples\valid\ai-turn-response-plan.json"; Expected = $true },
+        @{ Schema = "contracts\ai-service-turn-request.schema.json"; Sample = "contracts\samples\valid\ai-service-turn-request.json"; Expected = $true },
+        @{ Schema = "contracts\ai-service-turn-request.schema.json"; Sample = "contracts\samples\invalid\ai-service-turn-request-missing-plan.json"; Expected = $false },
+        @{ Schema = "contracts\ai-service-decision.schema.json"; Sample = "contracts\samples\valid\ai-service-decision-query.json"; Expected = $true },
+        @{ Schema = "contracts\ai-service-decision.schema.json"; Sample = "contracts\samples\invalid\ai-service-decision-query-five.json"; Expected = $false },
+        @{ Schema = "contracts\ai-service-decision.schema.json"; Sample = "contracts\samples\invalid\ai-service-decision-query-with-actions.json"; Expected = $false },
+        @{ Schema = "contracts\ai-query-continuation-request.schema.json"; Sample = "contracts\samples\valid\ai-query-continuation-request.json"; Expected = $true },
+        @{ Schema = "contracts\ai-query-continuation-request.schema.json"; Sample = "contracts\samples\invalid\ai-query-continuation-request-failed-payload.json"; Expected = $false }
     )) {
         $actual = (Get-Content -LiteralPath (Join-Path $repoRoot $contractCase.Sample) -Raw) |
             Test-Json -SchemaFile (Join-Path $repoRoot $contractCase.Schema) `
@@ -439,6 +456,27 @@ try {
     }
 
     Write-Host "上下文门禁通过：语法、成功读取、边界拒绝、正文不泄漏、审计、仓库地图与忽略规则均成功。"
+
+    if (-not (Test-Path -LiteralPath $aiEnvScript -PathType Leaf)) {
+        throw "缺少 Python AI 环境脚本：$aiEnvScript"
+    }
+    $python = & $aiEnvScript
+    if (-not $python -or -not (Test-Path -LiteralPath $python -PathType Leaf)) {
+        throw "Python AI 环境准备失败。"
+    }
+    Push-Location $aiRoot
+    try {
+        & $python -m compileall -q src tests
+        if ($LASTEXITCODE -ne 0) {
+            throw "Python AI 语法检查失败，退出码：$LASTEXITCODE"
+        }
+        & $python -m pytest
+        if ($LASTEXITCODE -ne 0) {
+            throw "Python AI 测试失败，退出码：$LASTEXITCODE"
+        }
+    } finally {
+        Pop-Location
+    }
 
     & (Join-Path $PSScriptRoot "build.ps1")
     if ($LASTEXITCODE -ne 0) {

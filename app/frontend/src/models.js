@@ -10,10 +10,12 @@ export const STATUS_LABEL = Object.freeze({
     PENDING: "等待",
     RUNNING: "执行中",
     EXECUTING: "执行中",
+    OK: "成功",
     COMPLETED: "成功",
     SUCCESS: "成功",
     SUCCEEDED: "成功",
     FAILED: "失败",
+    TRUNCATED: "已截断",
     REJECTED: "已拒绝",
     ROLLED_BACK: "已回滚",
     ROLLBACK: "回滚中",
@@ -21,6 +23,11 @@ export const STATUS_LABEL = Object.freeze({
     CANCELLED: "已取消",
     QUESTION: "需要澄清"
 });
+
+export const AI_QUERY_LIMIT = 4;
+
+const AI_QUERY_RESULT_STATUSES = new Set(["OK", "FAILED", "TRUNCATED"]);
+const QUERY_PAYLOAD_SUMMARY_LIMIT = 240;
 
 export const EVENT_ORIGIN = Object.freeze({
     PLAN: "PLAN",
@@ -100,6 +107,186 @@ export function normalizePlan(payload) {
         impact: flattenText(source.impact ?? source.estimatedImpact ?? ""),
         confidence: Number(source.confidence ?? 0),
         steps
+    };
+}
+
+/**
+ * 将本地查询结果压成有界、可安全渲染的单行摘要。
+ *
+ * @param {unknown} payload 查询结果
+ * @param {number} limit 最大字符数
+ * @returns {string} 摘要
+ */
+export function summarizeQueryPayload(payload, limit = QUERY_PAYLOAD_SUMMARY_LIMIT) {
+    if (payload == null) {
+        return "无结果内容";
+    }
+    const maximum = Number.isFinite(Number(limit))
+        ? Math.max(16, Math.min(1000, Math.trunc(Number(limit))))
+        : QUERY_PAYLOAD_SUMMARY_LIMIT;
+    let serialized = "";
+    if (typeof payload === "string") {
+        serialized = payload;
+    } else {
+        const seen = new WeakSet();
+        try {
+            serialized = JSON.stringify(payload, (_key, value) => {
+                if (typeof value === "bigint") {
+                    return String(value);
+                }
+                if (value && typeof value === "object") {
+                    if (seen.has(value)) {
+                        return "[循环]";
+                    }
+                    seen.add(value);
+                }
+                return value;
+            });
+        } catch {
+            serialized = String(payload);
+        }
+    }
+    const text = String(serialized ?? "").replace(/\s+/g, " ").trim() || "空结果";
+    return text.length > maximum
+        ? `${text.slice(0, maximum - 1)}…`
+        : text;
+}
+
+function boundedQueryText(value, limit = 600) {
+    return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, limit);
+}
+
+function sameQueryIdentity(result, moduleId, queryId) {
+    return Boolean(
+        result
+        && typeof result === "object"
+        && String(result.moduleId ?? "").trim() === moduleId
+        && String(result.queryId ?? "").trim() === queryId
+    );
+}
+
+function queryResultMessage(status) {
+    return {
+        OK: "查询完成",
+        FAILED: "查询失败",
+        TRUNCATED: "查询结果已截断"
+    }[status];
+}
+
+/**
+ * 规范化 AI 本地查询响应。只展示前四条查询，非 OK 结果不保留 payload。
+ *
+ * @param {unknown} payload /api/ai/turns 的 QUERY 响应
+ * @returns {{
+ *     kind: "QUERY",
+ *     valid: boolean,
+ *     degraded: boolean,
+ *     status: "OK" | "FAILED" | "TRUNCATED",
+ *     message: string,
+ *     queries: Array<object>,
+ *     error?: string,
+ *     notice?: string
+ * }} 查询模型
+ */
+export function normalizeAiQueryResponse(payload) {
+    const source = payload && typeof payload === "object" ? payload : {};
+    const message = boundedQueryText(source.message);
+    if (!Array.isArray(source.queries) || source.queries.length === 0) {
+        return {
+            kind: "QUERY",
+            valid: false,
+            degraded: true,
+            status: "FAILED",
+            message,
+            queries: [],
+            error: "AI 查询结果格式非法：queries 必须包含 1 至 4 条查询。"
+        };
+    }
+
+    const rawResults = Array.isArray(source.queryResults) ? source.queryResults : [];
+    const usedResults = new Set();
+    let degraded = source.queries.length > AI_QUERY_LIMIT || !Array.isArray(source.queryResults);
+    const queries = source.queries.slice(0, AI_QUERY_LIMIT).map((rawQuery, index) => {
+        const query = rawQuery && typeof rawQuery === "object" ? rawQuery : {};
+        const moduleId = boundedQueryText(query.moduleId, 128);
+        const queryId = boundedQueryText(query.queryId, 160);
+        if (!moduleId || !queryId) {
+            degraded = true;
+            return {
+                moduleId,
+                queryId,
+                status: "FAILED",
+                message: "查询描述不完整，未展示本地结果。"
+            };
+        }
+
+        let resultIndex = -1;
+        if (!usedResults.has(index)
+            && sameQueryIdentity(rawResults[index], moduleId, queryId)) {
+            resultIndex = index;
+        } else {
+            resultIndex = rawResults.findIndex((result, candidateIndex) =>
+                !usedResults.has(candidateIndex)
+                && sameQueryIdentity(result, moduleId, queryId));
+        }
+        if (resultIndex < 0) {
+            degraded = true;
+            return {
+                moduleId,
+                queryId,
+                status: "FAILED",
+                message: "宿主未返回该查询的可展示结果。"
+            };
+        }
+
+        usedResults.add(resultIndex);
+        const result = rawResults[resultIndex];
+        const statusText = String(result.status ?? "").trim().toUpperCase();
+        if (!AI_QUERY_RESULT_STATUSES.has(statusText)) {
+            degraded = true;
+            return {
+                moduleId,
+                queryId,
+                status: "FAILED",
+                message: "宿主返回了无法识别的查询状态，未展示本地结果。"
+            };
+        }
+        const resultMessage = boundedQueryText(result.message)
+            || queryResultMessage(statusText);
+        return {
+            moduleId,
+            queryId,
+            status: statusText,
+            message: resultMessage,
+            ...(statusText === "OK" && Object.hasOwn(result, "payload")
+                ? { payload: result.payload }
+                : {})
+        };
+    });
+
+    const aggregateStatus = queries.some((query) => query.status === "FAILED")
+        ? "FAILED"
+        : queries.some((query) => query.status === "TRUNCATED")
+            ? "TRUNCATED"
+            : "OK";
+    const status = source.queries.length > AI_QUERY_LIMIT && aggregateStatus === "OK"
+        ? "TRUNCATED"
+        : aggregateStatus;
+    const notice = source.queries.length > AI_QUERY_LIMIT
+        ? "宿主返回的查询超过 4 条，界面仅展示前 4 条。"
+        : !Array.isArray(source.queryResults)
+            ? "宿主未返回有效的查询结果列表，查询项已安全降级为失败。"
+            : degraded
+                ? "部分查询结果无法展示，已按失败状态安全降级。"
+                : "";
+    return {
+        kind: "QUERY",
+        valid: true,
+        degraded,
+        status,
+        message,
+        queries,
+        ...(notice ? { notice } : {})
     };
 }
 

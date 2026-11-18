@@ -2,13 +2,11 @@ package com.orderly.host.api;
 
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.contract.ModuleUiAsset;
-import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.contract.ModuleEntry;
-import com.orderly.host.contract.ParameterContract;
-import com.orderly.host.contract.QueryContract;
 import com.orderly.host.ai.AiContracts;
 import com.orderly.host.ai.AiInterpretService;
-import com.orderly.host.ai.AiSettingsService;
+import com.orderly.host.ai.AiQueryService;
+import com.orderly.host.ai.AiServiceClient;
 import com.orderly.host.event.ExecutionEvent;
 import com.orderly.host.event.ExecutionJournal;
 import com.orderly.host.execution.ExecutionRunResult;
@@ -56,7 +54,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 /** 本地前端使用的受控 HTTP 接口。 */
 @RestController
@@ -75,7 +72,8 @@ public class OrderlyController {
     private final ModuleDataService moduleData;
     private final SystemFeatureService features;
     private final AiActionService aiActions;
-    private final AiSettingsService aiSettings;
+    private final AiServiceClient aiServiceClient;
+    private final AiQueryService aiQueries;
     private final AiInterpretService aiInterpret;
     private final ExecutionRecordStore records;
 
@@ -92,7 +90,8 @@ public class OrderlyController {
             ModuleDataService moduleData,
             SystemFeatureService features,
             AiActionService aiActions,
-            AiSettingsService aiSettings,
+            AiServiceClient aiServiceClient,
+            AiQueryService aiQueries,
             AiInterpretService aiInterpret,
             ExecutionRecordStore records
     ) {
@@ -108,7 +107,8 @@ public class OrderlyController {
         this.moduleData = moduleData;
         this.features = features;
         this.aiActions = aiActions;
-        this.aiSettings = aiSettings;
+        this.aiServiceClient = aiServiceClient;
+        this.aiQueries = aiQueries;
         this.aiInterpret = aiInterpret;
         this.records = records;
     }
@@ -118,7 +118,8 @@ public class OrderlyController {
         return Map.of(
                 "status", "UP",
                 "planner", "LOCAL_RULES",
-                "aiConfigured", aiSettings.view().configured(),
+                "aiConfigured", aiServiceClient.configured(),
+                "aiService", aiServiceClient.health(),
                 "workspace", runtime.workspaceLabel(),
                 "javaVersion", Runtime.version().feature()
         );
@@ -206,18 +207,7 @@ public class OrderlyController {
             @PathVariable String queryId,
             @RequestParam Map<String, String> parameters
     ) {
-        return moduleControl.withEnabledBusinessModule(moduleId, module -> {
-            QueryContract query = module.queries().stream()
-                    .filter(candidate -> candidate.id().equals(queryId))
-                    .findFirst()
-                    .orElseThrow(() -> new ApiException(
-                            HttpStatus.NOT_FOUND,
-                            "MODULE_QUERY_NOT_FOUND",
-                            "模块未声明查询：" + moduleId + "/" + queryId
-                    ));
-            Map<String, String> validated = validateQueryParameters(query, parameters);
-            return catalog.requireExecutor(moduleId).query(queryId, validated, runtime);
-        });
+        return aiQueries.executeHttpQuery(moduleId, queryId, parameters);
     }
 
     @GetMapping("/modules/{moduleId}/ui/{asset}")
@@ -345,25 +335,24 @@ public class OrderlyController {
 
     @GetMapping("/ai/settings")
     public AiContracts.SettingsView aiSettings() {
-        return aiSettings.view();
+        return aiServiceClient.settings();
     }
 
     @PutMapping("/ai/settings")
     public AiContracts.SettingsView updateAiSettings(
             @RequestBody AiContracts.SettingsRequest request
     ) {
-        return aiSettings.configure(request);
+        return aiServiceClient.updateSettings(request);
     }
 
     @DeleteMapping("/ai/settings")
     public AiContracts.SettingsView clearAiSettings() {
-        aiSettings.clear();
-        return aiSettings.view();
+        return aiServiceClient.clearSettings();
     }
 
     @PostMapping("/ai/settings/test")
     public AiContracts.ConnectionTest testAiSettings() {
-        return aiSettings.testConnection();
+        return aiServiceClient.testSettings();
     }
 
     @PostMapping("/ai/turns")
@@ -539,62 +528,4 @@ public class OrderlyController {
         return request.moduleIds();
     }
 
-    private Map<String, String> validateQueryParameters(
-            QueryContract query,
-            Map<String, String> supplied
-    ) {
-        Map<String, String> validated = new java.util.LinkedHashMap<>();
-        for (ParameterContract parameter : query.parameters()) {
-            String value = supplied.get(parameter.name());
-            if (parameter.required() && (value == null || value.isBlank())) {
-                throw new ApiException(
-                        HttpStatus.BAD_REQUEST,
-                        "INVALID_QUERY_PARAMETERS",
-                        "查询 " + query.id() + " 缺少必填参数：" + parameter.name()
-                );
-            }
-            if (value != null) {
-                validateQueryParameterType(query.id(), parameter, value);
-                validated.put(parameter.name(), value);
-            }
-        }
-        Optional<String> unknown = supplied.keySet().stream()
-                .filter(name -> query.parameters().stream().noneMatch(parameter -> parameter.name().equals(name)))
-                .findFirst();
-        if (unknown.isPresent()) {
-            throw new ApiException(
-                    HttpStatus.BAD_REQUEST,
-                    "INVALID_QUERY_PARAMETERS",
-                    "查询 " + query.id() + " 包含契约外参数：" + unknown.orElseThrow()
-            );
-        }
-        return Map.copyOf(validated);
-    }
-
-    private void validateQueryParameterType(
-            String queryId,
-            ParameterContract parameter,
-            String value
-    ) {
-        boolean valid = switch (parameter.type()) {
-            case "string" -> true;
-            case "boolean" -> value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false");
-            case "integer" -> {
-                try {
-                    Integer.parseInt(value);
-                    yield true;
-                } catch (NumberFormatException exception) {
-                    yield false;
-                }
-            }
-            default -> false;
-        };
-        if (!valid) {
-            throw new ApiException(
-                    HttpStatus.BAD_REQUEST,
-                    "INVALID_QUERY_PARAMETERS",
-                    "查询 " + queryId + " 参数 " + parameter.name() + " 类型应为 " + parameter.type()
-            );
-        }
-    }
 }

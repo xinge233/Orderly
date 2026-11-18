@@ -1,0 +1,22 @@
+{
+  "goal": "看看待办",
+  "conversationId": null,
+  "clientRequestId": "service-turn-1",
+  "aiPlanEnabled": true,
+  "modules": [
+    {
+      "moduleId": "module_todo",
+      "title": "待办",
+      "description": "管理个人待办",
+      "actions": [],
+      "queries": [
+        {
+          "queryId": "todo.list",
+          "title": "列出待办",
+          "description": "读取当前待办",
+          "parameters": []
+        }
+      ]
+    }
+  ]
+}

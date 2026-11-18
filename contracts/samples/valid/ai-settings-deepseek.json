@@ -3,5 +3,6 @@
   "apiKey": "temporary-test-key",
   "baseUrl": null,
   "model": null,
-  "allowDeleteDirect": false
+  "allowDeleteDirect": false,
+  "allowSendQueryResultsToModel": false
 }

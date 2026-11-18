@@ -214,7 +214,8 @@ test("API client uses independent AI settings, turns and plan confirmation endpo
         apiKey: "temporary-key",
         baseUrl: null,
         model: null,
-        allowDeleteDirect: false
+        allowDeleteDirect: false,
+        allowSendQueryResultsToModel: true
     });
     await api.testAiSettings();
     await api.interpretAiTurn({
@@ -239,5 +240,13 @@ test("API client uses independent AI settings, turns and plan confirmation endpo
     assert.deepEqual(JSON.parse(requests[3].options.body), {
         goal: "创建归档目录",
         conversationId: null
+    });
+    assert.deepEqual(JSON.parse(requests[1].options.body), {
+        mode: "DEEPSEEK",
+        apiKey: "temporary-key",
+        baseUrl: null,
+        model: null,
+        allowDeleteDirect: false,
+        allowSendQueryResultsToModel: true
     });
 });

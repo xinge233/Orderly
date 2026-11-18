@@ -3720,7 +3720,7 @@ function renderAiSettings(panel) {
         element(
             "p",
             "",
-            "API Key 只保存在当前宿主进程内，刷新或退出后失效；不会写入仓库、日志或浏览器存储。"
+            "API Key 只保存在当前 Python AI 服务进程内，刷新或退出后失效；不会写入仓库、日志或浏览器存储。"
         )
     );
     panel.append(header);
@@ -3834,6 +3834,29 @@ function renderAiSettings(panel) {
         "允许 AI 生成计划"
     );
 
+    const queryResultsRow = settingRow(
+        "allowSendQueryResultsToModel",
+        "发送本地查询结果给模型",
+        "默认不把本地查询结果发送给模型，开启后仅发送有上限的查询结果。",
+        settings.allowSendQueryResultsToModel === true,
+        () => {},
+        state.aiSettingsLoading || state.aiSettingsSaving || state.aiSettingsTesting,
+        "发送本地查询结果给模型"
+    );
+
+    const policyField = element("fieldset", "setting-field");
+    policyField.append(
+        element("legend", "", "执行策略"),
+        element(
+            "p",
+            "",
+            "风险开关由宿主保存；本地查询结果是否发送给模型由下方开关控制。"
+        )
+    );
+    const policyRows = element("div", "settings-fields");
+    policyRows.append(deleteRow, planRow, queryResultsRow);
+    policyField.append(policyRows);
+
     const actions = element("div", "settings-actions");
     const saveButton = element("button", "primary-button", "保存临时设置");
     saveButton.type = "button";
@@ -3861,7 +3884,7 @@ function renderAiSettings(panel) {
     testButton.addEventListener("click", () => void persistAiSettings(panel, { test: true }));
     clearButton.addEventListener("click", () => void clearAiSettings(panel));
 
-    fields.append(modeField, keyField, customFields, deleteRow, planRow, actions);
+    fields.append(modeField, keyField, customFields, policyField, actions);
     panel.append(fields);
     updateModeFields();
 }
@@ -3881,7 +3904,15 @@ async function persistAiSettings(panel, { test = false } = {}) {
     const baseUrlInput = panel.querySelector("#ai-settings-base-url");
     const modelInput = panel.querySelector("#ai-settings-model");
     const deleteInput = panel.querySelector('[data-setting-key="allowDeleteDirect"]');
-    if (!modeSelect || !keyInput || !baseUrlInput || !modelInput || !deleteInput) {
+    const queryResultsInput = panel.querySelector(
+        '[data-setting-key="allowSendQueryResultsToModel"]'
+    );
+    if (!modeSelect
+        || !keyInput
+        || !baseUrlInput
+        || !modelInput
+        || !deleteInput
+        || !queryResultsInput) {
         return;
     }
     const draft = {
@@ -3912,7 +3943,8 @@ async function persistAiSettings(panel, { test = false } = {}) {
             apiKey: draft.apiKey.trim(),
             baseUrl: draft.mode === "CUSTOM" ? draft.baseUrl.trim() : null,
             model: draft.mode === "CUSTOM" ? draft.model.trim() : null,
-            allowDeleteDirect: deleteInput.checked
+            allowDeleteDirect: deleteInput.checked,
+            allowSendQueryResultsToModel: queryResultsInput.checked
         });
         state.aiSettings = normalizeAiSettings(saved);
         state.aiSettingsError = "";

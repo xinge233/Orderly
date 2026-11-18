@@ -114,6 +114,24 @@ test("AI dialog delegates model work through injected callbacks", async () => {
     assert.match(component, /API Key/);
 });
 
+test("AI dialog renders bounded QUERY results without inventing actions or plans", async () => {
+    const component = await read("../src/ai-dialog.js");
+    const models = await read("../src/models.js");
+
+    assert.match(component, /normalizeAiQueryResponse/);
+    assert.match(component, /summarizeQueryPayload/);
+    assert.match(component, /response\?\.kind === "QUERY"/);
+    assert.match(component, /mode: "query"/);
+    assert.match(component, /function renderQueryResult\(\)/);
+    assert.match(component, /item\.status === "OK"[\s\S]*?summarizeQueryPayload\(item\.payload\)/);
+    assert.match(component, /查询完成，未执行动作/);
+    assert.match(component, /query\.status === "TRUNCATED"/);
+    assert.match(component, /TRUNCATED[\s\S]*?"truncated"/);
+    assert.match(component, /"error",\s*"query"/);
+    assert.match(models, /source\.queries\.slice\(0, AI_QUERY_LIMIT\)/);
+    assert.match(models, /statusText === "OK" && Object\.hasOwn\(result, "payload"\)/);
+});
+
 test("AI actions surface host failures and notify the framework after execution", async () => {
     const component = await read("../src/ai-dialog.js");
     const app = await read("../src/app.js");

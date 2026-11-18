@@ -19,12 +19,23 @@ test("AI settings never trust or require a returned API key", () => {
         model: "deepseek-flash",
         configured: true,
         allowDeleteDirect: false,
+        allowSendQueryResultsToModel: true,
         allowLocalProvider: false,
         apiKey: "must-not-be-used"
     });
 
     assert.equal(settings.configured, true);
+    assert.equal(settings.allowSendQueryResultsToModel, true);
     assert.equal(Object.hasOwn(settings, "apiKey"), false);
+});
+
+test("sending local query results to the model is opt-in", () => {
+    assert.equal(normalizeAiSettings({}).allowSendQueryResultsToModel, false);
+    assert.equal(
+        normalizeAiSettings({ allowSendQueryResultsToModel: "yes" })
+            .allowSendQueryResultsToModel,
+        false
+    );
 });
 
 test("custom AI settings require HTTPS and a model", () => {
@@ -101,4 +112,7 @@ test("settings dialog exposes a dedicated AI partition", async () => {
     assert.match(app, /api\.saveAiSettings/);
     assert.match(app, /api\.testAiSettings/);
     assert.match(app, /allowDeleteDirect/);
+    assert.match(app, /allowSendQueryResultsToModel/);
+    assert.match(app, /默认不把本地查询结果发送给模型，开启后仅发送有上限的查询结果/);
+    assert.match(app, /queryResultsInput\.checked/);
 });

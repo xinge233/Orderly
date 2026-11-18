@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderly.host.api.ApiException;
 import com.orderly.host.ai.AiContracts;
 import com.orderly.host.ai.AiPlanService;
+import com.orderly.host.ai.AiServiceClient;
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.execution.AiActionService;
 import com.orderly.host.execution.ExecutionRecord;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -34,6 +36,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -44,6 +47,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -107,9 +111,36 @@ class ModuleControlIntegrationTest {
     @Autowired
     private SystemFeatureService features;
 
+    @MockBean
+    private AiServiceClient aiService;
+
     @BeforeEach
     void enablePlanning() {
         features.setPlanningEnabled(true);
+        org.mockito.Mockito.when(aiService.settings()).thenReturn(new AiContracts.SettingsView(
+                AiContracts.Mode.DEEPSEEK,
+                "https://api.deepseek.com",
+                "deepseek-flash",
+                true,
+                false,
+                false,
+                false,
+                0
+        ));
+        org.mockito.Mockito.when(aiService.settings(any()))
+                .thenReturn(new AiContracts.SettingsView(
+                        AiContracts.Mode.DEEPSEEK,
+                        "https://api.deepseek.com",
+                        "deepseek-flash",
+                        true,
+                        false,
+                        false,
+                        false,
+                        0
+                ));
+        org.mockito.Mockito.when(aiService.beginTurn()).thenReturn(
+                new AiServiceClient.TurnBudget(Instant.now().plusSeconds(60))
+        );
     }
 
     @Test
@@ -230,6 +261,88 @@ class ModuleControlIntegrationTest {
             assertThatThrownBy(() -> execution.confirm(preview.planId(), true, ""))
                     .isInstanceOf(ApiException.class)
                     .hasMessageContaining("已停用");
+        } finally {
+            moduleControl.setActivation("module_business", true);
+        }
+    }
+
+    @Test
+    void aiQueriesRespectEnabledAndStaticAndDynamicAiCallableGates() throws Exception {
+        org.mockito.Mockito.when(aiService.createTurn(any(), any()))
+                .thenReturn(queryDecision("business.list"));
+
+        mockMvc.perform(post("/api/ai/turns")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "goal": "读取业务",
+                                  "conversationId": null,
+                                  "clientRequestId": "query-ok"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.kind").value("QUERY"))
+                .andExpect(jsonPath("$.queryResults[0].status").value("OK"))
+                .andExpect(jsonPath("$.queryResults[0].payload.count").value(1));
+
+        org.mockito.Mockito.when(aiService.createTurn(any(), any()))
+                .thenReturn(queryDecision("business.hidden"));
+        mockMvc.perform(post("/api/ai/turns")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "goal": "读取静态禁用查询",
+                                  "conversationId": null,
+                                  "clientRequestId": "query-static-disabled"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.queryResults[0].status").value("FAILED"));
+
+        mockMvc.perform(patch(
+                        "/api/modules/module_business/interfaces/query/business.list/ai-callable"
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aiCallable\":false}"))
+                .andExpect(status().isOk());
+        try {
+            org.mockito.Mockito.when(aiService.createTurn(any(), any()))
+                    .thenReturn(queryDecision("business.list"));
+            mockMvc.perform(post("/api/ai/turns")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "goal": "读取动态禁用查询",
+                                      "conversationId": null,
+                                      "clientRequestId": "query-dynamic-disabled"
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.queryResults[0].status").value("FAILED"));
+        } finally {
+            moduleControl.setInterfaceAiCallable(
+                    "module_business",
+                    "query",
+                    "business.list",
+                    true
+            );
+        }
+
+        moduleControl.setActivation("module_business", false);
+        try {
+            org.mockito.Mockito.when(aiService.createTurn(any(), any()))
+                    .thenReturn(queryDecision("business.list"));
+            mockMvc.perform(post("/api/ai/turns")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "goal": "读取停用模块",
+                                      "conversationId": null,
+                                      "clientRequestId": "query-module-disabled"
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.queryResults[0].status").value("FAILED"));
         } finally {
             moduleControl.setActivation("module_business", true);
         }
@@ -485,5 +598,20 @@ class ModuleControlIntegrationTest {
         } catch (Exception exception) {
             throw new IllegalStateException("创建模块控制测试夹具失败", exception);
         }
+    }
+
+    private AiContracts.ServiceDecision queryDecision(String queryId) {
+        return new AiContracts.ServiceDecision(
+                "QUERY",
+                "module-control-query-conversation",
+                "读取本地数据",
+                null,
+                List.of(new AiContracts.QueryCall(
+                        "module_business",
+                        queryId,
+                        Map.of()
+                )),
+                null
+        );
     }
 }

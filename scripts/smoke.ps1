@@ -12,6 +12,12 @@ if ($health.status -ne "UP") {
 if ([int]$health.javaVersion -ne 21) {
     throw "宿主未运行在 JDK 21：$($health.javaVersion)"
 }
+if ($health.aiService -ne "UP") {
+    throw "Python AI 服务未就绪：$($health | ConvertTo-Json -Compress)"
+}
+if ($health.aiConfigured -isnot [bool]) {
+    throw "/api/health 缺少布尔 aiConfigured。"
+}
 
 $features = Invoke-RestMethod -Uri "$BaseUrl/api/system/features" -Method Get
 if ($features.planningEnabled -isnot [bool]) {
@@ -214,6 +220,9 @@ if ($aiSettings.mode -ne "DEEPSEEK" -or
         $aiSettings.baseUrl -ne "https://api.deepseek.com" -or
         $aiSettings.model -ne "deepseek-flash") {
     throw "AI 设置未返回 DeepSeek 固定默认值。"
+}
+if ($aiSettings.allowSendQueryResultsToModel -isnot [bool]) {
+    throw "AI 设置缺少布尔 allowSendQueryResultsToModel。"
 }
 
 if ($moduleIds -contains "module_fs") {

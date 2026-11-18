@@ -1,0 +1,8 @@
+{
+  "kind": "QUERY",
+  "requestId": "sample-query-invalid-empty",
+  "conversationId": "sample-conversation-query",
+  "message": "非法查询响应",
+  "queries": [],
+  "queryResults": []
+}

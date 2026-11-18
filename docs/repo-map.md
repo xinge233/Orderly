@@ -22,7 +22,7 @@
 | `app/frontend/` | 本地静态界面、前端状态、设置和交互测试 |
 | `Module/` | 自包含业务模块与唯一的系统模块 `module_control` |
 | `contracts/` | 计划、模块、模块 UI、主题和学习数据的契约与样例 |
-| `ai/` | 未来独立模型服务、提示词、工具卡和评测基线；凭据不进入仓库 |
+| `ai/` | Python 3.14 + FastAPI AI 服务、提示词、模型接入、会话、Query 选择和评测；凭据不进入仓库 |
 | `themes/` | 目录主题包，只包含清单、语义变量、动效和登记资源 |
 | `scripts/` | 构建、启动、门禁、烟测、模块化和上下文工具 |
 | `docs/agents/` | 角色规则、架构基线、协作流程、模板和历史交接 |
@@ -55,7 +55,8 @@
 | 执行与回滚 | `app/host/src/main/java/com/orderly/host/execution/ExecutionService.java` |
 | 共享 Action 执行核心 | `app/host/src/main/java/com/orderly/host/execution/ActionExecutionCore.java` |
 | AI 直执入口 | `app/host/src/main/java/com/orderly/host/execution/AiActionService.java` |
-| AI 设置与解释 | `app/host/src/main/java/com/orderly/host/ai/` |
+| Python AI 服务 | `ai/src/orderly_ai/` |
+| Java AI 网关与编排 | `app/host/src/main/java/com/orderly/host/ai/` |
 | 持久化执行记录 | `app/host/src/main/java/com/orderly/host/execution/ExecutionRecordStore.java` |
 | 系统功能开关 | `app/host/src/main/java/com/orderly/host/system/SystemFeatureService.java` |
 | 模块运行时 | `app/host/src/main/java/com/orderly/host/runtime/ModuleBootstrap.java` |
@@ -73,7 +74,10 @@
 | `contracts/action-execution.schema.json` | 总体 AI 直执 Action 数组请求 |
 | `contracts/ai-settings.schema.json` | AI 模式、临时 API Key 与删除直执设置 |
 | `contracts/ai-turn-request.schema.json` | 自然语言 AI 回合请求 |
-| `contracts/ai-turn-response.schema.json` | ACTIONS、PLAN、QUESTION 响应 |
+| `contracts/ai-turn-response.schema.json` | ACTIONS、PLAN、QUERY、QUESTION 响应 |
+| `contracts/ai-service-turn-request.schema.json` | Java 到 Python AI 服务的版本化 IPC 请求 |
+| `contracts/ai-query-continuation-request.schema.json` | Query 结果回传 Python 的受控续聊请求 |
+| `contracts/ai-service-decision.schema.json` | Python 到 Java 的受控决策响应 |
 | `contracts/module.schema.json` | 模块 JAR 契约与模块测试 |
 | `contracts/module-ui.schema.json` | 模块 UI 清单与前端契约测试 |
 | `contracts/theme.schema.json` | 宿主主题加载与主题样例 |

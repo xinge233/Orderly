@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/ai-query-continuation-request.schema.json",
+  "title": "Orderly Java to Python Query Result Continuation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "goal",
+    "conversationId",
+    "clientRequestId",
+    "aiPlanEnabled",
+    "modules",
+    "queryResults"
+  ],
+  "properties": {
+    "goal": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "conversationId": { "type": "string", "minLength": 1 },
+    "clientRequestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "aiPlanEnabled": { "type": "boolean" },
+    "modules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/module" }
+    },
+    "queryResults": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["moduleId", "queryId", "status", "message"],
+        "properties": {
+          "moduleId": { "type": "string", "minLength": 1 },
+          "queryId": { "type": "string", "minLength": 1 },
+          "status": {
+            "enum": ["OK", "FAILED", "TRUNCATED"]
+          },
+          "payload": {
+            "oneOf": [
+              { "type": "object" },
+              { "type": "array" },
+              { "type": "null" }
+            ]
+          },
+          "message": { "type": "string", "minLength": 1 }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": ["status"],
+              "properties": { "status": { "const": "OK" } }
+            },
+            "then": {
+              "required": ["payload"],
+              "properties": {
+                "payload": {
+                  "oneOf": [
+                    { "type": "object" },
+                    { "type": "array" }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": ["status"],
+              "properties": {
+                "status": { "enum": ["FAILED", "TRUNCATED"] }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": { "type": "null" }
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "parameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "required", "description"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["string", "boolean", "integer"] },
+        "required": { "type": "boolean" },
+        "description": { "type": "string" }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actionId", "title", "description", "risk", "parameters"],
+      "properties": {
+        "actionId": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "risk": { "enum": ["READ_ONLY", "WRITE", "DELETE"] },
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/parameter" }
+        }
+      }
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["queryId", "title", "description", "parameters"],
+      "properties": {
+        "queryId": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/parameter" }
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["moduleId", "title", "description", "actions", "queries"],
+      "properties": {
+        "moduleId": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/action" }
+        },
+        "queries": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/query" }
+        }
+      }
+    }
+  }
+}

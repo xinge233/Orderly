@@ -12,13 +12,14 @@
 - 日程模块：读取并修改已有日程的时间。
 - 学习界面参考扩展：新增 `研习蓝` 浅色主题、只读 AI 学习助手、知识脉络与复习自测模块；文件模块同时提供原型风格的资料管理视图和自身只读示例。它们不是 V7 已交付能力；全局 AI 接入不等同于学习模块的上传、自动整理、任务记录、自动出题与自动阅卷能力，这些学习能力仍明确标注尚未接入。
 - AI 直执：默认允许调用模块 Action，模块可显式禁止；Action 数组顺序执行，首次失败停止并逆序回滚此前完成项；支持指向前序输出的宿主解析引用。
-- 真实 AI 接入：设置中的独立 AI 分区支持 DeepSeek 与自定义 OpenAI 兼容模式；API Key 只临时保存在宿主进程内。默认生成独立 AI 计划，计划确认后执行；明确意图下允许直执只读和写入，删除默认需确认。
+- 真实 AI 接入：根目录 `ai/` 的 Python 3.14 + FastAPI 服务负责模型配置、提示词、会话和结构化决策；Java 宿主只做本机 IPC 网关、最终契约校验与执行。API Key 只临时保存在 Python AI 服务进程内。
+- AI Query：模型可选择模块已声明且允许 AI 调用的只读 Query，最多 4 条，由 Java 校验并执行。查询原始结果默认只返回本地界面，不发送模型；只有用户显式开启设置后才按大小上限发送结构化结果。
 - 中央控制：风险分级、服务端确认、路径边界、快照、持久化执行记录、事件时间线和逆序回滚。
 - 本地界面：动态模块侧栏与总览、彼此独立的可持久化卡片和侧边栏排序、默认时间线且可切换摘要的历史记录、设置弹窗；旧版计划功能启用后恢复计划界面，独立的可拖动 AI 对话 Dock 始终可用。
 
 ## 启动
 
-环境要求：JDK 21、Maven 3.9+。脚本显式使用 `JAVA_HOME\bin\java.exe`，因此必须把 `JAVA_HOME` 指向 JDK 21；即使 PATH 中还有另一个 Java 版本，也不会用于构建或启动。
+环境要求：JDK 21、Maven 3.9+、Python 3.14。脚本显式使用 `JAVA_HOME\bin\java.exe`，因此必须把 `JAVA_HOME` 指向 JDK 21；即使 PATH 中还有另一个 Java 版本，也不会用于构建或启动。启动脚本会创建或复用 `ai/.venv`，安装 FastAPI、Uvicorn 和测试依赖，然后启动仅监听回环地址的 Python AI 服务。
 
 ```powershell
 .\scripts\start.ps1
@@ -31,7 +32,7 @@
 .\scripts\start.ps1 -SkipBuild
 ```
 
-应用只监听 `127.0.0.1:8080`，打开 <http://127.0.0.1:8080/>。
+Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配的 `127.0.0.1` 临时端口和随机 Bearer Token。打开 <http://127.0.0.1:8080/>。宿主或 AI 服务异常退出时，启动脚本会清理本次启动的另一个子进程。
 
 程序首次运行会在仓库根目录创建 `.orderly-data/`：
 
@@ -92,7 +93,8 @@
 ## 架构
 
 - `app/kernel/`：模块 SPI 与跨端数据契约。
-- `app/host/`：授权、校验、调度、快照、回滚、事件和 HTTP/SSE 外壳，不实现具体业务。
+- `app/host/`：授权、校验、调度、快照、回滚、事件、HTTP/SSE 外壳和 Python AI IPC 网关，不实现具体业务或模型调用。
+- `ai/`：唯一的 Python AI 实现，负责模型配置与临时 Key、模型请求、提示词、会话、`ACTIONS / PLAN / QUERY / QUESTION` 解析和 Query 选择；不持有文件权限或执行能力。
 - `app/frontend/`：静态本地界面。
 - `Module/module_fs/`、`module_todo/`、`module_calendar/`：各自携带契约、查询、计划规则、执行器、逆操作和 `orderly-ui/` 资源；构建脚本会自动发现新的 `Module/module_*`。模块规范见 `Module/AGENTS.md`。
 - `Module/module_study_assistant/`、`module_study_map/`、`module_study_review/`：只读学习界面参考模块，每个模块从自身 JAR 的 `orderly-data/<moduleId>.json` 返回数据，不包含动作或跨模块读取。

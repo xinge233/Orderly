@@ -1,0 +1,21 @@
+{
+  "kind": "QUERY",
+  "conversationId": "service-conversation-invalid",
+  "message": "查询不得混入动作",
+  "actions": [
+    {
+      "moduleId": "module_fs",
+      "actionId": "fs.mkdir",
+      "arguments": {
+        "path": "mixed"
+      }
+    }
+  ],
+  "queries": [
+    {
+      "moduleId": "module_todo",
+      "queryId": "todo.list",
+      "arguments": {}
+    }
+  ]
+}

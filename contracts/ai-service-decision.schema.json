@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/ai-service-decision.schema.json",
+  "title": "Orderly Python to Java AI Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "conversationId"],
+  "properties": {
+    "kind": {
+      "enum": ["ACTIONS", "PLAN", "QUESTION", "QUERY"]
+    },
+    "conversationId": { "type": "string", "minLength": 1 },
+    "message": { "type": "string" },
+    "actions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/action" }
+    },
+    "queries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": { "$ref": "#/$defs/query" }
+    },
+    "question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prompt", "options"],
+      "properties": {
+        "prompt": { "type": "string", "minLength": 1 },
+        "options": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "enum": ["ACTIONS", "PLAN"] } } },
+      "then": {
+        "required": ["actions"],
+        "not": {
+          "anyOf": [
+            { "required": ["queries"] },
+            { "required": ["question"] }
+          ]
+        },
+        "properties": {
+          "actions": { "minItems": 1 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "QUESTION" } } },
+      "then": {
+        "required": ["question"],
+        "not": {
+          "anyOf": [
+            { "required": ["actions"] },
+            { "required": ["queries"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "QUERY" } } },
+      "then": {
+        "required": ["queries"],
+        "not": {
+          "anyOf": [
+            { "required": ["actions"] },
+            { "required": ["question"] }
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["moduleId", "actionId", "arguments"],
+      "properties": {
+        "moduleId": { "type": "string", "minLength": 1 },
+        "actionId": { "type": "string", "minLength": 1 },
+        "arguments": { "type": "object" }
+      }
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["moduleId", "queryId", "arguments"],
+      "properties": {
+        "moduleId": { "type": "string", "minLength": 1 },
+        "queryId": { "type": "string", "minLength": 1 },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": {
+            "type": ["string", "boolean", "integer", "null"]
+          }
+        }
+      }
+    }
+  }
+}

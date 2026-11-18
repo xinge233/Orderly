@@ -1,0 +1,16 @@
+{
+  "goal": "看看待办",
+  "conversationId": "service-conversation-invalid",
+  "clientRequestId": "service-query-invalid#query-results",
+  "aiPlanEnabled": false,
+  "modules": [],
+  "queryResults": [
+    {
+      "moduleId": "module_todo",
+      "queryId": "todo.list",
+      "status": "FAILED",
+      "payload": {},
+      "message": "失败结果不得携带 payload"
+    }
+  ]
+}

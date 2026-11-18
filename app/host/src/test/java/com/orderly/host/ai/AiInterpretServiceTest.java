@@ -1,8 +1,10 @@
 package com.orderly.host.ai;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderly.host.api.ApiException;
+import com.orderly.host.contract.ActionContract;
 import com.orderly.host.contract.ContractCatalog;
+import com.orderly.host.contract.ModuleContract;
+import com.orderly.host.contract.QueryContract;
 import com.orderly.host.execution.AiActionService;
 import com.orderly.host.execution.ExecutionRecord;
 import com.orderly.host.modulecontrol.ModuleControlService;
@@ -11,6 +13,7 @@ import com.orderly.kernel.RiskLevel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -21,7 +24,6 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -35,11 +37,7 @@ import static org.mockito.Mockito.when;
 class AiInterpretServiceTest {
 
     @Mock
-    private AiSettingsService settings;
-    @Mock
-    private AiProviderClient client;
-    @Mock
-    private AiPromptFactory prompts;
+    private AiServiceClient aiService;
     @Mock
     private ContractCatalog catalog;
     @Mock
@@ -50,42 +48,36 @@ class AiInterpretServiceTest {
     private AiPlanService plans;
     @Mock
     private SystemFeatureService systemFeatures;
+    @Mock
+    private AiQueryService queries;
 
-    private final AiContextEpoch contextEpoch = new AiContextEpoch();
     private AiInterpretService service;
 
     @BeforeEach
     void setUp() {
         service = new AiInterpretService(
-                settings,
-                client,
-                prompts,
+                aiService,
                 catalog,
                 moduleControl,
                 actions,
                 plans,
                 systemFeatures,
-                new ObjectMapper(),
-                contextEpoch
+                queries
         );
-        lenient().when(settings.requireConfigured()).thenReturn(new AiProviderConfig(
-                AiContracts.Mode.DEEPSEEK,
-                AiSettingsService.DEEPSEEK_BASE_URL,
-                AiSettingsService.DEEPSEEK_MODEL,
-                "temporary-key",
-                false
-        ));
-        lenient().when(systemFeatures.aiPlansEnabled()).thenReturn(true);
-        lenient().when(prompts.systemPrompt(anyList(), anyBoolean(), anyBoolean()))
-                .thenReturn("system");
         lenient().when(catalog.businessModules()).thenReturn(List.of());
+        lenient().when(systemFeatures.aiPlansEnabled()).thenReturn(true);
+        lenient().when(aiService.beginTurn()).thenReturn(
+                new AiServiceClient.TurnBudget(Instant.now().plusSeconds(60))
+        );
+        lenient().when(aiService.settings(any())).thenReturn(settings(false, false));
     }
 
     @Test
     void returnsQuestionWithoutExecution() {
-        when(client.complete(any(), any(), anyList())).thenReturn("""
-                {"kind":"QUESTION","message":"请选择目录","question":{"prompt":"哪个目录？","options":["下载目录","桌面"]}}
-                """);
+        when(aiService.createTurn(any(), any())).thenReturn(decision(
+                "QUESTION",
+                new AiContracts.Question("哪个目录？", List.of("下载目录", "桌面"))
+        ));
 
         AiContracts.TurnResponse response = service.interpret(new AiContracts.TurnRequest(
                 "整理一下",
@@ -96,26 +88,20 @@ class AiInterpretServiceTest {
         assertThat(response.kind()).isEqualTo("QUESTION");
         assertThat(response.question().options()).containsExactly("下载目录", "桌面");
         assertThat(response.execution()).isNull();
+        verifyNoInteractions(actions, plans, queries);
     }
 
     @Test
     void defaultsDeleteActionsToIndependentPlan() {
-        when(client.complete(any(), any(), anyList())).thenReturn("""
-                {"kind":"ACTIONS","message":"删除","actions":[{"moduleId":"module_fs","actionId":"fs.trash","arguments":{"path":"旧文件.txt"}}]}
-                """);
-        AiActionService.Preview preview = new AiActionService.Preview(
-                List.of(new AiActionService.ActionCall("module_fs", "fs.trash", Map.of("path", "旧文件.txt"))),
-                List.of(new AiActionService.PreviewStep(
+        when(aiService.createTurn(any(), any())).thenReturn(decision(
+                "ACTIONS",
+                new AiContracts.Action(
                         "module_fs",
                         "fs.trash",
-                        "移入回收站",
-                        "将对象移入项目回收站",
-                        RiskLevel.DELETE,
                         Map.of("path", "旧文件.txt")
-                )),
-                RiskLevel.DELETE
-        );
-        when(actions.preview(anyList())).thenReturn(preview);
+                )
+        ));
+        when(actions.preview(anyList())).thenReturn(preview(RiskLevel.DELETE, "fs.trash"));
         when(plans.create(any(), anyList())).thenReturn(new AiContracts.Plan(
                 "plan-1",
                 "删除旧文件",
@@ -140,21 +126,11 @@ class AiInterpretServiceTest {
     @Test
     void executesWriteActionsWhenIntentIsExplicit() {
         when(systemFeatures.aiPlansEnabled()).thenReturn(false);
-        when(client.complete(any(), any(), anyList())).thenReturn("""
-                {"kind":"ACTIONS","message":"创建","actions":[{"moduleId":"module_fs","actionId":"fs.mkdir","arguments":{"path":"归档"}}]}
-                """);
-        when(actions.preview(anyList())).thenReturn(new AiActionService.Preview(
-                List.of(new AiActionService.ActionCall("module_fs", "fs.mkdir", Map.of("path", "归档"))),
-                List.of(new AiActionService.PreviewStep(
-                        "module_fs",
-                        "fs.mkdir",
-                        "创建目录",
-                        "创建目录",
-                        RiskLevel.WRITE,
-                        Map.of("path", "归档")
-                )),
-                RiskLevel.WRITE
+        when(aiService.createTurn(any(), any())).thenReturn(decision(
+                "ACTIONS",
+                new AiContracts.Action("module_fs", "fs.mkdir", Map.of("path", "归档"))
         ));
+        when(actions.preview(anyList())).thenReturn(preview(RiskLevel.WRITE, "fs.mkdir"));
         ExecutionRecord record = mock(ExecutionRecord.class);
         when(actions.executeAiDirect(anyList())).thenReturn(record);
 
@@ -170,82 +146,62 @@ class AiInterpretServiceTest {
     }
 
     @Test
-    void rejectsPlanAfterOneRepairWhenAiPlansAreDisabled() {
-        when(systemFeatures.aiPlansEnabled()).thenReturn(false);
-        when(client.complete(any(), any(), anyList())).thenReturn("""
-                {"kind":"PLAN","message":"请审查","actions":[{"moduleId":"module_fs","actionId":"fs.mkdir","arguments":{"path":"归档"}}]}
-                """);
-
-        assertThatThrownBy(() -> service.interpret(new AiContracts.TurnRequest(
-                "整理目录",
-                null,
-                "disabled-plan-request"
-        )))
-                .isInstanceOfSatisfying(ApiException.class, exception -> {
-                    assertThat(exception.status().value()).isEqualTo(502);
-                    assertThat(exception.code()).isEqualTo("AI_INVALID_RESPONSE");
-                    assertThat(exception.getMessage()).contains("ACTIONS 或 QUESTION");
-                });
-
-        verify(client, times(2)).complete(any(), any(), anyList());
-        verifyNoInteractions(actions, plans);
-    }
-
-    @Test
-    void disabledAiPlansTurnUndeletedDeleteIntoQuestion() {
-        when(systemFeatures.aiPlansEnabled()).thenReturn(false);
-        when(client.complete(any(), any(), anyList())).thenReturn("""
-                {"kind":"ACTIONS","message":"删除","actions":[{"moduleId":"module_fs","actionId":"fs.trash","arguments":{"path":"旧文件.txt"}}]}
-                """);
-        when(actions.preview(anyList())).thenReturn(new AiActionService.Preview(
-                List.of(new AiActionService.ActionCall(
-                        "module_fs",
-                        "fs.trash",
-                        Map.of("path", "旧文件.txt")
-                )),
-                List.of(new AiActionService.PreviewStep(
-                        "module_fs",
-                        "fs.trash",
-                        "移入回收站",
-                        "将对象移入项目回收站",
-                        RiskLevel.DELETE,
-                        Map.of("path", "旧文件.txt")
-                )),
-                RiskLevel.DELETE
-        ));
+    void queryResultsStayLocalByDefaultAndNeverContinueToTheModel() {
+        when(aiService.createTurn(any(), any())).thenReturn(queryDecision());
+        List<AiContracts.QueryResult> results = List.of(okQueryResult());
+        when(queries.executeAiQueries(anyList())).thenReturn(results);
 
         AiContracts.TurnResponse response = service.interpret(new AiContracts.TurnRequest(
-                "删除旧文件.txt",
+                "看看待办",
                 null,
-                "delete-question-request"
+                "query-private-request"
         ));
 
-        assertThat(response.kind()).isEqualTo("QUESTION");
-        assertThat(response.question().prompt()).contains("删除直执未开启");
-        assertThat(response.execution()).isNull();
-        verify(actions, never()).executeAiDirect(anyList());
-        verifyNoInteractions(plans);
-    }
-
-    @Test
-    void providerFailureNeverFallsBackToLocalPlanning() {
-        when(client.complete(any(), any(), anyList()))
-                .thenThrow(new AiProviderException("模型服务不可用"));
-
-        assertThatThrownBy(() -> service.interpret(new AiContracts.TurnRequest(
-                "整理目录",
-                null,
-                "provider-failure-request"
-        )))
-                .isInstanceOfSatisfying(ApiException.class, exception -> {
-                    assertThat(exception.status().value()).isEqualTo(502);
-                    assertThat(exception.code()).isEqualTo("AI_PROVIDER_UNAVAILABLE");
-                });
+        assertThat(response.kind()).isEqualTo("QUERY");
+        assertThat(response.queryResults()).isEqualTo(results);
+        verify(queries).executeAiQueries(anyList());
+        verify(aiService, never()).continueWithQueryResults(any(), any());
         verifyNoInteractions(actions, plans);
     }
 
     @Test
-    void requiresClientRequestIdBeforeCallingTheModel() {
+    void explicitQueryResultSharingSendsBoundedResultsAndOnlyUsesFinalDecisionKinds() {
+        when(aiService.settings(any())).thenReturn(settings(false, true));
+        when(aiService.createTurn(any(), any())).thenReturn(queryDecision());
+        List<AiContracts.QueryResult> results = List.of(okQueryResult());
+        when(queries.executeAiQueries(anyList())).thenReturn(results);
+        when(aiService.continueWithQueryResults(any(), any())).thenReturn(
+                new AiContracts.ServiceDecision(
+                        "QUESTION",
+                        "conversation-query",
+                        "message",
+                        null,
+                        null,
+                        new AiContracts.Question("还需要哪一天？", List.of("今天", "明天"))
+                )
+        );
+
+        AiContracts.TurnResponse response = service.interpret(new AiContracts.TurnRequest(
+                "看看待办",
+                null,
+                "query-shared-request"
+        ));
+
+        ArgumentCaptor<AiContracts.ServiceQueryContinuationRequest> captor =
+                ArgumentCaptor.forClass(
+                        AiContracts.ServiceQueryContinuationRequest.class
+                );
+        verify(aiService).continueWithQueryResults(captor.capture(), any());
+        assertThat(captor.getValue().goal()).isEqualTo("看看待办");
+        assertThat(captor.getValue().modules()).isEmpty();
+        assertThat(captor.getValue().queryResults()).isEqualTo(results);
+        assertThat(response.kind()).isEqualTo("QUESTION");
+        assertThat(response.queryResults()).isEqualTo(results);
+        verifyNoInteractions(actions, plans);
+    }
+
+    @Test
+    void requiresClientRequestIdAndReplaysTheFirstResult() {
         assertThatThrownBy(() -> service.interpret(new AiContracts.TurnRequest(
                 "创建归档目录",
                 null,
@@ -255,75 +211,54 @@ class AiInterpretServiceTest {
                     assertThat(exception.status().value()).isEqualTo(400);
                     assertThat(exception.code()).isEqualTo("AI_CLIENT_REQUEST_ID_REQUIRED");
                 });
-        verifyNoInteractions(client, actions, plans);
-    }
+        verifyNoInteractions(aiService, actions, plans, queries);
 
-    @Test
-    void executesDeleteDirectlyOnlyWhenTheHostSettingAllowsIt() {
-        when(settings.requireConfigured()).thenReturn(new AiProviderConfig(
-                AiContracts.Mode.DEEPSEEK,
-                AiSettingsService.DEEPSEEK_BASE_URL,
-                AiSettingsService.DEEPSEEK_MODEL,
-                "temporary-key",
-                true
+        when(aiService.createTurn(any(), any())).thenReturn(decision(
+                "QUESTION",
+                new AiContracts.Question("哪个目录？", List.of())
         ));
-        when(client.complete(any(), any(), anyList())).thenReturn("""
-                {"kind":"ACTIONS","message":"删除","actions":[{"moduleId":"module_fs","actionId":"fs.trash","arguments":{"path":"旧文件.txt"}}]}
-                """);
-        when(actions.preview(anyList())).thenReturn(new AiActionService.Preview(
-                List.of(new AiActionService.ActionCall(
-                        "module_fs",
-                        "fs.trash",
-                        Map.of("path", "旧文件.txt")
-                )),
-                List.of(new AiActionService.PreviewStep(
-                        "module_fs",
-                        "fs.trash",
-                        "移入回收站",
-                        "将对象移入项目回收站",
-                        RiskLevel.DELETE,
-                        Map.of("path", "旧文件.txt")
-                )),
-                RiskLevel.DELETE
-        ));
-        ExecutionRecord record = mock(ExecutionRecord.class);
-        when(actions.executeAiDirect(anyList())).thenReturn(record);
-
-        AiContracts.TurnResponse response = service.interpret(new AiContracts.TurnRequest(
-                "删除旧文件.txt",
-                null,
-                "delete-direct-request"
-        ));
-
-        assertThat(response.kind()).isEqualTo("ACTIONS");
-        assertThat(response.highestRisk()).isEqualTo(RiskLevel.DELETE);
-        assertThat(response.execution()).isSameAs(record);
-        verifyNoInteractions(plans);
-    }
-
-    @Test
-    void replayedClientRequestReturnsTheFirstResultWithoutExecutingTwice() {
-        when(client.complete(any(), any(), anyList())).thenReturn("""
-                {"kind":"QUESTION","message":"请选择目录","question":{"prompt":"哪个目录？","options":[]}}
-                """);
-        AiContracts.TurnRequest request = new AiContracts.TurnRequest(
+        AiContracts.TurnRequest replayRequest = new AiContracts.TurnRequest(
                 "整理目录",
                 null,
                 "client-request-1"
         );
-
-        AiContracts.TurnResponse first = service.interpret(request);
-        AiContracts.TurnResponse replay = service.interpret(request);
+        AiContracts.TurnResponse first = service.interpret(replayRequest);
+        AiContracts.TurnResponse replay = service.interpret(replayRequest);
 
         assertThat(replay.requestId()).isEqualTo(first.requestId());
-        verify(client, times(1)).complete(any(), any(), anyList());
+        verify(aiService, times(1)).createTurn(any(), any());
+    }
+
+    @Test
+    void replayKeyIncludesSettingsVersion() {
+        when(aiService.settings(any())).thenReturn(
+                settings(false, false, 0),
+                settings(false, false, 1)
+        );
+        when(aiService.createTurn(any(), any())).thenReturn(
+                decision("QUESTION", new AiContracts.Question("第一次？", List.of())),
+                decision("QUESTION", new AiContracts.Question("第二次？", List.of()))
+        );
+        AiContracts.TurnRequest request = new AiContracts.TurnRequest(
+                "整理目录",
+                null,
+                "settings-version-request"
+        );
+
+        AiContracts.TurnResponse first = service.interpret(request);
+        AiContracts.TurnResponse second = service.interpret(request);
+
+        assertThat(first.question().prompt()).isEqualTo("第一次？");
+        assertThat(second.question().prompt()).isEqualTo("第二次？");
+        verify(aiService, times(2)).createTurn(any(), any());
     }
 
     @Test
     void reusingClientRequestIdForDifferentGoalsIsRejected() {
-        when(client.complete(any(), any(), anyList())).thenReturn("""
-                {"kind":"QUESTION","message":"请选择目录","question":{"prompt":"哪个目录？","options":[]}}
-                """);
+        when(aiService.createTurn(any(), any())).thenReturn(decision(
+                "QUESTION",
+                new AiContracts.Question("哪个目录？", List.of())
+        ));
         service.interpret(new AiContracts.TurnRequest(
                 "整理目录",
                 null,
@@ -339,27 +274,214 @@ class AiInterpretServiceTest {
                     assertThat(exception.status().value()).isEqualTo(409);
                     assertThat(exception.code()).isEqualTo("AI_CLIENT_REQUEST_ID_CONFLICT");
                 });
-        verify(client, times(1)).complete(any(), any(), anyList());
+        verify(aiService, times(1)).createTurn(any(), any());
     }
 
     @Test
-    void providerChangeDuringModelCallPreventsExecution() {
-        when(client.complete(any(), any(), anyList())).thenAnswer(invocation -> {
-            contextEpoch.advance();
-            return """
-                    {"kind":"ACTIONS","message":"创建","actions":[{"moduleId":"module_fs","actionId":"fs.mkdir","arguments":{"path":"归档"}}]}
-                    """;
-        });
+    void disabledAiPlansRejectPlanAndDoNotFallbackToLocalPlanning() {
+        when(systemFeatures.aiPlansEnabled()).thenReturn(false);
+        when(aiService.createTurn(any(), any())).thenReturn(decision(
+                "PLAN",
+                new AiContracts.Action("module_fs", "fs.mkdir", Map.of("path", "归档"))
+        ));
 
         assertThatThrownBy(() -> service.interpret(new AiContracts.TurnRequest(
-                "创建归档目录",
+                "整理目录",
                 null,
-                "client-request-change"
+                "disabled-plan-request"
         )))
                 .isInstanceOfSatisfying(ApiException.class, exception -> {
-                    assertThat(exception.status().value()).isEqualTo(409);
-                    assertThat(exception.code()).isEqualTo("AI_SETTINGS_CHANGED");
+                    assertThat(exception.status().value()).isEqualTo(502);
+                    assertThat(exception.code()).isEqualTo("AI_INVALID_RESPONSE");
                 });
         verifyNoInteractions(actions, plans);
+    }
+
+    @Test
+    void sendsOnlyEnabledModulesAndAiCallableActionsAndQueriesToPython() {
+        ModuleContract enabled = new ModuleContract(
+                "module_enabled",
+                "启用模块",
+                "已启用",
+                1,
+                null,
+                List.of(
+                        action("action.allowed", true),
+                        action("action.static-off", false),
+                        action("action.dynamic-off", true)
+                ),
+                List.of(
+                        query("query.allowed", true),
+                        query("query.static-off", false),
+                        query("query.dynamic-off", true)
+                ),
+                List.of()
+        );
+        ModuleContract disabled = new ModuleContract(
+                "module_disabled",
+                "停用模块",
+                "已停用",
+                2,
+                null,
+                List.of(action("disabled.action", true)),
+                List.of(query("disabled.query", true)),
+                List.of()
+        );
+        when(catalog.businessModules()).thenReturn(List.of(enabled, disabled));
+        when(moduleControl.isEnabled("module_enabled")).thenReturn(true);
+        when(moduleControl.isEnabled("module_disabled")).thenReturn(false);
+        when(moduleControl.isActionAiCallableEnabled("module_enabled", "action.allowed"))
+                .thenReturn(true);
+        when(moduleControl.isActionAiCallableEnabled(
+                "module_enabled",
+                "action.dynamic-off"
+        )).thenReturn(false);
+        when(moduleControl.isQueryAiCallableEnabled("module_enabled", "query.allowed"))
+                .thenReturn(true);
+        when(moduleControl.isQueryAiCallableEnabled(
+                "module_enabled",
+                "query.dynamic-off"
+        )).thenReturn(false);
+        when(aiService.createTurn(any(), any())).thenReturn(decision(
+                "QUESTION",
+                new AiContracts.Question("继续？", List.of())
+        ));
+
+        service.interpret(new AiContracts.TurnRequest(
+                "读取允许接口",
+                null,
+                "filtered-tools-request"
+        ));
+
+        ArgumentCaptor<AiContracts.ServiceTurnRequest> captor =
+                ArgumentCaptor.forClass(AiContracts.ServiceTurnRequest.class);
+        verify(aiService).createTurn(captor.capture(), any());
+        assertThat(captor.getValue().modules()).singleElement().satisfies(module -> {
+            assertThat(module.moduleId()).isEqualTo("module_enabled");
+            assertThat(module.actions()).extracting(AiContracts.ToolAction::actionId)
+                    .containsExactly("action.allowed");
+            assertThat(module.queries()).extracting(AiContracts.ToolQuery::queryId)
+                    .containsExactly("query.allowed");
+        });
+    }
+
+    private AiContracts.SettingsView settings(
+            boolean allowDeleteDirect,
+            boolean allowSendQueryResultsToModel
+    ) {
+        return settings(allowDeleteDirect, allowSendQueryResultsToModel, 0);
+    }
+
+    private AiContracts.SettingsView settings(
+            boolean allowDeleteDirect,
+            boolean allowSendQueryResultsToModel,
+            int settingsVersion
+    ) {
+        return new AiContracts.SettingsView(
+                AiContracts.Mode.DEEPSEEK,
+                "https://api.deepseek.com",
+                "deepseek-flash",
+                true,
+                allowDeleteDirect,
+                allowSendQueryResultsToModel,
+                false,
+                settingsVersion
+        );
+    }
+
+    private AiContracts.ServiceDecision queryDecision() {
+        return new AiContracts.ServiceDecision(
+                "QUERY",
+                "conversation-query",
+                "需要读取本地数据",
+                null,
+                List.of(new AiContracts.QueryCall(
+                        "module_todo",
+                        "todo.list",
+                        Map.of()
+                )),
+                null
+        );
+    }
+
+    private AiContracts.QueryResult okQueryResult() {
+        return new AiContracts.QueryResult(
+                "module_todo",
+                "todo.list",
+                AiContracts.QueryStatus.OK,
+                Map.of("items", List.of()),
+                "查询完成"
+        );
+    }
+
+    private ActionContract action(String id, boolean aiCallable) {
+        return new ActionContract(
+                id,
+                id,
+                "动作说明",
+                RiskLevel.READ_ONLY,
+                false,
+                null,
+                aiCallable,
+                List.of(),
+                null
+        );
+    }
+
+    private QueryContract query(String id, boolean aiCallable) {
+        return new QueryContract(
+                id,
+                id,
+                "查询说明",
+                aiCallable,
+                List.of()
+        );
+    }
+
+    private AiContracts.ServiceDecision decision(
+            String kind,
+            AiContracts.Action action
+    ) {
+        return new AiContracts.ServiceDecision(
+                kind,
+                "conversation-" + kind.toLowerCase(),
+                "message",
+                List.of(action),
+                null,
+                null
+        );
+    }
+
+    private AiContracts.ServiceDecision decision(
+            String kind,
+            AiContracts.Question question
+    ) {
+        return new AiContracts.ServiceDecision(
+                kind,
+                "conversation-" + kind.toLowerCase(),
+                "message",
+                null,
+                null,
+                question
+        );
+    }
+
+    private AiActionService.Preview preview(RiskLevel risk, String actionId) {
+        return new AiActionService.Preview(
+                List.of(new AiActionService.ActionCall(
+                        "module_fs",
+                        actionId,
+                        Map.of("path", "目标")
+                )),
+                List.of(new AiActionService.PreviewStep(
+                        "module_fs",
+                        actionId,
+                        "动作",
+                        "动作说明",
+                        risk,
+                        Map.of("path", "目标")
+                )),
+                risk
+        );
     }
 }

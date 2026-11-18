@@ -7,7 +7,7 @@
   "required": ["kind", "requestId", "conversationId", "message"],
   "properties": {
     "kind": {
-      "enum": ["ACTIONS", "PLAN", "QUESTION"]
+      "enum": ["ACTIONS", "PLAN", "QUESTION", "QUERY"]
     },
     "requestId": { "type": "string", "minLength": 1 },
     "conversationId": { "type": "string", "minLength": 1 },
@@ -17,16 +17,19 @@
     },
     "actions": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["moduleId", "actionId", "arguments"],
-        "properties": {
-          "moduleId": { "type": "string", "minLength": 1 },
-          "actionId": { "type": "string", "minLength": 1 },
-          "arguments": { "type": "object" }
-        }
-      }
+      "items": { "$ref": "#/$defs/action" }
+    },
+    "queries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": { "$ref": "#/$defs/query" }
+    },
+    "queryResults": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": { "$ref": "#/$defs/queryResult" }
     },
     "plan": {
       "type": "object",
@@ -90,6 +93,89 @@
     {
       "if": { "properties": { "kind": { "const": "ACTIONS" } } },
       "then": { "required": ["actions", "highestRisk"] }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "QUERY" } } },
+      "then": { "required": ["queries", "queryResults"] }
     }
-  ]
+  ],
+  "$defs": {
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["moduleId", "actionId", "arguments"],
+      "properties": {
+        "moduleId": { "type": "string", "minLength": 1 },
+        "actionId": { "type": "string", "minLength": 1 },
+        "arguments": { "type": "object" }
+      }
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["moduleId", "queryId", "arguments"],
+      "properties": {
+        "moduleId": { "type": "string", "minLength": 1 },
+        "queryId": { "type": "string", "minLength": 1 },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": {
+            "type": ["string", "boolean", "integer", "null"]
+          }
+        }
+      }
+    },
+    "queryResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["moduleId", "queryId", "status", "message"],
+      "properties": {
+        "moduleId": { "type": "string", "minLength": 1 },
+        "queryId": { "type": "string", "minLength": 1 },
+        "status": {
+          "enum": ["OK", "FAILED", "TRUNCATED"]
+        },
+        "payload": {
+          "oneOf": [
+            { "type": "object" },
+            { "type": "array" },
+            { "type": "null" }
+          ]
+        },
+        "message": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["status"],
+            "properties": { "status": { "const": "OK" } }
+          },
+          "then": {
+            "required": ["payload"],
+            "properties": {
+              "payload": {
+                "oneOf": [
+                  { "type": "object" },
+                  { "type": "array" }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["status"],
+            "properties": {
+              "status": { "enum": ["FAILED", "TRUNCATED"] }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": { "type": "null" }
+            }
+          }
+        }
+      ]
+    }
+  }
 }

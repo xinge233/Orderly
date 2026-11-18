@@ -5,9 +5,11 @@ import {
     formatBytes,
     joinPath,
     mergeEvents,
+    normalizeAiQueryResponse,
     normalizePlan,
     parentPath,
     requiresDeletePhrase,
+    summarizeQueryPayload,
     validateConfirmation
 } from "../src/models.js";
 
@@ -77,6 +79,96 @@ test("question responses can never be confirmed", () => {
         confirmed: true,
         phrase: "删除"
     }).allowed, false);
+});
+
+test("query responses keep only valid statuses and local payload summaries", () => {
+    const query = normalizeAiQueryResponse({
+        kind: "QUERY",
+        message: "已完成本地查询",
+        queries: [
+            { moduleId: "module_fs", queryId: "fs.list" },
+            { moduleId: "module_todo", queryId: "todo.list" },
+            { moduleId: "module_calendar", queryId: "calendar.list" }
+        ],
+        queryResults: [
+            {
+                moduleId: "module_fs",
+                queryId: "fs.list",
+                status: "OK",
+                payload: { files: 2 },
+                message: "目录已读取"
+            },
+            {
+                moduleId: "module_todo",
+                queryId: "todo.list",
+                status: "FAILED",
+                payload: { hidden: true },
+                message: "待办不可用"
+            },
+            {
+                moduleId: "module_calendar",
+                queryId: "calendar.list",
+                status: "TRUNCATED",
+                payload: { hidden: true },
+                message: "仅返回前 20 条"
+            }
+        ]
+    });
+
+    assert.equal(query.valid, true);
+    assert.equal(query.status, "FAILED");
+    assert.deepEqual(query.queries.map((item) => item.status), ["OK", "FAILED", "TRUNCATED"]);
+    assert.deepEqual(query.queries[0].payload, { files: 2 });
+    assert.equal(Object.hasOwn(query.queries[1], "payload"), false);
+    assert.equal(Object.hasOwn(query.queries[2], "payload"), false);
+    assert.match(summarizeQueryPayload(query.queries[0].payload), /files.*2/);
+});
+
+test("query responses cap display at four and degrade invalid items safely", () => {
+    const queries = Array.from({ length: 5 }, (_, index) => ({
+        moduleId: "module_fs",
+        queryId: `fs.list.${index}`
+    }));
+    const query = normalizeAiQueryResponse({
+        kind: "QUERY",
+        queries,
+        queryResults: queries.map((item) => ({
+            ...item,
+            status: "OK",
+            payload: { count: 1 }
+        }))
+    });
+    const invalid = normalizeAiQueryResponse({
+        kind: "QUERY",
+        queries: [{ moduleId: "module_fs", queryId: "fs.list" }],
+        queryResults: [{
+            moduleId: "module_fs",
+            queryId: "fs.list",
+            status: "UNKNOWN",
+            payload: { hidden: true }
+        }]
+    });
+
+    assert.equal(query.queries.length, 4);
+    assert.equal(query.status, "TRUNCATED");
+    assert.equal(query.degraded, true);
+    assert.match(query.notice, /最多|仅展示前 4 条/);
+    assert.equal(invalid.valid, true);
+    assert.equal(invalid.queries[0].status, "FAILED");
+    assert.equal(Object.hasOwn(invalid.queries[0], "payload"), false);
+    assert.match(invalid.queries[0].message, /无法识别/);
+});
+
+test("malformed query envelopes and payload summaries never throw", () => {
+    const invalid = normalizeAiQueryResponse({ kind: "QUERY", queries: [] });
+    const circular = {};
+    circular.self = circular;
+
+    assert.equal(invalid.valid, false);
+    assert.deepEqual(invalid.queries, []);
+    assert.match(invalid.error, /1 至 4/);
+    assert.equal(typeof summarizeQueryPayload(circular), "string");
+    assert.ok(summarizeQueryPayload("x".repeat(30), 20).length <= 20);
 });
 
 test("events are deduplicated and ordered by sequence", () => {

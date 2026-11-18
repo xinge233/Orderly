@@ -1,4 +1,5 @@
 import { icon, normalizeAiIcon } from "./icons.js";
+import { normalizeAiQueryResponse, summarizeQueryPayload } from "./models.js";
 
 const AI_RISK_ORDER = Object.freeze({
     READ_ONLY: 0,
@@ -24,6 +25,7 @@ function normalizeSettings(value) {
         configured: value?.configured === true,
         mode: value?.mode === "CUSTOM" ? "CUSTOM" : "DEEPSEEK",
         allowDeleteDirect: value?.allowDeleteDirect === true,
+        allowSendQueryResultsToModel: value?.allowSendQueryResultsToModel === true,
         baseUrl: typeof value?.baseUrl === "string" ? value.baseUrl : "",
         model: typeof value?.model === "string" ? value.model : ""
     };
@@ -328,6 +330,7 @@ export function mountAiDialog({
         popoverOpen: false,
         plan: null,
         question: null,
+        query: null,
         execution: null,
         conversationId: "",
         settings: normalizeSettings(getAiSettings()),
@@ -656,11 +659,22 @@ export function mountAiDialog({
     function updateSurfaces() {
         const composerOpen = dialog.composerOpen;
         const planOpen = dialog.panelOpen
-            && ["planning", "running", "completed", "failed", "question", "error"].includes(dialog.mode);
+            && [
+                "planning",
+                "running",
+                "completed",
+                "failed",
+                "question",
+                "error",
+                "query"
+            ].includes(dialog.mode);
         const expanded = composerOpen || planOpen;
         const running = dialog.mode === "running";
         const completed = dialog.mode === "completed";
         const failed = dialog.mode === "failed";
+        const query = dialog.mode === "query" ? dialog.query : null;
+        const queryFailed = query?.status === "FAILED";
+        const queryFinished = Boolean(query) && !queryFailed;
         const busy = dialog.busy === true;
         const configured = dialog.settings.configured === true;
 
@@ -704,9 +718,9 @@ export function mountAiDialog({
 
         nodes.launcher.dataset.status = running
             ? "running"
-            : completed
+            : completed || queryFinished
                 ? "completed"
-                : failed
+                : failed || queryFailed
                     ? "failed"
                     : "idle";
         renderAiIcon();
@@ -716,13 +730,19 @@ export function mountAiDialog({
                 ? "AI 正在执行，可拖动调整位置"
                 : completed
                     ? "AI 执行已完成，点击开始新对话"
+                    : query
+                        ? `AI 本地查询${queryFailed ? "未全部完成" : "结果可用"}，点击查看`
                     : failed
                         ? "AI 执行未成功，点击查看结果"
                         : "打开 AI 对话；可拖动调整位置"
         );
         nodes.planClose.setAttribute(
             "aria-label",
-            running ? "收起运行中的计划" : "关闭计划"
+            running
+                ? "收起运行中的计划"
+                : query
+                    ? "关闭查询结果"
+                    : "关闭计划"
         );
         nodes.run.disabled = dialog.mode === "running" || !dialog.plan;
         nodes.run.innerHTML = `${icon("check-plain", 15)}<span>确认执行</span>`;
@@ -745,9 +765,11 @@ export function mountAiDialog({
             rejected: "已拒绝",
             rollback_failed: "回滚失败",
             rolled_back: "已回滚",
+            ok: "成功",
             running: "运行中",
             success: "已完成",
             succeeded: "已完成",
+            truncated: "已截断",
             waiting: "等待"
         };
         return labels[normalized] ?? "等待";
@@ -816,8 +838,77 @@ export function mountAiDialog({
         updateSurfaces();
     }
 
+    function renderQueryResult() {
+        const query = dialog.query;
+        const queries = Array.isArray(query?.queries) ? query.queries : [];
+        const completed = queries.filter((item) => item.status === "OK").length;
+        const statusText = query?.status === "OK"
+            ? "已完成"
+            : query?.status === "TRUNCATED"
+                ? "结果已截断"
+                : "未全部完成";
+        nodes.planEyebrow.textContent = `AI 本地查询 · ${statusText}`;
+        const fallback = query?.status === "OK"
+            ? `已完成 ${completed}/${queries.length} 条本地查询`
+            : `查询可用结果 ${completed}/${queries.length}`;
+        nodes.planTitle.textContent = [query?.message, query?.notice]
+            .filter(Boolean)
+            .join(" ") || fallback;
+        nodes.planList.replaceChildren();
+
+        queries.forEach((item, index) => {
+            const visualStatus = item.status === "OK"
+                ? "completed"
+                : item.status === "TRUNCATED"
+                    ? "truncated"
+                    : "failed";
+            const row = document.createElement("li");
+            row.className = "ai-plan-step";
+            row.dataset.status = visualStatus;
+
+            const indexNode = document.createElement("span");
+            indexNode.className = "ai-plan-step__index";
+            indexNode.textContent = String(index + 1).padStart(2, "0");
+
+            const copy = document.createElement("span");
+            copy.className = "ai-plan-step__copy";
+            const title = document.createElement("strong");
+            title.textContent = `${item.moduleId || "未知模块"} · ${item.queryId || "未知查询"}`;
+            const detail = document.createElement("small");
+            detail.className = "ai-plan-step__message";
+            detail.textContent = item.status === "OK"
+                ? `本地结果：${summarizeQueryPayload(item.payload)}`
+                : item.message || queryStatusLabel(item.status);
+            copy.append(title, detail);
+
+            const status = document.createElement("span");
+            status.className = "ai-plan-step__status";
+            status.dataset.status = visualStatus;
+            status.textContent = queryStatusLabel(item.status);
+            row.append(indexNode, copy, status);
+            nodes.planList.append(row);
+        });
+
+        nodes.risk.dataset.risk = "READ_ONLY";
+        nodes.risk.innerHTML = query?.status === "OK"
+            ? `${icon("check-plain", 14)}<span>查询完成，未执行动作</span>`
+            : query?.status === "TRUNCATED"
+                ? `${icon("alert", 14)}<span>查询结果已截断，未执行动作</span>`
+                : `${icon("alert", 14)}<span>查询未全部完成，未执行动作</span>`;
+        nodes.run.disabled = true;
+        updateSurfaces();
+    }
+
+    function queryStatusLabel(status) {
+        return {
+            OK: "成功",
+            FAILED: "失败",
+            TRUNCATED: "已截断"
+        }[status] ?? "失败";
+    }
+
     function renderPlan() {
-        if (dialog.error && !dialog.plan && !dialog.question) {
+        if (dialog.error && !dialog.plan && !dialog.question && !dialog.query) {
             nodes.planEyebrow.textContent = "AI 暂不可用";
             nodes.planTitle.textContent = dialog.error;
             nodes.planList.replaceChildren();
@@ -825,6 +916,10 @@ export function mountAiDialog({
             nodes.risk.innerHTML = `${icon("alert", 14)}<span>未执行任何动作</span>`;
             nodes.run.disabled = true;
             updateSurfaces();
+            return;
+        }
+        if (dialog.query) {
+            renderQueryResult();
             return;
         }
         if (dialog.question) {
@@ -1141,6 +1236,7 @@ export function mountAiDialog({
         dialog.requestGeneration += 1;
         dialog.plan = null;
         dialog.question = null;
+        dialog.query = null;
         dialog.execution = null;
         dialog.error = "";
         dialog.busy = false;
@@ -1195,8 +1291,15 @@ export function mountAiDialog({
     }
 
     function showPlanPanel() {
-        if ((!dialog.plan && !dialog.question && !dialog.error)
-            || !["planning", "running", "completed", "question", "error"].includes(dialog.mode)) {
+        if ((!dialog.plan && !dialog.question && !dialog.error && !dialog.query)
+            || ![
+                "planning",
+                "running",
+                "completed",
+                "question",
+                "error",
+                "query"
+            ].includes(dialog.mode)) {
             return;
         }
         clearLater(dialog.collapseTimer);
@@ -1262,7 +1365,8 @@ export function mountAiDialog({
                 apiKey,
                 baseUrl: null,
                 model: null,
-                allowDeleteDirect: dialog.settings.allowDeleteDirect
+                allowDeleteDirect: dialog.settings.allowDeleteDirect,
+                allowSendQueryResultsToModel: dialog.settings.allowSendQueryResultsToModel
             });
             const test = await testAiSettings();
             if (test?.ok === false) {
@@ -1312,6 +1416,10 @@ export function mountAiDialog({
         const generation = ++dialog.requestGeneration;
         dialog.busy = true;
         dialog.error = "";
+        dialog.plan = null;
+        dialog.question = null;
+        dialog.query = null;
+        dialog.execution = null;
         clearInvocationLayer();
         setState({
             mode: "sending",
@@ -1330,6 +1438,7 @@ export function mountAiDialog({
             dialog.busy = false;
             if (response?.kind === "QUESTION") {
                 dialog.plan = null;
+                dialog.query = null;
                 dialog.execution = null;
                 dialog.question = response.question || {
                     prompt: response.message || "请补充信息。",
@@ -1346,6 +1455,7 @@ export function mountAiDialog({
             }
             if (response?.kind === "PLAN") {
                 dialog.question = null;
+                dialog.query = null;
                 dialog.execution = null;
                 dialog.plan = response.plan;
                 setState({
@@ -1361,6 +1471,7 @@ export function mountAiDialog({
                 const execution = response.execution || null;
                 const succeeded = executionSucceeded(execution);
                 dialog.question = null;
+                dialog.query = null;
                 dialog.plan = null;
                 dialog.execution = execution;
                 dialog.error = "";
@@ -1379,6 +1490,30 @@ export function mountAiDialog({
                 notifyExecutionFinished(execution);
                 return;
             }
+            if (response?.kind === "QUERY") {
+                const query = normalizeAiQueryResponse(response);
+                if (!query.valid) {
+                    throw new Error(query.error || "AI 查询结果格式非法。");
+                }
+                dialog.plan = null;
+                dialog.question = null;
+                dialog.execution = null;
+                dialog.query = query;
+                setState({
+                    mode: "query",
+                    composerOpen: true,
+                    panelOpen: true,
+                    focus: nodes.planClose
+                });
+                const notice = query.notice
+                    || (query.status === "OK"
+                        ? `已完成 ${query.queries.length} 条本地查询，未执行任何动作。`
+                        : query.status === "TRUNCATED"
+                            ? "查询结果已截断，未执行任何动作。"
+                            : "查询未全部完成，未执行任何动作。");
+                onNotice(notice, { error: query.status === "FAILED" });
+                return;
+            }
             throw new Error("AI 返回了未知结果类型。");
         } catch (error) {
             if (generation !== dialog.requestGeneration) return;
@@ -1386,6 +1521,7 @@ export function mountAiDialog({
             dialog.error = error?.message || "AI 请求失败";
             dialog.plan = null;
             dialog.question = null;
+            dialog.query = null;
             setState({
                 mode: "error",
                 composerOpen: true,
@@ -1621,7 +1757,7 @@ export function mountAiDialog({
             openComposer();
             return;
         }
-        if (["running", "planning", "failed", "question", "error"].includes(dialog.mode)) {
+        if (["running", "planning", "failed", "question", "error", "query"].includes(dialog.mode)) {
             showPlanPanel();
             return;
         }

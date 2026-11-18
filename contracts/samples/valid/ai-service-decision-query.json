@@ -1,0 +1,12 @@
+{
+  "kind": "QUERY",
+  "conversationId": "service-conversation-1",
+  "message": "需要读取本地待办",
+  "queries": [
+    {
+      "moduleId": "module_todo",
+      "queryId": "todo.list",
+      "arguments": {}
+    }
+  ]
+}
