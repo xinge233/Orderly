@@ -3,7 +3,11 @@ package com.orderly.host;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderly.host.api.ApiException;
+import com.orderly.host.ai.AiContracts;
+import com.orderly.host.ai.AiPlanService;
 import com.orderly.host.contract.ContractCatalog;
+import com.orderly.host.execution.AiActionService;
+import com.orderly.host.execution.ExecutionRecord;
 import com.orderly.host.execution.ExecutionRunResult;
 import com.orderly.host.execution.ExecutionService;
 import com.orderly.host.event.ExecutionJournal;
@@ -31,9 +35,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -78,6 +85,12 @@ class ModuleControlIntegrationTest {
 
     @Autowired
     private ExecutionService execution;
+
+    @Autowired
+    private AiActionService aiActions;
+
+    @Autowired
+    private AiPlanService aiPlans;
 
     @Autowired
     private WorkspaceRuntime runtime;
@@ -249,6 +262,191 @@ class ModuleControlIntegrationTest {
         ExecutionRunResult rollback = execution.rollback(plan.planId());
         assertThat(rollback.outcome()).isEqualTo("ROLLED_BACK");
         moduleControl.setActivation("module_business", true);
+    }
+
+    @Test
+    void interfaceAiCallableIsHostOwnedAndPlanUsageLocksActions() throws Exception {
+        mockMvc.perform(get("/api/system/module-interfaces"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.actionAiCallableEnabled.module_business['business.write']")
+                        .value(true))
+                .andExpect(jsonPath("$.queryAiCallableEnabled.module_business['business.list']")
+                        .value(true));
+
+        AiContracts.Plan pending = aiPlans.create(
+                "占用接口",
+                List.of(new AiContracts.Action(
+                        "module_business",
+                        "business.write",
+                        Map.of("label", "占用")
+                ))
+        );
+        mockMvc.perform(patch(
+                        "/api/modules/module_business/interfaces/action/business.write/ai-callable"
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aiCallable\":false}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INTERFACE_IN_USE"));
+
+        mockMvc.perform(patch(
+                        "/api/modules/module_business/interfaces/query/business.list/ai-callable"
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aiCallable\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.queryAiCallableEnabled.module_business['business.list']")
+                        .value(false))
+                .andExpect(jsonPath("$.inUseActions[0]")
+                        .value("module_business/business.write"));
+        mockMvc.perform(get("/api/modules/module_business/query/business.list"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(1));
+
+        mockMvc.perform(patch(
+                        "/api/modules/module_business/interfaces/query/business.hidden/ai-callable"
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aiCallable\":true}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INTERFACE_STATICALLY_DISABLED"));
+
+        aiPlans.confirm(pending.planId());
+        mockMvc.perform(patch(
+                        "/api/modules/module_business/interfaces/action/business.write/ai-callable"
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aiCallable\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.actionAiCallableEnabled.module_business['business.write']")
+                        .value(false));
+
+        assertThatThrownBy(() -> aiActions.preview(List.of(
+                new AiActionService.ActionCall(
+                        "module_business",
+                        "business.write",
+                        Map.of("label", "禁用")
+                )
+        )))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("用户关闭 AI 调用");
+
+        ModulePreferencesService reloaded = new ModulePreferencesService(
+                catalog,
+                runtime,
+                objectMapper
+        );
+        reloaded.initialize();
+        assertThat(reloaded.isActionAiCallableEnabled(
+                "module_business",
+                "business.write"
+        )).isFalse();
+        assertThat(reloaded.isQueryAiCallableEnabled(
+                "module_business",
+                "business.list"
+        )).isFalse();
+
+        mockMvc.perform(patch(
+                        "/api/modules/module_business/interfaces/action/business.write/ai-callable"
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aiCallable\":true}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(patch(
+                        "/api/modules/module_business/interfaces/query/business.list/ai-callable"
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aiCallable\":true}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void interfaceUsageStayLockedForTheWholePlanExecutionAndReleaseAfterward() throws Exception {
+        TestBusinessModule.blockNextExecution();
+        AiContracts.Plan plan = aiPlans.create(
+                "执行期间占用接口",
+                List.of(new AiContracts.Action(
+                        "module_business",
+                        "business.write",
+                        Map.of("label", "执行期间占用")
+                ))
+        );
+        var executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<ExecutionRecord> running = executor.submit(
+                    () -> aiPlans.confirm(plan.planId())
+            );
+            TestBusinessModule.awaitExecutionStarted();
+
+            assertThatThrownBy(() -> moduleControl.setInterfaceAiCallable(
+                    "module_business",
+                    "action",
+                    "business.write",
+                    false
+            ))
+                    .isInstanceOf(ApiException.class)
+                    .hasMessageContaining("正在被");
+            assertThat(moduleControl.interfaceState().inUseActions())
+                    .contains("module_business/business.write");
+
+            TestBusinessModule.releaseExecution();
+            ExecutionRecord completed = running.get(5, TimeUnit.SECONDS);
+            assertThat(completed.status()).isIn("COMPLETED", "FAILED_ROLLED_BACK");
+            moduleControl.setInterfaceAiCallable(
+                    "module_business",
+                    "action",
+                    "business.write",
+                    false
+            );
+            assertThat(moduleControl.interfaceState().inUseActions()).isEmpty();
+        } finally {
+            TestBusinessModule.releaseExecution();
+            executor.shutdownNow();
+            moduleControl.setInterfaceAiCallable(
+                    "module_business",
+                    "action",
+                    "business.write",
+                    true
+            );
+        }
+    }
+
+    @Test
+    void interfaceStateReadsAndActionTogglesDoNotDeadlock() throws Exception {
+        var executor = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<?> reads = executor.submit(() -> {
+                start.await();
+                for (int index = 0; index < 100; index++) {
+                    moduleControl.interfaceState();
+                }
+                return null;
+            });
+            Future<?> writes = executor.submit(() -> {
+                start.await();
+                for (int index = 0; index < 10; index++) {
+                    moduleControl.setInterfaceAiCallable(
+                            "module_business",
+                            "action",
+                            "business.write",
+                            index % 2 == 0
+                    );
+                }
+                return null;
+            });
+            start.countDown();
+            reads.get(5, TimeUnit.SECONDS);
+            writes.get(5, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+            moduleControl.setInterfaceAiCallable(
+                    "module_business",
+                    "action",
+                    "business.write",
+                    true
+            );
+        }
     }
 
     private static Path fixtureRoot() {

@@ -39,6 +39,8 @@ public class ModulePreferencesService {
     private List<String> sidebarOrder = new ArrayList<>();
     private List<String> managementOrder = new ArrayList<>();
     private Map<String, Map<String, Object>> moduleSettings = new LinkedHashMap<>();
+    private Map<String, Map<String, Boolean>> actionAiCallableEnabled = new LinkedHashMap<>();
+    private Map<String, Map<String, Boolean>> queryAiCallableEnabled = new LinkedHashMap<>();
     private String revision = UUID.randomUUID().toString();
 
     public ModulePreferencesService(
@@ -78,6 +80,46 @@ public class ModulePreferencesService {
 
     public synchronized ModulePreferences snapshot() {
         return new ModulePreferences(sidebarOrder, managementOrder, deepCopy(moduleSettings));
+    }
+
+    public synchronized Map<String, Map<String, Boolean>> actionAiCallableEnabled() {
+        return copyFlags(actionAiCallableEnabled);
+    }
+
+    public synchronized Map<String, Map<String, Boolean>> queryAiCallableEnabled() {
+        return copyFlags(queryAiCallableEnabled);
+    }
+
+    public synchronized boolean isActionAiCallableEnabled(String moduleId, String actionId) {
+        return actionAiCallableEnabled
+                .getOrDefault(moduleId, Map.of())
+                .getOrDefault(actionId, true);
+    }
+
+    public synchronized boolean isQueryAiCallableEnabled(String moduleId, String queryId) {
+        return queryAiCallableEnabled
+                .getOrDefault(moduleId, Map.of())
+                .getOrDefault(queryId, true);
+    }
+
+    public synchronized void setActionAiCallableEnabled(
+            String moduleId,
+            String actionId,
+            boolean enabled
+    ) {
+        actionAiCallableEnabled.computeIfAbsent(moduleId, ignored -> new LinkedHashMap<>())
+                .put(actionId, enabled);
+        persist();
+    }
+
+    public synchronized void setQueryAiCallableEnabled(
+            String moduleId,
+            String queryId,
+            boolean enabled
+    ) {
+        queryAiCallableEnabled.computeIfAbsent(moduleId, ignored -> new LinkedHashMap<>())
+                .put(queryId, enabled);
+        persist();
     }
 
     public synchronized String revision() {
@@ -137,18 +179,23 @@ public class ModulePreferencesService {
         List<String> previousSidebarOrder = new ArrayList<>(sidebarOrder);
         List<String> previousManagementOrder = new ArrayList<>(managementOrder);
         Map<String, Map<String, Object>> previousSettings = deepCopy(moduleSettings);
+        Map<String, Map<String, Boolean>> previousActions = copyFlags(actionAiCallableEnabled);
+        Map<String, Map<String, Boolean>> previousQueries = copyFlags(queryAiCallableEnabled);
         String previousRevision = revision;
         try {
             enabled.putIfAbsent(module.moduleId(), true);
             appendMissing(sidebarOrder, List.of(module));
             appendMissing(managementOrder, List.of(module));
             initializeSettings(module);
+            initializeInterfaceFlags(module);
             persist();
         } catch (RuntimeException exception) {
             enabled = previousEnabled;
             sidebarOrder = previousSidebarOrder;
             managementOrder = previousManagementOrder;
             moduleSettings = previousSettings;
+            actionAiCallableEnabled = previousActions;
+            queryAiCallableEnabled = previousQueries;
             revision = previousRevision;
             throw exception;
         }
@@ -194,6 +241,38 @@ public class ModulePreferencesService {
             reconciledSettings.put(module.moduleId(), validated);
         }
         moduleSettings = reconciledSettings;
+
+        Map<String, Map<String, Boolean>> reconciledActions = new LinkedHashMap<>();
+        Map<String, Map<String, Boolean>> reconciledQueries = new LinkedHashMap<>();
+        for (ModuleContract module : businessModules) {
+            Map<String, Boolean> actionValues = new LinkedHashMap<>();
+            for (var action : module.actions()) {
+                actionValues.put(
+                        action.id(),
+                        actionAiCallableEnabled
+                                .getOrDefault(module.moduleId(), Map.of())
+                                .getOrDefault(action.id(), true)
+                );
+            }
+            if (!actionValues.isEmpty()) {
+                reconciledActions.put(module.moduleId(), new LinkedHashMap<>(actionValues));
+            }
+
+            Map<String, Boolean> queryValues = new LinkedHashMap<>();
+            for (var query : module.queries()) {
+                queryValues.put(
+                        query.id(),
+                        queryAiCallableEnabled
+                                .getOrDefault(module.moduleId(), Map.of())
+                                .getOrDefault(query.id(), true)
+                );
+            }
+            if (!queryValues.isEmpty()) {
+                reconciledQueries.put(module.moduleId(), new LinkedHashMap<>(queryValues));
+            }
+        }
+        actionAiCallableEnabled = reconciledActions;
+        queryAiCallableEnabled = reconciledQueries;
     }
 
     private List<String> reconcileOrder(
@@ -273,6 +352,26 @@ public class ModulePreferencesService {
         );
     }
 
+    private void initializeInterfaceFlags(ModuleContract module) {
+        Map<String, Boolean> actions = actionAiCallableEnabled.computeIfAbsent(
+                module.moduleId(),
+                ignored -> new LinkedHashMap<>()
+        );
+        module.actions().forEach(action -> actions.putIfAbsent(action.id(), true));
+        if (actions.isEmpty()) {
+            actionAiCallableEnabled.remove(module.moduleId());
+        }
+
+        Map<String, Boolean> queries = queryAiCallableEnabled.computeIfAbsent(
+                module.moduleId(),
+                ignored -> new LinkedHashMap<>()
+        );
+        module.queries().forEach(query -> queries.putIfAbsent(query.id(), true));
+        if (queries.isEmpty()) {
+            queryAiCallableEnabled.remove(module.moduleId());
+        }
+    }
+
     private void readState() throws IOException {
         JsonNode root = objectMapper.readTree(stateFile.toFile());
         if (root == null || !root.isObject()) {
@@ -295,6 +394,14 @@ public class ModulePreferencesService {
         }
         sidebarOrder = parseStringArray(root.path("sidebarOrder"), "sidebarOrder");
         managementOrder = parseStringArray(root.path("managementOrder"), "managementOrder");
+        actionAiCallableEnabled = parseFlags(
+                root.path("actionAiCallableEnabled"),
+                "actionAiCallableEnabled"
+        );
+        queryAiCallableEnabled = parseFlags(
+                root.path("queryAiCallableEnabled"),
+                "queryAiCallableEnabled"
+        );
 
         JsonNode rawSettings = root.path("moduleSettings");
         if (!rawSettings.isObject()) {
@@ -340,6 +447,38 @@ public class ModulePreferencesService {
         return values;
     }
 
+    private Map<String, Map<String, Boolean>> parseFlags(JsonNode raw, String field) {
+        if (raw.isMissingNode() || raw.isNull()) {
+            return new LinkedHashMap<>();
+        }
+        if (!raw.isObject()) {
+            throw new IllegalStateException(field + " 必须是对象");
+        }
+        Map<String, Map<String, Boolean>> result = new LinkedHashMap<>();
+        for (var moduleIterator = raw.fields(); moduleIterator.hasNext(); ) {
+            Map.Entry<String, JsonNode> moduleEntry = moduleIterator.next();
+            if (!moduleEntry.getValue().isObject()) {
+                throw new IllegalStateException(
+                        field + "." + moduleEntry.getKey() + " 必须是对象"
+                );
+            }
+            Map<String, Boolean> values = new LinkedHashMap<>();
+            for (var interfaceIterator = moduleEntry.getValue().fields();
+                 interfaceIterator.hasNext(); ) {
+                Map.Entry<String, JsonNode> interfaceEntry = interfaceIterator.next();
+                if (!interfaceEntry.getValue().isBoolean()) {
+                    throw new IllegalStateException(
+                            field + "." + moduleEntry.getKey() + "." + interfaceEntry.getKey()
+                                    + " 必须是布尔值"
+                    );
+                }
+                values.put(interfaceEntry.getKey(), interfaceEntry.getValue().asBoolean());
+            }
+            result.put(moduleEntry.getKey(), values);
+        }
+        return result;
+    }
+
     private void persist() {
         revision = UUID.randomUUID().toString();
         ObjectNode root = objectMapper.createObjectNode();
@@ -353,6 +492,8 @@ public class ModulePreferencesService {
         moduleSettings.forEach((moduleId, values) ->
                 settingsNode.set(moduleId, objectMapper.valueToTree(values))
         );
+        root.set("actionAiCallableEnabled", flagObject(actionAiCallableEnabled));
+        root.set("queryAiCallableEnabled", flagObject(queryAiCallableEnabled));
 
         Path temporary = stateFile.resolveSibling(FILE_NAME + ".tmp");
         try {
@@ -379,6 +520,15 @@ public class ModulePreferencesService {
         return array;
     }
 
+    private ObjectNode flagObject(Map<String, Map<String, Boolean>> source) {
+        ObjectNode result = objectMapper.createObjectNode();
+        source.forEach((moduleId, values) -> {
+            ObjectNode moduleNode = result.putObject(moduleId);
+            values.forEach(moduleNode::put);
+        });
+        return result;
+    }
+
     private IllegalStateException corruptedState(Exception cause) {
         String detail = cause.getMessage();
         return new IllegalStateException(
@@ -393,6 +543,14 @@ public class ModulePreferencesService {
     ) {
         Map<String, Map<String, Object>> copy = new LinkedHashMap<>();
         source.forEach((key, value) -> copy.put(key, Map.copyOf(value)));
+        return copy;
+    }
+
+    private Map<String, Map<String, Boolean>> copyFlags(
+            Map<String, Map<String, Boolean>> source
+    ) {
+        Map<String, Map<String, Boolean>> copy = new LinkedHashMap<>();
+        source.forEach((key, value) -> copy.put(key, new LinkedHashMap<>(value)));
         return copy;
     }
 }

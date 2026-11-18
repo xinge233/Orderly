@@ -9,6 +9,7 @@ import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.contract.OutputSchemaValidator;
 import com.orderly.host.event.ExecutionJournal;
 import com.orderly.host.modulecontrol.ModuleControlService;
+import com.orderly.host.modulecontrol.InterfaceUsageRegistry;
 import com.orderly.host.runtime.WorkspaceRuntime;
 import com.orderly.kernel.ModuleInvocation;
 import com.orderly.kernel.ModuleResult;
@@ -31,6 +32,7 @@ public class ActionExecutionCore {
     private final WorkspaceRuntime runtime;
     private final ExecutionJournal journal;
     private final ModuleControlService moduleControl;
+    private final InterfaceUsageRegistry usage;
     private final ObjectMapper objectMapper;
 
     public ActionExecutionCore(
@@ -38,12 +40,14 @@ public class ActionExecutionCore {
             WorkspaceRuntime runtime,
             ExecutionJournal journal,
             ModuleControlService moduleControl,
+            InterfaceUsageRegistry usage,
             ObjectMapper objectMapper
     ) {
         this.catalog = catalog;
         this.runtime = runtime;
         this.journal = journal;
         this.moduleControl = moduleControl;
+        this.usage = usage;
         this.objectMapper = objectMapper;
     }
 
@@ -54,6 +58,13 @@ public class ActionExecutionCore {
                     HttpStatus.CONFLICT,
                     "ACTION_NOT_AI_CALLABLE",
                     "动作禁止 AI 调用：" + actionId
+            );
+        }
+        if (!moduleControl.isActionAiCallableEnabled(moduleId, actionId)) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "ACTION_AI_DISABLED",
+                    "动作已被用户关闭 AI 调用：" + actionId
             );
         }
         return target;
@@ -68,6 +79,19 @@ public class ActionExecutionCore {
     }
 
     public ActionResult execute(
+            String executionId,
+            String stepId,
+            String moduleId,
+            String actionId,
+            Map<String, Object> arguments,
+            String origin
+    ) {
+        try (var ignored = usage.beginAction(moduleId, actionId)) {
+            return executeInternal(executionId, stepId, moduleId, actionId, arguments, origin);
+        }
+    }
+
+    private ActionResult executeInternal(
             String executionId,
             String stepId,
             String moduleId,
@@ -176,6 +200,30 @@ public class ActionExecutionCore {
     }
 
     public String rollback(
+            String executionId,
+            String stepId,
+            String moduleId,
+            String actionId,
+            Map<String, Object> arguments,
+            Map<String, Object> snapshot,
+            Map<String, Object> output,
+            String origin
+    ) {
+        try (var ignored = usage.beginAction(moduleId, actionId)) {
+            return rollbackInternal(
+                    executionId,
+                    stepId,
+                    moduleId,
+                    actionId,
+                    arguments,
+                    snapshot,
+                    output,
+                    origin
+            );
+        }
+    }
+
+    private String rollbackInternal(
             String executionId,
             String stepId,
             String moduleId,

@@ -3,8 +3,10 @@ package com.orderly.host.modulecontrol;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.orderly.host.api.ApiException;
 import com.orderly.host.contract.ContractCatalog;
+import com.orderly.host.contract.ActionContract;
 import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.contract.ModuleEntry;
+import com.orderly.host.contract.QueryContract;
 import com.orderly.host.event.ExecutionJournal;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.time.Instant;
 
 /** 模块目录、启用状态、排序和模块设置的控制入口。 */
 @Service
@@ -20,17 +23,20 @@ public class ModuleControlService {
     private final ContractCatalog catalog;
     private final ModulePreferencesService preferences;
     private final ModuleControlCoordinator coordinator;
+    private final InterfaceUsageRegistry usage;
     private final ExecutionJournal journal;
 
     public ModuleControlService(
             ContractCatalog catalog,
             ModulePreferencesService preferences,
             ModuleControlCoordinator coordinator,
+            InterfaceUsageRegistry usage,
             ExecutionJournal journal
     ) {
         this.catalog = catalog;
         this.preferences = preferences;
         this.coordinator = coordinator;
+        this.usage = usage;
         this.journal = journal;
     }
 
@@ -76,6 +82,96 @@ public class ModuleControlService {
 
     public ModulePreferences preferences() {
         return coordinator.read(preferences::snapshot);
+    }
+
+    public ModuleInterfaceState interfaceState() {
+        return new ModuleInterfaceState(
+                preferences.actionAiCallableEnabled(),
+                preferences.queryAiCallableEnabled(),
+                usage.inUseActionKeys(Instant.now())
+        );
+    }
+
+    public ModuleInterfaceState setInterfaceAiCallable(
+            String moduleId,
+            String kind,
+            String interfaceId,
+            boolean enabled
+    ) {
+        ModuleContract module = requireBusinessModule(moduleId);
+        String normalizedKind = kind == null ? "" : kind.trim().toLowerCase(java.util.Locale.ROOT);
+        if ("action".equals(normalizedKind)) {
+            ActionContract action = module.actions().stream()
+                    .filter(candidate -> candidate.id().equals(interfaceId))
+                    .findFirst()
+                    .orElseThrow(() -> new ApiException(
+                            HttpStatus.NOT_FOUND,
+                            "MODULE_ACTION_NOT_FOUND",
+                            "模块未声明动作：" + moduleId + "/" + interfaceId
+                    ));
+            if (enabled && !action.aiCallable()) {
+                throw new ApiException(
+                        HttpStatus.CONFLICT,
+                        "INTERFACE_STATICALLY_DISABLED",
+                        "模块已静态禁止该动作被 AI 调用"
+                );
+            }
+            usage.withActionLock(() -> {
+                if (!enabled && usage.isActionInUse(moduleId, interfaceId, Instant.now())) {
+                    throw new ApiException(
+                            HttpStatus.CONFLICT,
+                            "INTERFACE_IN_USE",
+                            "接口正在被未执行 AI 计划或当前执行使用"
+                    );
+                }
+                preferences.setActionAiCallableEnabled(moduleId, interfaceId, enabled);
+                journal.append(
+                        "MODULE_CONTROL",
+                        "MODULE_CONTROL",
+                        null,
+                        null,
+                        moduleId,
+                        interfaceId,
+                        enabled ? "AI_ENABLED" : "AI_DISABLED",
+                        "Action AI 可调用状态已更新"
+                );
+                return null;
+            });
+        } else if ("query".equals(normalizedKind)) {
+            QueryContract query = module.queries().stream()
+                    .filter(candidate -> candidate.id().equals(interfaceId))
+                    .findFirst()
+                    .orElseThrow(() -> new ApiException(
+                            HttpStatus.NOT_FOUND,
+                            "MODULE_QUERY_NOT_FOUND",
+                            "模块未声明查询：" + moduleId + "/" + interfaceId
+                    ));
+            if (enabled && !query.aiCallable()) {
+                throw new ApiException(
+                        HttpStatus.CONFLICT,
+                        "INTERFACE_STATICALLY_DISABLED",
+                        "模块已静态禁止该查询被 AI 调用"
+                );
+            }
+            preferences.setQueryAiCallableEnabled(moduleId, interfaceId, enabled);
+            journal.append(
+                    "MODULE_CONTROL",
+                    "MODULE_CONTROL",
+                    null,
+                    null,
+                    moduleId,
+                    interfaceId,
+                    enabled ? "AI_ENABLED" : "AI_DISABLED",
+                    "Query AI 可调用状态已更新"
+            );
+        } else {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_INTERFACE_KIND",
+                    "接口类型必须是 action 或 query"
+            );
+        }
+        return interfaceState();
     }
 
     public ModulePreferences updateSidebarOrder(List<String> moduleIds) {
@@ -169,6 +265,14 @@ public class ModuleControlService {
 
     public boolean isEnabled(String moduleId) {
         return preferences.isEnabled(moduleId);
+    }
+
+    public boolean isActionAiCallableEnabled(String moduleId, String actionId) {
+        return preferences.isActionAiCallableEnabled(moduleId, actionId);
+    }
+
+    public boolean isQueryAiCallableEnabled(String moduleId, String queryId) {
+        return preferences.isQueryAiCallableEnabled(moduleId, queryId);
     }
 
     private ModuleContract requireBusinessModule(String moduleId) {

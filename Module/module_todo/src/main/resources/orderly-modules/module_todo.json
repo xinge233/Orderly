@@ -36,6 +36,7 @@
       "id": "todo.list",
       "title": "待办列表",
       "description": "只读读取模块自有待办集合。",
+      "aiCallable": true,
       "parameters": []
     }
   ],

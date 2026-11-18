@@ -103,6 +103,46 @@ function normalizeDefinitions(module) {
     return settingDefinitions(module).map(normalizeField);
 }
 
+function normalizeInterfaceDefinition(item, kind, index) {
+    const source = item && typeof item === "object" ? item : {};
+    return {
+        id: text(source.id, `${kind}${index + 1}`),
+        title: text(source.title ?? source.label, `${kind}${index + 1}`),
+        description: text(source.description),
+        aiCallable: source.aiCallable !== false,
+        kind
+    };
+}
+
+function normalizeInterfaceState(input) {
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const normalizeMap = (value) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+        return Object.fromEntries(Object.entries(value).flatMap(([moduleId, flags]) => {
+            if (!moduleId || !flags || typeof flags !== "object" || Array.isArray(flags)) {
+                return [];
+            }
+            return [[moduleId, Object.fromEntries(Object.entries(flags)
+                .filter(([, enabled]) => typeof enabled === "boolean"))]];
+        }));
+    };
+    return {
+        actionAiCallableEnabled: normalizeMap(source.actionAiCallableEnabled),
+        queryAiCallableEnabled: normalizeMap(source.queryAiCallableEnabled),
+        inUseActions: listOf(source.inUseActions).filter((key) => typeof key === "string")
+    };
+}
+
+function interfaceStateFor(interfaceState, kind, moduleId, interfaceId) {
+    const field = kind === "query" ? "queryAiCallableEnabled" : "actionAiCallableEnabled";
+    const value = interfaceState[field]?.[moduleId]?.[interfaceId];
+    return value !== false;
+}
+
+function actionIsInUse(interfaceState, moduleId, interfaceId) {
+    return interfaceState.inUseActions.includes(`${moduleId}/${interfaceId}`);
+}
+
 function settingValues(module, sharedValues = {}) {
     const direct = [
         module?.settingValues,
@@ -126,10 +166,13 @@ function settingValues(module, sharedValues = {}) {
 
 function normalizeModule(raw, index, sharedValues) {
     const source = raw && typeof raw === "object" ? raw : {};
+    const nestedModule = source.module && typeof source.module === "object"
+        ? source.module
+        : {};
     const contract = source.contract && typeof source.contract === "object"
         ? source.contract
-        : source;
-    const ui = source.ui ?? source.uiManifest ?? source.manifest ?? {};
+        : nestedModule;
+    const ui = source.ui ?? source.uiManifest ?? source.manifest ?? nestedModule.ui ?? {};
     const system = source.system ?? contract.system ?? {};
     const moduleId = text(source.moduleId ?? contract.moduleId ?? source.id);
     return {
@@ -148,6 +191,10 @@ function normalizeModule(raw, index, sharedValues) {
             settings: source.settings ?? contract.settings
         }),
         values: settingValues({ ...source, settings: source.settings ?? contract.settings }, sharedValues),
+        actions: listOf(source.actions ?? contract.actions ?? nestedModule.actions)
+            .map((item, actionIndex) => normalizeInterfaceDefinition(item, "action", actionIndex)),
+        queries: listOf(source.queries ?? contract.queries ?? nestedModule.queries)
+            .map((item, queryIndex) => normalizeInterfaceDefinition(item, "query", queryIndex)),
         raw: source
     };
 }
@@ -169,6 +216,7 @@ export default async function mount(root, context) {
     const make = context.element;
     const admin = context.systemAdmin;
     const getState = adminMethod(admin, "getState", "status", "listModules", "list");
+    const getInterfaceState = adminMethod(admin, "getInterfaceState", "interfaceState");
     const refreshModules = adminMethod(admin, "refreshModules", "refresh");
     const openFolder = adminMethod(
         admin,
@@ -190,6 +238,11 @@ export default async function mount(root, context) {
         "resetModuleSettings",
         "resetSettings"
     );
+    const setInterfaceAiCallable = adminMethod(
+        admin,
+        "setInterfaceAiCallable",
+        "saveInterfaceAiCallable"
+    );
 
     const state = {
         modules: [],
@@ -203,8 +256,11 @@ export default async function mount(root, context) {
         error: "",
         subpage: "list",
         selectedId: "",
-        draft: {}
+        draft: {},
+        expandedIds: new Set(),
+        interfaceState: normalizeInterfaceState({})
     };
+    let interfaceRefreshTimer = null;
 
     function setStatus(message, kind = "") {
         state.status = message;
@@ -226,6 +282,9 @@ export default async function mount(root, context) {
         state.modules = modules;
         state.added = listOf(snapshot.added ?? payload?.added);
         state.issues = listOf(snapshot.issues ?? payload?.issues);
+        state.interfaceState = normalizeInterfaceState(
+            snapshot.interfaceState ?? payload?.interfaceState
+        );
         const notBuilt = snapshot.notBuilt ?? snapshot.missingBuilds;
         state.needsBuild = snapshot.built === false
             || snapshot.needsBuild === true
@@ -313,6 +372,36 @@ export default async function mount(root, context) {
             throw new Error("宿主尚未接入模组管理 API");
         }
         return getState();
+    }
+
+    function interfaceStateEquals(left, right) {
+        return JSON.stringify(left) === JSON.stringify(right);
+    }
+
+    async function refreshInterfaceState() {
+        if (!getInterfaceState || !root.isConnected || state.loading || state.busy) {
+            return;
+        }
+        try {
+            const next = normalizeInterfaceState(await getInterfaceState());
+            if (!interfaceStateEquals(state.interfaceState, next)) {
+                state.interfaceState = next;
+                render();
+            }
+        } catch {
+            // 事件驱动的刷新失败不覆盖当前可用快照；下一次事件或手动刷新会重试。
+        }
+    }
+
+    function scheduleInterfaceRefresh() {
+        if (!getInterfaceState) return;
+        if (interfaceRefreshTimer) {
+            clearTimeout(interfaceRefreshTimer);
+        }
+        interfaceRefreshTimer = setTimeout(() => {
+            interfaceRefreshTimer = null;
+            void refreshInterfaceState();
+        }, 120);
     }
 
     async function reload() {
@@ -519,6 +608,136 @@ export default async function mount(root, context) {
             ?.focus();
     }
 
+    async function toggleInterface(module, iface, input) {
+        if (!setInterfaceAiCallable) {
+            input.checked = interfaceStateFor(
+                state.interfaceState,
+                iface.kind,
+                module.moduleId,
+                iface.id
+            );
+            setStatus("宿主尚未接入接口 AI 开关 API", "error");
+            render();
+            return;
+        }
+        const previous = interfaceStateFor(
+            state.interfaceState,
+            iface.kind,
+            module.moduleId,
+            iface.id
+        );
+        const requested = input.checked;
+        input.disabled = true;
+        try {
+            const payload = await setInterfaceAiCallable(
+                module.moduleId,
+                iface.kind,
+                iface.id,
+                requested
+            );
+            applySnapshot(payload);
+            setStatus(
+                `${iface.title}已${requested ? "允许" : "禁止"} AI 调用。`,
+                "safe"
+            );
+        } catch (error) {
+            input.checked = previous;
+            const message = runtimeMessage(error, "接口 AI 开关保存失败");
+            try {
+                applySnapshot(await readSnapshot());
+            } catch {
+                // 保留原始保存错误；读取失败时仍由下一次手动刷新恢复。
+            }
+            setStatus(message, "error");
+        }
+        render();
+    }
+
+    function buildInterfaceRow(module, iface) {
+        const row = make("div", "module-control-ui-interface");
+        const staticEnabled = iface.aiCallable;
+        const dynamicEnabled = interfaceStateFor(
+            state.interfaceState,
+            iface.kind,
+            module.moduleId,
+            iface.id
+        );
+        const inUse = iface.kind === "action"
+            && actionIsInUse(state.interfaceState, module.moduleId, iface.id);
+        const checked = staticEnabled && dynamicEnabled;
+
+        const title = make("strong", "module-control-ui-interface__title", iface.title);
+        const description = make(
+            "span",
+            "module-control-ui-interface__description",
+            iface.description || "尚未提供接口说明。"
+        );
+
+        const control = make("div", "module-control-ui-interface__control");
+        if (inUse) {
+            control.append(make("span", "module-control-ui-interface__state", "使用中"));
+        } else if (!staticEnabled) {
+            control.append(make("span", "module-control-ui-interface__state", "模块禁止 AI 调用"));
+        }
+
+        const switchLabel = make("label", "module-control-ui-switch module-control-ui-switch--interface");
+        const checkbox = make("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = checked;
+        checkbox.disabled = state.busy || !staticEnabled || inUse;
+        const moduleSuffix = module.enabled ? "" : "；模块当前停用";
+        checkbox.setAttribute(
+            "aria-label",
+            `${iface.title}${checked ? "允许" : "禁止"} AI 调用${moduleSuffix}`
+        );
+        const track = make("span", "module-control-ui-switch__track");
+        switchLabel.append(checkbox, track);
+        checkbox.addEventListener("change", () => void toggleInterface(module, iface, checkbox));
+        control.append(switchLabel);
+
+        if (!module.enabled) {
+            row.classList.add("is-module-disabled");
+        }
+        if (!staticEnabled || inUse) {
+            row.classList.add("is-locked");
+        }
+        row.append(title, description, control);
+        return row;
+    }
+
+    function buildInterfaceGroup(module, title, items, kind) {
+        const group = make("section", "module-control-ui-interface-group");
+        const heading = make("header", "module-control-ui-interface-group__header");
+        heading.append(
+            make("h3", "", title),
+            make("span", "", kind === "query" ? "仅影响未来 AI 查询；模块自身查询不限制" : "仅影响 AI 计划与 AI 直执")
+        );
+        group.append(heading);
+        if (!items.length) {
+            group.append(make("p", "module-control-ui-empty", "尚未声明接口"));
+            return group;
+        }
+        items.forEach((iface) => group.append(buildInterfaceRow(module, iface)));
+        if (kind === "query") {
+            group.append(make(
+                "p",
+                "module-control-ui-interface-note",
+                "AI 查询通道尚未接入；当前开关仅保存未来授权状态。"
+            ));
+        }
+        return group;
+    }
+
+    function buildInterfacePanel(module) {
+        const panel = make("section", "module-control-ui-interfaces");
+        panel.id = `module-control-interfaces-${module.moduleId}`;
+        panel.append(
+            buildInterfaceGroup(module, "动作接口", module.actions, "action"),
+            buildInterfaceGroup(module, "查询接口", module.queries, "query")
+        );
+        return panel;
+    }
+
     function buildRow(module) {
         const row = make("article", "module-control-ui-row");
         row.dataset.moduleId = module.moduleId;
@@ -527,6 +746,7 @@ export default async function mount(root, context) {
             row.classList.add("is-protected");
         }
 
+        const header = make("div", "module-control-ui-row-header");
         const handle = make("button", "module-control-ui-drag");
         handle.type = "button";
         handle.title = `拖动排序 ${module.title}`;
@@ -538,11 +758,33 @@ export default async function mount(root, context) {
 
         const moduleIcon = make("span", "module-control-ui-module-icon");
         moduleIcon.innerHTML = context.icon(module.icon, 20);
-        const copy = make("div", "module-control-ui-copy");
+        const expanded = state.expandedIds.has(module.moduleId);
+        const canExpandInterfaces = !(module.protected || module.role === MODULE_CONTROL_ROLE);
+        const copy = make(canExpandInterfaces ? "button" : "div", "module-control-ui-copy");
+        if (canExpandInterfaces) {
+            copy.type = "button";
+            copy.id = `module-control-expand-${module.moduleId}`;
+            copy.dataset.expandId = module.moduleId;
+            copy.setAttribute("aria-expanded", String(expanded));
+            copy.setAttribute("aria-controls", `module-control-interfaces-${module.moduleId}`);
+        } else {
+            copy.classList.add("is-static");
+        }
         copy.append(
             make("strong", "", module.title),
             make("span", "", module.description || "尚无模块说明")
         );
+        if (canExpandInterfaces) {
+            copy.addEventListener("click", () => {
+                if (expanded) {
+                    state.expandedIds.delete(module.moduleId);
+                } else {
+                    state.expandedIds.add(module.moduleId);
+                }
+                render();
+                root.querySelector(`[data-expand-id="${module.moduleId}"]`)?.focus();
+            });
+        }
 
         const rowActions = make("div", "module-control-ui-row-actions");
         const settingsButton = make("button", "module-control-ui-square");
@@ -569,7 +811,13 @@ export default async function mount(root, context) {
         checkbox.addEventListener("change", () => void toggleModule(module, checkbox));
         rowActions.append(settingsButton, switchLabel);
 
-        row.append(handle, moduleIcon, copy, rowActions);
+        header.append(handle, moduleIcon, copy, rowActions);
+        row.append(header);
+        if (canExpandInterfaces) {
+            const interfacePanel = buildInterfacePanel(module);
+            interfacePanel.hidden = !expanded;
+            row.append(interfacePanel);
+        }
         return row;
     }
 
@@ -828,4 +1076,18 @@ export default async function mount(root, context) {
 
     render();
     await reload();
+    if (typeof context.subscribeEvents === "function") {
+        let unsubscribe = null;
+        unsubscribe = context.subscribeEvents(() => {
+            if (!root.isConnected) {
+                if (interfaceRefreshTimer) {
+                    clearTimeout(interfaceRefreshTimer);
+                    interfaceRefreshTimer = null;
+                }
+                unsubscribe?.();
+                return;
+            }
+            scheduleInterfaceRefresh();
+        });
+    }
 }

@@ -95,6 +95,13 @@ public final class TestModuleArchives {
                       "title": "读取业务",
                       "description": "测试查询",
                       "parameters": []
+                    },
+                    {
+                      "id": "business.hidden",
+                      "title": "静态禁用查询",
+                      "description": "测试静态 AI 禁用",
+                      "aiCallable": false,
+                      "parameters": []
                     }
                   ],
                   "plannerRules": [

@@ -96,6 +96,10 @@ export class OrderlyApi {
         return this.request("/api/system/module-preferences", options);
     }
 
+    getModuleInterfaceState(options) {
+        return this.request("/api/system/module-interfaces", options);
+    }
+
     setModuleEnabled(moduleId, enabled, options = {}) {
         return this.request(`/api/modules/${encodeURIComponent(moduleId)}/activation`, {
             ...options,
@@ -133,6 +137,18 @@ export class OrderlyApi {
             ...options,
             method: "POST"
         });
+    }
+
+    setInterfaceAiCallable(moduleId, kind, interfaceId, aiCallable, options = {}) {
+        return this.request(
+            `/api/modules/${encodeURIComponent(moduleId)}/interfaces/${encodeURIComponent(kind)}`
+                + `/${encodeURIComponent(interfaceId)}/ai-callable`,
+            {
+                ...options,
+                method: "PATCH",
+                body: { aiCallable }
+            }
+        );
     }
 
     refreshSystemModules(options = {}) {

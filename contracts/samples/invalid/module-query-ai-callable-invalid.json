@@ -1,0 +1,17 @@
+{
+  "moduleId": "module_invalid_query",
+  "title": "非法查询模块",
+  "description": "用于验证查询 aiCallable 类型校验。",
+  "order": 10,
+  "actions": [],
+  "queries": [
+    {
+      "id": "invalid.query",
+      "title": "非法查询",
+      "description": "aiCallable 不是布尔值。",
+      "aiCallable": "yes",
+      "parameters": []
+    }
+  ],
+  "plannerRules": []
+}

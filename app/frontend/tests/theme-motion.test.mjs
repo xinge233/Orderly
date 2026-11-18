@@ -232,7 +232,14 @@ test("settings uses dedicated live regions and keeps the panel mounted on change
     assert.match(app, /alert\.setAttribute\("role", "alert"\)/);
     assert.equal((app.match(/setAttribute\("role", "alert"\)/g) ?? []).length, 1);
     assert.doesNotMatch(app, /id:\s*"modules",\s*label:\s*"模块管理"/);
-    assert.match(app, /getState\(\)\s*\{\s*return systemAdminSnapshot\(\)/s);
+    assert.match(
+        app,
+        /async getState\(\)\s*\{\s*await systemAdminApi\.getInterfaceState\(\);\s*return systemAdminSnapshot\(\);/s
+    );
+    assert.match(
+        app,
+        /async getInterfaceState\(\)\s*\{\s*const normalized = normalizeModuleInterfaceState\(\s*await api\.getModuleInterfaceState\(\)/s
+    );
     assert.match(app, /const issues = element\("section", "theme-issues"\)/);
     assert.match(app, /未配置可用默认主题/);
     assert.doesNotMatch(app, /内置安全外观已启用/);

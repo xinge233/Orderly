@@ -31,6 +31,7 @@ class ModuleContractSampleTest {
             assertThat(module.actions().getFirst().aiCallable()).isFalse();
             assertThat(module.actions().getFirst().outputSchema()).isNotNull();
             assertThat(module.queries()).extracting(QueryContract::id).containsExactly("demo.list");
+            assertThat(module.queries().getFirst().aiCallable()).isTrue();
             assertThat(module.plannerRules()).extracting(PlannerRuleContract::id).containsExactly("demo.read");
         }
     }
@@ -45,6 +46,21 @@ class ModuleContractSampleTest {
             ))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("risk");
+        }
+    }
+
+    @Test
+    void invalidQueryAiCallableFailsRuntimeValidation() throws Exception {
+        Path missingModules = Path.of("target", "sample-contract-" + UUID.randomUUID())
+                .toAbsolutePath();
+        try (ContractCatalog catalog = new ContractCatalog(objectMapper, missingModules.toString())) {
+            assertThatThrownBy(() -> catalog.parseAndValidateModule(
+                    objectMapper.readTree(
+                            samples.resolve("invalid/module-query-ai-callable-invalid.json").toFile()
+                    )
+            ))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("查询 aiCallable");
         }
     }
 

@@ -85,6 +85,34 @@ const ROLLBACK_ORIGINS = new Set([
     EVENT_ORIGIN.AI_PLAN
 ]);
 
+function normalizeInterfaceFlagMap(input) {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return {};
+    }
+    return Object.fromEntries(Object.entries(input).flatMap(([moduleId, values]) => {
+        if (!/^[a-z][a-z0-9_-]{0,63}$/.test(moduleId)
+            || !values
+            || typeof values !== "object"
+            || Array.isArray(values)) {
+            return [];
+        }
+        const flags = Object.fromEntries(Object.entries(values)
+            .filter(([, enabled]) => typeof enabled === "boolean"));
+        return [[moduleId, flags]];
+    }));
+}
+
+function normalizeModuleInterfaceState(input) {
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    return {
+        actionAiCallableEnabled: normalizeInterfaceFlagMap(source.actionAiCallableEnabled),
+        queryAiCallableEnabled: normalizeInterfaceFlagMap(source.queryAiCallableEnabled),
+        inUseActions: Array.isArray(source.inUseActions)
+            ? [...new Set(source.inUseActions.filter((key) => typeof key === "string" && key))]
+            : []
+    };
+}
+
 const state = {
     activeView: "overview",
     health: null,
@@ -101,6 +129,7 @@ const state = {
     aiSettingsError: "",
     modules: [],
     modulePreferences: normalizeModulePreferences({}),
+    moduleInterfaceState: normalizeModuleInterfaceState({}),
     moduleCatalogIssues: [],
     moduleRefreshIssues: [],
     themes: [],
@@ -128,6 +157,7 @@ const state = {
 };
 
 const systemAdminApi = createSystemAdminApi();
+const frameworkEventListeners = new Set();
 let eventStream = null;
 let eventRenderQueued = false;
 let navigationDrag = null;
@@ -165,6 +195,24 @@ function element(tag, className = "", text = "") {
         node.textContent = text;
     }
     return node;
+}
+
+function emitFrameworkEvent(event) {
+    frameworkEventListeners.forEach((listener) => {
+        try {
+            listener(event);
+        } catch {
+            // 单个模块的事件监听失败不能阻断框架事件流。
+        }
+    });
+}
+
+function subscribeFrameworkEvents(listener) {
+    if (typeof listener !== "function") {
+        throw new TypeError("模块事件监听器必须是函数");
+    }
+    frameworkEventListeners.add(listener);
+    return () => frameworkEventListeners.delete(listener);
 }
 
 function escapeHtml(value) {
@@ -485,6 +533,7 @@ function systemAdminSnapshot(extra = {}) {
     return {
         modules: managementModuleEntries(),
         settingValues: { ...state.modulePreferences.moduleSettings },
+        interfaceState: { ...state.moduleInterfaceState },
         issues: [
             ...state.moduleCatalogIssues,
             ...state.moduleRefreshIssues,
@@ -663,8 +712,17 @@ function sameStringArray(left, right) {
 
 function createSystemAdminApi() {
     return Object.freeze({
-        getState() {
+        async getState() {
+            await systemAdminApi.getInterfaceState();
             return systemAdminSnapshot();
+        },
+
+        async getInterfaceState() {
+            const normalized = normalizeModuleInterfaceState(
+                await api.getModuleInterfaceState()
+            );
+            state.moduleInterfaceState = normalized;
+            return normalized;
         },
 
         listManagementModules() {
@@ -749,6 +807,25 @@ function createSystemAdminApi() {
                 }
             };
             return { ...reset };
+        },
+
+        async setInterfaceAiCallable(moduleId, kind, interfaceId, aiCallable) {
+            const module = businessModuleOrThrow(moduleId);
+            const normalizedKind = kind === "query" ? "query" : "action";
+            state.moduleInterfaceState = normalizeModuleInterfaceState(
+                await api.setInterfaceAiCallable(
+                    module.moduleId,
+                    normalizedKind,
+                    interfaceId,
+                    aiCallable === true
+                )
+            );
+            return systemAdminSnapshot({
+                moduleId: module.moduleId,
+                kind: normalizedKind,
+                interfaceId,
+                aiCallable: aiCallable === true
+            });
         },
 
         getManagementOrder() {
@@ -1964,7 +2041,8 @@ async function mountModule(module) {
             icon,
             toast,
             fillCommand,
-            formatDate
+            formatDate,
+            subscribeEvents: subscribeFrameworkEvents
         };
         await moduleScript.default(root, createModuleMountContext({
             module,
@@ -3273,6 +3351,7 @@ function connectEventStream() {
         onEvent: (raw) => {
             const event = normalizeEvent(raw, state.events.length);
             state.events = mergeEvents(state.events, [event]);
+            emitFrameworkEvent(event);
             if (event.planId && state.plan?.planId && event.planId !== state.plan.planId) {
                 return;
             }

@@ -670,10 +670,15 @@ public class ContractCatalog implements AutoCloseable {
         requireText(node, "id");
         requireText(node, "title");
         requireText(node, "description");
+        JsonNode rawAiCallable = node.get("aiCallable");
+        if (rawAiCallable != null && !rawAiCallable.isBoolean()) {
+            throw new IllegalStateException("查询 aiCallable 必须是布尔值：" + node.path("id").asText());
+        }
         return new QueryContract(
                 node.path("id").asText(),
                 node.path("title").asText(),
                 node.path("description").asText(),
+                node.path("aiCallable").asBoolean(true),
                 parseParameters(node.path("parameters"), "查询")
         );
     }

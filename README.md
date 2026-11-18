@@ -6,7 +6,7 @@
 
 - 本地规则计划器：把少量明确的中文指令转换为结构化计划。它不连接外部大模型，界面会如实标注这一限制。
 - 自包含模块：每个 `Module/module_*` 在自身目录携带动作契约、只读查询、本地计划规则、执行器、逆操作和 UI 资源；宿主与前端不保存具体模块映射。
-- 模块控制：唯一的系统模块 `module_control` 管理系统业务模块的启停、侧边栏顺序、管理顺序和声明式设置。
+- 模块控制：唯一的系统模块 `module_control` 管理系统业务模块的启停、侧边栏顺序、管理顺序、声明式设置，以及 Action/Query 的 AI 可调用状态。
 - 文件模块：列出沙箱目录、创建目录、移动文件、移入回收站、从回收站恢复。
 - 待办模块：读取并创建待办。
 - 日程模块：读取并修改已有日程的时间。
@@ -39,7 +39,7 @@
 - `.orderly-data/trash/`：应用回收站。
 - `.orderly-data/state/`：各模块自己的集合状态、初始化标记和执行记录。
 - `.orderly-data/executions/`：宿主统一持久化的执行、步骤、参数、输出、快照和审计结果。
-- `.orderly-data/module-governance.json`：业务模块启用状态、两套排序和模块设置；使用原子文件替换写入。
+- `.orderly-data/module-governance.json`：业务模块启用状态、两套排序、模块设置以及 Action/Query 的动态 AI 可调用状态；使用原子文件替换写入。
 - `.orderly-data/system-features.json`：宿主功能开关；首次运行默认关闭计划功能。
 
 不会扫描或修改其他个人目录。首版可以通过 `ORDERLY_DATA_DIR` 环境变量改用另一个应用专用目录，但仍不支持选择任意系统文件夹。
@@ -112,6 +112,8 @@ PATCH /api/modules/{moduleId}/activation
 GET   /api/system/module-preferences
 PUT   /api/system/module-preferences/sidebar-order
 PUT   /api/system/module-preferences/management-order
+GET   /api/system/module-interfaces
+PATCH /api/modules/{moduleId}/interfaces/{kind}/{interfaceId}/ai-callable
 PUT   /api/modules/{moduleId}/settings
 POST  /api/modules/{moduleId}/settings/reset
 POST  /api/system/modules/refresh
@@ -119,6 +121,8 @@ POST  /api/system/module-folder/open
 ```
 
 `module-folder/open` 只接受 `X-Orderly-Action: open-module-folder`，只在 Windows 上打开配置的 `orderly.module-source-dir`，不接受客户端路径。模块查询、计划规则、计划生成、确认和执行都检查 `enabled`；执行中拒绝停用，回滚始终允许。开关、设置、排序、刷新和打开目录会写入审计事件。
+
+Action 和 Query 契约都可声明静态 `aiCallable`。宿主在 `.orderly-data/module-governance.json` 中保存用户级 `actionAiCallableEnabled` 与 `queryAiCallableEnabled`；静态 `false` 是永久上限，用户只能在其允许范围内调整。动态开关只限制 AI：Action 影响 AI 计划与 AI 直执，Query 当前只保存未来 AI 查询的授权状态，模块自身查询和总览不会受影响。独立 AI 计划引用中的 Action 显示“使用中”，确认时原子转换为整次执行占用，并在结束或失败后释放；过期提案也会释放。旧版计划不参与。AI Query 通道尚未接入。
 
 宿主功能与直执 API：
 

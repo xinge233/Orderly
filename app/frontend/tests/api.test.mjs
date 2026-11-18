@@ -104,6 +104,8 @@ test("API client uses the module governance endpoints and action header", async 
     await api.resetModuleSettings("module/todo");
     await api.refreshSystemModules();
     await api.openModuleFolder();
+    await api.getModuleInterfaceState();
+    await api.setInterfaceAiCallable("module/todo", "query", "todo.list", false);
 
     assert.deepEqual(requests.map(({ url }) => url), [
         "/api/system-modules",
@@ -114,7 +116,9 @@ test("API client uses the module governance endpoints and action header", async 
         "/api/modules/module%2Ftodo/settings",
         "/api/modules/module%2Ftodo/settings/reset",
         "/api/system/modules/refresh",
-        "/api/system/module-folder/open"
+        "/api/system/module-folder/open",
+        "/api/system/module-interfaces",
+        "/api/modules/module%2Ftodo/interfaces/query/todo.list/ai-callable"
     ]);
     assert.deepEqual(
         requests.slice(2, 7).map(({ options }) => [
@@ -128,6 +132,13 @@ test("API client uses the module governance endpoints and action header", async 
             ["PUT", { compact: true }],
             ["POST", null]
         ]
+    );
+    assert.deepEqual(
+        requests.slice(-1).map(({ options }) => [
+            options.method,
+            JSON.parse(options.body)
+        ]),
+        [["PATCH", { aiCallable: false }]]
     );
     assert.equal(requests[7].options.method, "POST");
     assert.equal(

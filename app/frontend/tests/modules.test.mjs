@@ -221,6 +221,7 @@ test("module_control bridge exposes the required systemAdmin surface", async () 
     );
     const methods = [
         "getState",
+        "getInterfaceState",
         "listManagementModules",
         "setModuleEnabled",
         "refreshModules",
@@ -228,22 +229,61 @@ test("module_control bridge exposes the required systemAdmin surface", async () 
         "saveManagementOrder",
         "saveModuleSettings",
         "resetModuleSettings",
+        "setInterfaceAiCallable",
         "getManagementOrder"
     ];
 
     methods.forEach((method) => assert.match(app, new RegExp(`\\b${method}\\s*\\(`)));
     [
         "getState",
+        "getInterfaceState",
         "setEnabled",
         "refreshModules",
         "openModuleFolder",
         "saveManagementOrder",
         "saveModuleSettings",
-        "resetModuleSettings"
+        "resetModuleSettings",
+        "setInterfaceAiCallable"
     ].forEach((method) => assert.match(control, new RegExp(`["']${method}["']`)));
     assert.match(app, /system:\s*module\.system\s*\?\?/);
+    assert.match(app, /subscribeEvents:\s*subscribeFrameworkEvents/);
     assert.doesNotMatch(control, /!module\.protected/);
     assert.match(control, /protectedModule/);
+});
+
+test("module_control renders interface AI switches with locking states", async () => {
+    const control = await readFile(
+        new URL(
+            "../../../Module/module_control/src/main/resources/orderly-ui/module.js",
+            import.meta.url
+        ),
+        "utf8"
+    );
+    const style = await readFile(
+        new URL(
+            "../../../Module/module_control/src/main/resources/orderly-ui/module.css",
+            import.meta.url
+        ),
+        "utf8"
+    );
+
+    assert.match(control, /buildInterfaceGroup\(module, "动作接口", module\.actions, "action"\)/);
+    assert.match(control, /buildInterfaceGroup\(module, "查询接口", module\.queries, "query"\)/);
+    assert.match(control, /module-control-ui-interface__title/);
+    assert.match(control, /module-control-ui-interface__description/);
+    assert.match(control, /使用中/);
+    assert.match(control, /模块禁止 AI 调用/);
+    assert.match(control, /AI 查询通道尚未接入/);
+    assert.match(control, /setInterfaceAiCallable/);
+    assert.match(control, /interfacePanel\.hidden = !expanded/);
+    assert.match(control, /interfaceStateFor\(\s*state\.interfaceState,/);
+    assert.match(control, /actionIsInUse\(state\.interfaceState,/);
+    assert.match(control, /const previous = interfaceStateFor\(/);
+    assert.match(control, /canExpandInterfaces/);
+    assert.match(control, /classList\.add\("is-static"\)/);
+    assert.match(control, /context\.subscribeEvents/);
+    assert.match(style, /\.module-control-ui-interfaces\[hidden\]\s*\{\s*display:\s*none;/);
+    assert.match(style, /\.module-control-ui-copy\.is-static\s*\{\s*cursor:\s*default;/);
 });
 
 test("host preferences preserve valid order and reject stale module settings", () => {

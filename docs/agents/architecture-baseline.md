@@ -113,10 +113,11 @@ docs/                       产品与协作文档
 
 ### 模块治理状态
 
-- 宿主在 `.orderly-data/module-governance.json` 单一 JSON 中持久化业务模块 `enabled`、全部运行模块的两套顺序（`sidebarOrder`、`managementOrder`）与 `moduleSettings`；写入使用同目录临时文件加原子替换。
+- 宿主在 `.orderly-data/module-governance.json` 单一 JSON 中持久化业务模块 `enabled`、全部运行模块的两套顺序（`sidebarOrder`、`managementOrder`）、`moduleSettings` 以及 Action/Query 的动态 `aiCallableEnabled`；写入使用同目录临时文件加原子替换。
 - 新业务模块默认启用，并按契约 `order` 插入 `module_control` 之前。`sidebarOrder` 和 `managementOrder` 都包含业务模块与系统模块 ID；失效模块 ID 从运行偏好中清理，系统模块可排序但不可停用或写入业务设置。
 - 状态文件损坏必须产生包含文件路径和原因的明确启动错误，不得静默回退为空状态。
 - 模块设置定义来自模块 JAR 的 `orderly-ui/module.json`。宿主校验字段 key 唯一、默认值、select options 与默认值归属、integer/text 范围，并拒绝未声明字段和错误类型。
+- Action/Query 的静态 `aiCallable` 来自模块契约；静态 `false` 是不可覆盖上限。用户动态开关只限制 AI，不阻断模块自身 Query；Query 开关为未来 AI 查询通道保存授权状态。未执行独立 AI 计划引用或执行中的 Action 由宿主标记“使用中”并拒绝关闭；计划确认时原子转换为整次执行占用，结束或失败后释放。旧版计划不参与。
 - 模块查询、计划规则、计划生成、计划确认、AI Action 直执和执行前检查都必须尊重业务模块 `enabled`。执行期间禁止停用；回滚不检查 `enabled`，始终允许按快照恢复。
 - 开关、设置、两类排序、刷新和打开模块源码目录都必须写入审计事件。打开目录只接受 Windows，只打开配置的 `orderly.module-source-dir`，不接受客户端路径。
 
@@ -153,6 +154,7 @@ docs/                       产品与协作文档
 | 左侧侧边栏 | 顶部搜索、模块导航、底部设置入口、可滚动 | 业务导航来自 `/api/modules`，模块控制入口来自 `/api/system-modules`；固定入口不可排序，动态模块可长按拖动并独立持久化；无业务模块时显示空状态 |
 | AI 对话入口 | 独立于旧版计划功能，永久显示在右下方并支持拖动 | 未配置模型时临时输入 DeepSeek API Key；配置后发送自然语言目标并显示独立 AI 计划、澄清和执行状态 |
 | 设置弹窗 | 左侧导航、右侧内容、右上角关闭入口 | 动态主题、独立 AI 接入，以及任意数量模块的可见性设置 |
+| 模组设置 | 系统模块入口、模块启停、排序和接口治理 | 模块行内展开 Action/Query，显示标题、描述、风险与 AI 调用开关；静态禁用、模块停用和使用中状态清晰可见 |
 | 视觉 | 卡片化、圆润、统一间距和语义变量 | 不硬编码颜色、字体、时长 |
 | 动效 | 进度与状态变化可感知 | 可关闭，关闭后内容仍完整可见 |
 

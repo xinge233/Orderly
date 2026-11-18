@@ -33,6 +33,7 @@
       "id": "demo.list",
       "title": "列出演示项",
       "description": "返回演示项集合。",
+      "aiCallable": true,
       "parameters": []
     }
   ],

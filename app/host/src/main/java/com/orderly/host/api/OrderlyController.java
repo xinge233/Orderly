@@ -19,6 +19,7 @@ import com.orderly.host.execution.ExecutionService;
 import com.orderly.host.execution.AiActionService;
 import com.orderly.host.modulecontrol.ModuleControlService;
 import com.orderly.host.modulecontrol.ModuleFolderService;
+import com.orderly.host.modulecontrol.ModuleInterfaceState;
 import com.orderly.host.modulecontrol.ModulePreferences;
 import com.orderly.host.modulecontrol.ModuleRefreshResult;
 import com.orderly.host.modulecontrol.ModuleRefreshService;
@@ -426,6 +427,33 @@ public class OrderlyController {
         return moduleControl.preferences();
     }
 
+    @GetMapping("/system/module-interfaces")
+    public ModuleInterfaceState moduleInterfaces() {
+        return moduleControl.interfaceState();
+    }
+
+    @PatchMapping("/modules/{moduleId}/interfaces/{kind}/{interfaceId}/ai-callable")
+    public ModuleInterfaceState updateInterfaceAiCallable(
+            @PathVariable String moduleId,
+            @PathVariable String kind,
+            @PathVariable String interfaceId,
+            @RequestBody InterfaceAiCallableRequest request
+    ) {
+        if (request == null || request.aiCallable() == null) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_REQUEST",
+                    "aiCallable 必须是布尔值"
+            );
+        }
+        return moduleControl.setInterfaceAiCallable(
+                moduleId,
+                kind,
+                interfaceId,
+                request.aiCallable()
+        );
+    }
+
     @PutMapping("/system/module-preferences/sidebar-order")
     public ModulePreferences updateSidebarOrder(@RequestBody ModuleOrderRequest request) {
         return moduleControl.updateSidebarOrder(requireModuleIds(request));
@@ -480,6 +508,9 @@ public class OrderlyController {
     }
 
     public record ActivationRequest(Boolean enabled) {
+    }
+
+    public record InterfaceAiCallableRequest(Boolean aiCallable) {
     }
 
     public record ModuleOrderRequest(List<String> moduleIds) {

@@ -1,8 +1,10 @@
 package com.orderly.host.ai;
 
 import com.orderly.host.api.ApiException;
+import com.orderly.host.event.ExecutionJournal;
 import com.orderly.host.execution.AiActionService;
 import com.orderly.host.execution.ExecutionRecord;
+import com.orderly.host.modulecontrol.InterfaceUsageRegistry;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -21,13 +23,28 @@ public class AiPlanService {
     private static final Duration PLAN_TTL = Duration.ofMinutes(30);
 
     private final AiActionService actions;
+    private final InterfaceUsageRegistry usage;
+    private final ExecutionJournal journal;
     private final Map<String, StoredPlan> plans = new ConcurrentHashMap<>();
 
-    public AiPlanService(AiActionService actions) {
+    public AiPlanService(
+            AiActionService actions,
+            InterfaceUsageRegistry usage,
+            ExecutionJournal journal
+    ) {
         this.actions = actions;
+        this.usage = usage;
+        this.journal = journal;
     }
 
     public AiContracts.Plan create(String goal, List<AiContracts.Action> requestedActions) {
+        return usage.withActionLock(() -> createLocked(goal, requestedActions));
+    }
+
+    private AiContracts.Plan createLocked(
+            String goal,
+            List<AiContracts.Action> requestedActions
+    ) {
         pruneExpiredPlans(Instant.now());
         List<AiActionService.ActionCall> calls = requestedActions.stream()
                 .map(action -> new AiActionService.ActionCall(
@@ -62,6 +79,32 @@ public class AiPlanService {
                 now.plus(PLAN_TTL)
         );
         plans.put(planId, new StoredPlan(plan, calls, now.plus(PLAN_TTL)));
+        usage.registerPlan(
+                planId,
+                now.plus(PLAN_TTL),
+                calls.stream()
+                        .map(action -> new InterfaceUsageRegistry.ActionRef(
+                                action.moduleId(),
+                                action.actionId()
+                        ))
+                        .toList()
+        );
+        try {
+            journal.append(
+                    "AI_PLAN",
+                    "AI_PLAN",
+                    planId,
+                    null,
+                    null,
+                    null,
+                    "PREVIEW",
+                    "独立 AI 计划已生成，引用接口进入使用中"
+            );
+        } catch (RuntimeException exception) {
+            plans.remove(planId);
+            usage.removePlan(planId);
+            throw exception;
+        }
         return plan;
     }
 
@@ -91,14 +134,28 @@ public class AiPlanService {
                     "AI 计划已经确认，不能重复执行"
             );
         }
-        plans.put(planId, stored.withStatus("CONFIRMING"));
-        ExecutionRecord record = actions.executeAiPlan(stored.actions());
-        plans.put(planId, stored.withStatus(record.status()));
-        return record;
+        try (var ignored = usage.beginPlanExecution(planId)) {
+            plans.put(planId, stored.withStatus("CONFIRMING"));
+            try {
+                ExecutionRecord record = actions.executeAiPlan(stored.actions());
+                plans.put(planId, stored.withStatus(record.status()));
+                return record;
+            } catch (RuntimeException exception) {
+                plans.put(planId, stored.withStatus("FAILED"));
+                throw exception;
+            }
+        }
     }
 
     private void pruneExpiredPlans(Instant now) {
-        plans.entrySet().removeIf(entry -> !now.isBefore(entry.getValue().expiresAt()));
+        List<String> expired = plans.entrySet().stream()
+                .filter(entry -> !now.isBefore(entry.getValue().expiresAt()))
+                .map(Map.Entry::getKey)
+                .toList();
+        expired.forEach(planId -> {
+            plans.remove(planId);
+            usage.removePlan(planId);
+        });
     }
 
     private record StoredPlan(

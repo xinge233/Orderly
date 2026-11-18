@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderly.host.api.ApiException;
+import com.orderly.host.contract.ActionContract;
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.execution.AiActionService;
@@ -473,6 +474,23 @@ public class AiInterpretService {
     private List<ModuleContract> enabledModules() {
         return catalog.businessModules().stream()
                 .filter(module -> moduleControl.isEnabled(module.moduleId()))
+                .map(module -> new ModuleContract(
+                        module.moduleId(),
+                        module.title(),
+                        module.description(),
+                        module.order(),
+                        module.system(),
+                        module.actions().stream()
+                                .filter(ActionContract::aiCallable)
+                                .filter(action -> moduleControl.isActionAiCallableEnabled(
+                                        module.moduleId(),
+                                        action.id()
+                                ))
+                                .toList(),
+                        module.queries(),
+                        module.plannerRules()
+                ))
+                .filter(module -> !module.actions().isEmpty())
                 .toList();
     }
 

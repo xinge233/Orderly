@@ -166,17 +166,21 @@
 }
 
 .module-control-ui-row {
+    display: block;
+    border-bottom: 1px solid var(--color-line);
+    background: transparent;
+    transition:
+        background var(--duration-fast) var(--ease-out),
+        opacity var(--duration-fast) var(--ease-out);
+}
+
+.module-control-ui-row-header {
     display: grid;
     grid-template-columns: auto auto minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--space-3);
     min-height: 4.75rem;
     padding: var(--space-3) var(--space-6);
-    border-bottom: 1px solid var(--color-line);
-    background: transparent;
-    transition:
-        background var(--duration-fast) var(--ease-out),
-        opacity var(--duration-fast) var(--ease-out);
 }
 
 .module-control-ui-row:last-child {
@@ -223,6 +227,17 @@
     display: grid;
     min-width: 0;
     gap: var(--space-1);
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.module-control-ui-copy.is-static {
+    cursor: default;
 }
 
 .module-control-ui-copy strong,
@@ -243,6 +258,11 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
+}
+
+.module-control-ui-copy:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 3px;
 }
 
 .module-control-ui-square {
@@ -312,6 +332,87 @@
     margin: 0;
     padding: var(--space-8) var(--space-6);
     text-align: center;
+}
+
+.module-control-ui-interfaces {
+    display: grid;
+    gap: var(--space-4);
+    padding: var(--space-2) var(--space-6) var(--space-5)
+        calc(var(--space-6) + 4.65rem);
+    border-top: 1px solid var(--color-line);
+    background: var(--color-surface-muted);
+}
+
+.module-control-ui-interfaces[hidden] {
+    display: none;
+}
+
+.module-control-ui-interface-group {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.module-control-ui-interface-group__header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.module-control-ui-interface-group__header h3 {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.module-control-ui-interface-group__header span,
+.module-control-ui-interface-note,
+.module-control-ui-interface__state {
+    color: var(--color-text-soft);
+    font-size: 0.78rem;
+}
+
+.module-control-ui-interface {
+    display: grid;
+    grid-template-columns: minmax(8rem, 0.7fr) minmax(0, 2fr) auto;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 3.6rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    padding: var(--space-2) var(--space-3);
+}
+
+.module-control-ui-interface__title,
+.module-control-ui-interface__description {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.module-control-ui-interface__description {
+    color: var(--color-text-soft);
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.module-control-ui-interface__control {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.module-control-ui-interface.is-locked {
+    border-color: var(--color-line-strong);
+}
+
+.module-control-ui-interface.is-module-disabled {
+    opacity: 0.72;
+}
+
+.module-control-ui-interface-note {
+    margin: 0;
 }
 
 .module-control-ui-settings-header {
@@ -394,14 +495,14 @@
     .module-control-ui-toolbar,
     .module-control-ui-settings-toolbar,
     .module-control-ui-status,
-    .module-control-ui-row,
+    .module-control-ui-row-header,
     .module-control-ui-settings-header,
     .module-control-ui-form {
         padding-right: var(--space-4);
         padding-left: var(--space-4);
     }
 
-    .module-control-ui-row {
+    .module-control-ui-row-header {
         grid-template-columns: auto auto minmax(0, 1fr);
     }
 
@@ -412,6 +513,26 @@
 
     .module-control-ui-toolbar .module-control-ui-button {
         flex: 1 1 auto;
+    }
+
+    .module-control-ui-interfaces {
+        padding-right: var(--space-4);
+        padding-left: var(--space-4);
+    }
+
+    .module-control-ui-interface {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .module-control-ui-interface__description {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+
+    .module-control-ui-interface-group__header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: var(--space-1);
     }
 }
 

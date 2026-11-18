@@ -2,7 +2,7 @@
 
 `plan.schema.json` 定义计划与澄清问题的公开结构，`module.schema.json` 定义模块契约，`module-ui.schema.json` 定义模块自带 UI 清单，`theme.schema.json` 定义目录主题包的 `theme.json`，`study-data.schema.json` 定义学习相关模块的只读数据边界，`samples/` 提供前端和测试共享的示例。
 
-`samples/valid/module.json`、`module-control.json` 与模块 UI 样例是宿主和前端实际校验逻辑接受的合法样例；`samples/invalid/` 中的模块契约和 UI 清单会被对应逻辑明确拒绝。`gate.ps1` 同时执行 Java 模块契约样例测试与 Node 模块 UI 样例测试，防止 schema、样例和运行时规则漂移。
+`samples/valid/module.json`、`module-control.json` 与模块 UI 样例是宿主和前端实际校验逻辑接受的合法样例；`samples/invalid/` 中的模块契约和 UI 清单会被对应逻辑明确拒绝。Action 与 Query 的静态 `aiCallable`、模块 UI 设置和 `module.schema.json` 必须共同校验，动态用户开关不属于模块 JAR 契约。`gate.ps1` 同时执行 Java 模块契约样例测试与 Node 模块 UI 样例测试，防止 schema、样例和运行时规则漂移。
 
 模块契约的可选 `system` 元数据只允许 `role: "MODULE_CONTROL"` 与 `protected: true`。全运行集必须恰好有一个 `module_control` 系统模块；零业务模块合法，但缺少控制模块或重复系统角色必须阻止构建或启动。
 
