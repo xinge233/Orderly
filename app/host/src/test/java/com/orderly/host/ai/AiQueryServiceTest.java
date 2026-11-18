@@ -43,7 +43,6 @@ class AiQueryServiceTest {
                 "test.list",
                 "测试查询",
                 "读取测试数据",
-                true,
                 List.of(new ParameterContract("label", "string", false, "标签"))
         );
         module = new ModuleContract(
@@ -113,55 +112,23 @@ class AiQueryServiceTest {
     }
 
     @Test
-    void staticAndDynamicAiCallableAreBothEnforced() {
-        QueryContract hidden = new QueryContract(
-                "test.hidden",
-                "隐藏查询",
-                "静态禁止",
-                false,
-                List.of()
-        );
-        module = new ModuleContract(
-                module.moduleId(),
-                module.title(),
-                module.description(),
-                module.order(),
-                null,
-                List.of(),
-                List.of(hidden),
-                List.of()
-        );
-
-        List<AiContracts.QueryResult> staticDisabled = service.executeAiQueries(List.of(
-                new AiContracts.QueryCall("module_test", "test.hidden", Map.of())
-        ));
-
-        assertThat(staticDisabled.get(0).status()).isEqualTo(AiContracts.QueryStatus.FAILED);
-        verifyNoInteractions(executor);
-
-        module = new ModuleContract(
-                module.moduleId(),
-                module.title(),
-                module.description(),
-                module.order(),
-                null,
-                List.of(),
-                List.of(new QueryContract(
-                        "test.list",
-                        "测试查询",
-                        "读取测试数据",
-                        true,
-                        List.of()
-                )),
-                List.of()
-        );
+    void dynamicAiCallableOnlyControlsAiQuery() {
         when(moduleControl.isQueryAiCallableEnabled("module_test", "test.list"))
                 .thenReturn(false);
+        when(executor.query(eq("test.list"), anyMap(), eq(runtime)))
+                .thenReturn(Map.of("items", List.of()));
+
+        Map<String, Object> direct = service.executeHttpQuery(
+                "module_test",
+                "test.list",
+                Map.of()
+        );
+        assertThat(direct).containsEntry("items", List.of());
 
         List<AiContracts.QueryResult> dynamicDisabled = service.executeAiQueries(List.of(query()));
 
         assertThat(dynamicDisabled.get(0).status()).isEqualTo(AiContracts.QueryStatus.FAILED);
-        verifyNoInteractions(executor);
+        verify(executor).query(eq("test.list"), anyMap(), eq(runtime));
     }
 
     @Test
@@ -181,7 +148,6 @@ class AiQueryServiceTest {
                 "test.list",
                 "测试查询",
                 "读取测试数据",
-                true,
                 List.of(new ParameterContract("label", "string", true, "标签"))
         );
         module = new ModuleContract(

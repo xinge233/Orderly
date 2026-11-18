@@ -455,8 +455,8 @@ public class AiInterpretService {
     /**
      * 从契约目录生成 Python 可见的工具卡。
      *
-     * <p>业务模块必须启用；Action/Query 同时受契约静态 {@code aiCallable} 和模块治理
-     * 动态开关约束。工具卡元数据来自 {@link ContractCatalog}，这里不维护第二套定义。</p>
+     * <p>业务模块必须启用；Action/Query 只受模块治理动态开关约束。工具卡元数据来自
+     * {@link ContractCatalog}，这里不维护第二套定义。</p>
      */
     private List<AiContracts.ToolModule> enabledToolModules() {
         List<AiContracts.ToolModule> cards = new ArrayList<>();
@@ -465,7 +465,6 @@ public class AiInterpretService {
                 continue;
             }
             List<AiContracts.ToolAction> actions = module.actions().stream()
-                    .filter(ActionContract::aiCallable)
                     .filter(action -> moduleControl.isActionAiCallableEnabled(
                             module.moduleId(),
                             action.id()
@@ -473,7 +472,6 @@ public class AiInterpretService {
                     .map(this::toolAction)
                     .toList();
             List<AiContracts.ToolQuery> queries = module.queries().stream()
-                    .filter(QueryContract::aiCallable)
                     .filter(query -> moduleControl.isQueryAiCallableEnabled(
                             module.moduleId(),
                             query.id()

@@ -9,7 +9,6 @@
       "id": "study.review.read",
       "title": "读取复习自测",
       "description": "从模块自身 JAR 读取只读复习题目，不自动阅卷。",
-      "aiCallable": true,
       "parameters": []
     }
   ],

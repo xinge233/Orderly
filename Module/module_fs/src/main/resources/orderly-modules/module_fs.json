@@ -84,7 +84,6 @@
       "description": "按回收站条目恢复原对象。",
       "risk": "WRITE",
       "confirmationRequired": true,
-      "aiCallable": false,
       "parameters": [
         { "name": "trashId", "type": "string", "required": true, "description": "回收站条目 ID" }
       ],
@@ -102,7 +101,6 @@
       "id": "fs.list",
       "title": "列出目录",
       "description": "只读列出工作区目录内容。",
-      "aiCallable": true,
       "parameters": [
         { "name": "path", "type": "string", "required": false, "description": "工作区相对路径" }
       ]
@@ -111,21 +109,18 @@
       "id": "fs.materials",
       "title": "资料目录",
       "description": "只读读取模块 classpath 内的课程与学习资料。",
-      "aiCallable": true,
       "parameters": []
     },
     {
       "id": "fs.summary",
       "title": "文件摘要",
       "description": "读取工作区根目录的条目数量和摘要。",
-      "aiCallable": true,
       "parameters": []
     },
     {
       "id": "fs.trash",
       "title": "回收站",
       "description": "只读列出项目回收站条目。",
-      "aiCallable": true,
       "parameters": []
     }
   ],

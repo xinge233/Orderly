@@ -74,11 +74,6 @@
         "risk": { "enum": ["READ_ONLY", "WRITE", "DELETE"] },
         "confirmationRequired": { "type": "boolean" },
         "confirmationPhrase": { "type": "string" },
-        "aiCallable": {
-          "type": "boolean",
-          "default": true,
-          "description": "省略时为 true；显式 false 禁止总体 AI 直执调用。"
-        },
         "parameters": {
           "type": "array",
           "items": { "$ref": "#/$defs/parameter" }
@@ -123,11 +118,6 @@
         "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_.-]+$" },
         "title": { "type": "string", "minLength": 1 },
         "description": { "type": "string", "minLength": 1 },
-        "aiCallable": {
-          "type": "boolean",
-          "default": true,
-          "description": "省略时为 true；静态 false 表示模块禁止 AI 查询该接口。"
-        },
         "parameters": {
           "type": "array",
           "items": { "$ref": "#/$defs/parameter" }

@@ -8,14 +8,12 @@ import java.util.List;
  * @param id 全局查询 ID
  * @param title 显示名称
  * @param description 说明
- * @param aiCallable 是否允许总体 AI 查询通道调用
  * @param parameters 查询参数
  */
 public record QueryContract(
         String id,
         String title,
         String description,
-        boolean aiCallable,
         List<ParameterContract> parameters
 ) {
     public QueryContract {

@@ -298,7 +298,7 @@ class AiInterpretServiceTest {
     }
 
     @Test
-    void sendsOnlyEnabledModulesAndAiCallableActionsAndQueriesToPython() {
+    void sendsOnlyEnabledModulesAndDynamicallyEnabledActionsAndQueriesToPython() {
         ModuleContract enabled = new ModuleContract(
                 "module_enabled",
                 "启用模块",
@@ -306,14 +306,12 @@ class AiInterpretServiceTest {
                 1,
                 null,
                 List.of(
-                        action("action.allowed", true),
-                        action("action.static-off", false),
-                        action("action.dynamic-off", true)
+                        action("action.allowed"),
+                        action("action.dynamic-off")
                 ),
                 List.of(
-                        query("query.allowed", true),
-                        query("query.static-off", false),
-                        query("query.dynamic-off", true)
+                        query("query.allowed"),
+                        query("query.dynamic-off")
                 ),
                 List.of()
         );
@@ -323,8 +321,8 @@ class AiInterpretServiceTest {
                 "已停用",
                 2,
                 null,
-                List.of(action("disabled.action", true)),
-                List.of(query("disabled.query", true)),
+                List.of(action("disabled.action")),
+                List.of(query("disabled.query")),
                 List.of()
         );
         when(catalog.businessModules()).thenReturn(List.of(enabled, disabled));
@@ -414,7 +412,7 @@ class AiInterpretServiceTest {
         );
     }
 
-    private ActionContract action(String id, boolean aiCallable) {
+    private ActionContract action(String id) {
         return new ActionContract(
                 id,
                 id,
@@ -422,18 +420,16 @@ class AiInterpretServiceTest {
                 RiskLevel.READ_ONLY,
                 false,
                 null,
-                aiCallable,
                 List.of(),
                 null
         );
     }
 
-    private QueryContract query(String id, boolean aiCallable) {
+    private QueryContract query(String id) {
         return new QueryContract(
                 id,
                 id,
                 "查询说明",
-                aiCallable,
                 List.of()
         );
     }

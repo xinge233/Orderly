@@ -179,11 +179,11 @@ src/main/resources/orderly-modules/example.json
 
 - 写操作和删除操作必须设置 `confirmationRequired: true`。
 - 删除操作不要求确认词，但必须经过用户勾选确认，并且只能进入项目回收站。
-- `aiCallable` 缺省为 `true`，只有不能由总体 AI 调用的动作才显式设为 `false`。
+- 契约不得声明静态 `aiCallable`；业务 Action 默认允许 AI 调用，由宿主动态治理。
 - `outputSchema` 应声明动作输出；首版只接受契约允许的 JSON Schema 子集。
 - 参数类型目前支持 `string`、`boolean` 和 `integer`。
-- Query 可声明 `aiCallable`，默认 `true`；它只限制未来 AI 查询通道，不影响模块自身
-  使用 Query。
+- Query 契约不得声明静态 `aiCallable`；宿主默认允许 AI Query，并可动态关闭。关闭
+  只影响 AI Query，不影响模块自身使用 Query。
 - 计划规则的 `actionId` 必须指向同一模块中的动作。
 - `argumentGroups` 只能映射该动作已经声明的参数，捕获组编号必须有效。
 - `pathArguments` 中的参数必须声明为字符串参数，并出现在 `argumentGroups` 中。
@@ -304,8 +304,8 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\start.ps1 -SkipBuild
   类加载器不能让多个 JAR 共用同一个根资源路径。
 - `/api/modules/{moduleId}/ui/module.json` 及 JS/CSS 可访问。
 - 契约中声明的只读查询能够通过通用查询接口执行。
-- Action/Query 的 AI 可调用状态由宿主统一保存；静态 `aiCallable=false` 必须锁定，
-  Query 开关不得影响模块自身查询。
+- 业务 Action/Query 的 AI 可调用状态由宿主统一保存并默认开启；Query 开关不得影响
+  模块自身查询。系统模块 `module_control` 不参与接口治理。
 - 写操作先进入计划确认，删除操作只进入项目回收站。
 - 移除模块源码并重新启动后，旧侧边栏、卡片、API 和 UI 不再出现。
 - 删除全部模块目录后，程序仍可启动，侧边栏和总览显示空状态。

@@ -98,9 +98,8 @@ public final class TestModuleArchives {
                     },
                     {
                       "id": "business.hidden",
-                      "title": "静态禁用查询",
-                      "description": "测试静态 AI 禁用",
-                      "aiCallable": false,
+                      "title": "第二查询",
+                      "description": "测试动态 AI 治理",
                       "parameters": []
                     }
                   ],

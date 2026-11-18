@@ -15,7 +15,6 @@ import java.util.List;
  * @param risk 风险等级
  * @param confirmationRequired 是否要求计划确认
  * @param confirmationPhrase 旧契约兼容字段；当前不再要求删除动作声明确认词
- * @param aiCallable 是否允许 AI 计划或 AI 直执调用
  * @param parameters 参数
  * @param outputSchema 可选的结构化输出 JSON Schema 子集
  */
@@ -26,7 +25,6 @@ public record ActionContract(
         RiskLevel risk,
         boolean confirmationRequired,
         String confirmationPhrase,
-        boolean aiCallable,
         List<ParameterContract> parameters,
         @JsonInclude(JsonInclude.Include.NON_NULL) JsonNode outputSchema
 ) {

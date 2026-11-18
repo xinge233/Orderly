@@ -179,10 +179,9 @@
     {
       "id": "calendar.space.create",
       "title": "创建自定义空间",
-      "description": "创建纯文本、图片或视频空间；不允许 AI 调用。",
+      "description": "创建纯文本、图片或视频空间。",
       "risk": "WRITE",
       "confirmationRequired": true,
-      "aiCallable": false,
       "parameters": [
         { "name": "type", "type": "string", "required": true, "description": "text、image 或 video" },
         { "name": "text", "type": "string", "required": false, "description": "文本内容" },
@@ -208,10 +207,9 @@
     {
       "id": "calendar.space.delete",
       "title": "删除自定义空间",
-      "description": "将空间整体移入项目回收站；不允许 AI 调用。",
+      "description": "将空间整体移入项目回收站。",
       "risk": "DELETE",
       "confirmationRequired": true,
-      "aiCallable": false,
       "parameters": [
         { "name": "spaceId", "type": "string", "required": true, "description": "空间 ID" }
       ],
@@ -230,14 +228,12 @@
       "id": "calendar.list",
       "title": "日程列表",
       "description": "只读读取模块自有日程集合。",
-      "aiCallable": true,
       "parameters": []
     },
     {
       "id": "calendar.todo.list",
       "title": "日历待办列表",
       "description": "只读读取日历模块独立待办。",
-      "aiCallable": true,
       "parameters": [
         { "name": "status", "type": "string", "required": false, "description": "状态筛选" },
         { "name": "category", "type": "string", "required": false, "description": "分类筛选" },
@@ -250,14 +246,12 @@
       "id": "calendar.space.list",
       "title": "自定义空间列表",
       "description": "只读读取模块自管空间元数据。",
-      "aiCallable": true,
       "parameters": []
     },
     {
       "id": "calendar.agenda",
       "title": "日程与待办时间线",
       "description": "只读合并日程和待办截止时间，不建立数据关联。",
-      "aiCallable": true,
       "parameters": [
         { "name": "from", "type": "string", "required": false, "description": "时间线起点；格式同 startAt" },
         { "name": "to", "type": "string", "required": false, "description": "时间线终点；格式同 startAt" }

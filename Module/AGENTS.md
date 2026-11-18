@@ -168,7 +168,8 @@ orderly-modules/<module>.json
 - `risk` 只能是 `READ_ONLY`、`WRITE` 或 `DELETE`。
 - `WRITE` 和 `DELETE` 必须设置 `confirmationRequired: true`。
 - `DELETE` 只要求宿主规定的明确确认，不额外要求确认词，并且只能把对象移入项目回收站。
-- `aiCallable` 缺省为 `true`；只有确实禁止总体 AI 调用时才显式设为 `false`。
+- Action 契约不得声明静态 `aiCallable`；所有业务 Action 默认允许 AI 调用，用户通过
+  宿主治理动态关闭。
 - 总体 AI 的直执策略由宿主决定：`READ_ONLY` 与 `WRITE` 可在明确意图下直执；`DELETE` 默认必须进入确认流程，只有宿主设置显式允许删除直执时才可直执。
 - `outputSchema` 应声明输出 JSON 结构，且只能使用当前契约允许的 JSON Schema 子集。
 - 参数类型当前只支持 `string`、`boolean` 和 `integer`。
@@ -182,8 +183,8 @@ orderly-modules/<module>.json
 - Query ID 必须带模块命名空间并在全运行集唯一。
 - Query 不得产生任何文件、集合、设置、审计或外部状态副作用。
 - Query 参数必须先在契约声明；模块不得接受未声明参数或执行隐式写入。
-- Query 可声明静态 `aiCallable`，省略时为 `true`；它只描述未来 AI 查询通道是否
-  允许使用该查询，不影响模块自身查询。
+- Query 契约不得声明静态 `aiCallable`；AI Query 权限由宿主治理的动态
+  `queryAiCallableEnabled` 控制，默认开启。动态关闭只阻断 AI Query，不影响模块自身查询。
 - 当前宿主以 `Map<String, String>` 向执行器传入 Query 参数；契约中的 Query 参数应
   按字符串设计，除非宿主接口和契约先同步升级。
 
@@ -207,8 +208,8 @@ Action 数组约束：
 
 - 宿主按数组顺序执行，模块不得自行调度、并行调用或插入下一步。
 - 每项必须声明 `moduleId`、`actionId` 和 `arguments`。
-- 宿主在执行前校验模块启用状态、Action 归属、`aiCallable`、风险、确认、参数和
-  输出 schema。
+- 宿主在执行前校验模块启用状态、Action 归属、`actionAiCallableEnabled`、风险、
+  确认、参数和输出 schema。
 - 首个不可恢复失败发生后，宿主停止后续 Action，并逆序回滚此前已完成 Action。
 - 模块之间不得直接互调；需要传递结果时，由宿主按顺序执行后续 Action。
 
@@ -301,9 +302,9 @@ export default async function mount(root, context) {
 - 模块只能使用宿主公开的 mount context，不得访问其他模块 DOM、内部状态或私有接口。
 - 只有 `module_control` 可以在满足系统模块校验时取得 `context.systemAdmin`；普通业务
   模块不得请求、伪造或缓存该特权。
-- `module_control` 通过宿主 API 管理 Action/Query 的动态 AI 可调用状态。静态
-  `aiCallable=false` 必须锁定；动态状态只限制 AI，不阻断模块自身 Query。未执行独立
-  AI 计划或执行中的 Action 必须由宿主标记为“使用中”并拒绝关闭。
+- `module_control` 通过宿主 API 管理业务 Action/Query 的动态 `aiCallable` 状态，
+  不治理自身接口。动态状态只限制 AI，不阻断模块自身 Query。未执行独立 AI 计划或
+  执行中的 Action 必须由宿主标记为“使用中”并拒绝关闭。
 - `orderly-ui/module.json` 的 `settings` 只支持 `boolean`、`integer`、`select` 和
   `text` 字段；字段值由宿主校验和持久化，模块不得自行维护第二套设置定义。
 - 不得在 `app/frontend/src/app.js` 等框架文件中增加固定视图映射。
@@ -358,7 +359,7 @@ export default async function mount(root, context) {
 | 契约合法 | 模块契约通过 `module.schema.json`，UI 清单通过 `module-ui.schema.json`；合法与非法样例均有实际测试 |
 | 标识唯一 | 模块、Action、Query、计划规则和视图 ID 的重复与越界被拒绝 |
 | 数据所有权 | `ownerModule` 与 `moduleId` 一致；资源名带模块 ID；运行态集合无跨模块复用并有测试 |
-| Action/Query | 风险、确认、`aiCallable`、参数和输出 schema 生效；Query 无副作用 |
+| Action/Query | 动态 `aiCallable`、风险、确认、参数和输出 schema 生效；Query 无副作用 |
 | 顺序与引用 | 有序 Action 数组按序执行；`$fromAction` 的成功、越界、缺失和类型错误均有测试 |
 | 快照与回滚 | 快照只读且可 JSON 化；失败停止；已完成 Action 逆序回滚；逆操作幂等 |
 | 删除 | 仅进入项目回收站；源码和测试中不存在物理删除调用 |

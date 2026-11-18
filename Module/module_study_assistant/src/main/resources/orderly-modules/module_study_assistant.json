@@ -9,7 +9,6 @@
       "id": "study.assistant.read",
       "title": "读取学习工作台",
       "description": "只读读取模块 JAR 自有的学习工作台数据。",
-      "aiCallable": true,
       "parameters": []
     }
   ],

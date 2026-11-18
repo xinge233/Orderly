@@ -119,7 +119,6 @@ function normalizeInterfaceDefinition(item, kind, index) {
         id: text(source.id, `${kind}${index + 1}`),
         title: text(source.title ?? source.label, `${kind}${index + 1}`),
         description: text(source.description),
-        aiCallable: source.aiCallable !== false,
         kind
     };
 }
@@ -681,7 +680,6 @@ export default async function mount(root, context) {
 
     function buildInterfaceRow(module, iface) {
         const row = make("div", "module-control-ui-interface");
-        const staticEnabled = iface.aiCallable;
         const dynamicEnabled = interfaceStateFor(
             state.interfaceState,
             iface.kind,
@@ -690,8 +688,7 @@ export default async function mount(root, context) {
         );
         const inUse = iface.kind === "action"
             && actionIsInUse(state.interfaceState, module.moduleId, iface.id);
-        // 静态 aiCallable=false 是不可覆盖上限；执行中的 Action 也只显示锁定状态。
-        const checked = staticEnabled && dynamicEnabled;
+        const checked = dynamicEnabled;
 
         const title = make("strong", "module-control-ui-interface__title", iface.title);
         const description = make(
@@ -703,15 +700,13 @@ export default async function mount(root, context) {
         const control = make("div", "module-control-ui-interface__control");
         if (inUse) {
             control.append(make("span", "module-control-ui-interface__state", "使用中"));
-        } else if (!staticEnabled) {
-            control.append(make("span", "module-control-ui-interface__state", "模块禁止 AI 调用"));
         }
 
         const switchLabel = make("label", "module-control-ui-switch module-control-ui-switch--interface");
         const checkbox = make("input");
         checkbox.type = "checkbox";
         checkbox.checked = checked;
-        checkbox.disabled = state.busy || !staticEnabled || inUse;
+        checkbox.disabled = state.busy || inUse;
         const moduleSuffix = module.enabled ? "" : "；模块当前停用";
         checkbox.setAttribute(
             "aria-label",
@@ -725,7 +720,7 @@ export default async function mount(root, context) {
         if (!module.enabled) {
             row.classList.add("is-module-disabled");
         }
-        if (!staticEnabled || inUse) {
+        if (inUse) {
             row.classList.add("is-locked");
         }
         row.append(title, description, control);
@@ -737,7 +732,9 @@ export default async function mount(root, context) {
         const heading = make("header", "module-control-ui-interface-group__header");
         heading.append(
             make("h3", "", title),
-            make("span", "", kind === "query" ? "仅影响未来 AI 查询；模块自身查询不限制" : "仅影响 AI 计划与 AI 直执")
+            make("span", "", kind === "query"
+                ? "仅影响 AI 查询；模块自身查询不受限制"
+                : "仅影响 AI 计划与 AI 直执")
         );
         group.append(heading);
         if (!items.length) {
@@ -745,13 +742,6 @@ export default async function mount(root, context) {
             return group;
         }
         items.forEach((iface) => group.append(buildInterfaceRow(module, iface)));
-        if (kind === "query") {
-            group.append(make(
-                "p",
-                "module-control-ui-interface-note",
-                "AI 查询通道尚未接入；当前开关仅保存未来授权状态。"
-            ));
-        }
         return group;
     }
 

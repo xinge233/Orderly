@@ -272,8 +272,9 @@ test("module_control renders interface AI switches with locking states", async (
     assert.match(control, /module-control-ui-interface__title/);
     assert.match(control, /module-control-ui-interface__description/);
     assert.match(control, /使用中/);
-    assert.match(control, /模块禁止 AI 调用/);
-    assert.match(control, /AI 查询通道尚未接入/);
+    assert.doesNotMatch(control, /模块禁止 AI 调用/);
+    assert.doesNotMatch(control, /AI 查询通道尚未接入/);
+    assert.match(control, /仅影响 AI 查询；模块自身查询不受限制/);
     assert.match(control, /setInterfaceAiCallable/);
     assert.match(control, /interfacePanel\.hidden = !expanded/);
     assert.match(control, /interfaceStateFor\(\s*state\.interfaceState,/);

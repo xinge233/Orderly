@@ -673,16 +673,17 @@ public class ContractCatalog implements AutoCloseable {
     }
 
     /**
-     * 解析 Action 契约，包括风险、AI 可调用上限、参数和可选输出 schema。
+     * 解析 Action 契约，包括风险、参数和可选输出 schema。
      *
-     * <p>{@code aiCallable} 省略时默认允许；{@code outputSchema} 仅接受宿主支持的
-     * JSON Schema 子集，并在加载阶段预先校验定义。</p>
+     * <p>AI 可调用状态只属于宿主动态治理，不进入模块 JAR 契约；
+     * {@code outputSchema} 仅接受宿主支持的 JSON Schema 子集。</p>
      */
     private ActionContract parseAction(JsonNode node) {
         requireText(node, "id");
         requireText(node, "title");
         requireText(node, "description");
         requireText(node, "risk");
+        rejectDeprecatedAiCallable(node, "动作");
         RiskLevel risk;
         try {
             risk = RiskLevel.valueOf(node.path("risk").asText());
@@ -692,10 +693,6 @@ public class ContractCatalog implements AutoCloseable {
         JsonNode rawConfirmationRequired = node.get("confirmationRequired");
         if (rawConfirmationRequired != null && !rawConfirmationRequired.isBoolean()) {
             throw new IllegalStateException("动作 confirmationRequired 必须是布尔值：" + node.path("id").asText());
-        }
-        JsonNode rawAiCallable = node.get("aiCallable");
-        if (rawAiCallable != null && !rawAiCallable.isBoolean()) {
-            throw new IllegalStateException("动作 aiCallable 必须是布尔值：" + node.path("id").asText());
         }
         JsonNode outputSchema = node.get("outputSchema");
         if (outputSchema != null && !outputSchema.isNull()) {
@@ -716,28 +713,32 @@ public class ContractCatalog implements AutoCloseable {
                 risk,
                 node.path("confirmationRequired").asBoolean(false),
                 node.path("confirmationPhrase").asText(""),
-                node.path("aiCallable").asBoolean(true),
                 List.copyOf(parameters),
                 outputSchema == null || outputSchema.isNull() ? null : outputSchema.deepCopy()
         );
     }
 
-    /** 解析只读 Query 契约，并把省略的 {@code aiCallable} 视为允许。 */
+    /** 解析只读 Query 契约；AI 可调用状态只由宿主治理。 */
     private QueryContract parseQuery(JsonNode node) {
         requireText(node, "id");
         requireText(node, "title");
         requireText(node, "description");
-        JsonNode rawAiCallable = node.get("aiCallable");
-        if (rawAiCallable != null && !rawAiCallable.isBoolean()) {
-            throw new IllegalStateException("查询 aiCallable 必须是布尔值：" + node.path("id").asText());
-        }
+        rejectDeprecatedAiCallable(node, "查询");
         return new QueryContract(
                 node.path("id").asText(),
                 node.path("title").asText(),
                 node.path("description").asText(),
-                node.path("aiCallable").asBoolean(true),
                 parseParameters(node.path("parameters"), "查询")
         );
+    }
+
+    private void rejectDeprecatedAiCallable(JsonNode node, String owner) {
+        if (node.has("aiCallable")) {
+            throw new IllegalStateException(
+                    owner + " aiCallable 已废弃，AI 可调用状态只能由宿主动态治理："
+                            + node.path("id").asText()
+            );
+        }
     }
 
     /** 解析本地计划规则的正则、参数捕获组和路径参数映射。 */

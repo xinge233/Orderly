@@ -61,18 +61,11 @@ public class ActionExecutionCore {
     /**
      * 解析仅供 AI 调用的动作目标。
      *
-     * <p>除业务模块启用、动作归属和系统模块保护校验外，还要求契约静态允许 AI 调用，
-     * 且用户动态开关未关闭该动作。该检查无业务副作用。</p>
+     * <p>除业务模块启用、动作归属和系统模块保护校验外，还要求用户动态开关未关闭
+     * 该动作。该检查无业务副作用。</p>
      */
     public ResolvedAction requireAiTarget(String moduleId, String actionId) {
         ResolvedAction target = requireEnabledTarget(moduleId, actionId);
-        if (!target.action().aiCallable()) {
-            throw new ApiException(
-                    HttpStatus.CONFLICT,
-                    "ACTION_NOT_AI_CALLABLE",
-                    "动作禁止 AI 调用：" + actionId
-            );
-        }
         if (!moduleControl.isActionAiCallableEnabled(moduleId, actionId)) {
             throw new ApiException(
                     HttpStatus.CONFLICT,
@@ -86,7 +79,7 @@ public class ActionExecutionCore {
     /**
      * 解析旧版计划可执行的动作目标。
      *
-     * <p>校验业务模块启用、动作归属和系统模块保护，但不应用 AI 静态或动态开关；
+     * <p>校验业务模块启用、动作归属和系统模块保护，但不应用 AI 动态开关；
      * 授权与确认仍由计划执行入口负责。</p>
      */
     public ResolvedAction requirePlanTarget(String moduleId, String actionId) {

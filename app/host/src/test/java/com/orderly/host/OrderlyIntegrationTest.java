@@ -8,6 +8,7 @@ import com.orderly.host.execution.ExecutionRecord;
 import com.orderly.host.execution.ExecutionRecordStore;
 import com.orderly.host.execution.ExecutionRecordStep;
 import com.orderly.host.event.ExecutionJournal;
+import com.orderly.host.modulecontrol.ModuleControlService;
 import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanStatus;
 import com.orderly.host.plan.PlanView;
@@ -76,6 +77,9 @@ class OrderlyIntegrationTest {
 
     @Autowired
     private SystemFeatureService features;
+
+    @Autowired
+    private ModuleControlService moduleControl;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -274,27 +278,39 @@ class OrderlyIntegrationTest {
     }
 
     @Test
-    void rejectsExplicitlyNonAiCallableAction() throws Exception {
-        mockMvc.perform(post("/api/ai/actions/execute")
-                        .contentType("application/json")
-                        .content("""
-                                {
-                                  "confirmed": true,
-                                  "actions": [{
-                                    "moduleId": "module_fs",
-                                    "actionId": "fs.restore",
-                                    "arguments": {"trashId": "not-used"}
-                                  }]
-                                }
-                                """))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("ACTION_NOT_AI_CALLABLE"));
+    void rejectsDynamicallyDisabledAiAction() throws Exception {
+        moduleControl.setInterfaceAiCallable("module_fs", "action", "fs.restore", false);
+        try {
+            mockMvc.perform(post("/api/ai/actions/execute")
+                            .contentType("application/json")
+                            .content("""
+                                    {
+                                      "confirmed": true,
+                                      "actions": [{
+                                        "moduleId": "module_fs",
+                                        "actionId": "fs.restore",
+                                        "arguments": {"trashId": "not-used"}
+                                      }]
+                                    }
+                                    """))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("ACTION_AI_DISABLED"));
+        } finally {
+            moduleControl.setInterfaceAiCallable("module_fs", "action", "fs.restore", true);
+        }
     }
 
     @Test
-    void moduleControlActionsUseAuditedSourceAndCanRunNonAiCallableActions() throws Exception {
-        clearCalendarSpaces();
-        mockMvc.perform(post("/api/modules/module_calendar/actions/calendar.space.create")
+    void moduleControlActionsUseAuditedSourceWhenAiIsDisabled() throws Exception {
+        moduleControl.setInterfaceAiCallable(
+                "module_calendar",
+                "action",
+                "calendar.space.create",
+                false
+        );
+        try {
+            clearCalendarSpaces();
+            mockMvc.perform(post("/api/modules/module_calendar/actions/calendar.space.create")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -335,11 +351,19 @@ class OrderlyIntegrationTest {
                 .andExpect(jsonPath("$.origin").value("MODULE_CONTROL"))
                 .andExpect(jsonPath("$.status").value("COMPLETED"));
 
-        mockMvc.perform(get("/api/modules/module_calendar/query/calendar.space.list"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.count").value(0));
-        assertThat(runtime.listTrash()).anyMatch(entry ->
-                entry.originalPath().startsWith("modules/module_calendar/spaces/"));
+            mockMvc.perform(get("/api/modules/module_calendar/query/calendar.space.list"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.count").value(0));
+            assertThat(runtime.listTrash()).anyMatch(entry ->
+                    entry.originalPath().startsWith("modules/module_calendar/spaces/"));
+        } finally {
+            moduleControl.setInterfaceAiCallable(
+                    "module_calendar",
+                    "action",
+                    "calendar.space.create",
+                    true
+            );
+        }
     }
 
     @Test
@@ -355,20 +379,35 @@ class OrderlyIntegrationTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CONFIRMATION_REQUIRED"));
 
-        mockMvc.perform(post("/api/ai/actions/execute")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "confirmed": true,
-                                  "actions": [{
-                                    "moduleId": "module_calendar",
-                                    "actionId": "calendar.space.create",
-                                    "arguments": {"type": "text", "text": "AI 不允许创建"}
-                                  }]
-                                }
-                                """))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("ACTION_NOT_AI_CALLABLE"));
+        moduleControl.setInterfaceAiCallable(
+                "module_calendar",
+                "action",
+                "calendar.space.create",
+                false
+        );
+        try {
+            mockMvc.perform(post("/api/ai/actions/execute")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "confirmed": true,
+                                      "actions": [{
+                                        "moduleId": "module_calendar",
+                                        "actionId": "calendar.space.create",
+                                        "arguments": {"type": "text", "text": "AI 不允许创建"}
+                                      }]
+                                    }
+                                    """))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("ACTION_AI_DISABLED"));
+        } finally {
+            moduleControl.setInterfaceAiCallable(
+                    "module_calendar",
+                    "action",
+                    "calendar.space.create",
+                    true
+            );
+        }
     }
 
     @Test

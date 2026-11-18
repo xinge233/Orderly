@@ -11,7 +11,7 @@
 - 待办模块：读取并创建待办。
 - 日程模块：读取并修改已有日程的时间。
 - 学习界面参考扩展：新增 `研习蓝` 浅色主题、只读 AI 学习助手、知识脉络与复习自测模块；文件模块同时提供原型风格的资料管理视图和自身只读示例。它们不是 V7 已交付能力；全局 AI 接入不等同于学习模块的上传、自动整理、任务记录、自动出题与自动阅卷能力，这些学习能力仍明确标注尚未接入。
-- AI 直执：默认允许调用模块 Action，模块可显式禁止；Action 数组顺序执行，首次失败停止并逆序回滚此前完成项；支持指向前序输出的宿主解析引用。
+- AI 直执：业务 Action 默认允许 AI 调用，用户可在模组设置中动态关闭；Action 数组顺序执行，首次失败停止并逆序回滚此前完成项；支持指向前序输出的宿主解析引用。
 - 真实 AI 接入：根目录 `ai/` 的 Python 3.14 + FastAPI 服务负责模型配置、提示词、会话和结构化决策；Java 宿主只做本机 IPC 网关、最终契约校验与执行。API Key 只临时保存在 Python AI 服务进程内。
 - AI Query：模型可选择模块已声明且允许 AI 调用的只读 Query，最多 4 条，由 Java 校验并执行。查询原始结果默认只返回本地界面，不发送模型；只有用户显式开启设置后才按大小上限发送结构化结果。
 - 中央控制：风险分级、服务端确认、路径边界、快照、持久化执行记录、事件时间线和逆序回滚。
@@ -124,7 +124,7 @@ POST  /api/system/module-folder/open
 
 `module-folder/open` 只接受 `X-Orderly-Action: open-module-folder`，只在 Windows 上打开配置的 `orderly.module-source-dir`，不接受客户端路径。模块查询、计划规则、计划生成、确认和执行都检查 `enabled`；执行中拒绝停用，回滚始终允许。开关、设置、排序、刷新和打开目录会写入审计事件。
 
-Action 和 Query 契约都可声明静态 `aiCallable`。宿主在 `.orderly-data/module-governance.json` 中保存用户级 `actionAiCallableEnabled` 与 `queryAiCallableEnabled`；静态 `false` 是永久上限，用户只能在其允许范围内调整。动态开关只限制 AI：Action 影响 AI 计划与 AI 直执，Query 当前只保存未来 AI 查询的授权状态，模块自身查询和总览不会受影响。独立 AI 计划引用中的 Action 显示“使用中”，确认时原子转换为整次执行占用，并在结束或失败后释放；过期提案也会释放。旧版计划不参与。AI Query 通道尚未接入。
+业务 Action 和 Query 不在模块契约中声明静态 AI 权限。宿主在 `.orderly-data/module-governance.json` 中保存用户级 `actionAiCallableEnabled` 与 `queryAiCallableEnabled`，所有业务接口默认开启且可由 `module_control` 动态切换；系统模块 `module_control` 不参与治理。动态开关只限制 AI：Action 影响 AI 计划与 AI 直执，Query 影响已接入的 AI Query，模块自身查询和总览不会受影响。独立 AI 计划引用中的 Action 显示“使用中”，确认时原子转换为整次执行占用，并在结束或失败后释放；过期提案也会释放。旧版计划不参与。
 
 宿主功能与直执 API：
 

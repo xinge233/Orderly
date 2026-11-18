@@ -21,7 +21,7 @@ import java.util.Optional;
  * 校验并执行模块只读 Query。
  *
  * <p>HTTP 查询与 AI 查询共用同一套契约参数校验和模块运行时入口。AI 查询额外检查
- * 每回合数量、静态/动态 {@code aiCallable} 以及单条和总量结果上限；所有原始结果
+ * 每回合数量、动态 AI 开关以及单条和总量结果上限；所有原始结果
  * 默认只回本地前端，不会由本服务直接发送给模型。</p>
  */
 @Service
@@ -140,8 +140,8 @@ public class AiQueryService {
     /**
      * 通过宿主运行模块查询。
      *
-     * <p>查询 ID、参数类型和未知参数均来自模块契约；AI 调用还必须满足静态
-     * {@code aiCallable} 上限和治理层动态开关。执行器只能通过
+     * <p>查询 ID、参数类型和未知参数均来自模块契约；AI 调用还必须满足治理层动态
+     * AI 开关。执行器只能通过
      * {@link WorkspaceRuntime} 读取模块自有只读状态。</p>
      */
     private Map<String, Object> executeOne(
@@ -160,8 +160,7 @@ public class AiQueryService {
                             "模块未声明查询：" + moduleId + "/" + queryId
                     ));
             if (requireAiCallable
-                    && (!query.aiCallable()
-                    || !moduleControl.isQueryAiCallableEnabled(moduleId, queryId))) {
+                    && !moduleControl.isQueryAiCallableEnabled(moduleId, queryId)) {
                 throw new ApiException(
                         HttpStatus.CONFLICT,
                         "QUERY_AI_DISABLED",

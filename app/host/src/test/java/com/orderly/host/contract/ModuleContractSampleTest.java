@@ -28,10 +28,8 @@ class ModuleContractSampleTest {
 
             assertThat(module.moduleId()).isEqualTo("module_demo");
             assertThat(module.actions()).extracting(ActionContract::id).containsExactly("demo.read");
-            assertThat(module.actions().getFirst().aiCallable()).isFalse();
             assertThat(module.actions().getFirst().outputSchema()).isNotNull();
             assertThat(module.queries()).extracting(QueryContract::id).containsExactly("demo.list");
-            assertThat(module.queries().getFirst().aiCallable()).isTrue();
             assertThat(module.plannerRules()).extracting(PlannerRuleContract::id).containsExactly("demo.read");
         }
     }
@@ -50,7 +48,15 @@ class ModuleContractSampleTest {
     }
 
     @Test
-    void invalidQueryAiCallableFailsRuntimeValidation() throws Exception {
+    void deprecatedStaticAiCallableFailsRuntimeValidationAndSchemaValidation() throws Exception {
+        var schema = objectMapper.readTree(
+                samples.getParent().resolve("module.schema.json").toFile()
+        );
+        assertThat(schema.path("$defs").path("action").path("properties").has("aiCallable"))
+                .isFalse();
+        assertThat(schema.path("$defs").path("query").path("properties").has("aiCallable"))
+                .isFalse();
+
         Path missingModules = Path.of("target", "sample-contract-" + UUID.randomUUID())
                 .toAbsolutePath();
         try (ContractCatalog catalog = new ContractCatalog(objectMapper, missingModules.toString())) {
@@ -60,7 +66,7 @@ class ModuleContractSampleTest {
                     )
             ))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("查询 aiCallable");
+                    .hasMessageContaining("查询 aiCallable 已废弃");
         }
     }
 

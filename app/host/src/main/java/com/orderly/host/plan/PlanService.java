@@ -74,8 +74,8 @@ public class PlanService {
     /**
      * 在已持有模块治理读取许可时完成规则匹配和契约校验。
      *
-     * <p>每一步必须对应已安装、已启用且允许 AI 调用的业务 Action；参数先由统一执行
-     * 核心验证，再串联为无环依赖链。无法匹配的动作转换为 {@code QUESTION} 计划，
+     * <p>每一步必须对应已安装、已启用的业务 Action；旧版计划不应用模块治理层的
+     * Action AI 动态开关。参数先由统一执行核心验证，再串联为无环依赖链。无法匹配的动作转换为 {@code QUESTION} 计划，
      * 已匹配但参数或 DAG 非法的结果直接失败。成功或澄清结果都会写入内存计划表。</p>
      */
     private PlanView createEnabled(String goal) {
@@ -98,12 +98,6 @@ public class PlanService {
                 return saveQuestion(
                         goal,
                         "模块“" + moduleId + "”当前已停用。请启用模块后重试；未生成可执行计划。"
-                );
-            }
-            if (!action.aiCallable()) {
-                return saveQuestion(
-                        goal,
-                        "动作“" + action.id() + "”已明确禁止 AI 调用；未生成可执行计划。"
                 );
             }
             executionCore.validateArguments(action, raw.arguments());

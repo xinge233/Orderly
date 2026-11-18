@@ -412,7 +412,9 @@ try {
     }
     $moduleRules = Get-Content -Raw -LiteralPath $moduleRulesPath
     foreach ($requiredRule in @(
-        "aiCallable",
+        "actionAiCallableEnabled",
+        "queryAiCallableEnabled",
+        '契约不得声明静态 `aiCallable`',
         "`$fromAction",
         "不得在编译期或运行期直接导入",
         "逆序回滚"

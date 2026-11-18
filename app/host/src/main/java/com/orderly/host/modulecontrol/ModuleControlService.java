@@ -3,10 +3,8 @@ package com.orderly.host.modulecontrol;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.orderly.host.api.ApiException;
 import com.orderly.host.contract.ContractCatalog;
-import com.orderly.host.contract.ActionContract;
 import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.contract.ModuleEntry;
-import com.orderly.host.contract.QueryContract;
 import com.orderly.host.event.ExecutionJournal;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -113,9 +111,9 @@ public class ModuleControlService {
     /**
      * 更新 Action 或 Query 的动态 AI 可调用开关。
      *
-     * <p>接口必须由目标业务模块声明。静态 {@code aiCallable=false} 是不可覆盖上限；
-     * Action 关闭在注册表锁内检查未执行计划和执行占用，使用中返回冲突。设置成功后
-     * 持久化治理状态并追加 MODULE_CONTROL 审计事件。Query 动态开关不阻断模块自身查询。</p>
+     * <p>接口必须由目标业务模块声明。Action 关闭在注册表锁内检查未执行计划和执行
+     * 占用，使用中返回冲突。设置成功后持久化治理状态并追加 MODULE_CONTROL 审计事件。
+     * Query 动态开关只限制 AI 查询，不阻断模块自身查询。</p>
      */
     public ModuleInterfaceState setInterfaceAiCallable(
             String moduleId,
@@ -126,7 +124,7 @@ public class ModuleControlService {
         ModuleContract module = requireBusinessModule(moduleId);
         String normalizedKind = kind == null ? "" : kind.trim().toLowerCase(java.util.Locale.ROOT);
         if ("action".equals(normalizedKind)) {
-            ActionContract action = module.actions().stream()
+            module.actions().stream()
                     .filter(candidate -> candidate.id().equals(interfaceId))
                     .findFirst()
                     .orElseThrow(() -> new ApiException(
@@ -134,13 +132,6 @@ public class ModuleControlService {
                             "MODULE_ACTION_NOT_FOUND",
                             "模块未声明动作：" + moduleId + "/" + interfaceId
                     ));
-            if (enabled && !action.aiCallable()) {
-                throw new ApiException(
-                        HttpStatus.CONFLICT,
-                        "INTERFACE_STATICALLY_DISABLED",
-                        "模块已静态禁止该动作被 AI 调用"
-                );
-            }
             usage.withActionLock(() -> {
                 if (!enabled && usage.isActionInUse(moduleId, interfaceId, Instant.now())) {
                     throw new ApiException(
@@ -163,7 +154,7 @@ public class ModuleControlService {
                 return null;
             });
         } else if ("query".equals(normalizedKind)) {
-            QueryContract query = module.queries().stream()
+            module.queries().stream()
                     .filter(candidate -> candidate.id().equals(interfaceId))
                     .findFirst()
                     .orElseThrow(() -> new ApiException(
@@ -171,13 +162,6 @@ public class ModuleControlService {
                             "MODULE_QUERY_NOT_FOUND",
                             "模块未声明查询：" + moduleId + "/" + interfaceId
                     ));
-            if (enabled && !query.aiCallable()) {
-                throw new ApiException(
-                        HttpStatus.CONFLICT,
-                        "INTERFACE_STATICALLY_DISABLED",
-                        "模块已静态禁止该查询被 AI 调用"
-                );
-            }
             preferences.setQueryAiCallableEnabled(moduleId, interfaceId, enabled);
             journal.append(
                     "MODULE_CONTROL",

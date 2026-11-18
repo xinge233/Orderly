@@ -1,15 +1,15 @@
 {
   "moduleId": "module_invalid_query",
   "title": "非法查询模块",
-  "description": "用于验证查询 aiCallable 类型校验。",
+  "description": "用于验证废弃的查询 aiCallable 字段必须被拒绝。",
   "order": 10,
   "actions": [],
   "queries": [
     {
       "id": "invalid.query",
       "title": "非法查询",
-      "description": "aiCallable 不是布尔值。",
-      "aiCallable": "yes",
+      "description": "AI 可调用状态只能由宿主动态治理。",
+      "aiCallable": true,
       "parameters": []
     }
   ],

@@ -251,7 +251,7 @@ if ($aiSettings.allowSendQueryResultsToModel -isnot [bool]) {
 if ($moduleIds -contains "module_fs") {
     $smokeDirectory = "smoke-" + [guid]::NewGuid().ToString("N")
 
-    # 先证明未确认 WRITE 和静态禁止的 Action 都被宿主拒绝，再执行允许的三步 Action 数组。
+    # 先证明未确认 WRITE 和动态关闭的 Action 都被宿主拒绝，再执行允许的三步 Action 数组。
     $unconfirmedAiStatus = $null
     try {
         Invoke-RestMethod -Uri "$BaseUrl/api/ai/actions/execute" -Method Post `
@@ -272,22 +272,46 @@ if ($moduleIds -contains "module_fs") {
     }
 
     $blockedAiStatus = $null
+    $blockedAiCode = $null
     try {
-        Invoke-RestMethod -Uri "$BaseUrl/api/ai/actions/execute" -Method Post `
+        Invoke-RestMethod `
+            -Uri "$BaseUrl/api/modules/module_fs/interfaces/action/fs.restore/ai-callable" `
+            -Method Patch `
             -ContentType "application/json" `
-            -Body (@{
-                confirmed = $true
-                actions = @(@{
-                    moduleId = "module_fs"
-                    actionId = "fs.restore"
-                    arguments = @{ trashId = "smoke-not-used" }
-                })
-            } | ConvertTo-Json -Depth 12) | Out-Null
-    } catch {
-        $blockedAiStatus = [int]$_.Exception.Response.StatusCode
-    }
-    if ($blockedAiStatus -ne 409) {
-        throw "禁止 AI 调用的 Action 未被 409 拒绝，实际状态：$blockedAiStatus"
+            -Body (@{ aiCallable = $false } | ConvertTo-Json) | Out-Null
+        try {
+            Invoke-RestMethod -Uri "$BaseUrl/api/ai/actions/execute" -Method Post `
+                -ContentType "application/json" `
+                -Body (@{
+                    confirmed = $true
+                    actions = @(@{
+                        moduleId = "module_fs"
+                        actionId = "fs.restore"
+                        arguments = @{ trashId = "smoke-not-used" }
+                    })
+                } | ConvertTo-Json -Depth 12) | Out-Null
+        } catch {
+            $blockedAiStatus = [int]$_.Exception.Response.StatusCode
+            try {
+                $errorPayload = $_.ErrorDetails.Message | ConvertFrom-Json
+                $blockedAiCode = [string]$errorPayload.code
+            } catch {
+                $blockedAiCode = $null
+            }
+        }
+        if ($blockedAiStatus -ne 409 -or $blockedAiCode -ne "ACTION_AI_DISABLED") {
+            throw "动态关闭的 Action 未返回 409/ACTION_AI_DISABLED，实际状态：$blockedAiStatus，错误码：$blockedAiCode"
+        }
+    } finally {
+        try {
+            Invoke-RestMethod `
+                -Uri "$BaseUrl/api/modules/module_fs/interfaces/action/fs.restore/ai-callable" `
+                -Method Patch `
+                -ContentType "application/json" `
+                -Body (@{ aiCallable = $true } | ConvertTo-Json) | Out-Null
+        } catch {
+            throw "恢复 fs.restore 的 AI 可调用状态失败：$($_.Exception.Message)"
+        }
     }
 
     # 数组使用前序 Action 输出引用，按创建目录、列出、移入回收站顺序执行；随后验证持久化和逆序回滚。

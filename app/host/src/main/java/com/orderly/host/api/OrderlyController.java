@@ -465,14 +465,14 @@ public class OrderlyController {
         return moduleControl.preferences();
     }
 
-    /** 读取 Action/Query 的静态和动态 AI 可调用状态。 */
+    /** 读取业务 Action/Query 的动态 AI 可调用状态。 */
     @GetMapping("/system/module-interfaces")
     public ModuleInterfaceState moduleInterfaces() {
         return moduleControl.interfaceState();
     }
 
     /**
-     * 更新治理层的 AI 可调用开关；静态禁用是不可覆盖上限。
+     * 更新治理层的 AI 可调用开关；系统模块和未声明接口不可修改。
      */
     @PatchMapping("/modules/{moduleId}/interfaces/{kind}/{interfaceId}/ai-callable")
     public ModuleInterfaceState updateInterfaceAiCallable(

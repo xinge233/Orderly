@@ -267,7 +267,28 @@ class ModuleControlIntegrationTest {
     }
 
     @Test
-    void aiQueriesRespectEnabledAndStaticAndDynamicAiCallableGates() throws Exception {
+    void legacyPlanDoesNotUseDynamicActionAiGovernance() throws Exception {
+        moduleControl.setInterfaceAiCallable("module_business", "action", "business.write", false);
+        try {
+            PlanView plan = plans.create("执行业务");
+            assertThat(plan.kind()).isEqualTo("PLAN");
+            assertThat(plan.steps()).singleElement().satisfies(step ->
+                    assertThat(step.actionId()).isEqualTo("business.write"));
+
+            ExecutionRunResult result = execution.confirm(plan.planId(), true, "");
+            assertThat(result.outcome()).isEqualTo("COMPLETED");
+        } finally {
+            moduleControl.setInterfaceAiCallable(
+                    "module_business",
+                    "action",
+                    "business.write",
+                    true
+            );
+        }
+    }
+
+    @Test
+    void aiQueriesRespectEnabledAndDynamicAiCallableGates() throws Exception {
         org.mockito.Mockito.when(aiService.createTurn(any(), any()))
                 .thenReturn(queryDecision("business.list"));
 
@@ -284,20 +305,6 @@ class ModuleControlIntegrationTest {
                 .andExpect(jsonPath("$.kind").value("QUERY"))
                 .andExpect(jsonPath("$.queryResults[0].status").value("OK"))
                 .andExpect(jsonPath("$.queryResults[0].payload.count").value(1));
-
-        org.mockito.Mockito.when(aiService.createTurn(any(), any()))
-                .thenReturn(queryDecision("business.hidden"));
-        mockMvc.perform(post("/api/ai/turns")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "goal": "读取静态禁用查询",
-                                  "conversationId": null,
-                                  "clientRequestId": "query-static-disabled"
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.queryResults[0].status").value("FAILED"));
 
         mockMvc.perform(patch(
                         "/api/modules/module_business/interfaces/query/business.list/ai-callable"
@@ -385,6 +392,10 @@ class ModuleControlIntegrationTest {
                         .value(true))
                 .andExpect(jsonPath("$.queryAiCallableEnabled.module_business['business.list']")
                         .value(true));
+        mockMvc.perform(get("/api/system/module-interfaces"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.actionAiCallableEnabled.module_control").doesNotExist())
+                .andExpect(jsonPath("$.queryAiCallableEnabled.module_control").doesNotExist());
 
         AiContracts.Plan pending = aiPlans.create(
                 "占用接口",
@@ -417,12 +428,12 @@ class ModuleControlIntegrationTest {
                 .andExpect(jsonPath("$.count").value(1));
 
         mockMvc.perform(patch(
-                        "/api/modules/module_business/interfaces/query/business.hidden/ai-callable"
+                        "/api/modules/module_control/interfaces/query/control.list/ai-callable"
                 )
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"aiCallable\":true}"))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("INTERFACE_STATICALLY_DISABLED"));
+                .andExpect(jsonPath("$.code").value("MODULE_PROTECTED"));
 
         aiPlans.confirm(pending.planId());
         mockMvc.perform(patch(
