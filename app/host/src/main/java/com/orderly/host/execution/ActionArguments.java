@@ -7,12 +7,22 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-/** 契约参数的白名单、必填和基础类型校验。 */
+/**
+ * 按动作契约校验一次调用参数。
+ *
+ * <p>校验只使用契约声明的参数名和基础类型，不接受额外字段；它不执行动作，
+ * 也不判断风险、确认或 AI 可调用性。</p>
+ */
 public final class ActionArguments {
 
     private ActionArguments() {
     }
 
+    /**
+     * 校验参数白名单、必填项和基础类型。
+     *
+     * @throws IllegalArgumentException 缺少必填参数、出现契约外参数或类型不符
+     */
     public static void validate(ActionContract action, Map<String, Object> arguments) {
         Map<String, Object> suppliedArguments = arguments == null ? Map.of() : arguments;
         Set<String> allowed = new HashSet<>();
@@ -37,6 +47,9 @@ public final class ActionArguments {
         }
     }
 
+    /**
+     * 校验契约支持的 string、boolean 和 integer 基础类型；整数仅接受 JVM 整型包装类型。
+     */
     private static void validateType(
             String actionId,
             ParameterContract parameter,

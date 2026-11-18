@@ -25,10 +25,12 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
- * 启动时扫描 orderly.themes-dir 的直接主题目录。
+ * 启动时扫描 {@code orderly.themes-dir} 直接子目录的主题目录索引。
  *
- * <p>不读取 classpath、不监听文件系统。单个主题包的格式或资源问题会记录为
- * ThemeIssue；重复 id 和多个默认主题仍是目录级阻塞冲突。</p>
+ * <p>不读取 classpath、不打包用户主题，也不监听文件系统热更新。单个主题包的格式或
+ * 资源问题会记录为 {@link ThemeIssue} 并隔离该包；重复 {@code id} 和多个
+ * {@code default: true} 是目录级阻塞冲突。索引没有可用默认主题时，
+ * {@code builtInFallbackActive} 为真，由前端启用内置安全外观。</p>
  */
 @Component
 public class ThemeCatalog {
@@ -67,6 +69,13 @@ public class ThemeCatalog {
     private final ThemeCatalogSnapshot snapshot;
     private final Map<String, ThemeDefinition> themesById;
 
+    /**
+     * 一次性扫描主题目录并建立稳定目录快照。
+     *
+     * <p>目录缺失或没有任何可用默认主题不会阻止启动，而是由快照标志触发内置回退。
+     * 重复主题 ID 或声明多个默认主题会抛出异常并阻止启动；其他单包问题只进入
+     * {@code issues}。构造完成后索引不再随磁盘变化。</p>
+     */
     public ThemeCatalog(
             ObjectMapper objectMapper,
             @Value("${orderly.themes-dir:themes}") String themesDirectory
@@ -93,14 +102,22 @@ public class ThemeCatalog {
         this.themesById = Map.copyOf(loaded);
     }
 
+    /** 返回启动时固定的主题摘要、局部问题和内置回退标志；调用只读。 */
     public ThemeCatalogSnapshot snapshot() {
         return snapshot;
     }
 
+    /** 返回按 {@code order}、再按 ID 排序的可用主题摘要列表。 */
     public List<ThemeSummary> summaries() {
         return snapshot.items();
     }
 
+    /**
+     * 读取一个已成功加载的主题定义。
+     *
+     * <p>缺失 ID 抛出参数异常；返回定义中的根路径仅供宿主资源读取，不作为公开 API
+     * 返回给前端。查找不触发磁盘扫描或热更新。</p>
+     */
     public ThemeDefinition require(String id) {
         ThemeDefinition theme = themesById.get(id);
         if (theme == null) {
@@ -109,6 +126,7 @@ public class ThemeCatalog {
         return theme;
     }
 
+    /** 判断当前启动快照是否包含指定主题 ID；不扫描目录。 */
     public boolean contains(String id) {
         return themesById.containsKey(id);
     }
@@ -116,7 +134,10 @@ public class ThemeCatalog {
     /**
      * 只读取主题清单登记的样式或静态资源。
      *
-     * <p>请求路径在进入文件系统前会再次执行相对路径、链接和登记白名单检查。</p>
+     * <p>请求路径必须先去前导斜杠，再同时通过清单白名单、CSS/图片/字体扩展名、相对
+     * 路径、逐段链接组件和普通文件检查。读取上限为 8 MiB。主题、登记项、文件或安全
+     * 校验任一不满足时返回空，不暴露磁盘路径；I/O 与安全异常也按不可提供处理。方法
+     * 每次读取当前文件，不承诺绕过检查后的并发文件替换。</p>
      */
     public Optional<ThemeAsset> readAsset(String id, String requestedPath) {
         ThemeDefinition theme = themesById.get(id);
@@ -160,6 +181,13 @@ public class ThemeCatalog {
         }
     }
 
+    /**
+     * 扫描根目录的直接主题包并累积可隔离问题。
+     *
+     * <p>根目录缺失视为无主题；根目录为链接、重解析点或非目录时形成问题。候选按名称
+     * 稳定排序，忽略下划线/点开头目录和非目录项。单个包抛出的
+     * {@link ThemeLoadFailure} 被转换为问题；重复 ID 等目录级错误继续抛出并阻止启动。</p>
+     */
     private void scanDirectory(
             ObjectMapper objectMapper,
             Path directory,
@@ -216,6 +244,12 @@ public class ThemeCatalog {
         }
     }
 
+    /**
+     * 读取并验证一个主题包。
+     *
+     * <p>目录名必须先是合法主题 ID；{@code theme.json} 必须是普通、非链接文件并包含
+     * 合法 JSON。任何单包格式、版本或资源错误都转换为 {@link ThemeLoadFailure}。</p>
+     */
     private ThemeDefinition loadPackage(
             ObjectMapper objectMapper,
             Path themeRoot,
@@ -250,6 +284,13 @@ public class ThemeCatalog {
         return parseAndValidate(root, themeRoot, directoryId);
     }
 
+    /**
+     * 校验主题清单字段、版本和全部登记资源。
+     *
+     * <p>清单禁止未知字段；目录名必须等于清单 ID；{@code styles} 必须登记
+     * {@code tokens.css} 与 {@code motion.css}。所有资源和样式均须存在于包内且非空。
+     * 任一项失败都拒绝整个主题包，不生成部分可用定义。</p>
+     */
     private ThemeDefinition parseAndValidate(
             JsonNode root,
             Path themeRoot,
@@ -361,6 +402,12 @@ public class ThemeCatalog {
         );
     }
 
+    /**
+     * 读取并校验资源路径数组。
+     *
+     * <p>字段缺失时，仅必填数组失败；存在时必须是文本数组，每项非空、唯一且使用安全
+     * 正斜杠相对路径。必填数组还不允许为空。重复、逃逸或反斜杠路径都会拒绝主题包。</p>
+     */
     private List<String> pathList(
             JsonNode root,
             String field,
@@ -402,6 +449,12 @@ public class ThemeCatalog {
         return List.copyOf(values);
     }
 
+    /**
+     * 验证主题资源位于包内、不是链接且可读取非空内容。
+     *
+     * <p>路径逐段检查链接组件，最终文件使用不跟随链接的普通文件检查，并读取一个字节
+     * 确认非空。缺失、空文件或 I/O 失败按调用方提供的错误码转换为局部主题问题。</p>
+     */
     private void requireThemeResource(
             Path themeRoot,
             String relativePath,
@@ -425,6 +478,12 @@ public class ThemeCatalog {
         }
     }
 
+    /**
+     * 检查主题根及相对路径的每一段是否经过链接或重解析点。
+     *
+     * <p>相对路径必须已经通过安全格式校验；本方法只沿词法段检查现有文件系统项，不读取
+     * 资源内容。任一段是链接或无法确认真实路径时返回真。</p>
+     */
     private boolean hasUnsafePathComponent(Path root, String relativePath) {
         Path current = root;
         if (isLinkOrReparsePoint(current)) {
@@ -439,6 +498,12 @@ public class ThemeCatalog {
         return false;
     }
 
+    /**
+     * 判断现有路径是否为符号链接或规范化后的重解析点。
+     *
+     * <p>不存在的路径返回假，由后续普通文件或目录检查决定失败。真实路径无法解析时
+     * 保守视为不安全，避免在边界不明时继续读取。</p>
+     */
     private boolean isLinkOrReparsePoint(Path path) {
         if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
             return false;
@@ -454,6 +519,12 @@ public class ThemeCatalog {
         }
     }
 
+    /**
+     * 检查主题资源路径是否是无逃逸的正斜杠相对路径。
+     *
+     * <p>拒绝空路径、绝对路径、反斜杠、百分号、冒号、空段、点段和父目录段。该检查
+     * 只处理字符串形状，扩展名白名单与真实文件检查由调用方继续执行。</p>
+     */
     private boolean isSafeRelativePath(String path) {
         if (path.isBlank()
                 || path.startsWith("/")
@@ -472,12 +543,14 @@ public class ThemeCatalog {
         return true;
     }
 
+    /** 按白名单扩展名返回浏览器内容类型；调用方保证路径已通过类型白名单。 */
     private String contentType(String path) {
         int dot = path.lastIndexOf('.');
         String extension = dot < 0 ? "" : path.substring(dot + 1).toLowerCase(Locale.ROOT);
         return CONTENT_TYPES.get(extension);
     }
 
+    /** 读取必填文本字段并去除首尾空白；缺失或空白时拒绝主题包。 */
     private String requiredText(JsonNode root, String field, String id) throws ThemeLoadFailure {
         String value = optionalText(root, field, id, "");
         if (value.isBlank()) {
@@ -486,6 +559,7 @@ public class ThemeCatalog {
         return value.trim();
     }
 
+    /** 读取可选文本字段；字段存在但不是 JSON 文本时拒绝主题包。 */
     private String optionalText(
             JsonNode root,
             String field,
@@ -502,6 +576,7 @@ public class ThemeCatalog {
         return node.asText();
     }
 
+    /** 读取必填非负整数；缺失、非整数、超出 int 或负数都拒绝主题包。 */
     private int requiredNonNegativeInteger(JsonNode root, String field, String id)
             throws ThemeLoadFailure {
         JsonNode node = root.get(field);
@@ -515,6 +590,7 @@ public class ThemeCatalog {
         return value;
     }
 
+    /** 读取可选布尔字段；字段存在但不是 JSON 布尔值时拒绝主题包。 */
     private boolean optionalBoolean(
             JsonNode root,
             String field,

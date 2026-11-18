@@ -1,3 +1,12 @@
+/**
+ * AI 设置的前端视图模型。
+ *
+ * 职责：把宿主返回的设置快照收敛为固定字段，并在提交前校验用户临时输入的连接参数。
+ * 边界：API Key 只作为一次提交草稿存在，既不会进入清洗结果，也不会由前端持久化；
+ * 真正的密钥保存、模型请求和删除直执策略均由宿主与 Python AI 服务负责。
+ *
+ * 副作用：本文件中的函数均为纯函数，不读取浏览器存储、不发起请求，也不修改宿主状态。
+ */
 export const AI_MODES = Object.freeze([
     { value: "DEEPSEEK", label: "DeepSeek" },
     { value: "CUSTOM", label: "自定义" }
@@ -10,6 +19,9 @@ const AI_MODE_VALUES = new Set(AI_MODES.map((item) => item.value));
  *
  * @param {unknown} payload /api/ai/settings 响应
  * @returns {{mode: string, baseUrl: string, model: string, configured: boolean, allowDeleteDirect: boolean, allowSendQueryResultsToModel: boolean, allowLocalProvider: boolean}} 设置
+ *
+ * 缺失字段采用保守默认值，布尔开关仅在宿主明确返回 `true` 时开启。这里不复制
+ * `apiKey`，避免页面状态或后续渲染意外持有短暂凭据。
  */
 export function normalizeAiSettings(payload) {
     const source = payload && typeof payload === "object" ? payload : {};
@@ -30,6 +42,10 @@ export function normalizeAiSettings(payload) {
  * @param {{mode: string, apiKey: string, baseUrl: string, model: string}} draft 草稿
  * @param {{configured?: boolean, allowLocalProvider?: boolean}} options 当前宿主状态
  * @returns {string} 错误消息；合法时返回空字符串
+ *
+ * 已配置时允许用户留空 API Key，以继续使用 Python 服务内存中的现有密钥。自定义端点
+ * 默认强制 HTTPS；只有宿主明确开放本地提供方时，才接受回环地址上的 HTTP。此处只做
+ * 提交前的快速反馈，宿主仍必须执行最终校验。
  */
 export function validateAiSettingsDraft(draft, {
     configured = false,

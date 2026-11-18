@@ -17,12 +17,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/** 校验并执行模块 Query；AI 查询仅在宿主授权边界内运行。 */
+/**
+ * 校验并执行模块只读 Query。
+ *
+ * <p>HTTP 查询与 AI 查询共用同一套契约参数校验和模块运行时入口。AI 查询额外检查
+ * 每回合数量、静态/动态 {@code aiCallable} 以及单条和总量结果上限；所有原始结果
+ * 默认只回本地前端，不会由本服务直接发送给模型。</p>
+ */
 @Service
 public class AiQueryService {
 
+    /** 单个 AI 回合最多执行的 Query 数量。 */
     static final int MAX_QUERIES = 4;
+    /** 单条查询 JSON 结果的发送上限。 */
     static final int MAX_SINGLE_RESULT_BYTES = 16 * 1024;
+    /** 一回合全部查询 JSON 结果的累计发送上限。 */
     static final int MAX_TOTAL_RESULT_BYTES = 64 * 1024;
 
     private final ContractCatalog catalog;
@@ -42,6 +51,11 @@ public class AiQueryService {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 执行模块自身或本地前端发起的只读 Query。
+     *
+     * <p>该入口仍要求业务模块启用并校验契约参数，但不检查 AI 专用可调用开关。</p>
+     */
     public Map<String, Object> executeHttpQuery(
             String moduleId,
             String queryId,
@@ -50,6 +64,13 @@ public class AiQueryService {
         return executeOne(moduleId, queryId, arguments, false);
     }
 
+    /**
+     * 执行 Python 提议的 1 至 4 条 Query。
+     *
+     * <p>每次执行都会重新校验模块与查询授权。单条 JSON 结果超过 16 KiB 或累计超过
+     * 64 KiB 时只返回截断状态而不保留 payload；单条执行失败被映射为失败结果，
+     * 以便宿主把受控状态返回前端或显式允许后的模型续聊。</p>
+     */
     public List<AiContracts.QueryResult> executeAiQueries(
             List<AiContracts.QueryCall> queries
     ) {
@@ -116,6 +137,13 @@ public class AiQueryService {
         return List.copyOf(results);
     }
 
+    /**
+     * 通过宿主运行模块查询。
+     *
+     * <p>查询 ID、参数类型和未知参数均来自模块契约；AI 调用还必须满足静态
+     * {@code aiCallable} 上限和治理层动态开关。执行器只能通过
+     * {@link WorkspaceRuntime} 读取模块自有只读状态。</p>
+     */
     private Map<String, Object> executeOne(
             String moduleId,
             String queryId,
@@ -150,6 +178,9 @@ public class AiQueryService {
         });
     }
 
+    /**
+     * 按契约校验必填、类型和未知参数，并生成传给模块运行时的字符串参数。
+     */
     private Map<String, String> validateParameters(
             QueryContract query,
             Map<String, ?> supplied
@@ -184,6 +215,12 @@ public class AiQueryService {
         return Map.copyOf(validated);
     }
 
+    /**
+     * 将 IPC/HTTP 标量转换为契约声明类型。
+     *
+     * <p>当前 Query 执行器接收 {@code Map<String, String>}，因此字符串、布尔值和整数
+     * 在入口处统一转成文本；对象、数组、小数和超出范围的整数会被拒绝。</p>
+     */
     private String parameterValue(
             String queryId,
             ParameterContract parameter,
@@ -222,6 +259,7 @@ public class AiQueryService {
         return value;
     }
 
+    /** 构造统一的 Query 参数类型错误。 */
     private ApiException invalidParameter(String queryId, ParameterContract parameter) {
         return new ApiException(
                 HttpStatus.BAD_REQUEST,
@@ -231,6 +269,7 @@ public class AiQueryService {
         );
     }
 
+    /** 以实际 UTF-8 JSON 编码长度执行结果大小限制。 */
     private int jsonBytes(Object value) {
         try {
             return objectMapper.writeValueAsBytes(value).length;
@@ -239,6 +278,7 @@ public class AiQueryService {
         }
     }
 
+    /** 保留可诊断原因并限制长度，避免失败结果无限膨胀。 */
     private String safeMessage(RuntimeException exception) {
         String message = exception.getMessage();
         if (message == null || message.isBlank()) {
@@ -248,10 +288,12 @@ public class AiQueryService {
         return trimmed.length() <= 500 ? trimmed : trimmed.substring(0, 500);
     }
 
+    /** 判断 IPC 字段是否缺失或仅含空白。 */
     private boolean blank(String value) {
         return value == null || value.isBlank();
     }
 
+    /** 构造 Query 决策不符合 AI 契约时的网关错误。 */
     private ApiException invalidResponse(String message) {
         return new ApiException(
                 HttpStatus.BAD_GATEWAY,

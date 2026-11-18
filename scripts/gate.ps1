@@ -1,4 +1,19 @@
 ﻿[CmdletBinding()]
+# 用途：
+#   执行仓库完整质量门禁：快速文档门禁、上下文边界、Python 测试、模块化 Maven 构建、前端/模块 UI 测试和静态禁止模式扫描。
+#
+# 输入：
+#   -DocumentOnly 要求变更集必须是非空且完全属于快速白名单的 Markdown。
+#   完整分支读取 Git 变更集、契约样例、源码和测试，并使用当前 JDK 21、Maven、Node 和 Python 3.14。
+#
+# 副作用：
+#   完整分支会创建或更新 ai/.venv、写入 Maven target/.m2-repository，并执行测试构建；
+#   快速 Markdown 分支只运行 doc-gate.ps1 和 Git 变更集检查。脚本本身不启动应用服务。
+#
+# 安全边界：
+#   先无条件执行只读文档门禁；变更分类不确定或出现非白名单文件时必须走完整门禁。
+#   二进制拒读夹具只写入系统临时目录并在严格前缀校验后清理；任何失败都保留原始输出并返回非零退出码。
+
 param(
     [switch]$DocumentOnly
 )
@@ -13,6 +28,7 @@ $aiEnvScript = Join-Path $aiRoot "scripts\ensure-env.ps1"
 $powerShellExecutable = (Get-Process -Id $PID).Path
 
 function Invoke-ContextProcess {
+    # 以无配置、非交互子进程运行门禁脚本，返回输出和真实退出码供当前门禁判断。
     param(
         [string[]]$Arguments,
         [string]$ScriptPath
@@ -44,6 +60,7 @@ function Invoke-ContextProcess {
 }
 
 function Assert-ContextRejected {
+    # 拒绝用例不仅要失败，还要包含预期原因且不能回显文件正文，才能证明边界不是偶然触发。
     param(
         [Parameter(Mandatory = $true)]
         [string]$CaseName,
@@ -69,6 +86,7 @@ function Assert-ContextRejected {
 }
 
 function Assert-ContextBinaryTailRejected {
+    # 构造首个缓冲块为普通文本、后部含 NUL 的临时 Git 仓库，验证二进制检测不是只看文件头。
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
         "orderly-context-binary-" + [guid]::NewGuid().ToString("N")
     )
@@ -99,6 +117,7 @@ function Assert-ContextBinaryTailRejected {
             -ExpectedText "拒绝二进制文件：tail-null.bin"
     }
     finally {
+        # 递归清理前校验路径位于系统临时根下且目录名带专用前缀，避免夹具异常时误删其他目录。
         if (Test-Path -LiteralPath $tempRoot) {
             $tempBase = [System.IO.Path]::GetFullPath(
                 [System.IO.Path]::GetTempPath()
@@ -125,6 +144,7 @@ function Assert-ContextBinaryTailRejected {
 }
 
 function Test-DocumentFastPath {
+    # 快速路径使用大小写敏感白名单；空段、. 和 .. 或非小写 .md 都退回完整门禁。
     param([Parameter(Mandatory = $true)][string]$Path)
 
     $normalizedPath = $Path.Replace("\", "/")
@@ -160,6 +180,7 @@ function Test-DocumentFastPath {
 }
 
 function Get-GateChangeSet {
+    # porcelain -z 能处理特殊字符路径；重命名、冲突或未知状态标记为分类不确定，强制走完整分支。
     $previousErrorActionPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = "Continue"
@@ -253,8 +274,10 @@ function Get-GateChangeSet {
     }
 }
 
+# 门禁期间以仓库根为当前目录；finally 只负责恢复目录，最终成功退出留给脚本末尾。
 Push-Location $repoRoot
 try {
+    # 文档门禁无条件先执行，避免快速分支被错误配置绕过。
     $docGateResult = Invoke-ContextProcess `
         -Arguments @() `
         -ScriptPath $docGateScript
@@ -279,11 +302,13 @@ try {
             [System.StringComparison]::Ordinal
         ) -and -not (Test-DocumentFastPath -Path $_)
     })
+    # 只有非空、分类可信且全部为快速白名单 Markdown 时，才允许跳过构建和测试。
     $isNonEmptyFastPathMarkdown = $changePaths.Count -gt 0 -and
         -not $changeSet.ClassificationUncertain -and
         $nonMarkdownPaths.Count -eq 0 -and
         $nonWhitelistedMarkdownPaths.Count -eq 0
 
+    # -DocumentOnly 是强制断言而不是优化选项：不满足白名单条件必须失败且不得启动构建。
     if ($DocumentOnly) {
         if (-not $isNonEmptyFastPathMarkdown) {
             $reason = if ($changePaths.Count -eq 0) {
@@ -323,6 +348,7 @@ try {
     }
     Write-Host "完整门禁：$fullGateReason，继续执行 Maven、前端和边界检查。"
 
+    # 完整分支先用 AST 检查上下文工具，再测试其成功读取和各类拒绝路径。
     $tokens = $null
     $parseErrors = $null
     [System.Management.Automation.Language.Parser]::ParseFile(
@@ -374,6 +400,7 @@ try {
         throw "上下文工具审计失败，退出码：$($audit.ExitCode)`n$($audit.Output)"
     }
 
+    # 仓库地图和模块规范是导航与模块边界的文档事实源，必须与脚本引用的关键约定一致。
     $repoMapText = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "docs\repo-map.md")
     if ($repoMapText.Contains("``````")) {
         throw "docs/repo-map.md 不得包含代码围栏。"
@@ -394,6 +421,7 @@ try {
             throw "Module/AGENTS.md 缺少规则：$requiredRule"
         }
     }
+    # 关键契约和样例必须存在，随后同时验证合法样例通过、非法样例被拒绝。
     foreach ($requiredContract in @(
         "contracts\action-execution.schema.json",
         "contracts\samples\valid\action-execution.json",
@@ -460,6 +488,7 @@ try {
     if (-not (Test-Path -LiteralPath $aiEnvScript -PathType Leaf)) {
         throw "缺少 Python AI 环境脚本：$aiEnvScript"
     }
+    # Python 环境可能在首次门禁联网安装依赖；环境或任一编译/测试失败都阻止继续构建。
     $python = & $aiEnvScript
     if (-not $python -or -not (Test-Path -LiteralPath $python -PathType Leaf)) {
         throw "Python AI 环境准备失败。"
@@ -483,6 +512,7 @@ try {
         throw "模块化构建失败，退出码：$LASTEXITCODE"
     }
 
+    # 前端和每个模块 UI 脚本都做语法检查，避免只验证框架而遗漏外部模块资源。
     $sourceFiles = @("app.js", "ai-dialog.js", "ai-settings.js", "api.js", "models.js", "modules.js", "settings.js")
     foreach ($sourceFile in $sourceFiles) {
         & node --check (Join-Path $frontendRoot "src\$sourceFile")
@@ -518,6 +548,7 @@ try {
         throw "学习数据契约校验失败，退出码：$LASTEXITCODE"
     }
 
+    # 以下 rg 扫描遵循同一退出语义：0 表示命中禁止模式，1 表示干净，其他值表示扫描工具本身异常。
     $forbiddenDelete = & rg -n --glob '*.java' 'Files\.delete|deleteIfExists' app Module
     if ($LASTEXITCODE -eq 0) {
         throw "检测到物理删除调用：`n$forbiddenDelete"
@@ -534,6 +565,7 @@ try {
         throw "样式色值扫描异常，rg 退出码：$LASTEXITCODE"
     }
 
+    # 固定模块映射和固定业务端点扫描保护框架/模块边界；命中说明框架重新硬编码了具体业务。
     $fixedModuleCode = & rg -n 'MODULE_VIEW_ADAPTERS|getFiles|getTodos|getCalendar|loadFiles|loadTodos|loadCalendar|overviewData|filePath|/api/files|/api/todos|/api/calendar|/api/trash|module_fs|module_todo|module_calendar' app/frontend/src app/host/src/main/java
     if ($LASTEXITCODE -eq 0) {
         throw "框架源码仍包含具体模块映射或固定业务端点：`n$fixedModuleCode"
@@ -566,6 +598,7 @@ try {
         throw "基础动画扫描异常，rg 退出码：$LASTEXITCODE"
     }
 
+    # 设置面板不应把整个内容区设为 live region，否则大量设置变化会制造噪声并干扰辅助技术。
     $globalPanelLive = & rg -n 'id="settings-panel"[^>]*aria-live' app/frontend/index.html
     if ($LASTEXITCODE -eq 0) {
         throw "设置面板仍使用整体 aria-live：`n$globalPanelLive"
@@ -574,6 +607,7 @@ try {
         throw "设置面板 live region 扫描异常，rg 退出码：$LASTEXITCODE"
     }
 
+    # 主题只能提供声明式 CSS 和登记资源；脚本、!important 都可能绕过宿主安全层。
     $themeScripts = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "themes") -Recurse -File -Filter "*.js")
     if ($themeScripts.Count -ne 0) {
         throw "主题包不得包含 JavaScript：$($themeScripts.FullName -join ', ')"
@@ -587,6 +621,7 @@ try {
         throw "主题 important 扫描异常，rg 退出码：$LASTEXITCODE"
     }
 
+    # 只有此前所有命令均以预期状态完成，才会到达唯一成功出口。
     Write-Host "门禁通过：上下文约束、模块化 Maven 测试、契约样例、语法、前端测试、目录主题边界、classpath 回退、基础动画、设置 live region 和样式变量检查均成功。"
 }
 finally {

@@ -1,3 +1,14 @@
+/**
+ * 框架内置图标目录与 `data-icon` 占位符水合工具。
+ *
+ * 职责：集中维护受信任的 SVG 路径和 AI 图标白名单，使模块与设置界面无需各自复制图标表。
+ * 安全边界：`icon()` 只拼接本文件中的静态路径，不接受调用方传入 SVG 字符串；非法图标名
+ * 回退为信息图标。调用方仍需确保 `size` 是受控数字，再使用返回值设置 `innerHTML`。
+ *
+ * 副作用：除 `hydrateIcons()` 会修改指定 DOM 子树外，其余函数均不读写外部状态。
+ */
+
+// 该对象是唯一的内置路径来源；新增图标时应保持路径为静态、可信的 SVG 片段。
 const ICONS = {
     search: '<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path>',
     settings: '<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.09A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.09A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.09A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.12.38.33.72.6 1 .3.28.68.42 1.1.4H21v4h-.09A1.7 1.7 0 0 0 19.4 15Z"></path>',
@@ -40,6 +51,8 @@ const AI_ICONS = new Set(AI_ICON_OPTIONS.map((item) => item.value));
  *
  * @param {unknown} value 原始值
  * @returns {"spark" | "route" | "shield" | "modules"} 合法图标名
+ *
+ * 异常与副作用：无。未知或非字符串值不会透传，避免设置页制造对任意图标名的隐式依赖。
  */
 export function normalizeAiIcon(value) {
     return AI_ICONS.has(value) ? value : "spark";
@@ -51,6 +64,9 @@ export function normalizeAiIcon(value) {
  * @param {string} name 图标名
  * @param {number} size 像素尺寸
  * @returns {string} 静态 SVG 标记
+ *
+ * 异常与副作用：无，也不访问 DOM。返回值包含调用方给出的尺寸属性，因此尺寸也必须受控；
+ * 路径内容始终来自本文件内置表，而不是外部模块清单或网络数据。
  */
 export function icon(name, size = 18) {
     const paths = ICONS[name] ?? ICONS.info;
@@ -61,6 +77,10 @@ export function icon(name, size = 18) {
  * 替换页面中的静态图标占位符。
  *
  * @param {ParentNode} root 根节点
+ * @returns {void}
+ *
+ * 副作用：查询并改写 `root` 下所有 `[data-icon]` 元素的 `innerHTML`。图标名经 `icon()`
+ * 的白名单回退处理，未知名称只会显示内置信息图标。
  */
 export function hydrateIcons(root = document) {
     root.querySelectorAll("[data-icon]").forEach((element) => {

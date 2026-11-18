@@ -22,6 +22,7 @@ public record ModuleEntry(
         plannerRules = List.copyOf(plannerRules);
     }
 
+    /** 从权威模块契约投影目录条目，并附加当前运行态启用状态。 */
     public static ModuleEntry from(ModuleContract module, boolean enabled) {
         return new ModuleEntry(
                 module.moduleId(),

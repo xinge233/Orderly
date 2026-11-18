@@ -1,11 +1,28 @@
+/**
+ * 复习自测只读视图。
+ *
+ * 职责：按课程筛选模块自带题目，展示题干、参考提纲和仅限当前页面的临时作答/自评状态。
+ * 依赖：orderly-ui/module.json 声明视图与卡片；唯一数据查询为 study.review.read；
+ * 宿主 mount context 提供 module、element、icon、query 与可选 toast。
+ * 隔离：无效负载或查询失败只影响当前复习视图；作答与标记不写 localStorage、Query 或模块业务集合。
+ */
+
 const COURSE_LABELS = Object.freeze({
     calculus: "高等数学",
     "linear-algebra": "线性代数",
     "data-structures": "数据结构"
 });
 
+/**
+ * 挂载复习自测视图。
+ *
+ * @param {HTMLElement} root 框架分配的模块视图根节点。
+ * @param {object} context 宿主 mount context；module 提供标题，query 读取只读题目。
+ * @returns {Promise<void>} 首次题目查询和局部渲染完成后结束。
+ */
 export default async function mount(root, context) {
     const make = context.element;
+    // Map 只承载本次挂载期间的演示状态；框架替换视图后由浏览器随闭包一起释放。
     const answers = new Map();
     const marks = new Map();
     let questions = [];
@@ -22,6 +39,7 @@ export default async function mount(root, context) {
             "课程复习题与作答区。当前为只读预览，不自动阅卷。")
     );
 
+    // 生成自测清单不在本模块能力内，用禁用状态和说明文字维持诚实性边界。
     const generate = make("button", "study-review-ui-button study-review-ui-generate");
     generate.type = "button";
     generate.disabled = true;
@@ -91,6 +109,7 @@ export default async function mount(root, context) {
     root.replaceChildren(panel);
 
     courseSelect.addEventListener("change", () => {
+        // 切换课程后先修正选中项，再统一刷新列表、详情和进度，避免三个区域引用不同题目。
         selectedCourse = courseSelect.value;
         ensureSelection();
         renderList();
@@ -98,6 +117,7 @@ export default async function mount(root, context) {
         renderProgress();
     });
 
+    // review 负载必须同时声明只读、无阅卷模式和题目数组，避免把其他查询结果误渲染为题目。
     try {
         const studyData = await context.query("study.review.read");
         if (studyData?.kind !== "review"
@@ -160,6 +180,7 @@ export default async function mount(root, context) {
 
     function ensureSelection() {
         const visible = filteredQuestions();
+        // 保留仍可见的选中项；仅在筛选将当前题隐藏时回退到首题或无选择。
         if (!visible.some((question) => question.id === selectedId)) {
             selectedId = visible[0]?.id ?? null;
         }
@@ -202,6 +223,7 @@ export default async function mount(root, context) {
             button.append(marker, copy, status);
             button.addEventListener("click", () => {
                 selectedId = question.id;
+                // 列表会整体重建，因此渲染后按稳定题目 ID 恢复键盘焦点。
                 renderList();
                 renderDetail();
                 const nextButton = [...questionList.querySelectorAll("[data-question-id]")]
@@ -247,6 +269,7 @@ export default async function mount(root, context) {
         textarea.rows = 7;
         textarea.placeholder = "写下你的思路或答案…";
         textarea.value = answers.get(question.id) || "";
+        // 输入只更新内存 Map，不触发 Query/Action，也不持久化到浏览器或模块集合。
         textarea.addEventListener("input", (event) => {
             answers.set(question.id, event.target.value);
             renderProgress();
@@ -275,6 +298,7 @@ export default async function mount(root, context) {
     }
 
     function markButton(label, iconName, mark, questionId) {
+        // aria-pressed 与视觉状态共用当前临时标记，再次点击同一标记即取消。
         const button = make("button", `study-review-ui-mark is-${mark}`);
         button.type = "button";
         button.dataset.mark = mark;
@@ -292,6 +316,7 @@ export default async function mount(root, context) {
             renderList();
             renderDetail();
             renderProgress();
+            // 详情重建后恢复原按钮焦点，保证键盘用户不会丢失操作位置。
             const nextButton = [...detailPane.querySelectorAll("[data-mark]")]
                 .find((node) => node.dataset.mark === mark);
             nextButton?.focus();
@@ -309,6 +334,7 @@ export default async function mount(root, context) {
         }).length;
         const total = visible.length;
         const percentage = total ? Math.round((completed / total) * 100) : 0;
+        // 进度条同时更新可见填充宽度与 ARIA 数值，二者都以当前筛选范围为准。
         progressFill.style.width = `${percentage}%`;
         progressValue.textContent = `${completed} / ${total}`;
         progressTrack.setAttribute("aria-valuemax", String(total));

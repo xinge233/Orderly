@@ -1,3 +1,15 @@
+/**
+ * 框架级前端外壳。
+ *
+ * 职责：维护应用导航、总览、历史、设置弹窗与模块挂载点，并把宿主 API 的契约数据
+ * 投射为统一界面；具体业务视图只通过模块 UI 清单和挂载函数接入。
+ *
+ * 状态来源：可执行事实与治理状态来自本地 Java 宿主；主题选择、动效档位和总览卡片
+ * 顺序来自 SettingsStore。前端不保存第二套模块或主题清单，也不直接判定授权。
+ *
+ * 模块隔离：单个模块的清单、样式或脚本失败只降级当前视图；框架不得为具体业务模块
+ * 增加分支，模块之间也不得借此共享内部状态。
+ */
 import { ApiError, OrderlyApi } from "./api.js";
 import { executionCompletedModules, mountAiDialog } from "./ai-dialog.js";
 import {
@@ -113,6 +125,10 @@ function normalizeModuleInterfaceState(input) {
     };
 }
 
+/**
+ * 框架共享视图状态。这里保存的是宿主快照、界面派生数据和临时交互状态；只有
+ * SettingsStore 持有的外观项与卡片顺序会进入浏览器本地存储。
+ */
 const state = {
     activeView: "overview",
     health: null,
@@ -157,6 +173,7 @@ const state = {
 };
 
 const systemAdminApi = createSystemAdminApi();
+// 这些句柄跨越异步事件与动画帧，统一留在模块作用域，便于切换视口或离开页面时清理。
 const frameworkEventListeners = new Set();
 let eventStream = null;
 let eventRenderQueued = false;
@@ -318,7 +335,13 @@ function setSettingsStatus(message, { error = false } = {}) {
 }
 
 /**
- * 启动页面。
+ * 启动框架外壳。
+ *
+ * 先建立独立 AI Dock 与设置入口，再并行读取宿主目录；有依赖关系的设置只能在这些
+ * 快照归一化之后应用。随后连接事件流并加载默认视图。
+ *
+ * 副作用：注册全局事件、读取宿主 API、写入模块作用域状态、驱动首屏渲染，并建立
+ * 页面卸载时的流清理。单个目录请求失败会保留安全降级状态，不阻断其他区域启动。
  */
 async function bootstrap() {
     applyPlanningFeatureState(false, { render: false, resetPlan: false });
@@ -343,6 +366,8 @@ async function bootstrap() {
     });
     bindSettingsDialog();
 
+    // 目录、偏好、主题、功能开关和 AI 状态彼此独立；使用 allSettled 隔离失败来源，
+    // 避免一个可选能力不可用拖垮整个本地工作台。
     const [
         moduleResult,
         systemModuleResult,
@@ -448,7 +473,12 @@ async function bootstrap() {
     void navigate("overview");
 }
 
-/** 并行读取模块自带 UI 清单；单个模块失败不阻断框架启动。 */
+/**
+ * 并行读取模块自带 UI 清单并记录逐模块错误。
+ *
+ * 副作用：写入 state.moduleUi 与 state.moduleErrors。失败项会进入模块管理信息和通用
+ * 降级视图，其他模块仍继续加载。
+ */
 async function loadModuleUis() {
     const results = await Promise.allSettled(state.modules.map(async (module) => {
         const payload = await api.getModuleUi(module.moduleId);
@@ -615,6 +645,12 @@ function refreshAfterAiExecution(execution) {
     }
 }
 
+/**
+ * 宿主刷新模块目录后的前端重建流程。
+ *
+ * 操作顺序刻意保持为“读取新目录 -> 合并偏好 -> 重载 UI -> 保存被纠正的顺序 ->
+ * 重新渲染”。若当前视图随模块停用而失效，则回到总览；刷新失败保留现有可用视图。
+ */
 async function reloadModuleCatalogAfterRefresh(refreshPayload) {
     const [moduleResult, systemModuleResult, preferenceResult] = await Promise.allSettled([
         api.getModules(),
@@ -835,7 +871,10 @@ function createSystemAdminApi() {
 }
 
 /**
- * 绑定全局按钮与键盘入口。
+ * 绑定框架级按钮、快捷键和指针入口。
+ *
+ * 副作用：向 window/document/sidebar 注册监听器。只在当前页面生命周期内有效，
+ * pagehide 会终止侧栏拖动和事件流，避免异步回调在页面离开后继续更新 DOM。
  */
 function bindGlobalControls() {
     document.querySelector("#open-settings")?.addEventListener("click", openSettings);
@@ -943,7 +982,10 @@ function syncHistoryViewRail() {
 }
 
 /**
- * 绑定桌面图标侧栏的指针与焦点展开入口。
+ * 绑定桌面侧栏的悬停、焦点与指针精度变化。
+ *
+ * 侧栏展开不是独立页面状态：指针离开、焦点离开、搜索有值、正在排序或设置弹窗打开
+ * 都会阻止收起。所有延迟统一走 desktopSidebar.timer，确保只保留一个待执行状态。
  */
 function bindDesktopSidebarControls() {
     const sidebar = document.querySelector("#sidebar");
@@ -1025,6 +1067,8 @@ function activateDesktopSidebar() {
     queueSidebarCountRender();
 }
 
+// 切换到移动抽屉时必须同时清掉桌面侧栏的延迟、动画帧、transitionend 回调和计数层，
+// 否则窄屏会出现旧定时器继续写桌面几何状态的问题。
 function deactivateDesktopSidebar() {
     clearDesktopSidebarTimer();
     clearSidebarAttention();
@@ -1042,6 +1086,8 @@ function deactivateDesktopSidebar() {
     }
 }
 
+// 展开与收起共用同一个状态入口；动效关闭时立即完成计数重绘，有动效时由帧循环和
+// transitionend 双保险收尾，避免只依赖主题是否声明 transition 而导致状态悬挂。
 function setDesktopSidebarExpansion(expanded) {
     const sidebar = document.querySelector("#sidebar");
     if (!sidebar || !desktopSidebar.active) {
@@ -1368,6 +1414,8 @@ function sidebarTransitionDurationMs() {
     return raw.endsWith("ms") ? value : value * 1000;
 }
 
+// 收起动画期间数字气泡必须跟随裁切边界移动；帧循环负责视觉平滑，transitionend
+// 与超时负责终止，防止主题未触发过渡事件或页面后台丢帧后留下永久循环。
 function scheduleSidebarCountRefreshAfterCollapse() {
     cancelSidebarCountTracking();
     cancelSidebarCountRefresh();
@@ -1388,6 +1436,7 @@ function scheduleSidebarCountRefreshAfterCollapse() {
     renderSidebarCountLayer();
 }
 
+// 展开动画从第一帧开始跟踪真实 clip-path 宽度，而不是预先假设动画时长。
 function beginSidebarCountTracking() {
     cancelSidebarCountTracking();
     cancelSidebarCountRefresh();
@@ -1476,7 +1525,11 @@ function applySettings(settings) {
 }
 
 /**
- * 应用目录主题；请求代次由 ThemeManager 保证旧响应不会覆盖新选择。
+ * 应用目录主题，并把实际生效主题回写到本地设置。
+ *
+ * ThemeManager 用请求代次阻止慢响应覆盖新选择；这里再次比对 settingsStore 的当前值，
+ * 防止用户在一次异步主题切换期间又选择了其他主题。副作用：插入/移除主题样式和元信息，
+ * 更新设置状态文本，必要时生成局部切换告警。
  *
  * @param {string} themeId 目标主题
  */
@@ -1686,6 +1739,7 @@ function renderNavigation(query = "") {
                 button.addEventListener("pointerdown", (event) => {
                     beginNavigationDrag(event, button, item.moduleId);
                 });
+                // 键盘排序只交换可见模块在宿主顺序中的相对位置，隐藏模块的槽位保持不变。
                 button.addEventListener("keydown", (event) => {
                     if (!event.altKey || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
                     event.preventDefault();
@@ -1724,6 +1778,7 @@ function beginNavigationDrag(event, button, moduleId) {
     navigationHoldTimer = window.setTimeout(activateNavigationDrag, NAV_DRAG_HOLD_MS);
 }
 
+// 长按超过阈值后才进入排序态；按住期间的移动超过容差会取消长按，从而保留普通点击。
 function activateNavigationDrag() {
     navigationHoldTimer = null;
     if (!navigationDrag) return;
@@ -1792,6 +1847,8 @@ function cancelNavigationDrag(event) {
     clearNavigationDrag();
 }
 
+// 排序可能由 pointerup、pointercancel、重渲染或页面隐藏结束，因此清理必须幂等，
+// 并同时撤销指针捕获、drop 标记、全局拖动态与侧栏收起判定。
 function clearNavigationDrag() {
     if (navigationHoldTimer != null) {
         window.clearTimeout(navigationHoldTimer);
@@ -1855,6 +1912,7 @@ function persistSidebarModuleOrder(sidebarModuleOrderIds, message) {
     renderNavigation(document.querySelector("#nav-search")?.value ?? "");
     const status = document.querySelector("#navigation-order-status");
     if (status) status.textContent = message;
+    // 先乐观更新以保持拖动反馈；只有最后一次保存失败才回滚，避免较慢的旧请求覆盖新顺序。
     const generation = ++sidebarOrderRequestGeneration;
     void api.saveSidebarModuleOrder(next.sidebarOrder).catch((error) => {
         if (generation !== sidebarOrderRequestGeneration) {
@@ -1985,9 +2043,16 @@ function renderLoadError(error) {
 }
 
 /**
- * 从模块 JAR 加载自有视图。样式和脚本只属于当前模块，失败时局部降级。
+ * 从模块 JAR 加载并挂载自有视图。
+ *
+ * 每次切换都会先建立独立容器并替换主内容区，再把有限宿主能力作为 context 注入。
+ * 样式加载、动态 import、默认导出校验和 mount 调用共用当前模块的 try/catch，因此
+ * 任一失败只替换这一个容器，不污染其他模块或框架级计划/历史状态。
+ *
+ * 副作用：向 DOM 添加模块样式和视图，执行受信任的模块脚本，并注册该脚本声明的监听器。
  *
  * @param {object} module 模块契约
+ * @returns {Promise<void>}
  */
 async function mountModule(module) {
     const ui = state.moduleUi[module.moduleId];
@@ -2085,6 +2150,7 @@ function loadModuleStyle(module, url) {
     });
 }
 
+// 模块错误始终保持局部容器和可继续工作的说明，防止单个扩展把主机界面变成空白页。
 function renderModuleFailure(module, container, error) {
     const panel = element("section", "panel module-local-error");
     panel.append(
@@ -2320,6 +2386,8 @@ function renderModuleCards() {
         return;
     }
 
+    // 总览顺序是浏览器本地设置，和宿主维护的侧边栏顺序相互独立；拖放与按钮最终都
+    // 只调用 persistModuleOrder，避免同一顺序出现两套持久化路径。
     displayed.forEach((module, index) => {
         const ui = state.moduleUi[module.moduleId];
         const card = ui?.card ?? {
@@ -2407,7 +2475,11 @@ function persistModuleOrder(moduleOrderIds, message) {
 }
 
 /**
- * 渲染计划预览。
+ * 渲染旧版计划预览与确认控件。
+ *
+ * 这里只把已归一化的宿主计划投射为界面，不执行动作。确认门槛由
+ * validateConfirmation 决定，执行中或已处理状态另行禁用；删除额外要求精确确认词，
+ * 且执行请求仍由宿主再次担保。
  */
 function renderPlan() {
     const slot = document.querySelector("#plan-slot");
@@ -2512,6 +2584,7 @@ function renderPlan() {
         return;
     }
 
+    // 风险展示取整条计划的上限；只读、写入、删除共用同一执行入口，但确认门槛不同。
     const deleteRisk = requiresDeletePhrase(state.plan);
     const writeRisk = state.plan.steps.some((step) => step.risk !== "READ_ONLY");
     const metaGrid = element("div", "plan-meta-grid");
@@ -2617,6 +2690,7 @@ function renderPlan() {
     confirm.append(actions);
     slot.append(confirm);
 
+    // 控件状态镜像到 state，用于重渲染后保持勾选与删除确认词；服务端校验不可省略。
     const sync = () => {
         state.confirmed = checkbox.checked;
         state.deletePhrase = deleteInput?.value ?? "";
@@ -2687,7 +2761,12 @@ async function draftGoal(goal) {
 }
 
 /**
- * 执行已确认计划。
+ * 执行用户已确认的旧版计划。
+ *
+ * 客户端校验只负责即时反馈，真正的契约、风险、快照和回滚仍由宿主承担。执行期间
+ * 禁止重复提交，并先显示 RUNNING 摘要；失败时保留失败摘要而不是伪造成完成状态。
+ *
+ * 副作用：更新计划/执行状态、请求宿主执行和事件、重绘总览与结果区域。
  */
 async function executePlan() {
     if (!state.planningEnabled || !state.plan || state.executing) {
@@ -2773,7 +2852,10 @@ function applyRunPayload(payload) {
 }
 
 /**
- * 将事件状态同步回计划步骤。
+ * 将当前计划范围内的最新事件状态同步回计划步骤。
+ *
+ * 事件可能乱序或重复到达，mergeEvents 已按序号去重排序；这里只取每个步骤的最新事件，
+ * 不根据最终执行摘要猜测未发生步骤的状态。
  */
 function applyEventStatuses() {
     if (!state.plan) {
@@ -3009,6 +3091,11 @@ function pulsePlanModules() {
 
 /**
  * 加载历史事件与运行摘要。
+ *
+ * 三个来源独立请求：事件失败只影响时间线提示；执行记录失败时才兼容回退到旧 runs
+ * 接口，并明确禁用缺少 executionId 的运行摘要回滚，避免把兼容记录当作可回滚事实。
+ *
+ * 副作用：覆盖历史相关 state 并重绘当前历史视图。
  */
 async function loadHistory() {
     const [executionResult, runResult, eventResult] = await Promise.allSettled([
@@ -3344,7 +3431,12 @@ function fillCommand(command) {
 }
 
 /**
- * 连接执行事件流。
+ * 连接宿主持久化执行事件流。
+ *
+ * 收到事件后立即合并审计数据并通知模块，但 DOM 更新按动画帧合并，避免高频 SSE
+ * 造成多次重排。计划视图只消费当前计划事件；历史页则保留全部已归一化事件。
+ *
+ * 副作用：建立 EventSource 等价连接并持续写入 state.events；pagehide 时由全局入口关闭。
  */
 function connectEventStream() {
     eventStream = api.streamEvents({
@@ -3457,7 +3549,10 @@ function openSettings() {
 }
 
 /**
- * 绑定设置弹窗。
+ * 绑定设置弹窗的关闭、重置与快捷键。
+ *
+ * 使用原生 dialog 的模态焦点边界；关闭时先同步 DOM 状态，再在微任务中恢复触发按钮
+ * 焦点和桌面侧栏收起判定，避免关闭动画期间焦点落到 inert 内容或抽屉外。
  */
 function bindSettingsDialog() {
     const dialog = document.querySelector("#settings-dialog");
@@ -3492,6 +3587,7 @@ function bindSettingsDialog() {
         }
         window.queueMicrotask(reconcileDesktopSidebar);
     });
+    // Ctrl/Cmd+, 是框架固定入口；单独注册，便于设置弹窗替换内容时不丢失快捷键。
     document.addEventListener("keydown", (event) => {
         if ((event.ctrlKey || event.metaKey) && event.key === ",") {
             event.preventDefault();
@@ -3542,6 +3638,8 @@ function renderSettings({ focusPanel = false } = {}) {
         nav.append(button);
     });
 
+    // 只替换内容面板，保留 dialog、导航容器和状态 live region，避免设置切换丢失
+    // 无障碍关系或把焦点抛回 body。
     panel.replaceChildren();
     if (state.settingsSection === "appearance") {
         renderAppearanceSettings(panel);
@@ -3617,6 +3715,8 @@ function renderAppearanceSettings(panel) {
     if (themes.length === 0) {
         themeGrid.append(element("p", "empty-state", "未发现可用主题，界面使用内置安全外观。"));
     }
+    // 主题单选只写入本地外观设置；真正的 CSS 获取、代次竞争和失败回退由 ThemeManager
+    // 统一处理，避免界面层同时维护第二套可应用主题判定。
     themes.forEach((option) => {
         const label = element("label", "theme-option");
         const input = document.createElement("input");
@@ -3866,6 +3966,7 @@ function renderAiSettings(panel) {
     clearButton.type = "button";
     actions.append(saveButton, testButton, clearButton);
 
+    // DeepSeek 模式固定使用宿主默认地址和模型；只有 CUSTOM 模式展示并启用连接字段。
     const updateModeFields = () => {
         const custom = modeSelect.value === "CUSTOM";
         customFields.hidden = !custom;
@@ -3873,6 +3974,8 @@ function renderAiSettings(panel) {
         modelInput.disabled = !custom;
     };
     modeSelect.addEventListener("change", updateModeFields);
+    // 删除直执是高风险能力开关：用户取消原生确认时恢复关闭，保存成功后仍由宿主执行
+    // 回收站、快照、审计和回滚约束。
     deleteInput.addEventListener("change", () => {
         if (deleteInput.checked && !window.confirm(
             "开启后，明确意图的删除可能直接进入回收站。仍会保留快照、审计和回滚。确认开启？"
@@ -3892,8 +3995,14 @@ function renderAiSettings(panel) {
 /**
  * 保存当前进程内 AI 设置；测试按钮会先保存再测试。
  *
+ * 保存期间统一禁用一个面板内的按钮以避免并发覆盖，但不持久化 API Key。成功响应会
+ * 重新归一化并同步给 AI Dock；失败只展示宿主错误，不回退到本地规则或伪造已连接。
+ *
+ * 副作用：调用宿主 AI 设置接口、更新 state.aiSettings、通知 Dock、重绘设置面板。
+ *
  * @param {HTMLElement} panel 设置面板
  * @param {{test?: boolean}} options 选项
+ * @returns {Promise<void>}
  */
 async function persistAiSettings(panel, { test = false } = {}) {
     if (state.aiSettingsSaving || state.aiSettingsTesting) {

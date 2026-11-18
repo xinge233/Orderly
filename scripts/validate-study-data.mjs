@@ -1,5 +1,21 @@
 #!/usr/bin/env node
 
+/*
+ * 用途：
+ *   对齐 contracts/study-data.schema.json 校验四种只读学习数据，并验证模块清单、模块自有数据及合法/非法样例。
+ *
+ * 输入：
+ *   读取四个模块的 orderly-modules 契约、orderly-ui 清单和 orderly-data 数据，以及 study-* 契约样例。
+ *
+ * 副作用：
+ *   只读仓库文件并输出结果；不联网、不写数据、不启动服务。任一样例或模块数据不合格时以退出码 1 结束。
+ *
+ * 安全边界：
+ *   使用固定模块白名单、ownerModule/kind 对应关系和 readOnly=true，防止跨模块归属或把只读参考数据伪装成外部 AI。
+ *   本脚本不加载通用 JSON Schema 引擎，而是在运行时复核 schema 的根字段、四类负载、集合计数和引用完整性；
+ *   contracts/study-data.schema.json 变更时必须同步维护这里的规则。
+ */
+
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -36,6 +52,7 @@ function isObject(value) {
 }
 
 export function assertNoDuplicateJsonKeys(raw, scope = "JSON") {
+    // JSON.parse 会静默保留重复键的最后一个值，因此先做轻量 token 扫描，把重复键变成显式合同错误。
     const tokens = String(raw).match(
         /"(?:\\u[0-9a-fA-F]{4}|\\[^u]|[^"\\])*"|[{}\[\]:,]|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/g
     ) ?? [];
@@ -116,6 +133,7 @@ function assertUniqueIds(items, scope, field) {
 }
 
 function assertSources(document, scope) {
+    // 来源是跨负载引用的共同根；先建立唯一 source id 集合，后续字段才能可靠检查悬空引用。
     assertArray(document.sources, scope, "sources");
     const sourceIds = assertUniqueIds(document.sources, scope, "sources");
     for (const source of document.sources) {
@@ -133,6 +151,7 @@ function assertSourceRef(sourceId, sourceIds, scope, field) {
 }
 
 function validateAssistant(document, sourceIds, scope) {
+    // 学习助手示例必须明确是本地规则且未连接外部模型，不能借结构合法的数据制造 AI 已接入的假象。
     const payload = document.payload;
     assert(payload.planner === "local-rules", scope, "assistant.planner 必须是 local-rules");
     assert(payload.externalModelConnected === false, scope,
@@ -171,6 +190,7 @@ function validateAssistant(document, sourceIds, scope) {
 }
 
 function validateMaterials(document, sourceIds, scope) {
+    // 资料必须归属于已声明课程并引用现有来源，卡片再去重；计数与真实资料数组保持一致。
     const payload = document.payload;
     assertArray(payload.courses, scope, "materials.courses");
     assertArray(payload.materials, scope, "materials.materials");
@@ -204,6 +224,7 @@ function validateMaterials(document, sourceIds, scope) {
 }
 
 function validateKnowledgeMap(document, sourceIds, scope) {
+    // 图数据同时检查节点/边唯一性、来源引用和边端点，避免前端收到无法绘制的悬空关系。
     const payload = document.payload;
     assertArray(payload.nodes, scope, "knowledge-map.nodes");
     assertArray(payload.edges, scope, "knowledge-map.edges");
@@ -238,6 +259,7 @@ function validateKnowledgeMap(document, sourceIds, scope) {
 }
 
 function validateReview(document, sourceIds, scope) {
+    // 复习自测当前只读且不阅卷，gradingMode=none 与题目 readOnly=true 是不可放宽的产品边界。
     const payload = document.payload;
     assert(payload.gradingMode === "none", scope, "review.gradingMode 必须是 none");
     assertArray(payload.questions, scope, "review.questions");
@@ -258,6 +280,7 @@ function validateReview(document, sourceIds, scope) {
 }
 
 export function validateStudyData(document, expectedOwnerModule = null) {
+    // 根字段采用精确允许集；模块身份、kind 和实际文件所属模块必须一致，不能靠负载内容自行宣告归属。
     const scope = expectedOwnerModule || document?.ownerModule || "study-data";
     assert(isObject(document), scope, "根节点必须是对象");
     const required = [
@@ -314,12 +337,14 @@ export function validateStudyData(document, expectedOwnerModule = null) {
 }
 
 async function readJson(filePath) {
+    // 所有 JSON 入口都先做重复键检查，再交给 JSON.parse，兼顾语法错误和键覆盖风险。
     const raw = await readFile(filePath, "utf8");
     assertNoDuplicateJsonKeys(raw, filePath);
     return JSON.parse(raw);
 }
 
 export async function validateModuleFiles(root = repoRoot) {
+    // 模块契约和 UI 清单先做严格 JSON 解析；学习数据再执行完整字段、归属和引用校验。
     for (const moduleId of MODULE_IDS) {
         const moduleRoot = path.join(root, "Module", moduleId);
         await readJson(path.join(
@@ -352,6 +377,7 @@ export async function validateModuleFiles(root = repoRoot) {
 }
 
 export async function validateSamples(root = repoRoot) {
+    // 合法样例必须全部通过，非法样例必须全部被拒绝；只检查文件存在会把校验器退化成语义空壳。
     const validRoot = path.join(root, "contracts", "samples", "valid");
     const invalidRoot = path.join(root, "contracts", "samples", "invalid");
     const validFiles = (await readdir(validRoot))
@@ -377,6 +403,7 @@ export async function validateSamples(root = repoRoot) {
 }
 
 export async function main(root = repoRoot) {
+    // 样例和真实模块文件都通过后才给出成功信息；调用方仍应依据退出码判断门禁结果。
     await validateSamples(root);
     await validateModuleFiles(root);
     console.log("学习数据契约通过：模块清单、模块自有数据和合法/非法样例均已校验。");
@@ -386,6 +413,7 @@ const invokedDirectly = process.argv[1] &&
     pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
 
 if (invokedDirectly) {
+    // 直接运行时统一把异常摘要写到 stderr 并设置非零退出码；作为模块导入时由测试框架处理异常。
     main().catch((error) => {
         console.error(error.message);
         process.exitCode = 1;

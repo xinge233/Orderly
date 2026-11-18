@@ -28,6 +28,7 @@ public record ExecutionEvent(
         String message,
         Instant timestamp
 ) {
+    /** 复制事件并替换来源，用于兼容缺失来源的历史日志。 */
     public ExecutionEvent withOrigin(String value) {
         return new ExecutionEvent(
                 seq,

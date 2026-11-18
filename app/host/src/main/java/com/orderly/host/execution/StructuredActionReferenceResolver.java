@@ -7,12 +7,24 @@ import java.util.List;
 import java.util.Map;
 import java.math.BigInteger;
 
-/** 解析 AI 直执动作参数中的 {@code $fromAction} 结构化引用。 */
+/**
+ * 解析有序 Action 参数中的 {@code $fromAction} 结构化引用。
+ *
+ * <p>引用只能指向当前批次中更早且已完成的输出，索引为零基。引用对象必须恰好包含
+ * {@code $fromAction} 和 {@code path}，路径必须非空、以 {@code output} 开头，并逐段
+ * 解析对象字段或数组索引；解析结果再次作为普通参数交给契约类型校验。</p>
+ */
 public final class StructuredActionReferenceResolver {
 
     private StructuredActionReferenceResolver() {
     }
 
+    /**
+     * 递归解析一个 Action 参数对象，并返回不可变顶层结果。
+     *
+     * <p>该方法无外部副作用；缺失、越界、非法路径或非法索引会抛出
+     * {@link IllegalArgumentException}，由执行入口停止当前批次。</p>
+     */
     public static Map<String, Object> resolve(
             Map<String, Object> arguments,
             List<Map<String, Object>> completedOutputs
@@ -26,6 +38,7 @@ public final class StructuredActionReferenceResolver {
         return Collections.unmodifiableMap(result);
     }
 
+    /** 递归处理对象和数组，普通值原样返回，发现 {@code $fromAction} 时进入引用解析。 */
     private static Object resolveValue(
             Object value,
             List<Map<String, Object>> completedOutputs,
@@ -56,6 +69,12 @@ public final class StructuredActionReferenceResolver {
         return value;
     }
 
+    /**
+     * 从已完成输出中解析单个引用。
+     *
+     * <p>{@code $fromAction} 必须落在已完成输出范围内；路径首段必须是 output，
+     * 后续段只允许命中现有对象字段或有效数组位置。</p>
+     */
     private static Object resolveReference(
             Map<?, ?> reference,
             List<Map<String, Object>> completedOutputs,
@@ -115,6 +134,7 @@ public final class StructuredActionReferenceResolver {
         return current;
     }
 
+    /** 仅接受可无损转换为 int 的整数类型，拒绝小数、布尔和越界长整数。 */
     private static Integer strictIndex(Object value) {
         if (value instanceof Byte number) {
             return number.intValue();

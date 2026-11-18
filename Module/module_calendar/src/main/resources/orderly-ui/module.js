@@ -1,3 +1,14 @@
+/**
+ * 日历工作区视图。
+ *
+ * 职责：展示模块自有日程、日历待办和自定义空间，并把用户明确发起的变更交给宿主执行。
+ * 依赖：orderly-ui/module.json 提供显示与轮播设置；
+ * 查询依赖 calendar.list、calendar.todo.list、calendar.space.list；
+ * 宿主 mount context 提供 settings、element、icon、query、executeAction、moduleDataUrl、toast 等能力。
+ * 隔离：查询或动作失败只降级当前日历视图；视图移除时停止定时器并断开生命周期观察器。
+ * 天气缓存和顶部文本仅是当前视图的本地辅助 UI 状态，不写入模块业务集合。
+ */
+
 const WEATHER_CACHE_KEY = "orderly.calendar.weather.v1";
 const FOCUS_TITLE_KEY = "orderly.calendar.focus-title.v1";
 const WEATHER_TTL = 15 * 60 * 1000;
@@ -27,6 +38,13 @@ const WEATHER_LABELS = new Map([
     [99, "强雷雨伴冰雹"]
 ]);
 
+/**
+ * 挂载日历工作区。
+ *
+ * @param {HTMLElement} root 框架分配的模块视图根容器；脚本只替换其子节点。
+ * @param {object} context 宿主 mount context，所有模块数据访问和动作执行都由此注入。
+ * @returns {Promise<void>} 首次查询与局部渲染完成后结束，后续交互由监听器处理。
+ */
 export default async function mount(root, context) {
     const make = context.element;
     const settings = context.settings ?? {};
@@ -34,6 +52,7 @@ export default async function mount(root, context) {
     const showEndTime = settings.showEndTime !== false;
     const rotationEnabled = settings.spaceRotationEnabled !== false;
     const rotationSeconds = clamp(Number(settings.spaceRotationSeconds) || 15, 5, 120);
+    // 视图状态只保存当前渲染所需的只读快照、选择位置、天气缓存和轮播暂停时刻。
     const state = {
         events: [],
         todos: [],
@@ -92,6 +111,7 @@ export default async function mount(root, context) {
         writeStoredValue(FOCUS_TITLE_KEY, focusTitle.value);
     });
 
+    // 空间导航按钮都有可见文字或 aria-label；图片和视频也提供替代文本，图标不是唯一可访问名称。
     const spacePanel = make("section", "calendar-space");
     const spaceHead = make("header", "calendar-space-head");
     const spaceTitle = make("div", "calendar-space-title", "自定义空间");
@@ -162,6 +182,7 @@ export default async function mount(root, context) {
             }
         }, rotationSeconds * 1000)
         : null;
+    // 时钟和空间轮播可能长期运行；容器离开文档后必须同时清定时器、断开观察器，避免闭包泄漏。
     const disconnectObserver = new MutationObserver(() => {
         if (!workspace.isConnected) {
             window.clearInterval(clockTimer);
@@ -176,6 +197,7 @@ export default async function mount(root, context) {
     await reloadData();
 
     async function reloadData() {
+        // 三类集合共同组成一个视图快照；全部成功后再替换，避免局部成功造成跨代数据混排。
         try {
             const [events, todos, spaces] = await Promise.all([
                 context.query("calendar.list"),
@@ -210,6 +232,7 @@ export default async function mount(root, context) {
         start.setDate(1 - offset);
         const todayKey = dateKey(new Date());
         const selectedKey = dateKey(selected);
+        // 固定 42 格并按周一对齐，保证六周月份也稳定布局；日期 key 驱动今天、选中和内容标记。
         for (let index = 0; index < 42; index += 1) {
             const date = new Date(start);
             date.setDate(start.getDate() + index);
@@ -300,6 +323,7 @@ export default async function mount(root, context) {
             spaceBody.append(make("p", "calendar-empty", "还没有自定义空间。"));
             return;
         }
+        // 非文本媒体只使用宿主签发的模块数据 URL，不拼接文件系统路径。
         if (space.type === "text") {
             spaceBody.append(make("p", "calendar-space-text", space.text || "空白文本空间"));
         } else if (space.type === "image") {
@@ -320,6 +344,7 @@ export default async function mount(root, context) {
     }
 
     function rotateSpace(offset, manual, random = false) {
+        // 自动轮播和手动导航共享索引；随机轮播保证与当前项不同，手动操作后短时暂停自动切换。
         if (state.spaces.length < 2) {
             return;
         }
@@ -351,6 +376,7 @@ export default async function mount(root, context) {
                 checkbox.checked = todo.status === "COMPLETED";
                 checkbox.setAttribute("aria-label", checkbox.checked ? "重开待办" : "完成待办");
                 checkbox.addEventListener("change", async () => {
+                    // 动作失败时恢复复选框视觉状态，成功或失败都等待宿主结果后再刷新权威快照。
                     try {
                         const actionId = checkbox.checked
                             ? "calendar.todo.complete"
@@ -520,6 +546,7 @@ export default async function mount(root, context) {
         dialog.append(form);
         cancel.addEventListener("click", () => dialog.close());
         type.addEventListener("change", toggleSpaceFields);
+        // 表单只收集参数；文本和媒体都经宿主动作入口提交，上传文件路径由宿主受限处理。
         form.addEventListener("submit", async (event) => {
             event.preventDefault();
             submit.disabled = true;
@@ -685,6 +712,7 @@ export default async function mount(root, context) {
     }
 
     async function loadWeather() {
+        // 新鲜缓存优先；定位不可用或拒绝时保留上次天气，并始终开放手动城市查询作为降级路径。
         if (state.weather && Date.now() - state.weather.savedAt < WEATHER_TTL) {
             renderWeather(state.weather);
             return;
@@ -780,6 +808,7 @@ export default async function mount(root, context) {
     }
 
     async function runAction(actionId, argumentsValue) {
+        // UI 不自行判定授权，只把动作交给宿主；非完成状态转换为当前视图可展示的错误消息。
         const result = await context.executeAction(actionId, argumentsValue, true);
         if (result?.status && !String(result.status).startsWith("COMPLETED")) {
             throw new Error(result.steps?.at(-1)?.message || "动作执行失败");

@@ -1,3 +1,15 @@
+/**
+ * 本地外观设置、主题目录与主题应用状态。
+ *
+ * 职责：保存主题、动效、AI 图标、通知偏好和总览卡片顺序；校验宿主计划开关；按启动目录
+ * 校正主题选择，并以事务方式装载目录主题 CSS。
+ *
+ * 状态所有权：功能开关、AI 查询结果共享和模块侧栏/管理顺序属于宿主，不能写入本文件的
+ * `SettingsStore`。后者只保存本地展示状态，并避免持久化凭据或业务事实。
+ *
+ * 副作用：`SettingsStore` 会读写注入的 Storage 并通知订阅者；`ThemeManager` 会请求主题
+ * 详情、增删文档样式表并更新根节点与 meta。纯规范化函数不产生这些副作用。
+ */
 import { normalizeAiIcon } from "./icons.js";
 import { reconcileModuleOrder } from "./modules.js";
 
@@ -27,6 +39,8 @@ const REQUIRED_THEME_STYLES = Object.freeze(["tokens.css", "motion.css"]);
  * @param {unknown} payload /api/system/features 响应
  * @param {boolean} fallback 缺省值
  * @returns {boolean} 是否启用
+ *
+ * 只接受真正的布尔值；宿主响应破损时采用调用方提供的安全缺省值，不把字符串当开关。
  */
 export function normalizePlanningFeature(payload, fallback = false) {
     return payload
@@ -42,6 +56,8 @@ export function normalizePlanningFeature(payload, fallback = false) {
  * @param {unknown} payload /api/system/features 响应
  * @param {boolean} fallback 缺省值
  * @returns {boolean} 是否允许 AI 返回计划
+ *
+ * 该设置与旧版计划审查开关相互独立；缺失时默认允许 AI 产出计划，但仍需用户确认执行。
  */
 export function normalizeAiPlanFeature(payload, fallback = true) {
     return payload
@@ -51,6 +67,15 @@ export function normalizeAiPlanFeature(payload, fallback = true) {
         : fallback;
 }
 
+/**
+ * 清洗本地保存的总览卡片顺序。
+ *
+ * @param {object} source 设置对象
+ * @param {string} key 数组字段名
+ * @returns {string[]} 去重后的非空 ID
+ *
+ * 异常与副作用：无；字段不是数组或包含非字符串项时按项丢弃。
+ */
 function normalizeModuleOrder(source, key) {
     if (!Array.isArray(source[key])) {
         return [];
@@ -65,6 +90,9 @@ function normalizeModuleOrder(source, key) {
  *
  * @param {unknown} input 原始值
  * @returns {object} 合法设置
+ *
+ * 输出集合刻意固定为本地展示字段：旧版可见性字段、计划开关和 AI 查询共享设置即使出现在
+ * 输入中也会被丢弃，防止把宿主状态复制成第二套真相源。副作用：无。
  */
 export function normalizeSettings(input) {
     const source = input && typeof input === "object" ? input : {};
@@ -86,6 +114,9 @@ export function normalizeSettings(input) {
  * @param {Array<object>} modules 模块契约
  * @param {Array<object>} themes 主题摘要
  * @returns {object} 已校正设置
+ *
+ * 主题失效时只回退可用默认主题；没有默认主题则清空选择并交给内置外观兜底。模块顺序
+ * 只校正本地总览卡片，不触碰宿主拥有的侧栏或管理顺序。副作用：无。
  */
 export function reconcileSettingsForCatalog(input, modules = [], themes = []) {
     const settings = normalizeSettings(input);
@@ -102,6 +133,9 @@ export function reconcileSettingsForCatalog(input, modules = [], themes = []) {
  * @param {string} selected 已选主题
  * @param {Array<object>} themes 主题摘要
  * @returns {string} 主题 id 或空字符串
+ *
+ * 有效已选主题优先；否则只选择明确标记为 default 的可用主题。排序第一项不能隐式成为
+ * 默认主题。异常与副作用：无。
  */
 export function resolveThemeSelection(selected, themes = []) {
     const ordered = availableThemes(themes);
@@ -116,6 +150,9 @@ export function resolveThemeSelection(selected, themes = []) {
  *
  * @param {Array<object>} themes 主题摘要
  * @returns {string} 默认主题 id 或空字符串
+ *
+ * 若宿主导入多个默认主题，只取排序后的第一个用于界面降级；重复默认主题应在宿主启动时
+ * 被拒绝，不能依赖此函数修复目录。异常与副作用：无。
  */
 export function resolveDefaultTheme(themes = []) {
     return availableThemes(themes).find((theme) => theme.default === true)?.id ?? "";
@@ -127,6 +164,9 @@ export function resolveDefaultTheme(themes = []) {
  * @param {unknown} requested 请求的主题 id
  * @param {unknown} appliedTheme 实际应用的主题详情
  * @returns {{theme: string} | null} 需要持久化的局部设置
+ *
+ * 只有实际应用 id 与请求一致时才返回 `null`，否则把设置校正为真实主题或空字符串，避免
+ * UI 声称正在使用一个加载失败的目录主题。异常与副作用：无。
  */
 export function reconcileAppliedTheme(requested, appliedTheme) {
     const requestedId = typeof requested === "string" ? requested : "";
@@ -145,6 +185,9 @@ export function reconcileAppliedTheme(requested, appliedTheme) {
  *
  * @param {unknown} payload API 响应
  * @returns {{items: Array<object>, issues: Array<object>, builtInFallbackActive: boolean}} 目录快照
+ *
+ * 只保留当前 schema 版本、合法 ID 的主题；问题项浅拷贝后保留给设置页诊断。宿主没有明确
+ * 说明回退状态时，以“是否还存在可用默认主题”推导。异常与副作用：无。
  */
 export function normalizeThemeCatalog(payload) {
     const source = payload && typeof payload === "object" && !Array.isArray(payload)
@@ -163,6 +206,15 @@ export function normalizeThemeCatalog(payload) {
     };
 }
 
+/**
+ * 浏览器本地展示设置的单一状态容器。
+ *
+ * 实例持有一个已清洗快照，更新时合并补丁、重新清洗并尽力写入 Storage，随后同步通知订阅者。
+ * 存储不可用或内容损坏时保留安全的会话内状态，不阻断页面启动。
+ *
+ * 副作用：`update()`/`reset()` 写 Storage 并调用监听器；`getSnapshot()` 和 `subscribe()`
+ * 不写入业务状态。快照是浅冻结对象，其中数组也已冻结。
+ */
 export class SettingsStore {
     #storage;
     #storageKey;
@@ -178,6 +230,14 @@ export class SettingsStore {
         this.#value = this.#read();
     }
 
+    /**
+     * 返回当前设置的只读快照。
+     *
+     * @returns {Readonly<object>} 当前设置
+     *
+     * 每次调用都会复制顶层对象和顺序数组，防止调用方绕过 `update()` 修改内部状态。
+     * 异常与副作用：无。
+     */
     getSnapshot() {
         return Object.freeze({
             ...this.#value,
@@ -190,6 +250,10 @@ export class SettingsStore {
      *
      * @param {object} patch 局部设置
      * @returns {object} 新快照
+     *
+     * 未声明字段会在 `normalizeSettings()` 中被丢弃。Storage 写入失败被有意降级为仅当前
+     * 会话生效，但内存状态和监听器仍会更新。异常：不向调用方抛出存储错误。
+     * 副作用：更新内部状态、尝试写 Storage，并同步通知所有订阅者。
      */
     update(patch) {
         this.#value = normalizeSettings({ ...this.#value, ...patch });
@@ -203,6 +267,14 @@ export class SettingsStore {
         return snapshot;
     }
 
+    /**
+     * 恢复全部本地设置默认值。
+     *
+     * @returns {object} 默认设置快照
+     *
+     * Storage 删除失败不会阻止会话状态重置。副作用：替换内部状态、尝试删除持久化键并通知
+     * 订阅者；异常：不向调用方抛出存储错误。
+     */
     reset() {
         this.#value = normalizeSettings(DEFAULTS);
         try {
@@ -215,11 +287,28 @@ export class SettingsStore {
         return snapshot;
     }
 
+    /**
+     * 订阅设置更新。
+     *
+     * @param {(snapshot: Readonly<object>) => void} listener 监听器
+     * @returns {() => boolean} 取消订阅函数
+     *
+     * 订阅不会立即推送当前值，调用方应先读取 `getSnapshot()`。异常与副作用：无，除维护
+     * 内存中的监听器集合外；取消函数按 `Set.delete()` 的结果返回是否移除成功。
+     */
     subscribe(listener) {
         this.#listeners.add(listener);
         return () => this.#listeners.delete(listener);
     }
 
+    /**
+     * 从 Storage 读取并清洗初始值。
+     *
+     * @returns {object} 可用的本地设置
+     *
+     * 缺失、JSON 损坏或 Storage 读取异常都会回退到默认值，避免损坏的本地数据阻止应用启动。
+     * 异常与副作用：内部吞掉存储与解析错误，不修改 Storage。
+     */
     #read() {
         try {
             const raw = this.#storage?.getItem(this.#storageKey);
@@ -230,6 +319,16 @@ export class SettingsStore {
     }
 }
 
+/**
+ * 目录主题的事务式应用器。
+ *
+ * 每次 `apply()` 递增 generation，慢请求只有在仍是最新代次时才能提交；候选 CSS 全部加载
+ * 成功后才切换根主题并移除旧样式，失败时保留当前主题。主题详情和资源路径只来自宿主目录；
+ * 候选失败后先保留当前主题，首次加载无现成主题时再尝试目录默认主题，最后才回到内置外观。
+ *
+ * 副作用：`apply()` 会发起请求，`apply()` 与 `clear()` 都会修改文档 `<head>`、根节点
+ * dataset 与 meta；缓存和代次状态保存在实例内。
+ */
 export class ThemeManager {
     #document;
     #fetch;
@@ -257,6 +356,10 @@ export class ThemeManager {
      * 更新当前启动目录快照。
      *
      * @param {unknown} payload /api/themes 响应
+     * @returns {{items: Array<object>, issues: Array<object>, builtInFallbackActive: boolean}} 目录快照
+     *
+     * 仅替换实例中的目录事实，不立即应用或卸载样式；应用动作始终由 `apply()` 显式触发。
+     * 异常与副作用：不抛异常，也不修改文档。
      */
     setCatalog(payload) {
         this.#catalog = normalizeThemeCatalog(payload);
@@ -268,6 +371,12 @@ export class ThemeManager {
      *
      * @param {string} name 主题 id
      * @returns {Promise<object | null>} 主题定义
+     *
+     * 返回的是实际应用的主题详情，可能因请求主题不可用而变为默认主题；没有可用目录主题或
+     * 候选加载失败且无法回退时返回 `null`。过期请求也返回 `null`，但不会清理更新代次已提交
+     * 的样式。预期网络、解析和样式加载失败均被隔离，不向调用方抛出。
+     *
+     * 副作用：可能发起主题详情和 CSS 请求，成功后原子切换文档样式；失败时清理候选链接。
      */
     async apply(name) {
         const generation = ++this.#generation;
@@ -316,6 +425,14 @@ export class ThemeManager {
         return null;
     }
 
+    /**
+     * 立即卸载目录主题并回退到内置安全外观。
+     *
+     * @returns {void}
+     *
+     * 副作用：递增代次以作废未完成请求，移除当前主题链接，清除根主题标记和颜色 meta；
+     * 异常：不主动抛出异常。
+     */
     clear() {
         this.#generation += 1;
         this.#removeLinks(this.#active?.links);
@@ -328,6 +445,18 @@ export class ThemeManager {
         return this.#current;
     }
 
+    /**
+     * 尝试加载、校验并提交一个主题候选。
+     *
+     * @param {string} id 候选主题 ID
+     * @param {number} generation 发起时的请求代次
+     * @returns {Promise<object | symbol | null>} 主题详情、过期标记或失败时的 null
+     *
+     * 详情缓存命中时仍重新校验 schema 和样式清单；任何失败都会删除该 id 的缓存并返回 null，
+     * 让外层决定是否回退。只有代次仍匹配且全部 CSS 已加载时才提交 DOM 变更。
+     *
+     * 副作用：可能发请求、更新缓存、创建并移除 link，成功时提交根主题与 meta。
+     */
     async #tryApplyCandidate(id, generation) {
         let theme = this.#cache.get(id);
         try {
@@ -364,6 +493,17 @@ export class ThemeManager {
         }
     }
 
+    /**
+     * 校验主题详情与必需样式清单。
+     *
+     * @param {string} id 请求主题 ID
+     * @param {unknown} theme 主题详情
+     * @returns {void}
+     * @throws {TypeError} schema 版本、主题 ID、styles 数组或资源路径不合法时抛出
+     *
+     * 样式路径必须为相对 CSS 文件，且至少包含 `tokens.css` 与 `motion.css`；该函数不接受
+     * 主题脚本或任意 HTML。副作用：无。
+     */
     #validateTheme(id, theme) {
         if (!theme || typeof theme !== "object"
             || theme.schemaVersion !== SUPPORTED_THEME_SCHEMA_VERSION
@@ -379,6 +519,20 @@ export class ThemeManager {
         }
     }
 
+    /**
+     * 以隐藏状态并行加载一个主题的全部样式表。
+     *
+     * @param {string} id 主题 ID
+     * @param {string[]} styles 已校验的样式路径
+     * @param {number} generation 请求代次
+     * @returns {Promise<HTMLLinkElement[] | symbol>} 已加载链接或过期标记
+     * @throws {TypeError} 当前文档缺少 head 或创建元素能力时抛出
+     * @throws {Error} 任一候选样式加载失败时抛出
+     *
+     * 链接先以 `media="not all"` 插入，全部 load 后才由调用方启用，避免只加载一部分变量时
+     * 页面闪到半成品主题。失败或已过期会移除本次创建的全部链接。
+     * 副作用：修改文档 head 并等待网络资源。
+     */
     async #loadStyles(id, styles, generation) {
         const head = this.#document?.head;
         if (!head || typeof this.#document?.createElement !== "function") {
@@ -417,6 +571,15 @@ export class ThemeManager {
         }
     }
 
+    /**
+     * 移除一组主题样式链接。
+     *
+     * @param {Array<HTMLLinkElement>} [links=[]] 待移除链接
+     * @returns {void}
+     *
+     * 优先使用元素的 `remove()`，兼容测试替身时再调用父节点。副作用：修改文档 DOM；
+     * 非数组输入会被忽略。函数不主动抛错，但异常 DOM 节点自身的移除方法仍可能传播错误。
+     */
     #removeLinks(links = []) {
         for (const link of Array.isArray(links) ? links : []) {
             if (typeof link.remove === "function") {
@@ -427,6 +590,15 @@ export class ThemeManager {
         }
     }
 
+    /**
+     * 将主题声明的浏览器颜色同步到文档 meta。
+     *
+     * @param {object} theme 已校验主题详情
+     * @returns {void}
+     *
+     * 仅更新已存在的 meta，不创建新节点；缺失或非字符串颜色时使用安全的浏览器默认值。
+     * 副作用：修改 color-scheme 与主题色 meta。
+     */
     #applyDocumentMeta(theme) {
         const schemeMeta = this.#document?.querySelector?.('meta[name="color-scheme"]');
         if (schemeMeta) {
@@ -442,6 +614,14 @@ export class ThemeManager {
         }
     }
 
+    /**
+     * 清除目录主题留下的根标记与浏览器颜色 meta。
+     *
+     * @returns {void}
+     *
+     * 移除 `data-theme` 后由内置 CSS 接管外观；两个 meta 恢复浏览器默认值。
+     * 副作用：修改文档根节点和 meta；异常：不主动抛出异常。
+     */
     #clearDocumentTheme() {
         const root = this.#document?.documentElement;
         if (root) {
@@ -460,6 +640,15 @@ export class ThemeManager {
 
 const STALE_REQUEST = Symbol("stale-theme-request");
 
+/**
+ * 过滤、补齐并排序可用主题摘要。
+ *
+ * @param {Array<unknown>} themes 原始主题摘要
+ * @returns {Array<object>} 可排序的主题副本
+ *
+ * 只接受 schemaVersion 1 和合法小写主题 ID；order 非有限数字时按 0 处理，default 仅严格
+ * 等于 true 时成立。异常与副作用：无，不修改输入。
+ */
 function availableThemes(themes) {
     return [...themes]
         .filter((theme) => theme

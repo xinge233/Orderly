@@ -1,4 +1,10 @@
 @echo off
+rem 用途：设置仓库工作目录和可用的 JDK 21 环境后，转发到 scripts\start.ps1。
+rem 输入：继承当前环境；仅接受已设置或可自动发现的 JAVA_HOME，未转发命令行参数。
+rem 副作用：启动前台 PowerShell 启动链，可能触发构建、虚拟环境和本地服务进程。
+rem 安全边界：本启动器不提升权限、不访问应用工作区之外的业务目录；JDK 主版本仍由 PowerShell 脚本复核。
+rem 错误传播：保存转发命令的 ERRORLEVEL，非零时暂停以便查看，再以相同退出码结束。
+
 setlocal
 cd /d "%~dp0"
 

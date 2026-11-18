@@ -5,6 +5,9 @@ import java.util.List;
 /**
  * 单个模块的完整公开契约。
  *
+ * <p>该对象来自模块 JAR 内的 {@code orderly-modules/*.json}，是模块 Action、
+ * Query、参数和本地计划规则在宿主中的权威只读投影。</p>
+ *
  * @param moduleId 模块 ID
  * @param title 标题
  * @param description 说明

@@ -13,7 +13,13 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-/** 提供模块自管运行资源的通用读写边界，不包含具体模块业务。 */
+/**
+ * 提供模块自管运行资源的通用读写边界，不包含具体模块业务。
+ *
+ * <p>所有路径最终经 {@link WorkspaceRuntime#resolveWorkspacePath} 限制在应用沙箱。
+ * 资源路径会去掉前导斜杠并按段校验，拒绝上跳、空段和非法字符；写入只允许受支持
+ * 图片/视频类型且不超过 100 MB，并拒绝覆盖已有文件。清理只移入项目回收站。</p>
+ */
 @Service
 public class ModuleDataService {
 
@@ -36,6 +42,12 @@ public class ModuleDataService {
         this.runtime = runtime;
     }
 
+    /**
+     * 打开已启用业务模块的现有普通资源。
+     *
+     * <p>解析路径后要求非符号链接普通文件，并按扩展名返回内容类型。只读，不创建或
+     * 替换文件。</p>
+     */
     public ModuleDataAsset open(String moduleId, String relativePath) {
         modules.requireEnabledBusinessModule(moduleId);
         Path file = resolve(moduleId, relativePath);
@@ -58,6 +70,12 @@ public class ModuleDataService {
         }
     }
 
+    /**
+     * 暂存一个模块二进制资源。
+     *
+     * <p>要求模块启用、内容非空且不超过 100 MB、MIME 与扩展名精确匹配。底层创建采用
+     * “目标不存在才写入”语义，不覆盖已有资源；任何失败都不会替换现有文件。</p>
+     */
     public ModuleDataAsset stage(
             String moduleId,
             String relativePath,
@@ -98,6 +116,12 @@ public class ModuleDataService {
         }
     }
 
+    /**
+     * 清理模块暂存资源，仅当路径存在时移入项目回收站。
+     *
+     * <p>该方法服务于执行/回滚清理，不检查模块当前启用状态；路径仍必须位于工作区。
+     * 路径已不存在时重复调用为 no-op，但无锁，不能替代并发写入协调。</p>
+     */
     public void cleanup(String moduleId, String relativePath, String planId, String stepId) {
         Path file = resolve(moduleId, relativePath);
         if (runtime.exists(file)) {
@@ -105,11 +129,18 @@ public class ModuleDataService {
         }
     }
 
+    /**
+     * 将模块相对资源解析为应用自管工作区内的路径。
+     *
+     * <p>先做段级白名单和上跳检查，再交给 WorkspaceRuntime 做最终边界及现有符号链接
+     * 校验。本方法只解析路径，不读写文件。</p>
+     */
     public Path resolve(String moduleId, String relativePath) {
         String normalized = requireRelativePath(relativePath);
         return runtime.resolveWorkspacePath("modules/" + moduleId + "/" + normalized);
     }
 
+    /** 规范化并校验相对路径和每个路径段，拒绝目录路径及任何上跳形式。 */
     private String requireRelativePath(String relativePath) {
         String value = relativePath == null ? "" : relativePath.replace('\\', '/').trim();
         while (value.startsWith("/")) {
@@ -138,6 +169,7 @@ public class ModuleDataService {
         return String.join("/", segments);
     }
 
+    /** 要求声明的 MIME 与扩展名白名单完全匹配，并返回规范化的 MIME。 */
     private String requireContentType(String contentType, String relativePath) {
         String value = contentType == null ? "" : contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
         String expected = CONTENT_TYPES.get(extension(relativePath));
@@ -151,16 +183,19 @@ public class ModuleDataService {
         return value;
     }
 
+    /** 根据扩展名推断响应内容类型，未知类型保留为二进制流。 */
     private String contentType(Path file) {
         String type = CONTENT_TYPES.get(extension(file.getFileName().toString()));
         return type == null ? "application/octet-stream" : type;
     }
 
+    /** 提取并小写最后一个点之后的扩展名。 */
     private String extension(String value) {
         int dot = value.lastIndexOf('.');
         return dot < 0 ? "" : value.substring(dot + 1).toLowerCase(Locale.ROOT);
     }
 
+    /** 构造统一的非法模块资源路径错误。 */
     private ApiException invalidPath() {
         return new ApiException(
                 HttpStatus.BAD_REQUEST,
@@ -169,6 +204,7 @@ public class ModuleDataService {
         );
     }
 
+    /** 已通过边界检查的模块资源描述，file 仅供宿主流式响应使用。 */
     public record ModuleDataAsset(
             String relativePath,
             String contentType,

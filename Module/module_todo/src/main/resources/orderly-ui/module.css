@@ -1,3 +1,8 @@
+/*
+ * 自包含 ownership：module_todo 只定义 .todo-ui-* 待办视图样式。
+ * 主题语义变量提供色彩、字体、间距、圆角与时长；gentle/minimal/none 三档由框架统一控制。
+ * 桌面以紧凑面板展示摘要和列表，640px 起标题区纵向排列，完成状态与错误信息保持可见。
+ */
 .todo-ui-panel {
     display: grid;
     gap: var(--space-5);
@@ -95,6 +100,7 @@
     color: var(--color-danger);
 }
 
+/* 手机端只调整头部布局，不改变待办项顺序、状态颜色或键盘可操作性。 */
 @media (max-width: 640px) {
     .todo-ui-header {
         align-items: stretch;

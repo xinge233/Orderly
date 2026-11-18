@@ -12,7 +12,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** 模块 UI manifest 中声明的设置字段及宿主持有的统一校验逻辑。 */
+/**
+ * 模块 UI manifest 中声明的设置字段及宿主持有的统一校验逻辑。
+ *
+ * <p>{@code orderly-ui/module.json} 的 {@code settings} 是模块设置定义的唯一来源。
+ * 本类只接受 boolean、integer、select 和 text 四种字段，校验 key 唯一、默认值、
+ * 选项归属、数值和文本边界，并把部分更新合并成宿主可持久化的完整值集合。</p>
+ */
 public record ModuleSettingsDefinition(List<Field> fields) {
 
     private static final Pattern KEY_PATTERN = Pattern.compile("[A-Za-z][A-Za-z0-9_-]{0,63}");
@@ -21,10 +27,17 @@ public record ModuleSettingsDefinition(List<Field> fields) {
         fields = List.copyOf(fields);
     }
 
+    /** 表示模块没有声明任何设置字段。 */
     public static ModuleSettingsDefinition empty() {
         return new ModuleSettingsDefinition(List.of());
     }
 
+    /**
+     * 从 UI manifest 的 {@code settings} 节点解析并校验字段定义。
+     *
+     * <p>允许字段数组或包含 {@code fields} 数组的对象两种兼容形态；缺省时返回空定义。
+     * 重复 key、未知类型、错误默认值和相互矛盾的边界都会阻止模块加载。</p>
+     */
     public static ModuleSettingsDefinition parse(JsonNode rawSettings, ObjectMapper objectMapper) {
         if (rawSettings == null || rawSettings.isMissingNode() || rawSettings.isNull()) {
             return empty();
@@ -48,10 +61,12 @@ public record ModuleSettingsDefinition(List<Field> fields) {
         return new ModuleSettingsDefinition(fields);
     }
 
+    /** 判断模块是否未声明设置字段。 */
     public boolean isEmpty() {
         return fields.isEmpty();
     }
 
+    /** 按声明顺序生成每项设置的默认值。 */
     public Map<String, Object> defaults() {
         Map<String, Object> values = new LinkedHashMap<>();
         for (Field field : fields) {
@@ -95,6 +110,9 @@ public record ModuleSettingsDefinition(List<Field> fields) {
         return Map.copyOf(merged);
     }
 
+    /**
+     * 校验字段公共元数据，再分派到对应类型的严格解析器。
+     */
     private static Field parseField(JsonNode raw, ObjectMapper objectMapper) {
         requireText(raw, "key");
         requireText(raw, "type");
@@ -120,6 +138,7 @@ public record ModuleSettingsDefinition(List<Field> fields) {
         };
     }
 
+    /** 解析布尔字段，默认值必须是 JSON boolean。 */
     private static Field parseBoolean(
             String key,
             String label,
@@ -145,6 +164,9 @@ public record ModuleSettingsDefinition(List<Field> fields) {
         );
     }
 
+    /**
+     * 解析整数字段，并确保最小/最大边界和默认值一致。
+     */
     private static Field parseInteger(
             String key,
             String label,
@@ -179,6 +201,9 @@ public record ModuleSettingsDefinition(List<Field> fields) {
         );
     }
 
+    /**
+     * 解析选择字段，拒绝空选项、重复 value 和不在选项内的默认值。
+     */
     private static Field parseSelect(
             String key,
             String label,
@@ -223,6 +248,9 @@ public record ModuleSettingsDefinition(List<Field> fields) {
         );
     }
 
+    /**
+     * 解析文本字段，读取占位提示并校验默认值与长度边界。
+     */
     private static Field parseText(
             String key,
             String label,
@@ -263,6 +291,9 @@ public record ModuleSettingsDefinition(List<Field> fields) {
         );
     }
 
+    /**
+     * 按字段类型验证更新值；对象、数组和未声明类型不会被隐式转换。
+     */
     private static void validateValue(Field field, JsonNode value) {
         switch (field.type()) {
             case "boolean" -> {
@@ -306,6 +337,7 @@ public record ModuleSettingsDefinition(List<Field> fields) {
         );
     }
 
+    /** 把已通过校验的 JSON 标量转换成设置持久化使用的 Java 标量。 */
     private static Object primitive(JsonNode value) {
         if (value.isBoolean()) {
             return value.asBoolean();
@@ -316,6 +348,7 @@ public record ModuleSettingsDefinition(List<Field> fields) {
         return value.asText();
     }
 
+    /** 读取可选的整数边界，并给出带字段位置的失败原因。 */
     private static Integer optionalInteger(JsonNode raw, String field, String key) {
         JsonNode value = raw.get(field);
         if (value == null) {
@@ -327,12 +360,14 @@ public record ModuleSettingsDefinition(List<Field> fields) {
         return value.asInt();
     }
 
+    /** 要求指定声明字段存在且包含非空文本。 */
     private static void requireText(JsonNode node, String field) {
         if (!node.path(field).isTextual() || node.path(field).asText().isBlank()) {
             throw new IllegalStateException("模块 UI 设置缺少文本字段：" + field);
         }
     }
 
+    /** 已校验的设置字段定义及其类型专属约束。 */
     public record Field(
             String key,
             String type,
@@ -351,6 +386,7 @@ public record ModuleSettingsDefinition(List<Field> fields) {
         }
     }
 
+    /** select 字段中一个稳定的值和本地化显示标签。 */
     public record Option(String value, String label) {
     }
 }

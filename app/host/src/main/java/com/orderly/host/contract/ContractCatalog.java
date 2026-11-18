@@ -34,8 +34,14 @@ import java.util.stream.Stream;
 /**
  * 从外部模块目录聚合工具契约并绑定模块执行器。
  *
- * <p>宿主不编译期依赖任何具体模块。模块 JAR 是本地受信任的可执行文件，
- * 由构建脚本放入运行时目录；启动时只扫描一次，不提供热加载或远程下载。</p>
+ * <p>模块 JAR 内的 {@code orderly-modules/*.json} 是 Action、Query、参数、风险和
+ * 本地计划规则的唯一机器可读真相源；本类只解析、校验并建立索引，不维护第二套工具
+ * 定义。宿主不编译期依赖任何具体模块，而是通过 {@link URLClassLoader} 与
+ * {@link ServiceLoader} 把契约和执行器绑定。模块 JAR 是本地受信任的可执行文件，
+ * 启动时只扫描一次，不提供热替换、卸载或远程下载。</p>
+ *
+ * <p>显式刷新只允许追加一个新业务模块。候选 JAR 先完成加载、初始化和全部校验，
+ * 再通过代次检查提交；提交后的快照可整体回滚，失败候选的类加载器会被关闭。</p>
  */
 @Component
 public class ContractCatalog implements AutoCloseable {
@@ -62,6 +68,13 @@ public class ContractCatalog implements AutoCloseable {
     private final List<URLClassLoader> moduleClassLoaders;
     private long generation;
 
+    /**
+     * 扫描运行模块目录，加载全部契约和执行器，并建立启动快照。
+     *
+     * <p>契约模块集合必须与 {@link ServiceLoader} 暴露的执行器集合一致，否则启动
+     * 失败。模块目录不存在表示零业务模块；目录存在时必须是普通目录，JAR 必须是
+     * 非符号链接的普通文件。</p>
+     */
     public ContractCatalog(
             ObjectMapper objectMapper,
             @Value("${orderly.modules-dir:target/orderly-modules}") String modulesDirectory
@@ -147,6 +160,7 @@ public class ContractCatalog implements AutoCloseable {
         return settingsByModule.getOrDefault(moduleId, ModuleSettingsDefinition.empty());
     }
 
+    /** 读取当前已加载模块 JAR 的文件名、大小和修改时间摘要。 */
     public Optional<ModuleArtifact> moduleArtifact(String moduleId) {
         Path jar = moduleJars.get(moduleId);
         if (jar == null) {
@@ -210,7 +224,11 @@ public class ContractCatalog implements AutoCloseable {
     }
 
     /**
-     * 预检一个新业务模块，不修改当前目录快照。失败时调用方无需回滚。
+     * 预检一个新业务模块，不修改当前对外契约快照。
+     *
+     * <p>候选 JAR 必须恰好声明一个新模块，静态契约与新增执行器必须一一对应；
+     * 系统模块、重复 ID 和契约冲突均被拒绝。失败时调用方无需回滚，因为当前快照
+     * 尚未改变。</p>
      */
     public synchronized PreparedModule prepareModule(
             Path jar,
@@ -306,6 +324,9 @@ public class ContractCatalog implements AutoCloseable {
         );
     }
 
+    /**
+     * 原子替换当前运行快照，并保留前一快照供显式刷新失败时回滚。
+     */
     private synchronized void commitPrepared(PreparedModule prepared) {
         if (prepared.owner != this) {
             throw new IllegalArgumentException("模块预检结果不属于当前宿主");
@@ -330,6 +351,9 @@ public class ContractCatalog implements AutoCloseable {
         prepared.committed = true;
     }
 
+    /**
+     * 在快照代次仍匹配时恢复提交前的契约、执行器和类加载器。
+     */
     private synchronized void rollbackPrepared(PreparedModule prepared) {
         if (prepared.owner != this || !prepared.committed) {
             throw new IllegalStateException("模块预检结果尚未提交，不能回滚");
@@ -389,6 +413,9 @@ public class ContractCatalog implements AutoCloseable {
         }
     }
 
+    /**
+     * 从模块 JAR 的 {@code orderly-ui/module.json} 读取并校验设置声明。
+     */
     private ModuleSettingsDefinition readSettings(
             JarFile jar,
             String moduleId,
@@ -427,6 +454,7 @@ public class ContractCatalog implements AutoCloseable {
         return executor;
     }
 
+    /** 根据已加载契约解析动作所属模块 ID。 */
     public String moduleIdForAction(String actionId) {
         for (ModuleContract module : modules) {
             if (module.actions().stream().anyMatch(action -> action.id().equals(actionId))) {
@@ -436,6 +464,9 @@ public class ContractCatalog implements AutoCloseable {
         throw new IllegalArgumentException("动作没有归属模块：" + actionId);
     }
 
+    /**
+     * 逆序关闭刷新过程中创建的类加载器；多个关闭错误会合并后抛出。
+     */
     @Override
     @PreDestroy
     public void close() throws IOException {
@@ -458,6 +489,12 @@ public class ContractCatalog implements AutoCloseable {
         }
     }
 
+    /**
+     * 稳定扫描模块目录中的直接 JAR 文件。
+     *
+     * <p>缺失目录表示没有模块；符号链接目录直接被拒绝，文件按名称排序以保证启动
+     * 快照可重复。实现不递归进入子目录。</p>
+     */
     private List<Path> findModuleJars(Path directory) {
         if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) {
             return List.of();
@@ -476,6 +513,7 @@ public class ContractCatalog implements AutoCloseable {
         }
     }
 
+    /** 要求候选 JAR 是普通本地文件而非符号链接，并返回规范化绝对路径。 */
     private Path requireRegularJar(Path path) {
         if (Files.isSymbolicLink(path) || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
             throw new IllegalStateException("模块 JAR 必须位于模块目录内且不能是符号链接：" + path);
@@ -483,6 +521,12 @@ public class ContractCatalog implements AutoCloseable {
         return path.toAbsolutePath().normalize();
     }
 
+    /**
+     * 解析一个 JAR 中的模块契约、UI 设置和全局唯一索引。
+     *
+     * <p>只读取 JAR 根下 {@code orderly-modules/*.json}。模块、Action、Query 和
+     * 计划规则 ID 均写入共享映射，通过 {@code putIfAbsent} 拒绝跨模块重复。</p>
+     */
     private void loadContracts(
             Path jarPath,
             ObjectMapper objectMapper,
@@ -557,6 +601,9 @@ public class ContractCatalog implements AutoCloseable {
         return module;
     }
 
+    /**
+     * 解析模块契约的必填字段和三个能力数组；结构错误在启动或刷新时失败。
+     */
     private ModuleContract parseModule(JsonNode root) {
         requireText(root, "moduleId");
         requireText(root, "title");
@@ -601,6 +648,9 @@ public class ContractCatalog implements AutoCloseable {
         );
     }
 
+    /**
+     * 解析可选系统模块元数据；当前只支持受保护的 {@code MODULE_CONTROL}。
+     */
     private ModuleSystemMetadata parseSystemMetadata(JsonNode rawSystem) {
         if (rawSystem.isMissingNode() || rawSystem.isNull()) {
             return null;
@@ -622,6 +672,12 @@ public class ContractCatalog implements AutoCloseable {
         );
     }
 
+    /**
+     * 解析 Action 契约，包括风险、AI 可调用上限、参数和可选输出 schema。
+     *
+     * <p>{@code aiCallable} 省略时默认允许；{@code outputSchema} 仅接受宿主支持的
+     * JSON Schema 子集，并在加载阶段预先校验定义。</p>
+     */
     private ActionContract parseAction(JsonNode node) {
         requireText(node, "id");
         requireText(node, "title");
@@ -666,6 +722,7 @@ public class ContractCatalog implements AutoCloseable {
         );
     }
 
+    /** 解析只读 Query 契约，并把省略的 {@code aiCallable} 视为允许。 */
     private QueryContract parseQuery(JsonNode node) {
         requireText(node, "id");
         requireText(node, "title");
@@ -683,6 +740,7 @@ public class ContractCatalog implements AutoCloseable {
         );
     }
 
+    /** 解析本地计划规则的正则、参数捕获组和路径参数映射。 */
     private PlannerRuleContract parsePlannerRule(JsonNode node) {
         requireText(node, "id");
         requireText(node, "actionId");
@@ -719,6 +777,9 @@ public class ContractCatalog implements AutoCloseable {
         );
     }
 
+    /**
+     * 解析参数数组；首版只支持 string、boolean 和 integer。
+     */
     private List<ParameterContract> parseParameters(JsonNode rawParameters, String owner) {
         if (!rawParameters.isArray()) {
             throw new IllegalStateException(owner + " parameters 必须是数组");
@@ -740,6 +801,12 @@ public class ContractCatalog implements AutoCloseable {
         return parameters;
     }
 
+    /**
+     * 校验模块内的动作命名、风险确认和参数唯一性。
+     *
+     * <p>写和删除动作必须声明确认；执行期仍需经过宿主授权与执行核心，契约字段
+     * 本身不能替代运行时担保。</p>
+     */
     private void validateModule(ModuleContract module) {
         for (ActionContract action : module.actions()) {
             if (!action.id().contains(".")) {
@@ -761,6 +828,7 @@ public class ContractCatalog implements AutoCloseable {
         }
     }
 
+    /** 校验 Query 的模块命名空间和参数唯一性。 */
     private void validateQuery(ModuleContract module, QueryContract query) {
         if (!query.id().contains(".")) {
             throw new IllegalStateException("查询 ID 应包含模块命名空间：" + query.id());
@@ -768,6 +836,9 @@ public class ContractCatalog implements AutoCloseable {
         requireUniqueParameters(query.id(), query.parameters());
     }
 
+    /**
+     * 校验计划规则只引用本模块动作、有效捕获组和已声明的字符串路径参数。
+     */
     private void validatePlannerRule(ModuleContract module, PlannerRuleContract rule) {
         if (!rule.id().contains(".")) {
             throw new IllegalStateException("计划规则 ID 应包含模块命名空间：" + rule.id());
@@ -806,6 +877,7 @@ public class ContractCatalog implements AutoCloseable {
         }
     }
 
+    /** 拒绝同一动作或查询中重复声明参数名。 */
     private void requireUniqueParameters(String ownerId, List<ParameterContract> parameters) {
         parameters.stream()
                 .collect(java.util.stream.Collectors.groupingBy(
@@ -825,6 +897,7 @@ public class ContractCatalog implements AutoCloseable {
         }
     }
 
+    /** 失败清理时只关闭临时加载器，不覆盖正在传播的根因异常。 */
     private void closeQuietly(URLClassLoader loader) {
         if (loader == null) {
             return;
@@ -900,18 +973,22 @@ public class ContractCatalog implements AutoCloseable {
             this.previousSettings = owner.settingsByModule;
         }
 
+        /** 返回本次预检新增的模块契约。 */
         public ModuleContract module() {
             return module;
         }
 
+        /** 提交候选快照；仅在预检结果未关闭且目录代次仍匹配时成功。 */
         public void commit() {
             owner.commitPrepared(this);
         }
 
+        /** 将已提交快照恢复到预检前的状态，并关闭候选类加载器。 */
         public void rollback() {
             owner.rollbackPrepared(this);
         }
 
+        /** 未提交就关闭时释放候选类加载器，不改变当前宿主快照。 */
         @Override
         public void close() {
             if (!committed && !closed) {

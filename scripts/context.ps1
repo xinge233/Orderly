@@ -1,4 +1,18 @@
 [CmdletBinding()]
+# 用途：
+#   提供只读、有界、仅限 Git 跟踪文件的上下文读取、搜索、差异统计和配置审计。
+#
+# 输入：
+#   -Mode 选择 file/map/files/search/diff/audit；file/search 使用 -Path、-Kind、-Pattern、-Start、-Count。
+#   路径可由仓库内相对路径或仓库内绝对路径表示。
+#
+# 副作用：
+#   正常模式只读取文件与 Git 元数据并输出摘要，不修改工作区、运行数据或 Git 状态。
+#
+# 安全边界：
+#   拒绝仓库外路径、忽略/未跟踪文件、目录、重解析点、二进制、超限文件和超限输出；
+#   搜索只使用 Git 跟踪清单。任何边界或工具错误以退出码 1 结束，且不输出文件正文。
+
 param(
     [ValidateSet("file", "map", "files", "search", "diff", "audit")]
     [string]$Mode,
@@ -32,6 +46,7 @@ function Invoke-Git {
         [string[]]$Arguments
     )
 
+    # Git 查询的退出码必须有语义（例如 1 可能表示未匹配），因此先收集输出再统一解释。
     $previousErrorActionPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = "Continue"
@@ -49,6 +64,7 @@ function Invoke-Git {
 }
 
 function Initialize-Repository {
+    # 以脚本所在目录为起点询问 Git 根，避免调用方当前目录不同导致路径边界判断偏移。
     $candidateRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
     $previousErrorActionPreference = $ErrorActionPreference
     try {
@@ -90,6 +106,7 @@ function Resolve-RepoPath {
         throw "路径不能为空。"
     }
 
+    # 先规范化为绝对路径再比较前缀，防止 ..、相对路径或大小写差异绕过仓库边界。
     $fullPath = if ([System.IO.Path]::IsPathRooted($InputPath)) {
         [System.IO.Path]::GetFullPath($InputPath)
     }
@@ -152,6 +169,7 @@ function Test-IsTracked {
 }
 
 function Assert-NoReparsePoint {
+    # 重解析点可能把仓库内路径引向仓库外，逐级检查用于封闭符号链接和目录联接绕过。
     param([Parameter(Mandatory = $true)][string]$RelativePath)
 
     $currentPath = $script:RepoRoot
@@ -171,6 +189,7 @@ function Assert-NoReparsePoint {
 }
 
 function Get-SafeTrackedFile {
+    # 该函数集中执行所有读取边界检查；调用方不能只校验路径后就自行打开文件。
     param(
         [Parameter(Mandatory = $true)]
         [string]$InputPath
@@ -199,6 +218,7 @@ function Get-SafeTrackedFile {
         throw "拒绝超限文件：$($resolved.RelativePath)，$fileSize 字节，上限 $($script:MaxFileBytes) 字节。"
     }
 
+    # 全文件扫描 NUL，而不是只看首块，避免前缀伪装成文本的二进制文件泄漏到上下文。
     $stream = [System.IO.File]::Open(
         $resolved.FullPath,
         [System.IO.FileMode]::Open,
@@ -227,6 +247,7 @@ function Get-SafeTrackedFile {
 }
 
 function Format-DisplayText {
+    # 控制字符替换可防止终端控制序列污染输出，同时保留制表符以维持有限可读性。
     param([AllowNull()][string]$Text)
 
     if ($null -eq $Text) {
@@ -246,6 +267,7 @@ function Format-DisplayText {
 }
 
 function Read-TextLines {
+    # 严格 UTF-8 解码和行窗口同时限制编码歧义与上下文体积；解码失败不会退化为乱码输出。
     param(
         [Parameter(Mandatory = $true)]
         [pscustomobject]$File,
@@ -297,6 +319,7 @@ function Read-TrackedText {
 }
 
 function Get-TrackedRelativePaths {
+    # 清单还处理 Git 的路径转义，并在枚举阶段拒绝任何经过重解析点的跟踪文件。
     $result = Invoke-Git -Arguments @("-c", "core.quotepath=false", "ls-files")
     if ($result.ExitCode -ne 0) {
         throw "无法读取 Git 跟踪文件清单。"
@@ -340,6 +363,7 @@ function Resolve-Mode {
 }
 
 function Invoke-FileMode {
+    # 默认只读 200 行、单次最多 500 行，确保工具不会被一次请求变成整文件转储。
     if ([string]::IsNullOrWhiteSpace($Path)) {
         throw "file 模式需要 -Path。"
     }
@@ -357,6 +381,7 @@ function Invoke-FileMode {
 }
 
 function Invoke-MapMode {
+    # map 模式只允许仓库地图，避免把“按地图读取”扩大成任意文件读取通道。
     $mapPath = if ([string]::IsNullOrWhiteSpace($Path)) { "docs/repo-map.md" } else { $Path }
     $resolvedMap = Resolve-RepoPath -InputPath $mapPath
     if ($resolvedMap.RelativePath -ne "docs/repo-map.md") {
@@ -376,6 +401,7 @@ function Invoke-MapMode {
 }
 
 function Invoke-FilesMode {
+    # 文件列表限制数量并支持扩展名筛选；-Path 只能缩小到 Git 跟踪的精确文件。
     if (-not [string]::IsNullOrWhiteSpace($Pattern)) {
         throw "files 模式不接受 -Pattern；请使用 search 模式。"
     }
@@ -403,6 +429,7 @@ function Invoke-FilesMode {
 }
 
 function Invoke-SearchMode {
+    # 搜索使用固定字符串和显式跟踪文件清单，避免 pathspec/正则元字符改变搜索边界。
     if ([string]::IsNullOrWhiteSpace($Pattern)) {
         throw "search 模式需要 -Pattern。"
     }
@@ -457,6 +484,7 @@ function Invoke-SearchMode {
 }
 
 function Invoke-DiffMode {
+    # diff 只输出统计，不展开补丁；禁用外部差异和 textconv，避免触发额外命令或内容转换。
     if (-not [string]::IsNullOrWhiteSpace($Pattern) -or
             -not [string]::IsNullOrWhiteSpace($Kind)) {
         throw "diff 模式不接受 -Pattern 或 -Kind。"
@@ -504,8 +532,10 @@ function Get-ConfigKeyCount {
 }
 
 function Invoke-AuditMode {
+    # 审计汇总所有可识别问题后一次性失败，便于修复配置；它只读取仓库，不写运行时数据。
     $issues = [System.Collections.Generic.List[string]]::new()
 
+    # 配置要求必需键精确且不重复，可选键只在出现时校验，防止配置漂移被静默接受。
     try {
         $config = Read-TrackedText -RelativePath ".codex/config.toml"
         $requiredConfig = [ordered]@{
@@ -547,6 +577,7 @@ function Invoke-AuditMode {
         $issues.Add("配置检查失败：$($_.Exception.Message)")
     }
 
+    # 仓库地图需要保持轻量、无代码围栏，并保留读取路由和验证入口。
     try {
         $mapFile = Get-SafeTrackedFile -InputPath "docs/repo-map.md"
         $mapLines = @([System.IO.File]::ReadAllLines(
@@ -569,6 +600,7 @@ function Invoke-AuditMode {
         $issues.Add("repo-map 检查失败：$($_.Exception.Message)")
     }
 
+    # 忽略规则必须覆盖构建、运行数据和缓存，防止上下文工具无意读取生成物。
     try {
         $ignoreText = Read-TrackedText -RelativePath ".gitignore"
         $ignoreLines = @($ignoreText -split "\r?\n" | ForEach-Object { $_.Trim() })
@@ -587,6 +619,7 @@ function Invoke-AuditMode {
         $issues.Add("忽略规则检查失败：$($_.Exception.Message)")
     }
 
+    # 最后验证扫描选择本身和工具实现约束，避免边界规则被后续修改悄悄移除。
     try {
         $trackedFiles = @(Get-TrackedRelativePaths)
         if ($trackedFiles.Count -eq 0) {
@@ -612,6 +645,7 @@ function Invoke-AuditMode {
         $issues.Add("扫描选择检查失败：$($_.Exception.Message)")
     }
 
+    # 审计失败返回非零退出码；成功信息只在没有 issue 时输出，避免部分通过被误读为通过。
     if ($issues.Count -ne 0) {
         Write-Output "AUDIT FAIL issues=$($issues.Count)"
         foreach ($issue in $issues) {

@@ -11,9 +11,12 @@
     <link rel="stylesheet" href="./styles/app.css">
 </head>
 <body>
+    <!-- 键盘用户的首个可聚焦入口：跳过侧栏导航，直接落到主内容焦点目标。 -->
     <a class="skip-link" href="#main-content">跳到主要内容</a>
 
+    <!-- 应用外壳：侧栏持久导航，app-main 承载移动工具栏、历史视图与模块主视图。 -->
     <div class="app-shell" data-motion-scope="app-shell" data-motion-state="ready" data-motion-phase="active">
+        <!-- 侧栏业务导航由宿主模块接口生成；navigation-order-status 专门播报排序结果。 -->
         <aside class="sidebar" id="sidebar" aria-label="应用导航" data-motion-scope="sidebar" data-motion-state="collapsed" data-motion-phase="active">
             <header class="brand">
                 <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -48,6 +51,7 @@
             </footer>
         </aside>
 
+        <!-- 主内容区：移动菜单通过 aria-controls/aria-expanded 控制抽屉，桌面端复用同一 main 焦点目标。 -->
         <div class="app-main">
             <header class="mobile-toolbar">
                 <button
@@ -82,6 +86,7 @@
 
     <span class="ai-snap-target" id="ai-snap-target" aria-hidden="true"></span>
 
+    <!-- 框架级 AI 入口独立于旧版计划；可见浮层由脚本同步 aria-hidden 与 data-* 状态。 -->
     <section
         class="ai-dock"
         id="ai-dock"
@@ -181,6 +186,7 @@
 
     <div class="ai-call-layer" id="ai-call-layer" aria-hidden="true"></div>
 
+    <!-- 原生 dialog 负责模态语义与关闭入口；aria-labelledby 将对话框绑定到可见标题。 -->
     <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title" data-motion-scope="settings-dialog" data-motion-state="closed" data-motion-phase="idle">
         <div class="settings-frame">
             <header class="settings-head">
@@ -203,6 +209,7 @@
         </div>
     </dialog>
 
+    <!-- 全局反馈使用状态型 live region；scrim 只承担移动抽屉的视觉阻断。 -->
     <div class="toast" id="toast" role="status" aria-live="polite" data-motion-scope="feedback" data-motion-state="idle" data-motion-phase="idle"></div>
     <div class="scrim" id="mobile-scrim" hidden></div>
 

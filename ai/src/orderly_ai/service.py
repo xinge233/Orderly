@@ -1,3 +1,11 @@
+"""短期 AI 回合编排、重放保护、会话管理与会话内工具校验。
+
+服务只处理受控决策，不执行 Action 或 Query。会话、重放结果、设置和 API Key
+均保存在当前 Python 进程内存中；Java 宿主负责最终契约校验、授权、快照、
+执行、审计和回滚。所有请求通过 ``clientRequestId`` 建立幂等边界，设置代次
+变化后旧状态不得复用。
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -34,12 +42,16 @@ from .prompts import (
 from .settings import SettingsStore
 
 
+# 只保留最近十二个 user/assistant 消息，限制上下文增长和敏感内容驻留时间。
 MAX_HISTORY_MESSAGES = 12
+# 大小按稳定紧凑 JSON 的 UTF-8 字节计算，匹配发给模型前的实际序列化形态。
 QUERY_RESULT_ITEM_LIMIT_BYTES = 16 * 1024
 QUERY_RESULTS_TOTAL_LIMIT_BYTES = 64 * 1024
 
 
 class Provider(Protocol):
+    """模型调用端口；实现不得获得业务执行或文件访问能力。"""
+
     async def complete(
         self,
         config: ProviderConfig,
@@ -52,6 +64,8 @@ class Provider(Protocol):
 
 @dataclass(slots=True)
 class Conversation:
+    """同一设置代次下的一段短时会话历史。"""
+
     messages: list[dict[str, str]]
     expires_at: float
     version: int
@@ -59,6 +73,8 @@ class Conversation:
 
 @dataclass(slots=True)
 class Replay:
+    """已成功完成的请求结果，用于 HTTP 重试时返回首次决策。"""
+
     fingerprint: str
     decision: Decision
     expires_at: float
@@ -66,6 +82,13 @@ class Replay:
 
 
 class AIService:
+    """协调 Provider 调用并维护进程内短期状态。
+
+    核心不变量：同一 ``clientRequestId`` 不能对应不同语义内容；模型结构
+    违规最多修复一次；设置变更后旧会话和重放结果不能被复用；Query 结果
+    未经显式隐私同意不得发送给外部模型。
+    """
+
     def __init__(
         self,
         *,
@@ -75,6 +98,7 @@ class AIService:
         monotonic: Callable[[], float] = time.monotonic,
         local_now: Callable[[], datetime] | None = None,
     ) -> None:
+        """创建以单调时钟管理 TTL、以设置代次隔离状态的进程内服务。"""
         self.provider = provider
         self.settings = settings or SettingsStore()
         self.ttl_seconds = ttl_seconds
@@ -86,15 +110,19 @@ class AIService:
         self._locks_guard = asyncio.Lock()
 
     def get_settings(self) -> SettingsView:
+        """返回不含 Key 的当前设置。"""
         return self.settings.view()
 
     def put_settings(self, request: SettingsPutRequest) -> SettingsView:
+        """更新内存设置；配置版本由设置存储负责递增。"""
         return self.settings.configure(request)
 
     def delete_settings(self) -> SettingsView:
+        """清除 Key 和安全开关。"""
         return self.settings.clear()
 
     async def test_connection(self) -> ConnectionTestView:
+        """验证当前 Provider 可调用，并把失败映射为安全的上游错误。"""
         config = self.settings.require_configured()
         try:
             await self.provider.test(config)
@@ -103,7 +131,10 @@ class AIService:
         return ConnectionTestView(ok=True, message="模型连接成功")
 
     async def turn(self, request: TurnRequest) -> Decision:
+        """处理首轮目标并允许模型在有界范围内提出 Query。"""
         config = self.settings.require_configured()
+        # 没有 conversationId 时仍以空串构造重放键，使相同请求重试返回同一
+        # 首次决策；随机生成的 ID 只用于响应和会话写入。
         replay_conversation_id = request.conversation_id or ""
         conversation_id = request.conversation_id or str(uuid.uuid4())
         return await self._run_completion(
@@ -124,6 +155,11 @@ class AIService:
         )
 
     async def query_results(self, request: QueryResultsRequest) -> Decision:
+        """提交只读 Query 结果，并禁止续聊再次发起 Query。
+
+        隐私开关先于任何序列化或 Provider 调用检查，确保未获同意时结果不会
+        离开本机进程。通过开关后再检查单条与总计 UTF-8 大小上限。
+        """
         config = self.settings.require_configured()
         if not config.allow_send_query_results_to_model:
             raise ServiceError(
@@ -171,6 +207,13 @@ class AIService:
         initial_user_message: str,
         fingerprint_source: dict,
     ) -> Decision:
+        """在单一请求锁内完成去重、会话读取、模型调用和状态提交。
+
+        重放键包含命名空间、设置代次、调用方会话 ID 和请求 ID。相同键若
+        指纹不同返回 409；相同指纹直接返回首次决策。成功结果、会话历史和
+        重放记录使用同一 TTL，并在 Provider 返回后再次核对设置代次，确保
+        安全开关在调用途中的变化不会被旧结果掩盖。
+        """
         now_tick = self._monotonic()
         self._prune(now_tick, config.version)
         replay_key = (
@@ -183,6 +226,7 @@ class AIService:
         lock = await self._lock_for(replay_key)
 
         async with lock:
+            # 等锁期间可能有其他请求完成或 TTL 到期，因此进入临界区后重新清理。
             now_tick = self._monotonic()
             self._prune(now_tick, config.version)
             replay = self._replays.get(replay_key)
@@ -224,6 +268,8 @@ class AIService:
                 update={"conversation_id": conversation_id}
             )
 
+            # 模型调用期间设置可能被更新；此时拒绝提交，防止旧 Key/旧开关
+            # 产生的决策在设置代次变化后仍被复用。
             if self.settings.snapshot().version != config.version:
                 raise ServiceError(
                     409,
@@ -235,6 +281,7 @@ class AIService:
                 *messages,
                 {"role": "assistant", "content": raw},
             ][-MAX_HISTORY_MESSAGES:]
+            # 会话和重放共享过期时间，避免一条消息对应另一条已失效状态。
             expires_at = self._monotonic() + self.ttl_seconds
             self._conversations[session_key] = Conversation(
                 messages=updated_history,
@@ -258,6 +305,12 @@ class AIService:
         allowed_kinds: tuple[str, ...],
         modules: list,
     ) -> tuple[Decision, str]:
+        """调用 Provider，并在首次契约失败时只进行一次定向修复。
+
+        修复请求把原始响应和失败原因追加回模型上下文；第二次仍不符合契约
+        时返回 ``AI_INVALID_RESPONSE``。Provider 网络或 HTTP 故障直接映射为
+        ``AI_PROVIDER_UNAVAILABLE``，不会伪装成模型格式错误。
+        """
         try:
             raw = await self.provider.complete(
                 config,
@@ -310,6 +363,7 @@ class AIService:
         ai_plan_enabled: bool,
         allow_query: bool,
     ) -> tuple[str, ...]:
+        """根据计划功能和回合阶段计算允许的决策集合。"""
         kinds = ["ACTIONS", "QUESTION"]
         if ai_plan_enabled:
             kinds.insert(1, "PLAN")
@@ -321,6 +375,7 @@ class AIService:
         self,
         request: QueryResultsRequest,
     ) -> None:
+        """按稳定紧凑 JSON 的 UTF-8 大小执行单条和总计限制。"""
         total = 0
         for result in request.query_results:
             size = len(
@@ -346,6 +401,7 @@ class AIService:
         self,
         key: tuple[str, int, str, str],
     ) -> asyncio.Lock:
+        """为同一重放键复用请求锁，防止并发重试重复调用模型。"""
         async with self._locks_guard:
             lock = self._locks.get(key)
             if lock is None:
@@ -354,6 +410,7 @@ class AIService:
             return lock
 
     def _prune(self, now: float, version: int) -> None:
+        """删除过期或其他设置代次的会话与重放结果。"""
         self._conversations = {
             key: value
             for key, value in self._conversations.items()
@@ -367,6 +424,7 @@ class AIService:
 
 
 def _stable_json(value: object) -> str:
+    """生成用于指纹和大小计算的确定性紧凑 JSON。"""
     return json.dumps(
         value,
         ensure_ascii=False,

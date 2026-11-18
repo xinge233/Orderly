@@ -20,7 +20,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/** 计划与持久化执行记录的统一确认、回滚入口。 */
+/**
+ * 计划与持久化执行记录的统一确认、执行和回滚入口。
+ *
+ * <p>计划确认先校验启用状态、PREVIEW 状态、风险确认和全部目标，再创建 RUNNING
+ * 执行记录；步骤严格顺序执行，首次失败停止后续步骤，并逆序回滚已完成步骤。
+ * 持久化执行记录可在计划对象不再可用后继续查询和执行记录级回滚。</p>
+ */
 @Service
 public class ExecutionService {
 
@@ -47,6 +53,14 @@ public class ExecutionService {
         this.records = records;
     }
 
+    /**
+     * 确认并执行一个旧版计划。
+     *
+     * <p>前置条件为计划功能开启、计划处于 PREVIEW、步骤非空、非只读计划已确认，
+     * 且所有目标模块启用、动作参数有效。执行期间持有协调器执行许可，计划状态从
+     * PREVIEW 迁移到 RUNNING，最终迁移到 COMPLETED、REJECTED 或
+     * PARTIALLY_ROLLED_BACK；失败时返回结果而不向调用方抛出业务失败。</p>
+     */
     public ExecutionRunResult confirm(String planId, boolean confirmed, String confirmation) {
         features.requirePlanningEnabled();
         ExecutionPlan plan = plans.require(planId);
@@ -214,6 +228,13 @@ public class ExecutionService {
         }
     }
 
+    /**
+     * 对内存中已完成或部分回滚失败的旧版计划执行整单回滚。
+     *
+     * <p>只处理当前仍为 COMPLETED 的步骤，按逆序调用统一回滚核心；步骤跳过模块
+     * 启用状态检查。全部成功时计划迁移到 ROLLED_BACK，否则保留为
+     * PARTIALLY_ROLLED_BACK。</p>
+     */
     public ExecutionRunResult rollback(String planId) {
         features.requirePlanningEnabled();
         ExecutionPlan plan = plans.require(planId);
@@ -268,6 +289,13 @@ public class ExecutionService {
         }
     }
 
+    /**
+     * 从持久化执行记录恢复并执行整单回滚。
+     *
+     * <p>仅允许 COMPLETED、PARTIALLY_ROLLED_BACK 或
+     * FAILED_PARTIALLY_ROLLED_BACK。逆序回滚 completed 步骤并保存新记录；
+     * 若来源为 PLAN，还会同步仍驻留内存的计划步骤状态。</p>
+     */
     public ExecutionRecord rollbackExecution(String executionId) {
         ExecutionRecord record = records.require(executionId);
         try (var permit = coordinator.beginExecution()) {
@@ -294,6 +322,7 @@ public class ExecutionService {
         }
     }
 
+    /** 聚合整份计划最高风险；存在 WRITE 或 DELETE 且未确认时拒绝执行。 */
     private void validateConfirmation(ExecutionPlan plan, boolean confirmed) {
         RiskLevel highestRisk = highestRisk(plan.steps().stream()
                 .map(ExecutionStep::risk)
@@ -308,6 +337,7 @@ public class ExecutionService {
         }
     }
 
+    /** 执行前重新解析所有目标并校验参数，防止预览后模块状态或契约快照失效。 */
     private void validateTargets(ExecutionPlan plan) {
         for (ExecutionStep step : plan.steps()) {
             ActionExecutionCore.ResolvedAction target = core.requirePlanTarget(
@@ -318,6 +348,12 @@ public class ExecutionService {
         }
     }
 
+    /**
+     * 逆序回滚内存计划中已完成的步骤并维护记录步骤。
+     *
+     * <p>单步失败不会中断后续回滚尝试；整体返回值表示是否全部成功。每次尝试都写入
+     * 审计事件，部分失败会保留 ROLLBACK_FAILED 状态供用户继续处理。</p>
+     */
     private boolean rollbackSteps(
             ExecutionPlan plan,
             List<ExecutionStep> steps,
@@ -366,6 +402,7 @@ public class ExecutionService {
         return allSucceeded;
     }
 
+    /** 从持久化步骤快照逆序回滚 completed 步骤，并更新记录步骤状态。 */
     private boolean rollbackRecordSteps(
             ExecutionRecord record,
             List<ExecutionRecordStep> steps,
@@ -421,6 +458,7 @@ public class ExecutionService {
         return allSucceeded;
     }
 
+    /** 将持久化执行记录的回滚状态同步到仍存在内存中的同 ID 计划。 */
     private void syncPlanAfterRecordRollback(ExecutionRecord record, boolean success) {
         if (!"PLAN".equals(record.origin())) {
             return;
@@ -444,10 +482,12 @@ public class ExecutionService {
         });
     }
 
+    /** 将内存计划步骤转换为持久化步骤快照。 */
     private List<ExecutionRecordStep> recordSteps(ExecutionPlan plan) {
         return plan.steps().stream().map(this::recordStep).toList();
     }
 
+    /** 转换单个计划步骤，复制其参数、风险、快照、输出和当前状态。 */
     private ExecutionRecordStep recordStep(ExecutionStep step) {
         return new ExecutionRecordStep(
                 step.id(),
@@ -463,6 +503,7 @@ public class ExecutionService {
         );
     }
 
+    /** 替换记录步骤状态和摘要，同时保留快照与输出。 */
     private ExecutionRecordStep withRecordStatus(
             ExecutionRecordStep step,
             String status,
@@ -482,6 +523,7 @@ public class ExecutionService {
         );
     }
 
+    /** 按步骤 ID 替换执行记录中的对应项。 */
     private void replaceRecordStep(
             List<ExecutionRecordStep> recordSteps,
             String stepId,
@@ -495,12 +537,14 @@ public class ExecutionService {
         }
     }
 
+    /** 从内存审计日志中筛选当前计划或执行的事件快照。 */
     private List<ExecutionEvent> eventsFor(String executionId) {
         return journal.snapshot().stream()
                 .filter(event -> executionId.equals(event.planId()))
                 .toList();
     }
 
+    /** 根据 RiskLevel 的自然顺序计算批次最高风险。 */
     private RiskLevel highestRisk(List<RiskLevel> risks) {
         RiskLevel highest = RiskLevel.READ_ONLY;
         for (RiskLevel risk : risks) {
@@ -511,6 +555,7 @@ public class ExecutionService {
         return highest;
     }
 
+    /** 返回可审计的非空异常摘要。 */
     private String safeMessage(RuntimeException exception) {
         String message = exception.getMessage();
         return message == null || message.isBlank() ? "执行失败" : message;

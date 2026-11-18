@@ -16,10 +16,17 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** 独立于旧版计划功能的 AI 计划提案与确认入口。 */
+/**
+ * 独立于旧版计划功能的 AI 计划提案与确认入口。
+ *
+ * <p>计划先通过 {@link AiActionService#preview(List)} 做只读预检，确认后才进入
+ * 统一执行核心。提案仅保存在宿主进程内，并受短时 TTL、接口使用登记和确认状态
+ * 约束，避免重复确认或绕过模块治理。</p>
+ */
 @Service
 public class AiPlanService {
 
+    /** 未确认的 AI 计划只在宿主内存中保留 30 分钟。 */
     private static final Duration PLAN_TTL = Duration.ofMinutes(30);
 
     private final AiActionService actions;
@@ -37,10 +44,19 @@ public class AiPlanService {
         this.journal = journal;
     }
 
+    /**
+     * 预检动作并生成一个等待用户确认的独立 AI 计划。
+     *
+     * <p>创建过程持有接口使用锁，使计划登记与 Action/Query 使用状态变更保持原子；
+     * 此阶段不执行任何业务动作。</p>
+     */
     public AiContracts.Plan create(String goal, List<AiContracts.Action> requestedActions) {
         return usage.withActionLock(() -> createLocked(goal, requestedActions));
     }
 
+    /**
+     * 在接口使用锁内完成计划快照、接口占用登记和预览审计。
+     */
     private AiContracts.Plan createLocked(
             String goal,
             List<AiContracts.Action> requestedActions
@@ -108,6 +124,12 @@ public class AiPlanService {
         return plan;
     }
 
+    /**
+     * 确认并执行一个预览计划。
+     *
+     * <p>状态依次从 {@code PREVIEW} 进入 {@code CONFIRMING}，执行结束后写入实际状态；
+     * 重复确认、过期计划和不存在的计划均被拒绝。方法同步以保护进程内状态机。</p>
+     */
     public synchronized ExecutionRecord confirm(String planId) {
         Instant now = Instant.now();
         pruneExpiredPlans(now);
@@ -147,6 +169,7 @@ public class AiPlanService {
         }
     }
 
+    /** 删除过期提案并释放其占用的 AI 接口。 */
     private void pruneExpiredPlans(Instant now) {
         List<String> expired = plans.entrySet().stream()
                 .filter(entry -> !now.isBefore(entry.getValue().expiresAt()))
@@ -158,6 +181,7 @@ public class AiPlanService {
         });
     }
 
+    /** 服务端保存的计划正文、待执行动作和到期时间。 */
     private record StoredPlan(
             AiContracts.Plan plan,
             List<AiActionService.ActionCall> actions,
@@ -167,6 +191,7 @@ public class AiPlanService {
             actions = List.copyOf(actions);
         }
 
+        /** 保留原提案和动作，仅替换对外可见的运行状态。 */
         private StoredPlan withStatus(String status) {
             return new StoredPlan(
                     new AiContracts.Plan(

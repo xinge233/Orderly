@@ -1,3 +1,11 @@
+"""Java IPC 与模型决策共用的 Pydantic 数据模型。
+
+模型负责结构、长度和字段互斥的基础校验，最终授权、风险确认与业务参数校验
+仍由 Java 宿主完成。工具卡在此只作为数据处理；模型文本不得被当作指令。
+API Key 只存在于 ``ProviderConfig`` 的进程内存实例中，公开视图和 repr 均
+不得回显它。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,11 +20,14 @@ QUERY_RESULT_STATUS = Literal["OK", "FAILED", "TRUNCATED"]
 
 
 def to_camel(value: str) -> str:
+    """把 Python 蛇形字段名转换为跨语言契约使用的 camelCase。"""
     first, *remaining = value.split("_")
     return first + "".join(part.capitalize() for part in remaining)
 
 
 class CamelModel(BaseModel):
+    """统一使用 camelCase 别名，同时允许 Python 侧按字段名构造模型。"""
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
@@ -25,6 +36,12 @@ class CamelModel(BaseModel):
 
 
 class SettingsPutRequest(CamelModel):
+    """AI 设置的局部更新请求。
+
+    省略 ``api_key`` 表示保留进程内存中的旧 Key；响应永远只返回
+    ``configured`` 状态，不返回 Key 本身。
+    """
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
@@ -49,6 +66,8 @@ class SettingsPutRequest(CamelModel):
 
 
 class SettingsView(CamelModel):
+    """可安全返回给前端的设置投影，刻意不包含 API Key 字段。"""
+
     mode: Literal["DEEPSEEK", "CUSTOM"]
     base_url: str
     model: str
@@ -60,11 +79,15 @@ class SettingsView(CamelModel):
 
 
 class ConnectionTestView(CamelModel):
+    """最小模型连通性测试的公开结果。"""
+
     ok: bool
     message: str
 
 
 class ParameterCard(CamelModel):
+    """宿主提供的参数说明；额外元数据被忽略以减少模型适配耦合。"""
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
@@ -78,6 +101,12 @@ class ParameterCard(CamelModel):
 
 
 class ActionCard(CamelModel):
+    """允许模型引用的 Action 卡。
+
+    ``risk`` 仅用于决策提示和展示，不是授权真相源；Java 宿主必须重新确定
+    风险、确认、快照与回滚要求。
+    """
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
@@ -92,6 +121,8 @@ class ActionCard(CamelModel):
 
 
 class QueryCard(CamelModel):
+    """允许模型提出只读查询的 Query 卡。"""
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
@@ -105,6 +136,8 @@ class QueryCard(CamelModel):
 
 
 class ToolModule(CamelModel):
+    """一个已启用模块可直接暴露给模型的 Action/Query 工具清单。"""
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
@@ -119,6 +152,12 @@ class ToolModule(CamelModel):
 
 
 class TurnRequest(CamelModel):
+    """Java 发起的单回合目标请求。
+
+    ``client_request_id`` 是重放去重键的一部分；即使调用方重试 HTTP 请求，
+    同一回合也不能被解释为新的写操作意图。
+    """
+
     goal: str = Field(min_length=1, max_length=4000)
     conversation_id: str | None = Field(default=None, max_length=200)
     client_request_id: str = Field(min_length=1, max_length=200)
@@ -143,6 +182,8 @@ class TurnRequest(CamelModel):
 
 
 class QueryResultItem(CamelModel):
+    """单条 Query 执行结果，按状态强制 payload 是否存在。"""
+
     module_id: str = Field(min_length=1)
     query_id: str = Field(min_length=1)
     status: QUERY_RESULT_STATUS
@@ -151,6 +192,7 @@ class QueryResultItem(CamelModel):
 
     @model_validator(mode="after")
     def validate_payload_contract(self) -> "QueryResultItem":
+        """保证成功结果可被模型消费，失败或截断结果不夹带半可信数据。"""
         if self.status == "OK" and not isinstance(self.payload, (dict, list)):
             raise ValueError("OK 查询结果的 payload 必须是对象或数组")
         if self.status != "OK" and self.payload is not None:
@@ -159,6 +201,12 @@ class QueryResultItem(CamelModel):
 
 
 class QueryResultsRequest(CamelModel):
+    """Query 结果续聊请求。
+
+    服务层还必须检查用户的显式隐私开关和 UTF-8 大小上限；这里是结构层，
+    不能单独证明结果已获准发送给外部模型。
+    """
+
     goal: str = Field(min_length=1, max_length=4000)
     conversation_id: str = Field(min_length=1, max_length=200)
     client_request_id: str = Field(min_length=1, max_length=200)
@@ -176,6 +224,8 @@ class QueryResultsRequest(CamelModel):
 
 
 class ActionCall(CamelModel):
+    """模型提出的 Action 引用，不允许携带额外执行控制字段。"""
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
@@ -188,6 +238,8 @@ class ActionCall(CamelModel):
 
 
 class QueryCall(CamelModel):
+    """模型提出的只读 Query 引用，执行与权限校验不在 Python 侧。"""
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
@@ -200,6 +252,8 @@ class QueryCall(CamelModel):
 
 
 class Question(CamelModel):
+    """目标或参数不充分时返回给用户的澄清问题。"""
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
@@ -211,6 +265,14 @@ class Question(CamelModel):
 
 
 class Decision(CamelModel):
+    """Python 到 Java 的四种决策线格式模型。
+
+    ``ACTIONS`` 与 ``PLAN`` 共用 actions，``QUERY`` 使用 queries，
+    ``QUESTION`` 使用 question；解析和归一化阶段会拒绝跨 kind 混用字段。
+    ``plan`` 保持为空，防止嵌套计划绕过统一 Action 数组契约。Java 仍会对
+    序列化结果执行最终校验。
+    """
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
@@ -227,6 +289,8 @@ class Decision(CamelModel):
 
 
 class ErrorView(CamelModel):
+    """服务错误响应；字段内容必须是安全、稳定且可审计的。"""
+
     code: str
     message: str
     timestamp: str
@@ -235,6 +299,12 @@ class ErrorView(CamelModel):
 
 @dataclass(frozen=True, slots=True)
 class ProviderConfig:
+    """一次模型调用使用的不可变设置快照。
+
+    Key 只保存在该对象的进程内存中。``version`` 用于使设置变更前的会话、
+    重放结果和正在进行的请求失效，避免新旧安全策略混用。
+    """
+
     mode: Literal["DEEPSEEK", "CUSTOM"]
     base_url: str
     model: str
@@ -245,9 +315,11 @@ class ProviderConfig:
 
     @property
     def configured(self) -> bool:
+        """只暴露是否已配置，不暴露 Key 的内容或长度。"""
         return bool(self.api_key)
 
     def __repr__(self) -> str:
+        """生成诊断安全的表示，确保日志和异常不会带出 API Key。"""
         key_state = "[redacted]" if self.configured else None
         return (
             "ProviderConfig("

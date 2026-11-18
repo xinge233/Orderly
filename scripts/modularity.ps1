@@ -1,4 +1,18 @@
 ﻿[CmdletBinding()]
+# 用途：
+#   执行模块与目录主题的可逆验收：全模块、移除单模块、零业务模块、恢复、临时模块自动发现、主题增删与回退。
+#
+# 输入：
+#   -Port 指定验收宿主端口，默认 18081；JAVA_HOME 必须指向 JDK 21。
+#
+# 副作用：
+#   会构建 Maven 产物，临时移动 Module/module_* 源码和 themes 目录主题到仓库 target 备份，
+#   创建随机验收模块/主题/数据目录并启动隐藏宿主进程。结束后恢复原生源码、停止本次进程并清理 target 临时目录。
+#
+# 安全边界：
+#   源码移动、备份和清理前都校验路径位于仓库 Module、themes 或 target 内；验收宿主只访问 127.0.0.1 和隔离数据目录。
+#   任一步骤失败仍会进入 finally 执行恢复；恢复不完整必须抛错，不能掩盖源文件状态。
+
 param([int]$Port = 18081)
 
 $ErrorActionPreference = "Stop"
@@ -17,6 +31,7 @@ $script:generatedModule = $null
 $script:succeeded = $false
 
 function Assert-Java21 {
+    # 验收同时依赖宿主和 Maven 产物，先锁定 JAVA_HOME 的 Java 主版本，避免旧 JDK 产生误导性失败。
     if ([string]::IsNullOrWhiteSpace($env:JAVA_HOME)) { throw "JAVA_HOME 未设置。" }
     $javaExe = Join-Path $env:JAVA_HOME "bin\java.exe"
     if (-not (Test-Path -LiteralPath $javaExe -PathType Leaf)) { throw "未找到 JAVA_HOME Java：$javaExe" }
@@ -33,6 +48,7 @@ function Invoke-Build {
 }
 
 function Start-Orderly([string]$javaExe) {
+    # 隐藏宿主进程会把 stdout/stderr 写到 target 备份目录；等待健康期间同时检测早退。
     $jar = Get-HostJar
     $stdout = Join-Path $backupRoot "server-out.log"
     $stderr = Join-Path $backupRoot "server-err.log"
@@ -61,6 +77,7 @@ function Start-Orderly([string]$javaExe) {
 }
 
 function Stop-Orderly {
+    # 只强制停止本脚本记录的子进程，并在等待后清空句柄，避免下一阶段误操作旧进程。
     if ($script:process -and -not $script:process.HasExited) {
         Stop-Process -Id $script:process.Id -Force
         Wait-Process -Id $script:process.Id -Timeout 10 -ErrorAction SilentlyContinue
@@ -77,6 +94,7 @@ function Set-PlanningEnabled([bool]$Enabled) {
 }
 
 function Assert-PathWithin([string]$Path, [string]$Root, [string]$Description) {
+    # 所有递归移动和删除都先经过此函数，阻止随机 ID 或异常配置把目标指向允许根之外。
     $fullPath = [System.IO.Path]::GetFullPath($Path)
     $fullRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd('\')
     if (-not $fullPath.Equals($fullRoot, [System.StringComparison]::OrdinalIgnoreCase) -and
@@ -87,6 +105,7 @@ function Assert-PathWithin([string]$Path, [string]$Root, [string]$Description) {
 }
 
 function Remove-TargetArtifact([string]$Path) {
+    # 该清理函数只服务于 target 内验收夹具；文件和目录分别处理，路径边界在调用前已校验。
     $safePath = Assert-PathWithin $Path $targetRoot "验收临时路径"
     if (Test-Path -LiteralPath $safePath -PathType Leaf) {
         Remove-Item -LiteralPath $safePath -Force
@@ -96,6 +115,7 @@ function Remove-TargetArtifact([string]$Path) {
 }
 
 function Remove-ModularityTargetArtifacts {
+    # 只清理带 modularity 专用前缀的历史验收目录，不触碰 Maven 正常产物或应用数据。
     if (-not (Test-Path -LiteralPath $targetRoot -PathType Container)) {
         return
     }
@@ -114,6 +134,7 @@ function Get-Sha256([string]$Path) {
 }
 
 function Move-ModuleToBackup([System.IO.DirectoryInfo]$module) {
+    # 用移动代替删除来模拟模块移除，并记录来源/备份对，供 finally 和恢复阶段验证。
     $source = Assert-PathWithin $module.FullName $moduleRoot "模块源目录"
     $destination = Assert-PathWithin (Join-Path $backupRoot $module.Name) $targetRoot "模块验收备份"
     Move-Item -LiteralPath $source -Destination $destination
@@ -121,6 +142,7 @@ function Move-ModuleToBackup([System.IO.DirectoryInfo]$module) {
 }
 
 function Restore-MovedSources {
+    # 仅当源位置空缺且备份存在时移回，随后再次验证每个模块和主题源目录确实恢复。
     foreach ($entry in $script:movedModules) {
         if ((Test-Path -LiteralPath $entry.Backup) -and -not (Test-Path -LiteralPath $entry.Source)) {
             Move-Item -LiteralPath $entry.Backup -Destination $entry.Source
@@ -138,6 +160,7 @@ function Restore-MovedSources {
 }
 
 function Remove-GeneratedTheme {
+    # 临时主题先移入 target 再清理，确保不会直接删除仍在 themes 下的未预期目录。
     if (-not $script:generatedTheme) {
         return
     }
@@ -167,6 +190,7 @@ function Get-HostJar {
 }
 
 function Move-GeneratedModuleToBackup {
+    # 已生成的验收模块先整体移入 target，再从该受控位置清理。
     if (-not $script:generatedModule) {
         return
     }
@@ -183,6 +207,7 @@ function Move-GeneratedModuleToBackup {
 }
 
 function Restore-GeneratedModule {
+    # 可逆测试要求先把模块恢复到源目录，再单独执行最终移出和清理；缺目录即视为验收失败。
     if (-not $script:generatedModule) {
         return
     }
@@ -212,6 +237,7 @@ function Remove-GeneratedModule {
 }
 
 function New-AcceptanceModule {
+    # 随机 ID、包名和契约字段避免与真实模块冲突，并让测试同时覆盖自动发现、查询和计划规则。
     $suffix = [guid]::NewGuid().ToString("N")
     $moduleId = "module_acceptance_$suffix"
     $actionId = "acceptance.$suffix"
@@ -385,6 +411,7 @@ export default async function mount(root, context) {
 .acceptance-ui { color: var(--color-text); }
 "@
 
+    # 临时模块只写入自身源码树，包含唯一 ServiceLoader 声明、单一契约和自有 UI 资源。
     $javaPath = Join-Path $source "src\main\java\com\orderly\module\acceptance\$javaSuffix\$className.java"
     $servicePath = Join-Path $source "src\main\resources\META-INF\services\com.orderly.kernel.OrderlyModule"
     $contractPath = Join-Path $source "src\main\resources\orderly-modules\$moduleId.json"
@@ -429,6 +456,7 @@ function Assert-SystemModule {
 }
 
 function Assert-HttpStatus([string]$Uri, [int]$ExpectedStatus) {
+    # 通过捕获异常响应统一断言 404/200，避免 Invoke-WebRequest 对非成功状态直接中断诊断。
     $actual = $null
     try {
         $response = Invoke-WebRequest -Uri $Uri -Method Get -TimeoutSec 5 -UseBasicParsing
@@ -444,6 +472,7 @@ function Assert-HttpStatus([string]$Uri, [int]$ExpectedStatus) {
 }
 
 function Assert-ModuleSurface([string[]]$ExpectedIds) {
+    # 遍历运行时目录验证 UI 资源和无必填参数查询均可通过通用端点访问，框架不得保留模块特判。
     $catalogResponse = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/modules" -TimeoutSec 5
     $catalog = @($catalogResponse | ForEach-Object { $_ })
     foreach ($module in $catalog) {
@@ -464,6 +493,7 @@ function Assert-ModuleSurface([string[]]$ExpectedIds) {
     }
 }
 
+# 验收会临时改变源码布局；从仓库根执行并在 finally 恢复调用方目录。
 Push-Location $repoRoot
 try {
     $javaExe = Assert-Java21
@@ -478,6 +508,7 @@ try {
     if ($baselineModules.Count -eq 0) { throw "模块化验收至少需要一个模块源目录。" }
     $baselineIds = @($baselineModules | ForEach-Object { $_.Name })
 
+    # 阶段 1 建立基线：全部业务模块、唯一系统模块、UI/查询面和新数据目录默认功能状态。
     Write-Host "[1/6] 全模块启动"
     Invoke-Build
     Start-Orderly $javaExe
@@ -494,6 +525,7 @@ try {
     $removedUi = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/modules/$($removedOne.Name)/ui/module.json" -TimeoutSec 5
     Stop-Orderly
 
+    # 阶段 2 移出一个模块，证明目录扫描无静态索引，并验证被移除模块的计划目标安全退化为 QUESTION。
     Write-Host "[2/6] 移出一个模块"
     $removedContract = @($baselineCatalog | Where-Object { $_.moduleId -eq $removedOne.Name })
     if ($removedContract.Count -ne 1) { throw "全模块目录中未找到待移除契约：$($removedOne.Name)" }
@@ -515,6 +547,7 @@ try {
     if ($question.kind -ne "QUESTION") { throw "缺少模块时计划未安全转为 QUESTION。" }
     Stop-Orderly
 
+    # 阶段 3 保留 module_control 而移出全部业务模块，验证零业务模块仍可启动且不暴露陈旧接口。
     Write-Host "[3/6] 移出全部模块"
     $left = @(Get-ChildItem -LiteralPath $moduleRoot -Directory -Filter "module_*" |
         Where-Object { $_.Name -ne "module_control" } |
@@ -532,6 +565,7 @@ try {
     if ($zeroQuestion.kind -ne "QUESTION") { throw "零模块计划未安全转为 QUESTION。" }
     Stop-Orderly
 
+    # 阶段 4 恢复原生模块并重新构建，确认验收不是靠一次性状态或残留 JAR 通过。
     Write-Host "[4/6] 恢复全部模块"
     Restore-MovedSources
     Invoke-Build
@@ -541,6 +575,7 @@ try {
     Assert-ModuleSurface -ExpectedIds $baselineIds
     Stop-Orderly
 
+    # 阶段 5 增加随机模块并比对受保护登记文件哈希，证明发现完全来自目录扫描而非框架登记。
     Write-Host "[5/6] 增加唯一有效模块并验证自动发现"
     $protectedFiles = [ordered]@{
         RootPom = Join-Path $repoRoot "pom.xml"
@@ -592,6 +627,7 @@ try {
     }
     Stop-Orderly
 
+    # 先移除并重启确认接口消失，再恢复并最终移出，覆盖临时模块的完整可逆生命周期。
     Move-GeneratedModuleToBackup
     Invoke-Build
     Start-Orderly $javaExe
@@ -603,6 +639,7 @@ try {
     Move-GeneratedModuleToBackup
     Write-Host "临时模块已验证可逆移出，最终位于 target 验收备份中等待安全清理。"
 
+    # 阶段 6 验证主题按目录发现、宿主 JAR 不因主题增删改变，以及已选主题失效时的前端回退。
     Write-Host "[6/6] 增加目录主题并验证重启生效、无重构建和删除已选主题后的回退"
     $themeId = "modularity-temp-" + [guid]::NewGuid().ToString("N")
     $themeSource = Join-Path $themesRoot $themeId
@@ -689,6 +726,8 @@ try {
     $script:succeeded = $true
 }
 finally {
+    # 清理顺序先停进程、恢复源码、移除临时内容，再重建真实模块产物并清理 target 验收目录。
+    # 恢复或重建失败会从 finally 抛出，保留非零结果，不把不完整的工作区伪装为通过。
     Stop-Orderly
     try {
         Restore-MovedSources

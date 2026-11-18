@@ -1,3 +1,8 @@
+/*
+ * 自包含 ownership：module_study_map 只定义 .study-map-ui* 知识脉络视图。
+ * 主题语义变量负责色彩、字体、间距、圆角和时长；gentle/minimal/none 三档沿用框架策略。
+ * 桌面保留图谱与详情双栏，1040px 起详情下移，700px 起筛选、标题和关系项改为单列。
+ */
 .study-map-ui {
     display: grid;
     gap: var(--space-5);
@@ -490,6 +495,7 @@
     text-align: right;
 }
 
+/* 中等宽度先解除详情粘附并改为单列；手机端再把筛选与关系操作纵向排列，保留节点键盘焦点。 */
 @media (max-width: 1040px) {
     .study-map-ui-workspace {
         grid-template-columns: minmax(0, 1fr);

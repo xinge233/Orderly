@@ -27,10 +27,19 @@ public final class OutputSchemaValidator {
     private OutputSchemaValidator() {
     }
 
+    /**
+     * 在模块加载阶段校验动作声明的输出 schema 只使用受支持子集。
+     */
     public static void validateDefinition(JsonNode schema) {
         validateDefinition(schema, "outputSchema");
     }
 
+    /**
+     * 在执行成功后校验动作输出是否符合其契约 schema。
+     *
+     * <p>未声明 schema 的动作不额外限制；校验失败会转换为包含动作 ID 的宿主异常，
+     * 由执行核心记录失败并触发既有回滚流程。</p>
+     */
     public static void validateOutput(
             JsonNode schema,
             Map<String, Object> output,
@@ -50,6 +59,11 @@ public final class OutputSchemaValidator {
         }
     }
 
+    /**
+     * 递归检查 schema 关键字、类型和子节点结构。
+     *
+     * <p>首版有意拒绝 {@code $ref}、组合和条件关键字，保持跨语言校验范围可预测。</p>
+     */
     private static void validateDefinition(JsonNode schema, String path) {
         if (schema == null || !schema.isObject()) {
             throw new IllegalStateException(path + " 必须是对象");
@@ -100,6 +114,10 @@ public final class OutputSchemaValidator {
         }
     }
 
+    /**
+     * 按 schema 递归校验一个输出值，包括 required、properties、
+     * additionalProperties、items 和 enum。
+     */
     private static void validateNode(JsonNode schema, JsonNode value, String path) {
         JsonNode rawType = schema.get("type");
         if (rawType != null && !matchesType(rawType.asText(), value)) {
@@ -159,6 +177,7 @@ public final class OutputSchemaValidator {
         }
     }
 
+    /** 判断 JSON 节点是否匹配受支持的单一基础类型。 */
     private static boolean matchesType(String type, JsonNode value) {
         return switch (type) {
             case "object" -> value.isObject();

@@ -30,7 +30,9 @@ import java.util.stream.Stream;
 /**
  * 显式刷新只在源码与已构建 JAR 同时出现时追加新业务模块。
  *
- * <p>已有模块的源码或 JAR 一旦变化，刷新只报告重启需求，不替换当前运行快照。</p>
+ * <p>启动时记录源码目录与已加载 JAR 的内容摘要。已有模块的源码或 JAR 一旦变化，
+ * 刷新只报告 RESTART_REQUIRED，不替换、卸载或删除当前运行快照；新增模块先预检，
+ * 提交目录快照后若治理状态登记失败则回滚目录快照。</p>
  */
 @Service
 public class ModuleRefreshService {
@@ -67,6 +69,9 @@ public class ModuleRefreshService {
         this.modulesDirectory = Path.of(modulesDirectory).toAbsolutePath().normalize();
     }
 
+    /**
+     * 记录刷新基线：源码目录指纹和每个已加载模块 JAR 的大小、时间与内容摘要。
+     */
     @PostConstruct
     public synchronized void captureBaseline() {
         baselineSourceFingerprints = scanSourceDirectories().stream()
@@ -93,10 +98,20 @@ public class ModuleRefreshService {
         baselineArtifacts = Map.copyOf(fingerprints);
     }
 
+    /**
+     * 在执行中立即拒绝的治理写边界内执行一次显式刷新。
+     */
     public ModuleRefreshResult refresh() {
         return coordinator.mutateRejectingDuringExecution(this::doRefresh);
     }
 
+    /**
+     * 检查现有模块变化并尝试追加尚未加载的新模块。
+     *
+     * <p>现有源码/JAR 变化只形成 RESTART_REQUIRED，不改变运行快照。新源码缺少普通
+     * JAR 时报告 MODULE_NOT_BUILT；预检、提交和治理登记成功的模块才加入 added。
+     * 单个新模块失败只形成 issue，并保留可重试的旧基线。刷新完成始终写审计事件。</p>
+     */
     private ModuleRefreshResult doRefresh() {
         Set<String> currentSources = new LinkedHashSet<>(scanSourceDirectories());
         List<ModuleRefreshIssue> issues = new ArrayList<>();
@@ -201,6 +216,7 @@ public class ModuleRefreshService {
         return new ModuleRefreshResult(added, issues, revision);
     }
 
+    /** 只扫描模块源码根的直接子目录，接受 module_* 命名并拒绝符号链接。 */
     private List<String> scanSourceDirectories() {
         if (!Files.isDirectory(moduleSourceDirectory, LinkOption.NOFOLLOW_LINKS)
                 || Files.isSymbolicLink(moduleSourceDirectory)) {
@@ -219,6 +235,12 @@ public class ModuleRefreshService {
         }
     }
 
+    /**
+     * 计算一个模块源码目录的内容指纹。
+     *
+     * <p>递归遍历时排除该模块的 target 目录，把相对路径、文件大小、修改时间及普通
+     * 文件内容纳入 SHA-256；符号链接不读取内容，目录越界或为符号链接时返回空指纹。</p>
+     */
     private String sourceFingerprint(String sourceName) {
         Path directory = moduleSourceDirectory.resolve(sourceName).normalize();
         if (!directory.startsWith(moduleSourceDirectory)
@@ -253,6 +275,7 @@ public class ModuleRefreshService {
         return HexFormat.of().formatHex(digest.digest());
     }
 
+    /** 读取 JAR 的稳定来源名、大小、修改时间和内容摘要。 */
     private ArtifactFingerprint artifactFingerprint(Path jar) {
         try {
             return new ArtifactFingerprint(
@@ -266,12 +289,14 @@ public class ModuleRefreshService {
         }
     }
 
+    /** 从 JAR 文件名去掉 .jar 后缀，得到源码目录和模块制品使用的来源名。 */
     private String sourceName(String jarFileName) {
         return jarFileName.toLowerCase(java.util.Locale.ROOT).endsWith(".jar")
                 ? jarFileName.substring(0, jarFileName.length() - 4)
                 : jarFileName;
     }
 
+    /** 取得 SHA-256 摘要器，当前 JDK 不支持时明确失败。 */
     private MessageDigest sha256() {
         try {
             return MessageDigest.getInstance("SHA-256");
@@ -280,11 +305,13 @@ public class ModuleRefreshService {
         }
     }
 
+    /** 返回刷新问题的非空异常摘要。 */
     private String safeMessage(RuntimeException exception) {
         String message = exception.getMessage();
         return message == null || message.isBlank() ? "未知加载错误" : message;
     }
 
+    /** 计算文件内容 SHA-256，用于判断已加载 JAR 是否变化。 */
     private String fileDigest(Path file) {
         MessageDigest digest = sha256();
         try {
@@ -295,6 +322,7 @@ public class ModuleRefreshService {
         return HexFormat.of().formatHex(digest.digest());
     }
 
+    /** 已加载模块制品的刷新基线指纹。 */
     private record ArtifactFingerprint(
             String sourceName,
             long size,

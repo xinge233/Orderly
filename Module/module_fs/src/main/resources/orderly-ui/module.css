@@ -1,3 +1,8 @@
+/*
+ * 自包含 ownership：module_fs 只定义 .fs-ui* 文件资料视图，不选择框架或他模块内部结构。
+ * 颜色、字体、间距、圆角及时长使用主题语义变量；gentle/minimal/none 由框架统一控制。
+ * 桌面采用目录表与详情双栏，1080px 起堆叠详情，760px 起标题、操作和元数据转为窄屏布局。
+ */
 .fs-ui {
     display: grid;
     gap: var(--space-6);
@@ -574,6 +579,7 @@
     font-size: var(--font-size-caption);
 }
 
+/* 先取消双栏和详情粘附，保证目录与详情在较窄工作区中不会横向挤压。 */
 @media (max-width: 1080px) {
     .fs-ui-main {
         grid-template-columns: minmax(0, 1fr);
@@ -584,6 +590,7 @@
     }
 }
 
+/* 手机端把头部操作与表格元数据改为纵向流，文本省略和焦点状态保持可用。 */
 @media (max-width: 760px) {
     .fs-ui-header {
         flex-direction: column;

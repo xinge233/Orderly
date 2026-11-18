@@ -1,3 +1,12 @@
+/**
+ * 高等数学知识脉络只读视图。
+ *
+ * 职责：把模块自带的节点与关系布局为可筛选的 SVG 图，并展示节点来源和相邻关系。
+ * 依赖：orderly-ui/module.json 声明视图与卡片；唯一数据查询为 study.map.read；
+ * 宿主 mount context 提供 module、element、icon 与 query，SVG 节点由模块自行创建。
+ * 隔离：查询失败、空图或部分非法节点只降级当前图谱与详情面板，不改写模块 JAR 数据。
+ */
+
 const SVG_NS = "http://www.w3.org/2000/svg";
 const COURSE_LABELS = Object.freeze({
     calculus: "高等数学（上）",
@@ -22,6 +31,7 @@ function text(value, fallback = "") {
 }
 
 function normalizeGraph(raw) {
+    // 先保留字段完整且类型正确的节点，再用节点集合过滤悬空关系，避免渲染层处理坏边。
     const nodes = Array.isArray(raw?.payload?.nodes)
         ? raw.payload.nodes.filter((node) =>
             text(node?.id) &&
@@ -66,6 +76,7 @@ function shortLabel(value) {
 }
 
 function computeLayout(nodes) {
+    // 按 layer 分列、列内居中排布；画布尺寸由最大层级和单列节点数推导，保证所有节点在 viewBox 内。
     const layers = new Map();
     nodes.forEach((node) => {
         if (!layers.has(node.layer)) {
@@ -103,6 +114,7 @@ function computeLayout(nodes) {
 }
 
 function edgePath(source, target) {
+    // 贝塞尔曲线的起止边和弯曲方向取决于节点左右顺序，使正向与回指关系都保持可读。
     const leftToRight = target.x >= source.x;
     const startX = leftToRight ? source.x + NODE_WIDTH : source.x;
     const endX = leftToRight ? target.x : target.x + NODE_WIDTH;
@@ -118,6 +130,13 @@ function edgePath(source, target) {
     ].join(" ");
 }
 
+/**
+ * 挂载知识脉络图。
+ *
+ * @param {HTMLElement} root 框架分配的模块视图根容器；模块负责其子 DOM 和 SVG。
+ * @param {object} context 宿主 mount context；query 读取模块 JAR 内只读图谱。
+ * @returns {Promise<void>} 图谱查询、归一化和首次渲染完成后结束。
+ */
 export default async function mount(root, context) {
     const make = context.element;
     const panel = make("section", "study-map-ui");
@@ -214,6 +233,7 @@ export default async function mount(root, context) {
                 left.order - right.order ||
                 collator.compare(left.label, right.label)
             );
+        // 关系只在源/目标都可见时保留，并同步修正已被筛掉的选中节点。
         const visibleIds = new Set(state.visibleNodes.map((node) => node.id));
         state.visibleEdges = state.graph.edges.filter((edge) =>
             visibleIds.has(edge.source) && visibleIds.has(edge.target)
@@ -228,6 +248,7 @@ export default async function mount(root, context) {
     };
 
     const selectNode = (nodeId, moveFocus = false) => {
+        // 选中节点及其直接邻居保持高亮，其余节点/边降噪；详情面板使用同一 selectedId。
         state.selectedId = nodeId;
         const connectedIds = new Set(nodeId ? [nodeId] : []);
         state.visibleEdges.forEach((edge) => {
@@ -252,6 +273,7 @@ export default async function mount(root, context) {
     };
 
     const renderGraph = () => {
+        // SVG、节点映射和边索引都随当前筛选重建，避免旧 DOM 残留持有不可见节点。
         nodeElements.clear();
         edgeElements.length = 0;
         graphViewport.replaceChildren();
@@ -356,6 +378,7 @@ export default async function mount(root, context) {
             group.append(label, meta);
             group.addEventListener("click", () => selectNode(node.id));
             group.addEventListener("keydown", (event) => {
+                // role=button 的 SVG 节点需自行处理 Enter/Space，并与鼠标选择共享同一状态更新。
                 if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     selectNode(node.id, true);
@@ -470,6 +493,7 @@ export default async function mount(root, context) {
         detailsPanel.append(relationList);
 
         if (moveFocus) {
+            // 从关系列表跳转后把焦点送回图谱节点，维持可预测的键盘导航位置。
             nodeElements.get(node.id)?.focus();
         }
     };
@@ -477,6 +501,7 @@ export default async function mount(root, context) {
     courseSelect.addEventListener("change", applyFilters);
     searchInput.addEventListener("input", applyFilters);
 
+    // 空节点集视为不可展示状态；查询或契约形状错误均落在当前视图的局部错误面板。
     try {
         const graph = normalizeGraph(await context.query("study.map.read"));
         if (!graph.nodes.length) {

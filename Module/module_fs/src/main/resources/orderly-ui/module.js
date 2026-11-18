@@ -1,8 +1,18 @@
+/**
+ * 资料管理只读视图。
+ *
+ * 职责：按课程、关键词和资料详情组织模块 JAR 自带的学习资料，并提供命令输入入口。
+ * 依赖：orderly-ui/module.json 声明视图与示例；唯一数据查询为 fs.materials；
+ * 宿主 mount context 提供 module、ui、element、icon、query、fillCommand 与可选 toast。
+ * 隔离：查询、契约校验或局部渲染失败只替换资料目录与详情区，不触发文件变更。
+ */
+
 function text(value, fallback = "") {
     return typeof value === "string" && value.trim() ? value : fallback;
 }
 
 function normalize(value) {
+    // 统一全半角与大小写后再比较，使中文、英文和课程编码搜索行为一致。
     return String(value ?? "").normalize("NFKC").toLocaleLowerCase("zh-CN");
 }
 
@@ -12,6 +22,13 @@ function statusTone(status) {
     return "reference";
 }
 
+/**
+ * 挂载资料管理视图。
+ *
+ * @param {HTMLElement} root 框架分配的模块视图根节点。
+ * @param {object} context 宿主 mount context；module 提供模块身份，query 只读取 fs.materials。
+ * @returns {Promise<void>} 首次资料查询和局部渲染完成后结束。
+ */
 export default async function mount(root, context) {
     const make = context.element;
     const state = {
@@ -46,6 +63,7 @@ export default async function mount(root, context) {
     }
 
     function createPendingButton(label, iconName) {
+        // 未接入能力保留可理解的禁用说明和提示，不伪造上传、历史整理或 AI 处理结果。
         const button = make("button", "fs-ui-button fs-ui-button--secondary");
         button.type = "button";
         const copy = make("span", "fs-ui-button__copy");
@@ -133,6 +151,7 @@ export default async function mount(root, context) {
     resultCount.setAttribute("aria-live", "polite");
     catalogHeader.append(catalogTitle, resultCount);
 
+    // 表头使用语义化 table/th/scope，点击行只改变当前视图选择，不执行文件操作。
     const tableWrap = make("div", "fs-ui-table-wrap");
     const table = make("table", "fs-ui-table");
     const tableHead = make("thead");
@@ -242,6 +261,7 @@ export default async function mount(root, context) {
     }
 
     function filteredMaterials() {
+        // 搜索和课程筛选完全在已加载快照上进行，不产生 Query 或磁盘访问。
         const needle = normalize(state.search).trim();
         return state.materials.filter((material) => {
             const matchesCourse = state.activeCourse === "all"
@@ -327,6 +347,7 @@ export default async function mount(root, context) {
             )
         );
         nameButton.addEventListener("click", (event) => {
+            // 名称按钮是行内的原生键盘入口；阻止冒泡避免同一次点击重复选择。
             event.stopPropagation();
             selectMaterial(material.id);
         });
@@ -468,6 +489,7 @@ export default async function mount(root, context) {
         renderDetail(selected || null);
     }
 
+    // 输入事件只更新本地筛选快照，重建结果时保留仍可见的选中资料或回退到首项。
     searchInput.addEventListener("input", () => {
         state.search = searchInput.value;
         renderResults();
@@ -476,6 +498,7 @@ export default async function mount(root, context) {
     tableBody.append(loadingRow("正在读取模块资料…"));
     renderEmptyDetail("正在读取 fs.materials…");
 
+    // 查询结果必须声明 materials 契约、模块归属和只读标志，并核对 count 后才进入视图状态。
     try {
         const payload = await context.query("fs.materials");
         if (

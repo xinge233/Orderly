@@ -1,3 +1,10 @@
+"""构造模型系统规则、Query 结果消息和一次格式修复提示。
+
+工具卡与 Query 结果都来自宿主，但其中的文本仍是不可信数据，必须明确禁止
+覆盖系统规则。提示词只要求模型输出受控决策，不提供文件访问、执行或授权
+能力；这些能力始终留在 Java 宿主。
+"""
+
 from __future__ import annotations
 
 import json
@@ -15,6 +22,12 @@ def build_system_prompt(
     allow_delete_direct: bool,
     allow_query: bool,
 ) -> str:
+    """生成包含当前时间、能力开关和工具卡的只读系统规则。
+
+    ``PLAN``、``QUERY`` 与删除直执是否出现在提示中，分别由当前功能开关和
+    隐私/安全设置决定。提示层只表达模型可见范围，Java 仍会独立复核最终
+    决策与删除授权。
+    """
     module_cards = [
         module.model_dump(by_alias=True, exclude_none=True)
         for module in modules
@@ -26,6 +39,7 @@ def build_system_prompt(
     if allow_query:
         allowed_kinds.append("QUERY")
 
+    # 把这些规则同时写入允许 kind 和自然语言约束，降低模型输出禁用结构的概率。
     plan_rule = (
         "默认返回 PLAN 供用户审查；只有目标与参数都明确时才直接返回 ACTIONS。"
         if ai_plan_enabled
@@ -42,6 +56,7 @@ def build_system_prompt(
         if allow_delete_direct
         else "删除不得直接放入 ACTIONS；应返回 QUESTION 或可审查的 PLAN。"
     )
+    # 工具卡整体序列化为数据块；它没有高于本系统提示词的指令优先级。
     return f"""你是归序 Orderly 的受控工作流决策器。
 
 你只做操作决策，不生成文章、解释文或闲聊。输出必须是一个 JSON 对象，不得包含 Markdown 或代码围栏。
@@ -75,6 +90,11 @@ def build_system_prompt(
 
 
 def build_query_results_message(results: Iterable[QueryResultItem]) -> str:
+    """把宿主提供的只读 Query 结果封装为不可信数据消息。
+
+    调用方必须先确认用户显式允许发送，并完成 16 KiB/64 KiB 上限检查。
+    续聊禁止再次产生 QUERY，以避免模型在 Java 控制循环之外形成查询循环。
+    """
     serialized = [
         result.model_dump(by_alias=True, exclude_none=True)
         for result in results
@@ -87,6 +107,11 @@ def build_query_results_message(results: Iterable[QueryResultItem]) -> str:
 
 
 def build_repair_message(*, allowed_kinds: Iterable[str], reason: str) -> str:
+    """生成唯一一次契约修复提示。
+
+    修复调用只针对格式或字段违规，不改变原目标，也不是网络级自动重试；
+    第二次仍非法时服务直接返回 ``AI_INVALID_RESPONSE``。
+    """
     return (
         "上一条输出不符合受控决策契约。"
         f"原因：{reason}。请只返回一个 JSON 对象，kind 只能是 "

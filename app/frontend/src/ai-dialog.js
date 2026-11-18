@@ -1,3 +1,17 @@
+/**
+ * 框架级独立 AI Dock。
+ *
+ * 职责：管理 AI 对话入口、独立 AI 计划、澄清、只读 Query 结果、执行进度与确认交互。
+ * 它不使用旧版计划审查状态，也不直接持有宿主 API；模型请求、计划确认、设置与执行
+ * 都通过 app.js 注入的回调完成。
+ *
+ * 状态来源：AI 设置来自宿主快照，回合结果来自 interpretGoal，计划执行结果来自
+ * confirmAiPlan；拖动位置是唯一进入 localStorage 的局部界面偏好。API Key 仅存在于
+ * 输入控件和 Python 服务进程内，不进入本模块状态或浏览器存储。
+ *
+ * 边界：Java 宿主仍是契约校验、授权、执行、快照、审计和回滚的唯一控制面；本组件
+ * 只负责界面状态、交互动画和结果呈现，失败时不得伪造计划或执行成功。
+ */
 import { icon, normalizeAiIcon } from "./icons.js";
 import { normalizeAiQueryResponse, summarizeQueryPayload } from "./models.js";
 
@@ -31,6 +45,42 @@ function normalizeSettings(value) {
     };
 }
 
+/**
+ * 计算收起态 Dock 周围可摆放的输入区与计划面板几何。
+ *
+ * 该函数只做纯布局决策：先根据左右可用空间选择伸展方向，再根据上下空间选择面板
+ * 次序，并返回视口内夹紧后的矩形与可用宽度/高度。调用方负责把结果写入 CSS 变量。
+ *
+ * 副作用：无。
+ *
+ * @param {object} input 几何与尺寸
+ * @param {number} input.dockLeft Dock 视口左坐标
+ * @param {number} input.dockTop Dock 视口上坐标
+ * @param {number} [input.dockWidth=58] Dock 宽度
+ * @param {number} [input.dockHeight=58] Dock 高度
+ * @param {number} input.viewportWidth 视口宽度
+ * @param {number} input.viewportHeight 视口高度
+ * @param {number} [input.margin=12] 视口安全边距
+ * @param {number} [input.gap=12] 面板间距
+ * @param {number} [input.composerWidth=720] 首选输入区宽度
+ * @param {number} [input.composerHeight=68] 输入区高度
+ * @param {number} [input.planWidth=288] 首选计划宽度
+ * @param {number} [input.planContentHeight=420] 计划内容自然高度
+ * @param {boolean} [input.composerOpen=true] 输入区是否打开
+ * @returns {{
+ *     horizontal: "left" | "right",
+ *     vertical: "above" | "below",
+ *     surfaceY: "above" | "below",
+ *     availableWidth: number,
+ *     composerOpen: boolean,
+ *     composerWidth: number,
+ *     composerHeight: number,
+ *     planWidth: number,
+ *     maxPlanHeight: number,
+ *     composerBox: {left: number, right: number, top: number, bottom: number},
+ *     planBox: {left: number, right: number, top: number, bottom: number}
+ * }} 视口内布局
+ */
 export function resolveAiSurfaceLayout({
     dockLeft,
     dockTop,
@@ -119,6 +169,8 @@ export function resolveAiSurfaceLayout({
 /**
  * 只有完全收起且没有形变/吸附动画时才允许移动 dock。
  *
+ * 副作用：无。
+ *
  * @param {{mode?: string, composerOpen?: boolean, panelOpen?: boolean, morphing?: boolean, snapAnimating?: boolean}} state dock 状态
  * @returns {boolean} 是否允许拖动
  */
@@ -139,6 +191,8 @@ export function canDragAiDock({
 /**
  * 计算 dock 左上角需要滑动到的默认吸附位置。
  *
+ * 副作用：无。
+ *
  * @param {{dockWidth: number, dockHeight: number, snapCenter: {x: number, y: number}}} input 几何
  * @returns {{x: number, y: number}} 目标左上角
  */
@@ -151,6 +205,8 @@ export function resolveAiSnapPosition({ dockWidth, dockHeight, snapCenter }) {
 
 /**
  * 选择更高的风险等级。
+ *
+ * 副作用：无。
  *
  * @param {string} left 风险等级
  * @param {string} right 风险等级
@@ -165,6 +221,8 @@ export function higherAiRisk(left, right) {
 /**
  * 规范化执行状态。
  *
+ * 副作用：无。
+ *
  * @param {unknown} value 原始状态
  * @returns {string} 小写状态
  */
@@ -174,6 +232,8 @@ export function normalizeExecutionStatus(value) {
 
 /**
  * 判断执行是否已经成功完成。
+ *
+ * 副作用：无。
  *
  * @param {object | null} execution 执行记录
  * @returns {boolean} 是否成功
@@ -202,6 +262,8 @@ export function executionSucceeded(execution) {
 
 /**
  * 从执行记录提取真实失败原因。
+ *
+ * 副作用：无。
  *
  * @param {object | null} execution 执行记录
  * @returns {string} 可展示原因
@@ -238,6 +300,8 @@ export function executionFailureMessage(execution) {
 /**
  * 获取需要重新读取数据的已完成模块。
  *
+ * 副作用：无。
+ *
  * @param {object | null} execution 执行记录
  * @returns {string[]} 模块 id
  */
@@ -258,14 +322,37 @@ export function executionCompletedModules(execution) {
 }
 
 /**
- * 挂载 AI 对话框。组件只负责界面状态、演示进度和调用轨迹。
+ * 挂载独立 AI Dock，并返回只暴露宿主外壳所需动作的控制器。
  *
- * @param {object} options 配置
+ * 组件内部使用单一 dialog 状态机派生输入区、计划、查询、进度和形变状态；所有模型
+ * 与会话能力由注入回调提供，组件不构造宿主 API、不执行 Action，也不在失败时回退到
+ * 本地规则。请求/运行代次用于丢弃过期异步结果，timer 与 invocationCleanups 负责
+ * 统一关闭延迟任务和调用轨迹。
+ *
+ * 副作用：查询并绑定 dock 内 DOM、注册 document/window 监听器、恢复 localStorage
+ * 中的 Dock 位置、创建动画/定时器，并在页面隐藏或 destroy 时清理长生命周期资源。
+ *
+ * @param {object} options 挂载配置
  * @param {HTMLElement} options.dock AI Dock 根节点
- * @param {HTMLElement} options.callLayer 轨迹覆盖层
- * @param {() => Array<object>} options.getModules 可见模块提供器
- * @param {(message: string, options?: object) => void} options.onNotice 通知回调
- * @returns {{setEnabled: (enabled: boolean) => void, reset: () => void, destroy: () => void}}
+ * @param {HTMLElement} options.callLayer 非交互调用轨迹覆盖层
+ * @param {() => Array<object>} options.getModules 当前可见模块提供器
+ * @param {() => object} [options.getAiSettings] AI 设置快照提供器
+ * @param {(settings: object) => Promise<object>} [options.saveAiSettings] 保存进程内 AI 设置
+ * @param {() => Promise<object>} [options.clearAiSettings] 清除进程内临时凭据
+ * @param {() => Promise<{ok?: boolean, message?: string}>} [options.testAiSettings] 测试模型连接
+ * @param {(request: object) => Promise<object>} [options.interpretGoal] 提交带 clientRequestId 的 AI 回合
+ * @param {(planId: string) => Promise<object>} [options.confirmAiPlan] 请求宿主确认并执行独立 AI 计划
+ * @param {(settings: object) => void} [options.onAiSettingsChanged] 回传已归一化设置
+ * @param {(execution: object | null) => void} [options.onExecutionFinished] 通知框架刷新受影响模块
+ * @param {(message: string, options?: {error?: boolean}) => void} [options.onNotice] 显示框架级提示
+ * @returns {{
+ *     setEnabled: (enabled: boolean) => void,
+ *     reset: () => void,
+ *     setAiSettings: (settings: object) => void,
+ *     setIcon: (name: string) => void,
+ *     openWithText: (text?: string) => void,
+ *     destroy: () => void
+ * }} Dock 控制器
  */
 export function mountAiDialog({
     dock,
@@ -322,6 +409,8 @@ export function mountAiDialog({
 
     const timers = new Set();
     const invocationCleanups = new Set();
+    // mode 是唯一语义状态；composerOpen/panelOpen/popoverOpen 只描述可见面，updateSurfaces
+    // 再派生 ARIA、inert 和禁用态。两个 generation 分别隔离回合响应与执行回调。
     const dialog = {
         enabled: true,
         mode: "collapsed",
@@ -354,6 +443,8 @@ export function mountAiDialog({
         position: null
     };
 
+    // 可取消的延迟任务都登记在同一集合，页面隐藏或 destroy 时可一次清理，避免关闭
+    // 动画、进度气泡和调用轨迹在组件卸载后继续操作 DOM。
     function later(callback, delay) {
         const timer = window.setTimeout(() => {
             timers.delete(timer);
@@ -393,6 +484,7 @@ export function mountAiDialog({
         callLayer.replaceChildren();
     }
 
+    // 执行完成后的模块刷新属于辅助行为；刷新异常不能把宿主已返回的执行结果改成失败。
     function notifyExecutionFinished(execution) {
         void Promise.resolve()
             .then(() => onExecutionFinished(execution))
@@ -422,6 +514,7 @@ export function mountAiDialog({
         }
     }
 
+    // 只持久化非敏感的位置坐标；localStorage 被禁用或配额不足时继续支持当前会话内拖动。
     function storePosition(position) {
         try {
             window.localStorage.setItem(
@@ -441,6 +534,8 @@ export function mountAiDialog({
         }
     }
 
+    // 根据 Dock 真实位置和 CSS 语义尺寸计算四个方向的可用空间。结果通过 dataset 与
+    // CSS 变量交给主题样式消费，确保展开面不越出视口、不覆盖 Dock 主体。
     function updateExpandedGeometry() {
         const rect = dock.getBoundingClientRect();
         if (!rect.width || !rect.height) {
@@ -527,6 +622,7 @@ export function mountAiDialog({
         placeSurface(nodes.progress, planOffset);
     }
 
+    // 自由位置在写入前夹紧到视口；persist=false 用于拖动帧，结束或键盘操作才落盘。
     function setFreePosition(x, y, { persist = false } = {}) {
         const rect = dock.getBoundingClientRect();
         const width = rect.width || 58;
@@ -590,6 +686,8 @@ export function mountAiDialog({
         nodes.snapTarget.dataset.near = String(visible && near);
     }
 
+    // 吸附动画只改变视觉位移，结束时统一回到默认锚点并清除测量残留；无 Web Animations
+    // 或动效时长为 0 时直接落位，保证关闭动效后几何仍完整可用。
     function animateSnapToDefault() {
         if (dialog.snapAnimating
             || !canDragAiDock({
@@ -656,6 +754,8 @@ export function mountAiDialog({
         nodes.launcherIcon.innerHTML = icon(dialog.aiIcon, inSendButton ? 16 : 26);
     }
 
+    // 所有界面可见性都从状态派生，避免按钮、ARIA 与 CSS dataset 各自维护一份真值。
+    // inert 加上 aria-hidden 同时移除键盘焦点并防止屏幕阅读器读到隐藏面板。
     function updateSurfaces() {
         const composerOpen = dialog.composerOpen;
         const planOpen = dialog.panelOpen
@@ -775,6 +875,8 @@ export function mountAiDialog({
         return labels[normalized] ?? "等待";
     }
 
+    // 执行结果直接消费宿主 steps；失败原因和成功判定使用同一套 helper，避免模型文案
+    // 与真实执行状态不一致时把失败展示成完成。
     function renderExecutionResult() {
         const execution = dialog.execution;
         const steps = Array.isArray(execution?.steps) ? execution.steps : [];
@@ -838,6 +940,8 @@ export function mountAiDialog({
         updateSurfaces();
     }
 
+    // Query 只展示宿主返回的本地只读结果摘要；原始 payload 不在此重新发给模型，
+    // 失败或截断项也不会被补造成成功数据。
     function renderQueryResult() {
         const query = dialog.query;
         const queries = Array.isArray(query?.queries) ? query.queries : [];
@@ -907,6 +1011,8 @@ export function mountAiDialog({
         }[status] ?? "失败";
     }
 
+    // renderPlan 只负责状态到视图的映射：错误、Query、澄清、执行结果和待确认计划
+    // 互斥展示。真正的 Action/计划执行必须经过宿主回调，不能由渲染路径触发。
     function renderPlan() {
         if (dialog.error && !dialog.plan && !dialog.question && !dialog.query) {
             nodes.planEyebrow.textContent = "AI 暂不可用";
@@ -1078,6 +1184,8 @@ export function mountAiDialog({
         updateSurfaces();
     }
 
+    // 先用变更后布局测量终点，再以旧尺寸和颜色作为首帧做“入口形变”；新动画会取消
+    // 上一组动画，finished 回调还会核对句柄，防止旧动画把新状态提前标记为完成。
     function animateDockTransition({
         expanded,
         beforeRect,
@@ -1201,6 +1309,8 @@ export function mountAiDialog({
             });
     }
 
+    // 状态入口集中触发一次派生渲染，并在浏览器完成布局后应用目标焦点。focus 参数
+    // 仅指定面板内安全目标；隐藏或不存在的节点不会被强行聚焦。
     function setState({
         mode = dialog.mode,
         composerOpen = dialog.composerOpen,
@@ -1231,6 +1341,8 @@ export function mountAiDialog({
         }
     }
 
+    // 同时递增回合与运行代次，等于让所有在途响应失效；随后清空内容、延迟任务和
+    // 非交互调用轨迹，确保新一轮对话不会继承上一轮的确认或进度。
     function clearPlan() {
         dialog.runGeneration += 1;
         dialog.requestGeneration += 1;
@@ -1324,6 +1436,8 @@ export function mountAiDialog({
         }, AI_RUNNING_LEAVE_DELAY_MS);
     }
 
+    // 进度气泡使用独立的显示/隐藏延迟，指针从入口移到浮层时会取消隐藏，避免鼠标
+    // 穿过间隙时闪断；运行面板打开时不叠加浮层。
     function showProgressPopover() {
         if (!["running", "completed"].includes(dialog.mode) || dialog.panelOpen) {
             return;
@@ -1346,6 +1460,8 @@ export function mountAiDialog({
         }, AI_PROGRESS_HIDE_DELAY_MS);
     }
 
+    // 内联凭据只从当前输入控件读取，成功后立即清空控件内容；失败会尽力清除宿主进程
+    // 中的临时配置，但保留原始连接错误，不把它覆盖成清理错误。
     async function connectTemporaryApi() {
         const apiKey = nodes.inlineKey.value.trim();
         if (!apiKey) {
@@ -1402,6 +1518,8 @@ export function mountAiDialog({
         }
     }
 
+    // 每个自然语言回合递增 requestGeneration；较慢的旧响应即使晚到也会被丢弃。
+    // clientRequestId 交给宿主去重，避免网络重试造成重复写入。
     async function submitGoal() {
         if (!dialog.settings.configured) {
             await connectTemporaryApi();
@@ -1590,6 +1708,8 @@ export function mountAiDialog({
         };
     }
 
+    // 调用轨迹是覆盖层上的纯视觉提示。目标不可见时短暂等待后跳过；每个动画都注册
+    // 幂等 cleanup，并同时受动画结束和超时约束，防止取消异常遗留高亮节点。
     async function animateInvocation(moduleId) {
         clearInvocationLayer();
         const origin = invocationOrigin();
@@ -1669,6 +1789,8 @@ export function mountAiDialog({
         return true;
     }
 
+    // 独立 AI 计划只在用户点击确认后调用宿主。调用前逐个呈现目标模块轨迹，但轨迹
+    // 不代表动作已执行；最终状态仅采信宿主返回的执行记录。
     async function confirmPlan() {
         if (!dialog.plan?.planId || dialog.busy) {
             return;
@@ -1799,6 +1921,8 @@ export function mountAiDialog({
         collapseAndReset();
     }
 
+    // 指针捕获保证 Dock 快速移动时仍能收到 move/up；捕获失败的合成事件由元素自身
+    // 继续接收移动事件，拖动开始后页面坐标仍会被夹紧到视口。
     function onLauncherPointerDown(event) {
         if (event.button !== 0
             || !dialog.enabled
@@ -1821,6 +1945,8 @@ export function mountAiDialog({
         }
     }
 
+    // 超过 6px 才把点击意图升级为拖动，避免轻触/键盘激活被误判；首次升级才记录自由
+    // 位置并显示吸附目标，后续帧只更新几何，不重复持久化。
     function onLauncherPointerMove(event) {
         const drag = dialog.drag;
         if (!drag || drag.pointerId !== event.pointerId) return;
@@ -1845,6 +1971,8 @@ export function mountAiDialog({
         setSnapTargetState(true, isNearDefaultSnap());
     }
 
+    // 结束拖动时只持久化最终自由位置；接近默认锚点则走吸附动画并清除自由位置。点击
+    // 抑制窗口跨越动画尾帧，防止 pointerup 紧接的 click 误打开输入区。
     function finishLauncherDrag(event) {
         const drag = dialog.drag;
         if (!drag || drag.pointerId !== event.pointerId) return;
@@ -1878,6 +2006,8 @@ export function mountAiDialog({
         setSnapTargetState(false, false);
     }
 
+    // 键盘移动与鼠标拖动共享同一位置模型：Shift 提供细步长；只有向默认锚点靠近且
+    // 进入吸附半径时才播放吸附，反向移动不会被“吸住”。
     function onLauncherKeyDown(event) {
         if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
             return;
@@ -1902,6 +2032,8 @@ export function mountAiDialog({
         }
     }
 
+    // 点击 Dock 外部只收起计划面板，保留已打开的输入区；这样用户可以在不中断
+    // composing 状态的情况下查看主界面，符合输入区与计划面板可共存的设计。
     function onDocumentPointerDown(event) {
         if (!dialog.panelOpen || dock.contains(event.target)) {
             return;
@@ -1909,6 +2041,8 @@ export function mountAiDialog({
         collapsePlanOnly();
     }
 
+    // 自由位置在视口变化后重新夹紧并持久化；默认锚点由 CSS 和布局函数重算。
+    // 吸附动画期间暂停 resize 写入，避免两个几何源同时修改 CSS 变量。
     function onWindowResize() {
         if (dialog.snapAnimating) {
             return;
@@ -1920,6 +2054,8 @@ export function mountAiDialog({
         setFreePosition(dialog.position.x, dialog.position.y, { persist: true });
     }
 
+    // Dock 内监听器绑定到外壳长期持有的节点；跨 document/window 的监听器在 destroy
+    // 中显式移除，避免重复挂载产生多份拖拽、关闭面板和 resize 行为。
     nodes.launcher.addEventListener("click", onLauncherClick);
     nodes.launcher.addEventListener("pointerdown", onLauncherPointerDown);
     nodes.launcher.addEventListener("pointermove", onLauncherPointerMove);
@@ -1971,6 +2107,8 @@ export function mountAiDialog({
     document.addEventListener("pointerdown", onDocumentPointerDown);
     window.addEventListener("resize", onWindowResize);
 
+    // 页面隐藏时先取消动画并清空可取消任务，再移除调用轨迹高亮。状态与代次无需修改：
+    // pagehide 后不会再有当前文档可见更新，destroy 会额外递增运行代次。
     const stop = () => {
         dialog.morphAnimation?.cancel();
         dialog.iconAnimation?.cancel();
@@ -1998,6 +2136,8 @@ export function mountAiDialog({
         reset,
         setAiSettings(settings) {
             dialog.settings = normalizeSettings(settings);
+            // 宿主清除临时凭据后，已展开的 Dock 立即回到输入 Key 的状态；折叠态不主动
+            // 弹出面板，避免后台设置变化突然抢占焦点。
             if (!dialog.settings.configured && dialog.mode !== "collapsed") {
                 setState({
                     mode: "unconfigured",
@@ -2022,6 +2162,7 @@ export function mountAiDialog({
             );
         },
         destroy() {
+            // 先让在途计划确认结果失效，再停止动画/定时器并解除 document/window 事件。
             dialog.runGeneration += 1;
             stop();
             window.removeEventListener("pagehide", stop);

@@ -1,3 +1,8 @@
+/*
+ * 自包含 ownership：module_calendar 只定义 .calendar-* 界面样式，不覆盖框架或他模块 DOM。
+ * 颜色、字体、间距、圆角和动效时长消费主题语义变量；gentle/minimal/none 三档由框架统一控制，
+ * 系统 reduced-motion 不另设模块策略。桌面使用日期主区与双栏列表，窄屏只重排、不隐藏状态。
+ */
 .calendar-workspace {
     display: grid;
     gap: var(--space-5);
@@ -572,6 +577,7 @@ textarea.calendar-field {
     cursor: wait;
 }
 
+/* 平板以下收起双栏，日历、今日聚焦与列表改为单列；手机端进一步压缩内边距和对话框操作。 */
 @media (max-width: 920px) {
     .calendar-hero,
     .calendar-grid {

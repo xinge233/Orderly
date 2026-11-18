@@ -1,3 +1,16 @@
+/**
+ * 模块目录、UI 清单、设置 schema、治理偏好与顺序的前端规范化层。
+ *
+ * 职责：区分业务模块和系统模块，校验模块自带的视图、资源名、设置字段与特权元数据，并在
+ * 目录变化后校正两套宿主顺序和本地总览卡片顺序。
+ *
+ * 安全边界：资源名校验、视图 ID 去重和 `systemAdmin` 收窄属于前端防御，不能代替宿主对
+ * 模块启用状态、接口调用和特权的授权。宿主响应仍是模块目录事实来源，业务条目自称的
+ * system 字段不会被信任。
+ *
+ * 除函数注释另有说明外，本文件函数均为纯函数；需要防误改的契约对象会被冻结，其他结果
+ * 使用新数组或浅副本返回，不改变原始 API 响应。
+ */
 const MODULE_ID = /^[a-z][a-z0-9_-]{0,63}$/;
 const VIEW_ID = /^[a-z][a-z0-9-]{0,63}$/;
 const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -12,10 +25,29 @@ export const SYSTEM_ADMIN_MODULE_ID = "module_control";
 
 const SETTING_TYPES = new Set(["boolean", "integer", "select", "text"]);
 
+/**
+ * 将可展示字符串去除首尾空白并提供兜底。
+ *
+ * @param {unknown} value 候选值
+ * @param {string} [fallback=""] 空值兜底
+ * @returns {string} 规范化文本
+ *
+ * 异常与副作用：无；非字符串值不会通过隐式 `String()` 变成意外内容。
+ */
 function text(value, fallback = "") {
     return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+/**
+ * 校验模块生态内的单文件资源名。
+ *
+ * @param {unknown} value 清单中的资源名
+ * @param {"js" | "css"} extension 期望扩展名
+ * @returns {string} 安全的文件名
+ * @throws {TypeError} 名称含目录分隔符、非法字符或扩展名不匹配时抛出
+ *
+ * 副作用：无。只允许单段文件名，从源头阻止 `../`、绝对路径和伪装扩展名进入 UI URL。
+ */
 function assetName(value, extension) {
     const name = text(value, `module.${extension}`);
     if (!ASSET_NAME.test(name) || !name.toLowerCase().endsWith(`.${extension}`)) {
@@ -24,16 +56,41 @@ function assetName(value, extension) {
     return name;
 }
 
+/**
+ * 判断值是否为可展开的普通对象候选。
+ *
+ * @param {unknown} value 候选值
+ * @returns {object | null} 对象本身或 null
+ *
+ * 异常与副作用：无；数组和 null 被视为不合法。
+ */
 function plainObject(value) {
     return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
 
+/**
+ * 去除字符串数组中的非字符串、空值和重复项。
+ *
+ * @param {unknown} values 候选数组
+ * @returns {string[]} 去重且已 trim 的数组
+ *
+ * 异常与副作用：无；输入不是数组时返回空数组。
+ */
 function uniqueStrings(values) {
     return [...new Set((Array.isArray(values) ? values : [])
         .filter((value) => typeof value === "string" && value.trim())
         .map((value) => value.trim()))];
 }
 
+/**
+ * 从直接数组或常见 API 包裹对象中提取列表。
+ *
+ * @param {unknown} payload API 响应
+ * @param {string[]} keys 调用方指定的优先字段
+ * @returns {Array<unknown>} 列表
+ *
+ * 异常与副作用：无。只检查顶层字段，不递归猜测数据，避免把嵌套内容误识别为模块目录。
+ */
 function payloadItems(payload, keys) {
     if (Array.isArray(payload)) {
         return payload;
@@ -50,6 +107,15 @@ function payloadItems(payload, keys) {
     return [];
 }
 
+/**
+ * 校验并冻结 select 设置选项。
+ *
+ * @param {unknown} input options 数组
+ * @returns {ReadonlyArray<{value: string, label: string}>} 规范化选项
+ * @throws {TypeError} options 为空、字段缺失或 value 重复时抛出
+ *
+ * 副作用：无。value 保持原样以匹配持久化值，label 去除首尾空白后用于展示。
+ */
 function normalizeSettingOptions(input) {
     if (!Array.isArray(input) || input.length === 0) {
         throw new TypeError("select 设置 options 必须是非空数组");
@@ -71,6 +137,17 @@ function normalizeSettingOptions(input) {
     }));
 }
 
+/**
+ * 读取可选整数约束。
+ *
+ * @param {object} source 设置字段
+ * @param {string} key 约束字段名
+ * @param {string} label 错误消息中的字段描述
+ * @returns {number | undefined} 整数或 undefined
+ * @throws {TypeError} 字段存在但不是整数时抛出
+ *
+ * 异常与副作用：参数非法时抛出 `TypeError`，不修改 source。
+ */
 function optionalInteger(source, key, label) {
     if (source[key] === undefined) {
         return undefined;
@@ -81,6 +158,17 @@ function optionalInteger(source, key, label) {
     return source[key];
 }
 
+/**
+ * 拒绝设置字段中的未声明属性。
+ *
+ * @param {object} source 原始字段
+ * @param {string[]} allowed 当前类型允许的键
+ * @param {string} key 设置键
+ * @returns {void}
+ * @throws {TypeError} 发现未知字段时抛出
+ *
+ * 副作用：无。严格白名单让 schema 演进必须显式完成，避免未知属性被静默带入后续逻辑。
+ */
 function assertKnownFieldKeys(source, allowed, key) {
     const unknown = Object.keys(source).find((name) => !allowed.includes(name));
     if (unknown) {
@@ -88,6 +176,17 @@ function assertKnownFieldKeys(source, allowed, key) {
     }
 }
 
+/**
+ * 根据设置类型校验并冻结单个字段定义。
+ *
+ * @param {unknown} input 原始字段
+ * @returns {Readonly<object>} 规范化字段
+ * @throws {TypeError} 键、类型、默认值、范围或选项不合法时抛出
+ *
+ * 不变量：boolean 的 default 必须是布尔值；integer 的 default 必须在可选 min/max 内；
+ * select 的 default 必须属于非空且唯一的 options；text 的默认长度必须满足长度约束。
+ * 副作用：无，除冻结新建对象外不修改输入。
+ */
 function normalizeSettingField(input) {
     const source = plainObject(input) ?? {};
     const key = text(source.key);
@@ -208,6 +307,10 @@ function normalizeSettingField(input) {
  *
  * @param {unknown} input 合约规定的 {fields}，兼容当前模块使用的字段数组
  * @returns {{fields: ReadonlyArray<object>}} 规范化结构
+ * @throws {TypeError} 顶层结构、字段定义或键唯一性不合法时抛出
+ *
+ * `null`/`undefined` 表示模块未声明设置；一旦提供设置结构，就必须完整通过字段白名单校验。
+ * 副作用：无。
  */
 export function normalizeModuleSettingSchema(input) {
     if (input == null) {
@@ -243,6 +346,10 @@ export function normalizeModuleSettingSchema(input) {
  * @param {string} moduleId 模块 ID
  * @param {unknown} input 原始清单
  * @returns {object} 规范化清单
+ * @throws {TypeError} 模块 ID、UI 版本、视图 ID、资源名或设置 schema 不合法时抛出
+ *
+ * 调用方按模块捕获异常，使单个坏清单只隔离当前模块。清单中的默认文案只用于展示，不能
+ * 用于推断模块能力；`script` 和 `style` 被收窄为单文件资源名。副作用：无。
  */
 export function normalizeModuleUi(moduleId, input) {
     if (!MODULE_ID.test(String(moduleId ?? ""))) {
@@ -295,6 +402,9 @@ export function normalizeModuleUi(moduleId, input) {
  * @param {Array<object>} modules 模块目录
  * @param {Array<{moduleId: string, ui?: object, error?: string}>} loaded 加载结果
  * @returns {{moduleUi: object, moduleErrors: object}} UI 状态
+ *
+ * 系统模块先处理，因此视图 ID 冲突时保留系统入口，业务条目只记录局部错误。缺少清单、
+ * 加载失败或占用框架保留视图的模块不会进入 `moduleUi`。副作用：无。
  */
 export function resolveModuleUiCatalog(modules = [], loaded = []) {
     const entries = new Map(loaded.map((entry) => [entry?.moduleId, entry]));
@@ -340,6 +450,9 @@ export function resolveModuleUiCatalog(modules = [], loaded = []) {
  * @param {unknown} input 模块条目
  * @param {string} source 目录来源
  * @returns {object} 模块条目
+ * @throws {TypeError} 条目不是对象或模块 ID 不合法时抛出
+ *
+ * `source` 由调用方根据请求端点决定，而不是读取条目自称的 system 标记。副作用：无。
  */
 export function normalizeModuleEntry(input, source = MODULE_SOURCE.BUSINESS) {
     const item = plainObject(input);
@@ -371,6 +484,9 @@ export function normalizeModuleEntry(input, source = MODULE_SOURCE.BUSINESS) {
  * @param {unknown} businessPayload /api/modules 响应
  * @param {unknown} systemPayload /api/system-modules 响应
  * @returns {{modules: Array<object>, businessModules: Array<object>, systemModules: Array<object>}} 目录
+ *
+ * 每个目录内先出现者保留；随后从业务目录剔除所有系统 ID，确保重复 ID 始终以系统目录为准。
+ * 单条非法模块被丢弃，不阻断其余目录。副作用：无。
  */
 export function normalizeModuleCatalogs(businessPayload, systemPayload) {
     const normalizeAll = (items, source) => {
@@ -453,6 +569,10 @@ export function hasSystemAdminPrivilege(module) {
  *
  * @param {{module: object, context?: object, settings?: object, systemAdmin?: object}} input 输入
  * @returns {object} mount context
+ *
+ * `context` 与 `settings` 做成浅副本；只有满足固定管理员条件时才由本函数主动注入
+ * `systemAdmin`。由于 `context` 是展开复制的，调用方必须保证传入的 context 自身可信，
+ * 不能把任意模块数据混入其中。副作用：无，且 systemAdmin 对象本身不会深拷贝。
  */
 export function createModuleMountContext({
     module,
@@ -475,6 +595,9 @@ export function createModuleMountContext({
  *
  * @param {unknown} input 响应
  * @returns {{sidebarOrder: Array<string>, managementOrder: Array<string>, moduleSettings: object}} 偏好
+ *
+ * 仅接受合法模块 ID 对应的普通设置对象；字段值保留原样，交由声明 schema 的消费方理解。
+ * 副作用：无。
  */
 export function normalizeModulePreferences(input) {
     const source = plainObject(input) ?? {};
@@ -498,6 +621,9 @@ export function normalizeModulePreferences(input) {
  * @param {Array<object>} modules 全部模块
  * @param {unknown} input 宿主偏好
  * @returns {{sidebarOrder: Array<string>, managementOrder: Array<string>, moduleSettings: object}} 偏好
+ *
+ * 两套顺序都会移除失效 ID 并追加新模块；模块设置只保留仍存在的业务模块，系统模块设置
+ * 即使出现在响应中也会被剔除。副作用：无。
  */
 export function reconcileModulePreferences(modules = [], input = {}) {
     const preferences = normalizeModulePreferences(input);
@@ -521,6 +647,9 @@ export function reconcileModulePreferences(modules = [], input = {}) {
  * @param {Array<object>} modules 模块契约
  * @param {Array<string>} orderIds 已保存顺序
  * @returns {Array<object>} 已排序副本
+ *
+ * 已保存 ID 优先；未保存模块再按契约 `order` 和模块 ID 稳定追加，避免目录响应顺序泄漏到
+ * 界面。副作用：无，不修改输入数组。
  */
 export function sortModules(modules = [], orderIds = []) {
     const positions = new Map(orderIds.map((id, index) => [id, index]));
@@ -543,6 +672,8 @@ export function sortModules(modules = [], orderIds = []) {
  * @param {Array<object>} modules 当前模块
  * @param {Array<string>} orderIds 已保存顺序
  * @returns {Array<string>} 新顺序
+ *
+ * 保留有效旧顺序、去重并移除失效 ID，再按契约顺序追加新模块。副作用：无。
  */
 export function reconcileModuleOrder(modules = [], orderIds = []) {
     const catalogIds = new Set(modules.map((module) => module?.moduleId).filter(Boolean));
@@ -555,6 +686,17 @@ export function reconcileModuleOrder(modules = [], orderIds = []) {
     return [...kept, ...defaults];
 }
 
+/**
+ * 将模块在完整顺序中移动指定偏移。
+ *
+ * @param {Array<string>} [orderIds=[]] 完整模块顺序
+ * @param {string} moduleId 待移动模块
+ * @param {number} offset 负值上移、正值下移
+ * @returns {Array<string>} 新顺序
+ *
+ * 目标位置被夹紧到数组边界；模块不存在或位置未变时仍返回新数组，便于调用方统一持久化。
+ * 异常与副作用：无。
+ */
 export function moveModuleOrder(orderIds = [], moduleId, offset) {
     const ids = [...orderIds];
     const from = ids.indexOf(moduleId);
@@ -566,10 +708,33 @@ export function moveModuleOrder(orderIds = [], moduleId, offset) {
     return ids;
 }
 
+/**
+ * 将模块移动到目标模块之前。
+ *
+ * @param {Array<string>} [orderIds=[]] 完整模块顺序
+ * @param {string} movingId 待移动模块
+ * @param {string} targetId 目标模块
+ * @returns {Array<string>} 新顺序
+ *
+ * 异常与副作用：无；移动 ID 为空或与目标相同时返回副本，目标不存在时追加到末尾。此函数
+ * 不校验 movingId 是否原本就在数组中，界面调用方应先用当前目录顺序约束输入。
+ */
 export function reorderBefore(orderIds = [], movingId, targetId) {
     return reorderRelative(orderIds, movingId, targetId, false);
 }
 
+/**
+ * 将模块移动到目标模块之前或之后。
+ *
+ * @param {Array<string>} [orderIds=[]] 完整模块顺序
+ * @param {string} movingId 待移动模块
+ * @param {string} targetId 目标模块
+ * @param {boolean} [after=false] 是否插入目标之后
+ * @returns {Array<string>} 新顺序
+ *
+ * 先移除待移动 ID 再定位目标，避免原位置影响插入下标；目标缺失时按追加处理。
+ * 异常与副作用：无。
+ */
 export function reorderRelative(orderIds = [], movingId, targetId, after = false) {
     if (!movingId || movingId === targetId) return [...orderIds];
     const ids = orderIds.filter((id) => id !== movingId);
@@ -587,6 +752,9 @@ export function reorderRelative(orderIds = [], movingId, targetId, after = false
  * @param {string} moduleId 移动模块
  * @param {number} offset -1 上移，1 下移
  * @returns {Array<string>} 新完整顺序
+ *
+ * 用当前可见序列确定相邻目标，再把移动映射回完整顺序，因此隐藏模块会随相邻项保持相对
+ * 位置。异常与副作用：无。
  */
 export function moveVisibleModuleOrder(orderIds = [], visibleIds = [], moduleId, offset) {
     const visible = [...new Set(visibleIds)];
@@ -597,6 +765,15 @@ export function moveVisibleModuleOrder(orderIds = [], visibleIds = [], moduleId,
     return reorderRelative(orderIds, moduleId, visible[targetIndex], offset > 0);
 }
 
+/**
+ * 从查询结果中读取卡片计数。
+ *
+ * @param {unknown} payload 查询结果
+ * @param {string} [key="count"] 支持点号分隔的嵌套键
+ * @returns {number | string} 数组/字符串长度、有限数字、原始展示值或破折号
+ *
+ * 路径中断时返回破折号，不让单个模块的数据形状破坏总览渲染。异常与副作用：无。
+ */
 export function readCount(payload, key = "count") {
     const parts = String(key || "count").split(".").filter(Boolean);
     let value = payload;

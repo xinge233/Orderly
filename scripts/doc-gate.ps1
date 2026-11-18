@@ -1,4 +1,17 @@
 [CmdletBinding()]
+# 用途：
+#   执行只读文档快速门禁：检查关键规则/契约文件、PowerShell AST、上下文审计、仓库地图和 Markdown 链接。
+#
+# 输入：
+#   Git 跟踪及未跟踪未忽略的 Markdown、关键仓库文件、脚本本身和 .codex/config.toml 审计结果。
+#
+# 副作用：
+#   不访问网络，不启动 Java、Maven 或 Node，不写运行数据；仅读取文件和调用只读 Git/PowerShell 命令。
+#
+# 安全边界：
+#   所有读取限制在仓库内并拒绝重解析点；Markdown 只校验本地相对链接。发现语法、规则、链接或审计错误时
+#   返回退出码 1，不能把部分检查通过当作整体通过。
+
 param()
 
 Set-StrictMode -Version Latest
@@ -13,12 +26,14 @@ $powerShellExecutable = (Get-Process -Id $PID).Path
 $script:CheckCount = 0
 
 function Add-Check {
+    # 统一累计检查数，使成功和失败摘要都能证明门禁实际运行过哪些检查。
     param([int]$Count = 1)
 
     $script:CheckCount += $Count
 }
 
 function Assert-NoReparsePoint {
+    # 逐段拒绝重解析点，防止文档路径通过链接落到仓库外。
     param([Parameter(Mandatory = $true)][string]$RelativePath)
 
     $currentPath = $repoRoot
@@ -38,6 +53,7 @@ function Assert-NoReparsePoint {
 }
 
 function Read-TextFile {
+    # 读取入口同时执行仓库边界、文件存在和 UTF-8 检查，调用方无需重复安全判断。
     param(
         [Parameter(Mandatory = $true)][string]$RelativePath,
         [Parameter(Mandatory = $true)][string]$Purpose
@@ -58,6 +74,7 @@ function Read-TextFile {
 }
 
 function Invoke-PowerShellScript {
+    # 子进程隔离执行可消费其退出码，同时避免审计输出与当前脚本状态互相污染。
     param(
         [Parameter(Mandatory = $true)][string]$ScriptPath,
         [string[]]$Arguments = @()
@@ -83,6 +100,7 @@ function Invoke-PowerShellScript {
 }
 
 function Invoke-GitText {
+    # Git 失败必须立即转成带上下文的异常，避免空输出被误判为“没有文件”或“没有匹配”。
     param(
         [Parameter(Mandatory = $true)][string[]]$Arguments,
         [Parameter(Mandatory = $true)][string]$Purpose
@@ -131,6 +149,7 @@ function Test-TrackedPath {
 }
 
 function Get-MarkdownPaths {
+    # 使用 NUL 分隔可安全处理空格和特殊字符；同时包含已跟踪和未跟踪未忽略 Markdown。
     $output = Invoke-GitText `
         -Purpose "读取 Git 跟踪及未跟踪未忽略 Markdown 清单" `
         -Arguments @(
@@ -155,6 +174,7 @@ function Get-MarkdownPaths {
 }
 
 function Assert-NoMergeConflictMarkers {
+    # 冲突分隔符需要结合开标记判断，降低普通表格或标题被误报的概率。
     param(
         [Parameter(Mandatory = $true)][string]$Text,
         [Parameter(Mandatory = $true)][string]$RelativePath
@@ -178,6 +198,7 @@ function Assert-NoMergeConflictMarkers {
 }
 
 function Get-MarkdownLinkTargets {
+    # 跳过围栏代码和行内代码，只提取真实 Markdown 链接，减少示例语法造成的假失败。
     param([Parameter(Mandatory = $true)][string]$Text)
 
     $targets = [System.Collections.Generic.List[object]]::new()
@@ -231,6 +252,7 @@ function Get-MarkdownLinkTargets {
 }
 
 function Get-NormalizedLinkDestination {
+    # 外部 URL、锚点和绝对系统路径不归本地链接门禁处理；其余目标在调用方做仓库边界校验。
     param([Parameter(Mandatory = $true)][string]$RawTarget)
 
     $target = $RawTarget.Trim()
@@ -269,6 +291,7 @@ function Get-NormalizedLinkDestination {
 }
 
 function Assert-LocalMarkdownLink {
+    # 解析后必须仍位于仓库内，目标可以不存在于 Git 清单中，但磁盘路径必须真实存在。
     param(
         [Parameter(Mandatory = $true)][string]$SourceRelativePath,
         [Parameter(Mandatory = $true)][string]$RawTarget,
@@ -306,6 +329,7 @@ function Assert-LocalMarkdownLink {
 }
 
 try {
+    # 关键文件和规则是架构与验证链的最小事实集；缺失时不能继续给出绿色文档门禁。
     $requiredFiles = @(
         "AGENTS.md",
         "Module/AGENTS.md",
@@ -358,6 +382,7 @@ try {
         Add-Check
     }
 
+    # 先对所有 scripts/*.ps1 做 AST 解析，语法错误必须在任何运行型门禁之前暴露。
     $scriptFiles = @(Get-ChildItem `
         -LiteralPath (Join-Path $repoRoot "scripts") `
         -File `
@@ -389,6 +414,7 @@ try {
     }
 
     $contextScript = Join-Path $repoRoot "scripts\context.ps1"
+    # 上下文工具审计独立运行，确保受限读取配置本身没有被后续脚本修改破坏。
     $contextAudit = Invoke-PowerShellScript `
         -ScriptPath $contextScript `
         -Arguments @("-Mode", "audit")
@@ -429,6 +455,7 @@ try {
         Add-Check
     }
 
+    # 仓库地图声明的 scripts/*.ps1 必须存在，防止验证入口指向已删除或改名的脚本。
     $repoMapScriptReferences = @([regex]::Matches(
         $repoMapText,
         "\.\\scripts\\([A-Za-z0-9._-]+\.ps1)"
@@ -446,6 +473,7 @@ try {
         Add-Check
     }
 
+    # 最后一轮同时扫描合并冲突和本地链接；已跟踪但工作区删除的普通 Markdown 只跳过正文。
     $markdownPaths = @(Get-MarkdownPaths)
     if ($markdownPaths.Count -eq 0) {
         throw "Git Markdown 清单为空。"
@@ -490,6 +518,7 @@ try {
         }
     }
 
+    # 成功摘要列出关键计数；任何异常都会落入 catch 并转换为退出码 1。
     Write-Output (
         "DOC GATE PASS checks=$script:CheckCount " +
         "scripts=$($scriptFiles.Count) " +

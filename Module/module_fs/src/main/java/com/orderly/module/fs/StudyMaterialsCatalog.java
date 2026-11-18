@@ -11,12 +11,15 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 读取模块自带的学习资料只读数据。
+ * {@code module_fs} 自带学习资料的只读目录。
  *
- * <p>数据文件固定在模块 classpath 内，查询不会访问工作区或个人目录。</p>
+ * <p>本类只读取本模块 JAR 内的 {@code orderly-data/module_fs.json}，并验证数据归属、只读标记、
+ * 引用关系和固定枚举。它不访问工作区、个人目录、其他模块资源或宿主数据库，也不提供写入、
+ * 删除、快照或回滚能力；无效数据直接阻止查询，不以空目录或部分结果兜底。</p>
  */
 final class StudyMaterialsCatalog {
 
+    /** 仅属于本模块 JAR 的固定资料资源。 */
     private static final String RESOURCE_PATH = "/orderly-data/module_fs.json";
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
@@ -50,9 +53,17 @@ final class StudyMaterialsCatalog {
     private static final Set<String> MATERIAL_FORMATS = Set.of("PDF", "Markdown", "HTML", "DOCX");
     private static final Set<String> MATERIAL_STATUSES = Set.of("已整理", "待复核", "只读示例");
 
+    /** 本目录独占的 JSON 解析器。 */
     private final ObjectMapper objectMapper = new ObjectMapper();
+    /** 只在完整校验成功后保存的只读文档缓存。 */
     private Map<String, Object> cached;
 
+    /**
+     * 加载并校验本模块学习资料。
+     *
+     * <p>首次成功加载后缓存根文档，后续查询复用同一数据且不会回写 JAR。资源缺失、解析失败或
+     * 契约校验失败都会抛出明确异常；方法不访问 {@link ModuleRuntime} 或任意文件系统路径。</p>
+     */
     synchronized Map<String, Object> load() {
         if (cached != null) {
             return cached;
@@ -70,6 +81,7 @@ final class StudyMaterialsCatalog {
         }
     }
 
+    /** 校验根元信息、来源、课程、资料以及声明数量的一致性。 */
     private void validate(Map<String, Object> document) {
         requireExactFields(document, ROOT_FIELDS, "根节点");
         requireInteger(document, "schemaVersion", "根节点", 1);
@@ -99,6 +111,9 @@ final class StudyMaterialsCatalog {
         }
     }
 
+    /**
+     * 校验来源字段、允许类型和 ID 唯一性，返回可被资料引用的来源 ID 集合。
+     */
     private Set<String> validateSources(List<?> sources) {
         Set<String> ids = new HashSet<>();
         for (int index = 0; index < sources.size(); index++) {
@@ -116,6 +131,9 @@ final class StudyMaterialsCatalog {
         return ids;
     }
 
+    /**
+     * 校验课程字段、必填文本和 ID 唯一性，返回可被资料引用的课程 ID 集合。
+     */
     private Set<String> validateCourses(List<?> courses) {
         Set<String> ids = new HashSet<>();
         for (int index = 0; index < courses.size(); index++) {
@@ -130,6 +148,11 @@ final class StudyMaterialsCatalog {
         return ids;
     }
 
+    /**
+     * 校验每条资料的 ID、课程/来源引用、格式、状态、摘要和卡片负载。
+     *
+     * <p>所有引用必须指向同一 JAR 文档内已声明的对象，避免跨模块数据被当作本模块资料展示。</p>
+     */
     private void validateMaterials(
             List<?> materials,
             Set<String> courseIds,
@@ -158,6 +181,7 @@ final class StudyMaterialsCatalog {
         }
     }
 
+    /** 校验某条资料下卡片字段、文本内容和非空 ID。 */
     private void validateCards(List<?> cards, String materialScope) {
         Set<String> ids = new HashSet<>();
         for (int index = 0; index < cards.size(); index++) {
@@ -170,6 +194,7 @@ final class StudyMaterialsCatalog {
         }
     }
 
+    /** 验证引用值存在，并把错误限定到当前对象和字段。 */
     private void requireReference(
             Map<String, Object> value,
             String field,
@@ -182,6 +207,7 @@ final class StudyMaterialsCatalog {
         }
     }
 
+    /** 注册对象 ID；重复时拒绝整份资料文档。 */
     private void requireUniqueId(Map<String, Object> value, String scope, Set<String> ids) {
         String id = requireString(value, "id", scope);
         if (!ids.add(id)) {
@@ -189,6 +215,11 @@ final class StudyMaterialsCatalog {
         }
     }
 
+    /**
+     * 要求对象字段集合与契约完全一致。
+     *
+     * <p>错误信息分别列出缺失和多余字段，防止资源演进时未知字段被静默忽略。</p>
+     */
     private void requireExactFields(
             Map<String, Object> value,
             Set<String> expected,
@@ -203,6 +234,7 @@ final class StudyMaterialsCatalog {
         }
     }
 
+    /** 要求字段为非空白字符串，并返回原值供后续引用校验。 */
     private String requireString(Map<String, Object> value, String field, String scope) {
         Object raw = value.get(field);
         if (!(raw instanceof String text) || text.isBlank()) {
@@ -211,6 +243,7 @@ final class StudyMaterialsCatalog {
         return text;
     }
 
+    /** 要求字段为非负整数。 */
     private int requireInteger(Map<String, Object> value, String field, String scope) {
         Object raw = value.get(field);
         if (!(raw instanceof Integer number) || number < 0) {
@@ -219,6 +252,7 @@ final class StudyMaterialsCatalog {
         return number;
     }
 
+    /** 要求整数字段等于当前文档版本或固定值。 */
     private void requireInteger(
             Map<String, Object> value,
             String field,
@@ -230,10 +264,12 @@ final class StudyMaterialsCatalog {
         }
     }
 
+    /** 从对象字段取得数组。 */
     private List<?> requireList(Map<String, Object> value, String field, String scope) {
         return requireList(value.get(field), scope + "." + field);
     }
 
+    /** 要求原值为数组。 */
     private List<?> requireList(Object raw, String scope) {
         if (!(raw instanceof List<?> list)) {
             throw invalid(scope + " 必须是数组");
@@ -241,6 +277,11 @@ final class StudyMaterialsCatalog {
         return list;
     }
 
+    /**
+     * 要求原值为字段名均为字符串的对象。
+     *
+     * <p>转换前显式检查键类型，避免后续按字符串字段名读取时出现隐式转换或漏检。</p>
+     */
     private Map<String, Object> requireObject(Object raw, String scope) {
         if (!(raw instanceof Map<?, ?> map)) {
             throw invalid(scope + " 必须是对象");
@@ -255,6 +296,7 @@ final class StudyMaterialsCatalog {
         return typed;
     }
 
+    /** 构造带 materials 契约前缀的数据错误，交由查询调用方报告给宿主。 */
     private IllegalStateException invalid(String detail) {
         return new IllegalStateException("资料数据不符合 materials 契约：" + detail);
     }

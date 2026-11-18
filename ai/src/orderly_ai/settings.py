@@ -1,3 +1,11 @@
+"""进程内存中的 AI Provider 设置与 URL 安全规范化。
+
+设置不得写入仓库、普通配置、浏览器存储或日志。DeepSeek 模式固定官方
+Base URL 与模型标识；自定义模式默认只允许 HTTPS，只有显式开发开关存在时
+才允许回环地址使用 HTTP。每次变更递增 ``version``，使旧会话、重放结果和
+并发中的回合失效。
+"""
+
 from __future__ import annotations
 
 import os
@@ -13,9 +21,14 @@ DEEPSEEK_MODEL = "deepseek-flash"
 
 
 class SettingsStore:
-    """Process-memory AI settings. The API key is never serialized."""
+    """线程安全的内存设置存储，API Key 永不进入公开视图或序列化结果。"""
 
     def __init__(self, allow_local_provider: bool | None = None) -> None:
+        """建立未配置的 DeepSeek 默认状态。
+
+        锁用于同步设置读写；初始 Key 为空，只有 ``configure`` 才可把调用方
+        临时提交的 Key 放入当前进程内存。
+        """
         self._lock = threading.RLock()
         self._allow_local_provider = (
             os.environ.get("ORDERLY_AI_ALLOW_LOCAL_PROVIDER", "")
@@ -36,16 +49,19 @@ class SettingsStore:
         )
 
     def snapshot(self) -> ProviderConfig:
+        """返回不可变设置快照，供一次请求一致地读取开关与 Key。"""
         with self._lock:
             return self._config
 
     def view(self) -> SettingsView:
+        """返回不含 Key 的公开设置视图。"""
         return self._view(
             self.snapshot(),
             allow_local_provider=self._allow_local_provider,
         )
 
     def require_configured(self) -> ProviderConfig:
+        """取得可用快照；未配置 Key 时以稳定错误失败关闭。"""
         config = self.snapshot()
         if not config.configured:
             raise ServiceError(
@@ -56,6 +72,12 @@ class SettingsStore:
         return config
 
     def configure(self, request: SettingsPutRequest) -> SettingsView:
+        """应用局部设置更新并递增安全策略代次。
+
+        空 ``apiKey`` 会被模型归一化为 ``None``，表示保留内存中的旧 Key；
+        只有 ``clear`` 会主动移除 Key。模式固定值和 URL 校验在持锁期间完成，
+        避免读取到半更新配置。
+        """
         with self._lock:
             current = self._config
             mode = request.mode or current.mode
@@ -119,6 +141,7 @@ class SettingsStore:
             )
 
     def clear(self) -> SettingsView:
+        """清除 Key 和安全开关，并恢复 DeepSeek 默认配置。"""
         with self._lock:
             self._config = ProviderConfig(
                 mode="DEEPSEEK",
@@ -140,6 +163,7 @@ class SettingsStore:
         *,
         allow_local_provider: bool,
     ) -> SettingsView:
+        """把内部配置投影为可跨 IPC 返回的安全模型。"""
         return SettingsView(
             mode=config.mode,
             base_url=config.base_url,
@@ -155,6 +179,7 @@ class SettingsStore:
 
 
 def normalize_model(value: str) -> str:
+    """规范化自定义模型标识，拒绝空值。"""
     model = value.strip()
     if not model:
         raise ServiceError(
@@ -170,6 +195,11 @@ def normalize_base_url(
     *,
     allow_local_provider: bool = False,
 ) -> str:
+    """校验并规范化自定义 OpenAI 兼容 Base URL。
+
+    禁止 URL 内嵌用户信息、查询参数和片段，避免凭据泄露或端点解析歧义。
+    HTTPS 是默认要求；localhost HTTP 仅在显式开发开关开启时放行。
+    """
     raw = value.strip().rstrip("/")
     if not raw:
         raise invalid_url("自定义模式需要 API Base URL。")
@@ -208,4 +238,5 @@ def normalize_base_url(
 
 
 def invalid_url(message: str) -> ServiceError:
+    """构造稳定的 Base URL 校验错误。"""
     return ServiceError(400, "AI_INVALID_BASE_URL", message)

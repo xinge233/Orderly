@@ -22,12 +22,24 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-/** 将宿主 AI 请求隔离到本地 Python 服务；Java 不保存模型凭据或会话。 */
+/**
+ * 将宿主 AI 请求隔离到本地 Python 服务。
+ *
+ * <p>IPC 目标必须是 {@code http://127.0.0.1:<port>}，禁止重定向、路径、凭据和远端
+ * 主机。正常启动时 {@code scripts/start.ps1} 每次运行生成随机 Bearer Token，并通过
+ * 环境变量注入 Java 与 Python；本客户端只把该令牌放入请求头，不写日志或响应。
+ * Java 不保存模型 API Key 或会话，模型凭据只在 Python 进程内存中。</p>
+ *
+ * <p>连接、单请求和整回合分别受配置时限约束；一次回合的后续设置、首次请求和
+ * Query 续聊共享总截止时间，避免分段调用无限延长。</p>
+ */
 @Component
 public class AiServiceClient {
 
+    /** 首次回合允许返回的决策种类。 */
     private static final Set<String> TURN_KINDS =
             Set.of("ACTIONS", "PLAN", "QUESTION", "QUERY");
+    /** Query 结果续聊允许的最终决策种类，明确禁止再次 Query。 */
     private static final Set<String> FOLLOW_UP_KINDS =
             Set.of("ACTIONS", "PLAN", "QUESTION");
 
@@ -39,6 +51,12 @@ public class AiServiceClient {
     private final Duration turnTimeout;
     private final String ipcToken;
 
+    /**
+     * 创建仅访问本机 AI 服务的 HTTP 客户端。
+     *
+     * <p>决策响应使用开启未知字段失败的严格 mapper；HTTP 客户端关闭自动重定向，
+     * 防止回环请求被引导到其他主机。</p>
+     */
     public AiServiceClient(
             ObjectMapper objectMapper,
             @Value("${orderly.ai-service.url:http://127.0.0.1:18080}") String serviceUrl,
@@ -61,10 +79,14 @@ public class AiServiceClient {
         this.ipcToken = ipcToken == null ? "" : ipcToken.trim();
     }
 
+    /** 使用标准请求时限读取 Python 内存中的 AI 设置。 */
     public AiContracts.SettingsView settings() {
         return settings(requestTimeout);
     }
 
+    /**
+     * 在给定剩余预算内读取设置，并校验响应至少包含提供方模式。
+     */
     public AiContracts.SettingsView settings(Duration timeout) {
         JsonNode body = requestJson("GET", "/v1/settings", null, timeout);
         try {
@@ -81,6 +103,12 @@ public class AiServiceClient {
         }
     }
 
+    /**
+     * 将设置写入 Python 内存。
+     *
+     * <p>请求可能包含临时 API Key；本方法不记录请求体，Python 返回的
+     * {@link AiContracts.SettingsView} 也不含 Key。</p>
+     */
     public AiContracts.SettingsView updateSettings(AiContracts.SettingsRequest request) {
         if (request == null) {
             throw new ApiException(
@@ -104,6 +132,7 @@ public class AiServiceClient {
         }
     }
 
+    /** 清除 Python 进程中的模型配置，并返回不含凭据的最新设置视图。 */
     public AiContracts.SettingsView clearSettings() {
         JsonNode body = requestJson("DELETE", "/v1/settings", null, requestTimeout);
         try {
@@ -113,6 +142,7 @@ public class AiServiceClient {
         }
     }
 
+    /** 使用 Python 内存中的当前配置执行一次受控连通性测试。 */
     public AiContracts.ConnectionTest testSettings() {
         JsonNode body = requestJson("POST", "/v1/settings/test", null, requestTimeout);
         try {
@@ -129,10 +159,14 @@ public class AiServiceClient {
         }
     }
 
+    /** 使用整回合默认时限发送首次 AI 回合。 */
     public AiContracts.ServiceDecision createTurn(AiContracts.ServiceTurnRequest request) {
         return createTurn(request, turnTimeout);
     }
 
+    /**
+     * 发送首次 AI 回合，并对 Python 返回的结构化决策做宿主侧契约校验。
+     */
     public AiContracts.ServiceDecision createTurn(
             AiContracts.ServiceTurnRequest request,
             Duration timeout
@@ -142,12 +176,19 @@ public class AiServiceClient {
         return validateDecision(decision, true);
     }
 
+    /** 使用剩余整回合时限发送 Query 结果续聊。 */
     public AiContracts.ServiceDecision continueWithQueryResults(
             AiContracts.ServiceQueryContinuationRequest request
     ) {
         return continueWithQueryResults(request, turnTimeout);
     }
 
+    /**
+     * 将经用户设置允许的受限 Query 结果回传 Python。
+     *
+     * <p>续聊只允许返回 {@code ACTIONS}、{@code PLAN} 或 {@code QUESTION}，不能再次
+     * 产生 Query，从而在宿主侧终止查询循环。</p>
+     */
     public AiContracts.ServiceDecision continueWithQueryResults(
             AiContracts.ServiceQueryContinuationRequest request,
             Duration timeout
@@ -157,6 +198,7 @@ public class AiServiceClient {
         return validateDecision(decision, false);
     }
 
+    /** 为一次完整 AI 回合创建不可延长的总截止时间。 */
     public TurnBudget beginTurn() {
         return new TurnBudget(Instant.now().plus(turnTimeout));
     }
@@ -180,6 +222,7 @@ public class AiServiceClient {
         }
     }
 
+    /** 以短时只读探针判断 Python 是否已持有可用模型配置。 */
     public boolean configured() {
         try {
             Duration timeout = requestTimeout.compareTo(Duration.ofSeconds(1)) < 0
@@ -192,6 +235,12 @@ public class AiServiceClient {
         }
     }
 
+    /**
+     * 规范化并限制 Python 服务根地址。
+     *
+     * <p>只接受 HTTP、字面回环地址 {@code 127.0.0.1} 和显式端口；主机名、HTTPS、
+     * 用户信息、额外路径、查询参数和片段全部拒绝，避免 IPC 离开本机或改变根路径。</p>
+     */
     static URI serviceRoot(String serviceUrl) {
         String normalized = String.valueOf(serviceUrl == null ? "" : serviceUrl).trim();
         while (normalized.endsWith("/")) {
@@ -222,6 +271,9 @@ public class AiServiceClient {
         return URI.create(normalized);
     }
 
+    /**
+     * 发送 JSON IPC 请求并把非 2xx 状态映射为稳定宿主错误。
+     */
     private JsonNode requestJson(String method, String path, Object payload, Duration timeout) {
         HttpResponse<String> response = send(
                 method,
@@ -243,6 +295,12 @@ public class AiServiceClient {
         }
     }
 
+    /**
+     * 构造并异步发送 HTTP 请求，再由调用线程按剩余预算等待。
+     *
+     * <p>有载荷时设置 JSON 内容类型；IPC Token 非空时只作为 Authorization 请求头
+     * 使用。中断状态会被恢复，连接失败和超时统一失败关闭为服务不可用。</p>
+     */
     private <T> HttpResponse<T> send(
             String method,
             String path,
@@ -285,6 +343,7 @@ public class AiServiceClient {
         }
     }
 
+    /** 用严格 mapper 把 JSON 转为决策，拒绝契约外字段和原始类型 null。 */
     private AiContracts.ServiceDecision decision(JsonNode body) {
         try {
             return strictMapper.treeToValue(body, AiContracts.ServiceDecision.class);
@@ -293,6 +352,12 @@ public class AiServiceClient {
         }
     }
 
+    /**
+     * 在进入执行层前校验决策种类及其互斥字段。
+     *
+     * <p>首次回合允许 Query；携带 Query 结果的续聊禁止再次 Query。Action/Plan 必须有
+     * 动作，Question 必须有具体问题，其他种类不得混入不适用字段。</p>
+     */
     private AiContracts.ServiceDecision validateDecision(
             AiContracts.ServiceDecision decision,
             boolean queryAllowed
@@ -351,6 +416,12 @@ public class AiServiceClient {
         return decision;
     }
 
+    /**
+     * 将 Python 错误映射为安全的上游失败。
+     *
+     * <p>只透传格式合法的 4xx 业务码和消息；非法响应保留明确的 502 语义，其余
+     * 5xx、不可解析响应或未批准错误码统一收敛为 503，避免泄漏上游细节。</p>
+     */
     private ApiException upstreamFailure(int statusCode, String body) {
         JsonNode root = null;
         try {
@@ -407,6 +478,12 @@ public class AiServiceClient {
         );
     }
 
+    /**
+     * 单次 AI 回合的共享截止时间。
+     *
+     * <p>{@link #remaining()} 只会返回非负剩余时长；归零后后续 IPC 请求失败关闭，
+     * 不能用新的单请求超时延长整个回合。</p>
+     */
     public record TurnBudget(Instant deadline) {
         public Duration remaining() {
             Duration duration = Duration.between(Instant.now(), deadline);

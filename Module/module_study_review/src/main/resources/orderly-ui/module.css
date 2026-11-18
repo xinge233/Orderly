@@ -1,3 +1,8 @@
+/*
+ * 自包含 ownership：module_study_review 只定义 .study-review-ui* 复习自测视图。
+ * 颜色、字体、间距、圆角和时长消费主题语义变量；gentle/minimal/none 三档由框架统一控制。
+ * 桌面使用题目列表与详情双栏，900px 起单列，640px 起头部、进度和评分操作改为纵向布局。
+ */
 .study-review-ui {
     display: grid;
     gap: var(--space-5);
@@ -431,6 +436,7 @@
     color: var(--color-danger);
 }
 
+/* 先取消双栏并保留进度可见，再在手机端压缩题目与评分控件；none 档下状态仍由文字和色彩表达。 */
 @media (max-width: 900px) {
     .study-review-ui-controls {
         align-items: stretch;

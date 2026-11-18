@@ -1,3 +1,9 @@
+"""启动仅监听回环地址的 Orderly AI 服务进程。
+
+启动脚本负责生成并注入短暂 IPC 令牌。本模块只接受端口配置，不读取或记录
+模型 API Key，也不允许把监听地址扩展到局域网或公网接口。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -9,6 +15,12 @@ from .app import create_app
 
 
 def main() -> None:
+    """校验进程级启动参数后运行 Uvicorn。
+
+    回环监听是 IPC 信任边界的一部分；缺少随机 Bearer 令牌时直接失败关闭，
+    避免受保护端点以无鉴权状态启动。访问日志关闭，防止请求头或临时凭据
+    意外进入终端日志。
+    """
     parser = argparse.ArgumentParser(description="Run the loopback Orderly AI service")
     parser.add_argument(
         "--port",

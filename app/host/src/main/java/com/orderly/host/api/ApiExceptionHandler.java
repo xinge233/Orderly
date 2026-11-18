@@ -10,28 +10,37 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.nio.file.InvalidPathException;
 
-/** 把业务异常转换为稳定的结构化响应，不泄露服务端堆栈。 */
+/**
+ * 把业务异常转换为稳定的结构化响应，不泄露服务端堆栈。
+ *
+ * <p>可预期业务错误保留明确状态和错误码；参数、资源和未知异常分别映射为固定响应。
+ * SSE 客户端断开被视为正常连接生命周期，不再尝试写入 JSON 错误体。</p>
+ */
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
+    /** 原样输出受控 {@link ApiException} 的状态、错误码、消息和详情。 */
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiError> handleApi(ApiException exception) {
         return ResponseEntity.status(exception.status())
                 .body(ApiError.of(exception.code(), exception.getMessage(), exception.details()));
     }
 
+    /** 将可诊断的参数和路径异常映射为 400，不返回类型名或堆栈。 */
     @ExceptionHandler({IllegalArgumentException.class, InvalidPathException.class})
     public ResponseEntity<ApiError> handleIllegalArgument(RuntimeException exception) {
         return ResponseEntity.badRequest()
                 .body(ApiError.of("INVALID_REQUEST", safeMessage(exception, "请求参数非法")));
     }
 
+    /** 返回固定的请求字段校验失败消息。 */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException exception) {
         return ResponseEntity.badRequest()
                 .body(ApiError.of("INVALID_REQUEST", "请求字段校验失败"));
     }
 
+    /** 将未匹配的 HTTP 资源映射为统一 404。 */
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiError> handleMissingResource(NoResourceFoundException exception) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -46,12 +55,14 @@ public class ApiExceptionHandler {
         // 异步响应已不可用，交由容器完成连接清理。
     }
 
+    /** 未知异常统一失败关闭为 500，响应不暴露原始异常细节。 */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleUnexpected(Exception exception) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiError.of("INTERNAL_ERROR", "服务处理失败，请查看本机日志"));
     }
 
+    /** 选择非空异常消息或稳定的兜底文本。 */
     private String safeMessage(RuntimeException exception, String fallback) {
         String message = exception.getMessage();
         return message == null || message.isBlank() ? fallback : message;

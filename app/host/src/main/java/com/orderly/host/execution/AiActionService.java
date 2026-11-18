@@ -13,7 +13,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** 受控 AI 直执入口；执行前与计划路径共用同一 Action 核心担保。 */
+/**
+ * AI Action 数组的预览、直执和独立 AI 计划执行入口。
+ *
+ * <p>批量执行最多接受 50 项，先解析全部目标并汇总最高风险，再要求非只读批次获得
+ * 确认。执行严格保持数组顺序，后续参数只能引用此前已完成输出；任一 Action 失败
+ * 后不再执行剩余项，并按完成顺序逆序回滚。所有路径复用
+ * {@link ActionExecutionCore} 的风险、快照、审计和回滚担保。</p>
+ */
 @Service
 public class AiActionService {
 
@@ -34,11 +41,17 @@ public class AiActionService {
         this.coordinator = coordinator;
     }
 
+    /** 以 AI 直执来源执行 Action 数组，调用方传入批次确认状态。 */
     public ExecutionRecord execute(boolean confirmed, List<ActionCall> actions) {
         return executeBatch("AI_DIRECT", confirmed, actions, true);
     }
 
-    /** 校验并汇总 Action 数组，不产生任何执行副作用。 */
+    /**
+     * 校验并汇总 Action 数组，不产生任何执行副作用。
+     *
+     * <p>逐项执行 AI 目标检查与参数校验，并按 READ_ONLY、WRITE、DELETE 的顺序
+     * 汇总最高风险；空数组、超过 50 项或缺少模块/动作标识会直接拒绝。</p>
+     */
     public Preview preview(List<ActionCall> actions) {
         if (actions == null || actions.isEmpty()) {
             throw new ApiException(
@@ -88,17 +101,27 @@ public class AiActionService {
         return new Preview(List.copyOf(actions), List.copyOf(steps), highestRisk);
     }
 
-    /** 用户明确要求直执时由宿主调用；仍经过统一确认和风险策略。 */
+    /**
+     * 用户已明确要求执行时由宿主调用，批次按已确认处理。
+     *
+     * <p>“已确认”只豁免本方法的二次确认；AI 可调用、模块启用、快照和回滚仍由
+     * 统一执行核心保证。</p>
+     */
     public ExecutionRecord executeAiDirect(List<ActionCall> actions) {
         return executeBatch("AI_DIRECT", true, actions, true);
     }
 
-    /** 独立 AI 计划确认后由宿主调用。 */
+    /** 独立 AI 计划确认后执行，来源记为 AI_PLAN，并复用同一数组执行状态机。 */
     public ExecutionRecord executeAiPlan(List<ActionCall> actions) {
         return executeBatch("AI_PLAN", true, actions, true);
     }
 
-    /** 模块自有 UI 发起的单动作入口，使用 MODULE_CONTROL 来源并复用同一执行核心。 */
+    /**
+     * 模块自有 UI 发起的单动作入口。
+     *
+     * <p>来源固定为 MODULE_CONTROL，不应用 AI 可调用开关；模块启用、参数、快照、
+     * 审计与回滚仍由统一执行核心处理。</p>
+     */
     public ExecutionRecord executeModuleControl(
             String moduleId,
             String actionId,
@@ -120,6 +143,14 @@ public class AiActionService {
         );
     }
 
+    /**
+     * 执行一个有序 Action 批次。
+     *
+     * <p>预检阶段解析全部目标和最高风险，非只读批次需要确认；随后创建 RUNNING
+     * 执行记录。运行阶段逐项解析结构化引用、保存 RUNNING 步骤、调用统一核心并
+     * 持久化已完成输出。首次失败停止后续项，并逆序回滚已完成步骤。最终记录为
+     * COMPLETED、FAILED_ROLLED_BACK 或 FAILED_PARTIALLY_ROLLED_BACK。</p>
+     */
     private ExecutionRecord executeBatch(
             String origin,
             boolean confirmed,
@@ -348,6 +379,7 @@ public class AiActionService {
         }
     }
 
+    /** 逆序回滚已完成步骤；单步回滚失败会继续尝试其余步骤并返回整体是否全部成功。 */
     private boolean rollbackCompleted(
             String origin,
             String executionId,
@@ -419,6 +451,7 @@ public class AiActionService {
         return allSucceeded;
     }
 
+    /** 用步骤 ID 替换执行记录中的对应步骤。 */
     private void replace(
             List<ExecutionRecordStep> steps,
             String stepId,
@@ -432,6 +465,7 @@ public class AiActionService {
         }
     }
 
+    /** 复制步骤元数据并替换本次状态、快照、输出和摘要。 */
     private ExecutionRecordStep withStep(
             ExecutionRecordStep step,
             Map<String, Object> arguments,
@@ -454,21 +488,29 @@ public class AiActionService {
         );
     }
 
+    /** 从内存审计日志中筛选当前执行的事件快照。 */
     private List<com.orderly.host.event.ExecutionEvent> eventsFor(String executionId) {
         return journal.snapshot().stream()
                 .filter(event -> executionId.equals(event.planId()))
                 .toList();
     }
 
+    /** 返回可审计的非空异常摘要。 */
     private String safeMessage(RuntimeException exception) {
         String message = exception.getMessage();
         return message == null || message.isBlank() ? "执行失败" : message;
     }
 
+    /** 仅为 AI 计划与 AI 直执生成日志中的来源文案。 */
     private String actionSourceLabel(String origin) {
         return "AI_PLAN".equals(origin) ? "AI 计划" : "AI 直执";
     }
 
+    /**
+     * AI 提交的一项 Action 调用。
+     *
+     * <p>构造时将参数做不可变顶层复制，不在此处解释结构化引用或判断风险。</p>
+     */
     public record ActionCall(
             String moduleId,
             String actionId,
@@ -479,6 +521,7 @@ public class AiActionService {
         }
     }
 
+    /** 预览中的单步元数据，不包含快照、输出或执行副作用。 */
     public record PreviewStep(
             String moduleId,
             String actionId,
@@ -492,6 +535,7 @@ public class AiActionService {
         }
     }
 
+    /** 已校验 Action 批次及最高风险，供确认策略使用。 */
     public record Preview(
             List<ActionCall> actions,
             List<PreviewStep> steps,

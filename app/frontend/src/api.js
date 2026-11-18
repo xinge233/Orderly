@@ -1,3 +1,20 @@
+/**
+ * Orderly 宿主的 HTTP 与 SSE 客户端。
+ *
+ * 职责：统一 JSON 请求、multipart 上传、服务端错误归一化和执行事件订阅，并为各资源端点
+ * 提供薄封装。该模块不解释授权策略，也不替代宿主校验；它只把网络层事实转换为调用方可
+ * 稳定处理的 `ApiError` 或响应数据。
+ *
+ * 副作用：除 URL 构造函数外，公开方法通常会发起网络请求；`streamEvents()` 还会创建
+ * `EventSource`，调用方必须保存并关闭返回的订阅。
+ */
+
+/**
+ * 携带 HTTP 状态和原始响应体的客户端错误。
+ *
+ * 网络层没有收到 HTTP 响应时 `status` 为 0；`payload` 保留服务端原始 JSON、文本或底层
+ * 异常，便于上层展示或诊断，但调用方不应把其中的文本当作可信 HTML。
+ */
 export class ApiError extends Error {
     /**
      * @param {string} message 错误消息
@@ -11,6 +28,12 @@ export class ApiError extends Error {
     }
 }
 
+/**
+ * 面向 Orderly 宿主 API 的轻量客户端。
+ *
+ * 构造函数可注入 `fetch` 和 Base URL 以支持测试或同源部署。实例方法不缓存业务数据，
+ * 因此多次调用会反映宿主当前状态；需要一致快照的调用方应自行组合请求并处理竞态。
+ */
 export class OrderlyApi {
     #fetch;
     #baseUrl;
@@ -35,6 +58,10 @@ export class OrderlyApi {
      * @param {string} path 路径
      * @param {{method?: string, body?: unknown, signal?: AbortSignal, headers?: Record<string, string>}} options 选项
      * @returns {Promise<unknown>} 响应
+     * @throws {ApiError | Error} 网络失败或非 2xx 时抛出 `ApiError`；主动取消时保留原始 AbortError
+     *
+     * 响应体先按文本读取：能解析为 JSON 时返回对象，否则保留文本，避免吞掉宿主的非标准错误页。
+     * 网络异常统一包装为可展示的本地服务提示，但 AbortError 原样上抛，因为取消不是连接故障。
      */
     async request(path, { method = "GET", body, signal, headers = {} } = {}) {
         let response;
@@ -69,6 +96,7 @@ export class OrderlyApi {
         }
 
         if (!response.ok) {
+            // 优先使用宿主结构化错误；没有可用消息时仍附带 HTTP 状态，避免空白错误提示。
             const message = payload && typeof payload === "object"
                 ? payload.message ?? payload.error ?? `请求失败（${response.status}）`
                 : String(payload || `请求失败（${response.status}）`);
@@ -186,6 +214,7 @@ export class OrderlyApi {
     }
 
     moduleDataUrl(moduleId, relativePath) {
+        // 逐段编码而不是编码整个路径，既保留数据目录的层级分隔符，又消除各段中的保留字符。
         const encoded = String(relativePath ?? "")
             .split("/")
             .filter(Boolean)
@@ -194,6 +223,21 @@ export class OrderlyApi {
         return `${this.#baseUrl}/api/modules/${encodeURIComponent(moduleId)}/data/${encoded}`;
     }
 
+    /**
+     * 以 multipart/form-data 上传文件并执行模块动作。
+     *
+     * @param {string} moduleId 模块 ID
+     * @param {string} actionId 动作 ID
+     * @param {unknown} argumentsValue 动作参数
+     * @param {Blob | File} file 上传文件
+     * @param {boolean} [confirmed=true] 是否已由界面取得用户确认
+     * @param {{signal?: AbortSignal}} [options] 请求选项
+     * @returns {Promise<unknown>} 宿主响应
+     * @throws {ApiError | Error} 网络失败或非 2xx 时抛出；主动取消保留 AbortError
+     *
+     * 副作用：读取 `file` 并发送 multipart 请求。请求体刻意不设置 `Content-Type`，让浏览器
+     * 生成包含 boundary 的正确头；确认标志只是提交事实，最终风险判定仍由宿主执行。
+     */
     async executeModuleActionWithFile(
         moduleId,
         actionId,
@@ -241,6 +285,7 @@ export class OrderlyApi {
             }
         }
         if (!response.ok) {
+            // 上传与普通 JSON 请求采用同一错误语义，调用方无需区分传输形态即可展示消息。
             const message = payload && typeof payload === "object"
                 ? payload.message ?? payload.error ?? `上传失败（${response.status}）`
                 : String(payload || `上传失败（${response.status}）`);
@@ -252,6 +297,20 @@ export class OrderlyApi {
         return payload;
     }
 
+    /**
+     * 执行普通模块动作。
+     *
+     * @param {string} moduleId 模块 ID
+     * @param {string} actionId 动作 ID
+     * @param {object} [argumentsValue={}] 动作参数
+     * @param {boolean} [confirmed=true] 是否已由界面取得用户确认
+     * @param {object} [options={}] 请求选项
+     * @returns {Promise<unknown>} 宿主响应
+     * @throws {ApiError | Error} 请求被拒绝、网络失败或主动取消时抛出
+     *
+     * 原始值、函数和空值会收敛为空对象；数组仍是 JavaScript 对象，因此原样提交给宿主
+     * 校验。该方法不自行确认风险，宿主仍会复核确认状态、参数契约、快照与审计要求。
+     */
     executeModuleAction(moduleId, actionId, argumentsValue = {}, confirmed = true, options = {}) {
         return this.request(
             `/api/modules/${encodeURIComponent(moduleId)}/actions/${encodeURIComponent(actionId)}`,
@@ -268,6 +327,19 @@ export class OrderlyApi {
         );
     }
 
+    /**
+     * 调用模块只读 Query。
+     *
+     * @param {string} moduleId 模块 ID
+     * @param {string} queryId 查询 ID
+     * @param {object} [parameters={}] 查询参数
+     * @param {object} [options] 请求选项
+     * @returns {Promise<unknown>} 查询结果
+     * @throws {ApiError | Error} 请求被拒绝、网络失败或主动取消时抛出
+     *
+     * 空值与空字符串参数被省略，防止可选过滤条件被序列化为 `"null"` 或 `""`。参数编码
+     * 只表达查询意图，不构成只读授权；模块启用状态和 Query 契约仍由宿主校验。
+     */
     queryModule(moduleId, queryId, parameters = {}, options) {
         const search = new URLSearchParams();
         Object.entries(parameters).forEach(([key, value]) => {
@@ -394,6 +466,10 @@ export class OrderlyApi {
      *
      * @param {{onEvent: (event: object) => void, onError?: (error: Event) => void}} handlers 回调
      * @returns {{close: () => void, source: EventSource | null}} 订阅
+     *
+     * 副作用：创建长连接并持续调用 `onEvent`；调用方必须在页面卸载或重新连接前调用
+     * `close()`。事件 JSON 或 `onEvent` 回调抛出的异常都会被当前处理块忽略；非 JSON
+     * 心跳不会污染审计时间线，但回调副作用失败也不会由本方法报告。
      */
     streamEvents({ onEvent, onError }) {
         if (typeof globalThis.EventSource !== "function") {

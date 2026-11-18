@@ -1,10 +1,25 @@
 ﻿[CmdletBinding()]
+# 用途：
+#   对已启动的 Orderly 宿主执行端到端 HTTP 烟测，覆盖模块/主题目录、通用查询、AI Action 和计划确认门禁。
+#
+# 输入：
+#   -BaseUrl 指定目标宿主，默认 http://127.0.0.1:8080；目标实例必须已配置并启动 Python AI 服务。
+#
+# 副作用：
+#   会切换宿主的计划功能开关，并在应用沙箱中顺序创建、列出和移入回收站一个随机目录，
+#   随后通过执行记录回滚。脚本结束前会恢复初始计划开关；若中途失败，服务端可能保留当时的状态。
+#
+# 安全边界：
+#   默认只访问本机回环实例，但脚本不自行验证自定义 BaseUrl 是否回环。
+#   所有写动作仍必须由宿主风险确认、沙箱、快照、审计和回滚规则担保，烟测不绕过这些门禁。
+
 param(
     [string]$BaseUrl = "http://127.0.0.1:8080"
 )
 
 $ErrorActionPreference = "Stop"
 
+# 先验证健康快照，避免后续测试把“服务不可达”误报成单个业务接口错误。
 $health = Invoke-RestMethod -Uri "$BaseUrl/api/health" -Method Get
 if ($health.status -ne "UP") {
     throw "健康检查失败：$($health | ConvertTo-Json -Compress)"
@@ -26,11 +41,13 @@ if ($features.planningEnabled -isnot [bool]) {
 if ($features.aiPlanEnabled -isnot [bool]) {
     throw "/api/system/features 缺少布尔 aiPlanEnabled。"
 }
+# 记录初始开关，后面临时关闭旧计划功能测试 409，并在正常完成路径恢复原值。
 $initialPlanningEnabled = [bool]$features.planningEnabled
 Invoke-RestMethod -Uri "$BaseUrl/api/system/features/planning" -Method Put `
     -ContentType "application/json" `
     -Body (@{ enabled = $false } | ConvertTo-Json) | Out-Null
 
+# 失败响应状态要单独捕获：预期 409 是测试结果，不应被 Invoke-RestMethod 当成脚本崩溃。
 $disabledPlanStatus = $null
 try {
     Invoke-RestMethod -Uri "$BaseUrl/api/plans" -Method Post `
@@ -58,6 +75,7 @@ foreach ($module in $modules) {
     }
 }
 
+# 系统模块与业务模块分开断言，防止 module_control 同时泄漏到可停用/可排序的业务目录。
 $systemModulesResponse = Invoke-RestMethod -Uri "$BaseUrl/api/system-modules" -Method Get
 $systemModules = @($systemModulesResponse | ForEach-Object { $_ })
 $controlModules = @($systemModules | Where-Object { $_.moduleId -eq "module_control" })
@@ -78,6 +96,7 @@ if (@($preferences.sidebarOrder) -notcontains "module_control") {
     throw "sidebarOrder 未包含系统模块 module_control。"
 }
 
+# 主题检查覆盖摘要、详情、声明资源可达性、缓存语义和路径隐藏，验证目录主题而非 classpath 静态列表。
 $themesResponse = Invoke-RestMethod -Uri "$BaseUrl/api/themes" -Method Get
 $themes = @($themesResponse.items | ForEach-Object { $_ })
 $themeIds = @($themes | ForEach-Object { $_.id })
@@ -130,6 +149,7 @@ foreach ($themeSummary in $themes) {
     }
 }
 
+# 通用查询只自动执行无必填参数的接口；有参数的查询由模块测试和调用方负责，避免烟测伪造业务输入。
 $queryCount = 0
 $firstExample = $null
 foreach ($module in $modules) {
@@ -155,6 +175,7 @@ foreach ($module in $modules) {
     }
 }
 
+# 学习界面模块是可选只读扩展：存在时校验负载诚实性和引用完整性，不在受测安装中时跳过。
 $optionalStudyQueries = [ordered]@{
     module_fs = "fs.materials"
     module_study_assistant = "study.assistant.read"
@@ -211,6 +232,7 @@ foreach ($entry in $optionalStudyQueries.GetEnumerator()) {
     }
 }
 
+# AI 设置响应不得包含凭据；这里只验证固定默认值和布尔能力，不输入或持久化 API Key。
 $aiExecutionId = $null
 $aiSettings = Invoke-RestMethod -Uri "$BaseUrl/api/ai/settings" -Method Get
 if ($aiSettings.PSObject.Properties.Name -contains "apiKey") {
@@ -225,9 +247,11 @@ if ($aiSettings.allowSendQueryResultsToModel -isnot [bool]) {
     throw "AI 设置缺少布尔 allowSendQueryResultsToModel。"
 }
 
+# 文件模块存在时构造真实但隔离的写入/回滚链；模块缺失时由通用模块测试负责零模块场景。
 if ($moduleIds -contains "module_fs") {
     $smokeDirectory = "smoke-" + [guid]::NewGuid().ToString("N")
 
+    # 先证明未确认 WRITE 和静态禁止的 Action 都被宿主拒绝，再执行允许的三步 Action 数组。
     $unconfirmedAiStatus = $null
     try {
         Invoke-RestMethod -Uri "$BaseUrl/api/ai/actions/execute" -Method Post `
@@ -266,6 +290,7 @@ if ($moduleIds -contains "module_fs") {
         throw "禁止 AI 调用的 Action 未被 409 拒绝，实际状态：$blockedAiStatus"
     }
 
+    # 数组使用前序 Action 输出引用，按创建目录、列出、移入回收站顺序执行；随后验证持久化和逆序回滚。
     $aiResult = Invoke-RestMethod -Uri "$BaseUrl/api/ai/actions/execute" -Method Post `
         -ContentType "application/json" `
         -Body (@{
@@ -324,6 +349,7 @@ if ($moduleIds -contains "module_fs") {
     }
 }
 
+# AI 场景完成后重新启用计划，测试旧计划 API；最终再恢复调用前的用户设置。
 Invoke-RestMethod -Uri "$BaseUrl/api/system/features/planning" -Method Put `
     -ContentType "application/json" `
     -Body (@{ enabled = $true } | ConvertTo-Json) | Out-Null
@@ -340,6 +366,7 @@ if ($modules.Count -gt 0 -and $plan.kind -notin @("PLAN", "QUESTION")) {
 }
 
 if ($plan.kind -eq "PLAN") {
+    # 只发送未确认请求验证 409，不确认执行计划，避免烟测产生计划说明之外的业务变更。
     $unconfirmedStatus = $null
     try {
         Invoke-RestMethod -Uri "$BaseUrl/api/plans/$([uri]::EscapeDataString([string]$plan.planId))/confirm" -Method Post `
@@ -353,16 +380,19 @@ if ($plan.kind -eq "PLAN") {
     }
 }
 
+# 正常路径恢复原开关，避免烟测改变用户下一次启动看到的功能状态。
 Invoke-RestMethod -Uri "$BaseUrl/api/system/features/planning" -Method Put `
     -ContentType "application/json" `
     -Body (@{ enabled = $initialPlanningEnabled } | ConvertTo-Json) | Out-Null
 
+# 刷新只验证响应契约；当前烟测不替换、卸载或热加载已有模块。
 $refresh = Invoke-RestMethod -Uri "$BaseUrl/api/system/modules/refresh" -Method Post
 if ($null -eq $refresh.added -or $null -eq $refresh.issues -or
         [string]::IsNullOrWhiteSpace([string]$refresh.revision)) {
     throw "模块刷新响应缺少 added、issues 或 revision。"
 }
 
+# 到达这里说明所有断言和回滚均成功；明确的零退出码供门禁脚本判断。
 Write-Host "HTTP 烟测通过：JDK 21、计划开关、AI Action 数组顺序执行与输出引用、风险确认、Action AI 调用限制、持久化记录与回滚、业务/系统模块目录、模块偏好、模块 UI、通用查询、目录主题、刷新响应和未执行计划确认；业务测试数据已回滚。"
 Write-Host "已执行无必填参数的通用查询数量：$queryCount"
 

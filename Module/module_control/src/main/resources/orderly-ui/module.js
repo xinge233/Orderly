@@ -1,3 +1,13 @@
+/**
+ * 模组设置系统视图。
+ *
+ * 职责：管理业务模块启停、管理顺序、模块设置和 Action/Query 的动态 AI 调用状态。
+ * 依赖：orderly-ui/module.json 只声明容器视图，不提供 Query 或 Action；
+ * 宿主仅为受保护的 module_control 注入 context.systemAdmin，所有管理调用都经该接口完成。
+ * 隔离：单个管理 API、刷新或保存失败时保留当前可用快照并在本视图内报错；
+ * 视图移除时取消延迟刷新和框架事件订阅，不触碰其他模块 DOM 或内部实现。
+ */
+
 const SETTING_TYPES = new Set(["boolean", "select", "integer", "text"]);
 const MODULE_CONTROL_ROLE = "MODULE_CONTROL";
 
@@ -200,6 +210,7 @@ function normalizeModule(raw, index, sharedValues) {
 }
 
 function adminMethod(admin, ...names) {
+    // 按宿主公开的兼容方法名解析能力；缺失方法由具体交互显示“尚未接入”，不猜测本地替代实现。
     for (const name of names) {
         if (typeof admin?.[name] === "function") {
             return admin[name].bind(admin);
@@ -212,6 +223,13 @@ function runtimeMessage(error, fallback) {
     return text(error?.message, fallback);
 }
 
+/**
+ * 挂载模组设置视图。
+ *
+ * @param {HTMLElement} root 框架分配的模块视图根节点。
+ * @param {object} context 宿主 mount context；仅 module_control 会获得可选 systemAdmin 管理 API。
+ * @returns {Promise<void>} 初始快照读取和首屏渲染完成后结束。
+ */
 export default async function mount(root, context) {
     const make = context.element;
     const admin = context.systemAdmin;
@@ -260,6 +278,7 @@ export default async function mount(root, context) {
         expandedIds: new Set(),
         interfaceState: normalizeInterfaceState({})
     };
+    // 事件可能在短时间内成批到达，单一 timer 用于合并刷新并保证视图销毁时可取消。
     let interfaceRefreshTimer = null;
 
     function setStatus(message, kind = "") {
@@ -394,6 +413,7 @@ export default async function mount(root, context) {
     }
 
     function scheduleInterfaceRefresh() {
+        // 120ms 防抖把连续框架事件合并成一次读取，避免重复重建同一管理列表。
         if (!getInterfaceState) return;
         if (interfaceRefreshTimer) {
             clearTimeout(interfaceRefreshTimer);
@@ -459,6 +479,7 @@ export default async function mount(root, context) {
             render();
             return;
         }
+        // 先乐观更新当前 DOM 顺序以保持拖动反馈，再由宿主返回值或权威快照确认。
         state.modules = moduleIds
             .map((id, index) => {
                 const module = state.modules.find((item) => item.moduleId === id);
@@ -475,6 +496,7 @@ export default async function mount(root, context) {
             }
             setStatus("模组顺序已保存。", "safe");
         } catch (error) {
+            // 保存失败恢复操作前顺序；成功和失败都在重渲染后把焦点送回发起拖动的模块。
             const byId = new Map(state.modules.map((module) => [module.moduleId, module]));
             state.modules = previous.map((id) => byId.get(id)).filter(Boolean);
             setStatus(runtimeMessage(error, "模组顺序保存失败"), "error");
@@ -484,6 +506,7 @@ export default async function mount(root, context) {
     }
 
     function finishPointerOrder(moduleId, cancelled = false) {
+        // 最终顺序以当前行 DOM 为准；取消时直接重渲染，避免把预览位置误提交给宿主。
         const rows = [...root.querySelectorAll("[data-module-id]")];
         rows.forEach((row) => {
             row.classList.remove("is-dragging", "is-drop-target");
@@ -502,6 +525,7 @@ export default async function mount(root, context) {
     function bindPointerOrder(handle, row, moduleId) {
         let pointerId = null;
 
+        // 拖动期间临时使用文档级 pointer 监听，鼠标移出手柄后仍可排序，结束或取消时统一移除。
         const move = (event) => {
             if (pointerId !== event.pointerId) return;
             const rows = [...root.querySelectorAll("[data-module-id]")];
@@ -555,6 +579,7 @@ export default async function mount(root, context) {
     }
 
     function bindKeyboardOrder(handle, moduleId) {
+        // Alt+方向键提供与指针拖动等价的排序能力，并复用同一持久化和焦点恢复路径。
         handle.addEventListener("keydown", (event) => {
             if (!event.altKey || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
             event.preventDefault();
@@ -597,6 +622,7 @@ export default async function mount(root, context) {
     function openSettings(module) {
         state.selectedId = module.moduleId;
         state.subpage = "settings";
+        // 编辑从宿主持久化值复制成独立草稿，保存成功后才以宿主返回值更新模块快照。
         state.draft = {};
         module.settings.forEach((field) => {
             const current = module.values[field.key];
@@ -664,6 +690,7 @@ export default async function mount(root, context) {
         );
         const inUse = iface.kind === "action"
             && actionIsInUse(state.interfaceState, module.moduleId, iface.id);
+        // 静态 aiCallable=false 是不可覆盖上限；执行中的 Action 也只显示锁定状态。
         const checked = staticEnabled && dynamicEnabled;
 
         const title = make("strong", "module-control-ui-interface__title", iface.title);
@@ -1054,6 +1081,7 @@ export default async function mount(root, context) {
     }
 
     function render() {
+        // 全量重建当前视图是本地状态模型的一部分；需要连续操作的控件在调用处显式恢复焦点。
         const panel = make("section", "module-control-ui-panel");
         const header = make("header", "module-control-ui-header");
         header.append(
@@ -1078,6 +1106,7 @@ export default async function mount(root, context) {
     await reload();
     if (typeof context.subscribeEvents === "function") {
         let unsubscribe = null;
+        // 框架事件只触发接口状态轻量刷新；根节点脱离文档后取消 timer 和订阅，阻止死后重渲染。
         unsubscribe = context.subscribeEvents(() => {
             if (!root.isConnected) {
                 if (interfaceRefreshTimer) {

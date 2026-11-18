@@ -24,7 +24,13 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-/** 计划生成、保存和前置校验入口。 */
+/**
+ * 旧版计划的内存生成、保存和前置校验入口。
+ *
+ * <p>服务只在计划功能开启时调用本地规则计划器，把契约中已安装且启用的业务 Action
+ * 转换为可审查步骤。这里不会执行 Action；确认、快照、回滚和审计由执行服务负责。
+ * 计划对象仅保存在当前进程内，重启后不会恢复。</p>
+ */
 @Service
 public class PlanService {
 
@@ -36,6 +42,7 @@ public class PlanService {
     private final ActionExecutionCore executionCore;
     private final ConcurrentMap<String, ExecutionPlan> plans = new ConcurrentHashMap<>();
 
+    /** 注入计划器、契约索引、模块治理、功能开关和执行参数校验依赖。 */
     public PlanService(
             LocalRulePlanner planner,
             ContractCatalog catalog,
@@ -52,11 +59,25 @@ public class PlanService {
         this.executionCore = executionCore;
     }
 
+    /**
+     * 在计划功能开启时为一个目标创建新的预览计划。
+     *
+     * <p>读取通过模块治理协调器执行，避免与模块启停或刷新提交并发。成功时计划会
+     * 写入当前进程内存并返回视图；功能关闭时抛出冲突错误。重复调用即使目标相同也会
+     * 生成不同计划，因此该方法不是幂等操作，但不会执行任何真实 Action。</p>
+     */
     public PlanView create(String goal) {
         features.requirePlanningEnabled();
         return coordinator.read(() -> createEnabled(goal));
     }
 
+    /**
+     * 在已持有模块治理读取许可时完成规则匹配和契约校验。
+     *
+     * <p>每一步必须对应已安装、已启用且允许 AI 调用的业务 Action；参数先由统一执行
+     * 核心验证，再串联为无环依赖链。无法匹配的动作转换为 {@code QUESTION} 计划，
+     * 已匹配但参数或 DAG 非法的结果直接失败。成功或澄清结果都会写入内存计划表。</p>
+     */
     private PlanView createEnabled(String goal) {
         PlannerResult result = planner.draft(goal);
         List<ExecutionStep> steps = new ArrayList<>();
@@ -118,6 +139,12 @@ public class PlanService {
         return PlanView.from(plan);
     }
 
+    /**
+     * 保存一个不可执行的澄清结果。
+     *
+     * <p>结果使用 {@code QUESTION} 类型和空步骤，假设中明确标注本地规则计划器未连接
+     * 外部模型。方法只写入计划表，不产生工作区或模块状态变更。</p>
+     */
     private PlanView saveQuestion(String goal, String message) {
         String id = java.util.UUID.randomUUID().toString();
         ExecutionPlan plan = new ExecutionPlan(
@@ -135,6 +162,12 @@ public class PlanService {
         return PlanView.from(plan);
     }
 
+    /**
+     * 读取仍存在于当前进程中的计划。
+     *
+     * <p>缺失或重启后失效的计划抛出 404 业务异常。返回对象是宿主内部可变实例，只应
+     * 在持有相应治理/执行协调许可的宿主服务中使用。</p>
+     */
     public ExecutionPlan require(String id) {
         ExecutionPlan plan = plans.get(id);
         if (plan == null) {
@@ -143,10 +176,17 @@ public class PlanService {
         return plan;
     }
 
+    /** 按 ID 查找进程内计划；不存在时返回空，不创建占位计划。 */
     public Optional<ExecutionPlan> find(String id) {
         return Optional.ofNullable(plans.get(id));
     }
 
+    /**
+     * 返回按创建时间倒序排列的计划视图。
+     *
+     * <p>方法读取并发映射的当前值，不修改计划或状态。并发创建期间得到的是近实时集合，
+     * 不承诺跨调用的一致快照。</p>
+     */
     public List<PlanView> list() {
         return plans.values().stream()
                 .sorted(java.util.Comparator.comparing(ExecutionPlan::createdAt).reversed())
@@ -154,6 +194,12 @@ public class PlanService {
                 .toList();
     }
 
+    /**
+     * 校验步骤 ID 唯一、依赖存在且图无环。
+     *
+     * <p>该方法只构建临时图，不修改步骤或计划。重复 ID、悬空依赖或检测到环时抛出
+     * 参数异常，由调用链拒绝保存该计划。</p>
+     */
     private void validateDag(List<ExecutionStep> steps) {
         Map<String, ExecutionStep> byId = new LinkedHashMap<>();
         Map<String, Integer> inDegree = new HashMap<>();

@@ -10,9 +10,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** 读取并校验模块自身 classpath 内的高等数学知识图谱。 */
+/**
+ * {@code module_study_map} 自带知识图谱的只读目录。
+ *
+ * <p>本类只读取本模块 JAR 内的 {@code orderly-data/module_study_map.json}，校验数据归属、只读
+ * 标记、节点来源、边端点与 ID 唯一性。它不访问工作区、其他模块集合、任意个人目录或宿主
+ * 数据库，也不提供写入、删除、快照或回滚能力。校验失败必须阻止展示，不能静默丢弃坏节点。</p>
+ */
 final class StudyMapCatalog {
 
+    /** 仅属于本模块 JAR 的固定知识图谱资源。 */
     private static final String RESOURCE_PATH = "/orderly-data/module_study_map.json";
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
@@ -50,9 +57,17 @@ final class StudyMapCatalog {
     private static final Set<String> NODE_CATEGORIES = Set.of("模块", "概念", "方法", "公式", "练习");
     private static final Set<String> EDGE_KINDS = Set.of("contains", "depends", "supports", "applies");
 
+    /** 本目录独占的 JSON 解析器。 */
     private final ObjectMapper objectMapper = new ObjectMapper();
+    /** 只在完整校验成功后保存的只读文档缓存。 */
     private Map<String, Object> cached;
 
+    /**
+     * 加载并校验知识图谱文档。
+     *
+     * <p>首次成功后缓存根文档，后续查询复用同一只读数据。资源缺失、解析失败或结构不符合契约
+     * 时抛出明确异常，不退回空图、其他模块数据或工作区文件。</p>
+     */
     synchronized Map<String, Object> load() {
         if (cached != null) {
             return cached;
@@ -70,6 +85,7 @@ final class StudyMapCatalog {
         }
     }
 
+    /** 校验根元信息、来源、节点、边及声明节点数量的一致性。 */
     private void validate(Map<String, Object> document) {
         requireExactFields(document, ROOT_FIELDS, "根节点");
         requireInteger(document, "schemaVersion", "根节点", 1);
@@ -100,6 +116,7 @@ final class StudyMapCatalog {
         }
     }
 
+    /** 校验来源字段、允许类型和 ID 唯一性，返回节点可引用的来源集合。 */
     private Set<String> validateSources(List<?> sources) {
         Set<String> ids = new HashSet<>();
         for (int index = 0; index < sources.size(); index++) {
@@ -117,6 +134,12 @@ final class StudyMapCatalog {
         return ids;
     }
 
+    /**
+     * 校验节点字段、分类、层级、顺序、ID 唯一性和来源引用。
+     *
+     * <p>节点必须位于同一文档声明的来源范围内，且至少存在一个节点，防止空知识图谱被当作有效
+     * 内容展示。</p>
+     */
     private Set<String> validateNodes(List<?> nodes, Set<String> sourceIds) {
         if (nodes.isEmpty()) {
             throw invalid("payload.nodes 至少需要一个节点");
@@ -144,6 +167,7 @@ final class StudyMapCatalog {
         return ids;
     }
 
+    /** 校验节点引用的来源 ID 均为非空且已在根文档声明。 */
     private void validateNodeSources(List<?> sourceIds, Set<String> availableSources, String scope) {
         for (int index = 0; index < sourceIds.size(); index++) {
             Object raw = sourceIds.get(index);
@@ -156,6 +180,11 @@ final class StudyMapCatalog {
         }
     }
 
+    /**
+     * 校验边的 ID、允许类型以及源/目标节点引用。
+     *
+     * <p>边只能连接本文档已声明的节点，防止悬空关系或跨模块节点混入。</p>
+     */
     private void validateEdges(List<?> edges, Set<String> nodeIds) {
         Set<String> ids = new HashSet<>();
         for (int index = 0; index < edges.size(); index++) {
@@ -173,6 +202,7 @@ final class StudyMapCatalog {
         }
     }
 
+    /** 验证节点或边引用存在，并把错误限定到当前对象字段。 */
     private void requireReference(
             Map<String, Object> value,
             String field,
@@ -185,6 +215,7 @@ final class StudyMapCatalog {
         }
     }
 
+    /** 注册对象 ID；重复时拒绝整份知识图谱。 */
     private void requireUniqueId(Map<String, Object> value, String scope, Set<String> ids) {
         String id = requireString(value, "id", scope);
         if (!ids.add(id)) {
@@ -192,6 +223,11 @@ final class StudyMapCatalog {
         }
     }
 
+    /**
+     * 要求对象字段集合与契约完全一致。
+     *
+     * <p>错误信息分别列出缺失和多余字段，避免未知字段被静默忽略。</p>
+     */
     private void requireExactFields(
             Map<String, Object> value,
             Set<String> expected,
@@ -206,6 +242,7 @@ final class StudyMapCatalog {
         }
     }
 
+    /** 要求字段为非空白字符串，并返回原值供引用和枚举校验。 */
     private String requireString(Map<String, Object> value, String field, String scope) {
         Object raw = value.get(field);
         if (!(raw instanceof String text) || text.isBlank()) {
@@ -214,6 +251,7 @@ final class StudyMapCatalog {
         return text;
     }
 
+    /** 要求字段为非负整数。 */
     private int requireInteger(Map<String, Object> value, String field, String scope) {
         Object raw = value.get(field);
         if (!(raw instanceof Integer number) || number < 0) {
@@ -222,6 +260,7 @@ final class StudyMapCatalog {
         return number;
     }
 
+    /** 要求整数字段等于当前文档版本或固定值。 */
     private void requireInteger(
             Map<String, Object> value,
             String field,
@@ -233,10 +272,12 @@ final class StudyMapCatalog {
         }
     }
 
+    /** 从对象字段取得数组。 */
     private List<?> requireList(Map<String, Object> value, String field, String scope) {
         return requireList(value.get(field), scope + "." + field);
     }
 
+    /** 要求原值为数组。 */
     private List<?> requireList(Object raw, String scope) {
         if (!(raw instanceof List<?> list)) {
             throw invalid(scope + " 必须是数组");
@@ -244,6 +285,11 @@ final class StudyMapCatalog {
         return list;
     }
 
+    /**
+     * 要求原值为字段名均为字符串的对象。
+     *
+     * <p>转换前显式检查键类型，避免后续按字符串字段名读取时发生隐式转换。</p>
+     */
     private Map<String, Object> requireObject(Object raw, String scope) {
         if (!(raw instanceof Map<?, ?> map)) {
             throw invalid(scope + " 必须是对象");
@@ -258,6 +304,7 @@ final class StudyMapCatalog {
         return typed;
     }
 
+    /** 构造带 knowledge-map 契约前缀的数据错误，交由查询调用方报告给宿主。 */
     private IllegalStateException invalid(String detail) {
         return new IllegalStateException("知识图谱数据不符合 knowledge-map 契约：" + detail);
     }

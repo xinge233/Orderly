@@ -1,3 +1,19 @@
+/**
+ * 学习助手只读工作台视图。
+ *
+ * 职责：展示模块自带的周任务、示例对话、工具轨迹和引用资料，并把学习目标填入宿主命令入口。
+ * 依赖：orderly-ui/module.json 声明视图与卡片；唯一数据查询为 study.assistant.read；
+ * 宿主 mount context 提供 module、element、icon、query、fillCommand 与可选 toast。
+ * 隔离：查询失败或负载不完整时只替换本视图的错误态；示例对话和禁用按钮不会伪造外部模型能力。
+ */
+
+/**
+ * 挂载学习工作台。
+ *
+ * @param {HTMLElement} root 框架分配的模块视图根容器。
+ * @param {object} context 宿主 mount context，提供模块元数据、只读查询和命令填充能力。
+ * @returns {Promise<void>} 首次查询及局部渲染完成后结束。
+ */
 export default async function mount(root, context) {
     const make = context.element;
     const shell = make("div", "study-ui-shell");
@@ -29,6 +45,7 @@ export default async function mount(root, context) {
 }
 
 function renderWorkbench(shell, data, context, make) {
+    // 模块负载和来源映射均按可选字段归一化，避免单项缺失阻断其余只读区块。
     const payload = data?.payload ?? {};
     const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
     const conversation = Array.isArray(payload.conversation) ? payload.conversation : [];
@@ -54,6 +71,7 @@ function renderWorkbench(shell, data, context, make) {
         "study-ui-badge study-ui-badge--safe",
         payload.planner === "local-rules" ? "本地规则" : String(payload.planner || "规划方式未声明")
     );
+    // 外部模型状态只按数据显式声明展示；未声明时保持“未验证”，不推断已连接。
     const modelBadge = make(
         "span",
         "study-ui-badge",
@@ -67,6 +85,7 @@ function renderWorkbench(shell, data, context, make) {
     );
 
     const headerActions = make("div", "study-ui-header-actions");
+    // 记录能力尚未实现，使用原生禁用按钮明确降级，而不是制造可点击但无行为的假动作。
     const recordButton = make("button", "study-ui-record-button");
     recordButton.type = "button";
     recordButton.disabled = true;
@@ -198,6 +217,7 @@ function conversationSection(conversation, context, make) {
     const status = make("p", "study-ui-composer-status");
     status.setAttribute("aria-live", "polite");
     composer.append(label, input, submit, status);
+    // 表单不直接执行学习动作；校验非空后仅把目标交给宿主命令入口和计划审查流程。
     composer.addEventListener("submit", (event) => {
         event.preventDefault();
         const command = input.value.trim();

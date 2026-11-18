@@ -1,3 +1,8 @@
+/*
+ * 自包含 ownership：module_control 作为系统模块，仅定义 .module-control-ui-* 治理界面。
+ * 主题语义变量负责色彩、字体、间距和时长；gentle/minimal/none 三档沿用框架令牌与 safety 层。
+ * 桌面以固定高度的可滚动治理面板呈现，手机端压缩行布局并让接口操作换行，状态保持可达。
+ */
 .module-control-ui-panel {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
@@ -484,6 +489,7 @@
     padding-top: var(--space-2);
 }
 
+/* 手机端由桌面整行治理改为可回流网格，但所有开关、说明和焦点顺序继续保留。 */
 @media (max-width: 640px) {
     .module-control-ui-panel {
         height: auto;
@@ -536,6 +542,7 @@
     }
 }
 
+/* 显式关闭档兜底：仅停用本模块过渡，按钮、开关和治理行的状态信息仍完整可见。 */
 [data-motion="none"] .module-control-ui-button,
 [data-motion="none"] .module-control-ui-square,
 [data-motion="none"] .module-control-ui-drag,
