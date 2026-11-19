@@ -9,6 +9,15 @@ rem 错误传播：保存转发命令的 ERRORLEVEL，非零时暂停以便查�
 setlocal
 cd /d "%~dp0"
 
+rem 从 PowerShell 7 等宿主启动时，继承的 PSModulePath 可能让 Windows PowerShell
+rem 无法自动加载 Get-FileHash 等内置模块；在 setlocal 作用域内补回系统模块目录。
+set "WINDOWS_POWERSHELL_MODULES=%ProgramFiles%\WindowsPowerShell\Modules;%SystemRoot%\System32\WindowsPowerShell\v1.0\Modules"
+if defined PSModulePath (
+  set "PSModulePath=%WINDOWS_POWERSHELL_MODULES%;%PSModulePath%"
+) else (
+  set "PSModulePath=%WINDOWS_POWERSHELL_MODULES%"
+)
+
 if not defined JAVA_HOME (
   for /d %%J in ("C:\Program Files\Java\jdk-21*" "C:\Program Files\Eclipse Adoptium\jdk-21*" "%USERPROFILE%\.jdks\*21*") do (
     if not defined JAVA_HOME set "JAVA_HOME=%%~fJ"
