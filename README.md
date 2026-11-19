@@ -94,9 +94,9 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 
 `scripts/doc-gate.ps1` 是只读快速门禁，不访问网络，不启动 Java、Maven 或 Node，也不写运行数据。它解析 `scripts/*.ps1` 的 PowerShell AST，检查关键规则、契约样例、上下文配置、仓库地图脚本引用，以及 Git 跟踪和未跟踪未忽略 Markdown 的合并冲突标记和本地相对链接。已跟踪但工作区删除的普通 Markdown 会跳过正文读取，但其他文档指向它的本地链接仍会失败，关键文件仍必须存在。`scripts/test-build-parallel.ps1` 不依赖 Pester，在 `target` 下用临时 Maven 包装器验证默认串行、显式并发、隔离仓库、失败退出码、原始日志、失败后产物不变和严格离线 `-o`。
 
-快速路径只接受明确的快速白名单 Markdown 文档：根 `AGENTS.md`、`README.md`、`Module/AGENTS.md`、`Module/README.md`、`docs/**/*.md` 和 `.codex/agents/**/*.md`。白名单路径大小写精确，扩展名只接受小写 `.md`；大写或混合大小写的目录、文件名和扩展名均回落完整门禁。`themes/**`、`contracts/**`、`Module/module_*` 以及任意未知根目录中的 `.md` 即使扩展名为 Markdown，也不得使用快速路径。
+纯 Markdown 文档只需变更集非空、分类可信且每一项都是安全路径下的小写 `.md`。该规则适用于所有 Markdown 文档，包括 `AGENTS.md` 和 `.codex/agents/**` 角色卡；它们仍必须通过文档门禁中的关键规则和本地链接检查。
 
-`gate.ps1` 会先无条件调用 `scripts/doc-gate.ps1`。当变更集非空且每一项都属于快速白名单 Markdown 时，`gate.ps1` 自动走快速文档分支并直接成功退出；空变更集、任何非 Markdown 文件、快速白名单外 Markdown 或分类不确定的变更都继续完整门禁。完整分支使用标准 Python `jsonschema` 校验契约样例，并执行模块化 Maven 测试与打包、框架与模块 UI 语法、前端 Node 测试，同时检查物理删除调用、业务样式硬编码色值、固定模块映射和固定业务端点。`-DocumentOnly` 要求变更集必须是非空快速白名单 Markdown，否则失败且不启动构建。`modularity.ps1` 通过移动源码和重启宿主，验证全业务模块、移除单模块、零业务模块（保留 `module_control`）、恢复、临时模块自动发现与可逆移出、模块 UI/查询/计划规则、动态主题与已选主题失效回退；结束后恢复原生模块源码，并清理 `target` 验收临时目录。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
+`gate.ps1` 会先无条件调用 `scripts/doc-gate.ps1`。当变更是纯 Markdown 文档时，`gate.ps1` 在文档门禁成功后直接退出，不运行 Maven、Node 或 Python 测试；空变更集、任何非 Markdown 文件、混合变更或分类不确定的变更继续完整门禁。完整分支使用标准 Python `jsonschema` 校验契约样例，并执行模块化 Maven 测试与打包、框架与模块 UI 语法、前端 Node 测试，同时检查物理删除调用、业务样式硬编码色值、固定模块映射和固定业务端点。`-DocumentOnly` 要求变更集必须是非空纯 Markdown，否则失败且不启动构建。`modularity.ps1` 通过移动源码和重启宿主，验证全业务模块、移除单模块、零业务模块（保留 `module_control`）、恢复、临时模块自动发现与可逆移出、模块 UI/查询/计划规则、动态主题与已选主题失效回退；结束后恢复原生模块源码，并清理 `target` 验收临时目录。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
 
 ### 离线源码包
 

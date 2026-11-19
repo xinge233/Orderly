@@ -381,10 +381,15 @@ function Assert-LocalMarkdownLink {
 }
 
 try {
-    # 关键文件和规则是架构与验证链的最小事实集；缺失时不能继续给出绿色文档门禁。
+    # 关键文件、规则和角色卡是架构与验证链的最小事实集；缺失时不能继续给出绿色文档门禁。
     $requiredFiles = @(
         "AGENTS.md",
         "Module/AGENTS.md",
+        ".codex/agents/project-manager.toml",
+        ".codex/agents/software-engineer.toml",
+        ".codex/agents/module-design-lead/AGENTS.md",
+        ".codex/agents/ui-design-lead/agent.toml",
+        ".codex/agents/ui-design-lead/README.md",
         "docs/agents/architecture-baseline.md",
         "docs/agents/collaboration-workflow.md",
         "docs/repo-map.md",

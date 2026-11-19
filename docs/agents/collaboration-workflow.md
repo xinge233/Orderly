@@ -176,9 +176,9 @@ PM 或主代理给出 `FAIL` 或阻塞项时：
 - 空模块、加载失败、错误、禁用状态和窄屏布局均有实际检查证据
 - 所有测试失败和环境问题均原样报告
 
-快速白名单 Markdown 例外：仅当任务变更集非空且每一项都属于根 `AGENTS.md`、`README.md`、`Module/AGENTS.md`、`Module/README.md`、`docs/**/*.md` 或 `.codex/agents/**/*.md` 时，最低验证才可使用只读的 `.\scripts\doc-gate.ps1`。白名单路径大小写精确，只接受小写 `.md` 扩展名；大写或混合大小写的目录、文件名和扩展名均回落完整门禁。该门禁不访问网络，不启动 Java、Maven 或 Node，也不写运行数据；它同时扫描 Git 跟踪和未跟踪未忽略 Markdown。完整 `.\scripts\gate.ps1` 会先无条件调用快速门禁，再自动识别快速白名单变更并跳过 Maven 与前端测试。
+纯 Markdown 文档例外：当任务变更集非空、分类可信且每一项都是安全路径下的小写 `.md` 文档时，最低验证可使用只读的 `.\scripts\doc-gate.ps1`，并跳过 Maven、Node 与 Python 测试。该规则适用于所有 Markdown 文档；`AGENTS.md`、`.codex/agents/**` 角色卡和其他文档仍必须通过文档门禁，不得绕过关键规则与本地链接检查。文档门禁不访问网络，不启动 Java、Maven 或 Node，也不写运行数据；它同时扫描 Git 跟踪和未跟踪未忽略 Markdown。完整 `.\scripts\gate.ps1` 会先无条件调用该门禁，再自动识别纯 Markdown 变更并跳过重测试。
 
-空变更集、任何非 Markdown 文件、快速白名单外 Markdown 或分类不确定的变更仍必须执行完整门禁。`themes/**`、`contracts/**`、`Module/module_*` 和任意未知 Markdown 即使扩展名为 `.md` 也不得使用快速路径；代码、脚本、配置、契约、主题和二进制文档变更不得用快速门禁替代应用验证。需要强制限制为文档任务时可使用 `.\scripts\gate.ps1 -DocumentOnly`，变更集不符合非空快速白名单 Markdown 条件时必须失败且不启动构建。
+空变更集、任何非 Markdown 文件、混合变更、路径不合法或分类不确定的变更仍必须执行完整门禁。代码、脚本、配置、契约、主题和二进制文档变更不得用文档门禁替代应用验证。需要强制限制为文档任务时可使用 `.\scripts\gate.ps1 -DocumentOnly`，变更集不符合非空纯 Markdown 条件时必须失败且不启动构建。
 
 具体命令由任务卡和 README 明确，默认门禁为：
 

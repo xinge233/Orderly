@@ -4,7 +4,7 @@
 #   执行仓库完整质量门禁：快速文档门禁、上下文边界、Python 测试、模块化 Maven 构建、前端/模块 UI 测试和静态禁止模式扫描。
 #
 # 输入：
-#   -DocumentOnly 要求变更集必须是非空且完全属于快速白名单的 Markdown。
+#   -DocumentOnly 要求变更集必须是非空且全部为小写 .md 文档。
 #   -Offline 将严格 Maven 离线模式和可选 -MavenRepository 透传给 build.ps1；
 #   严格离线分支复用现有 ai/.venv，不调用 ensure-env.ps1 联网安装 Python 依赖。
 #   -MaxParallel 原样透传给 build.ps1，默认 1；门禁本身不实现模块调度。
@@ -15,7 +15,7 @@
 #   快速 Markdown 分支只运行 doc-gate.ps1 和 Git 变更集检查。脚本本身不启动应用服务。
 #
 # 安全边界：
-#   先无条件执行只读文档门禁；变更分类不确定或出现非白名单文件时必须走完整门禁。
+#   先无条件执行只读文档门禁；纯 Markdown 变更跳过重测试，其他或不确定变更走完整门禁。
 #   二进制拒读夹具只写入系统临时目录并在严格前缀校验后清理；任何失败都保留原始输出并返回非零退出码。
 
 param(
@@ -152,8 +152,8 @@ function Assert-ContextBinaryTailRejected {
     }
 }
 
-function Test-DocumentFastPath {
-    # 快速路径使用大小写敏感白名单；空段、. 和 .. 或非小写 .md 都退回完整门禁。
+function Test-MarkdownDocumentPath {
+    # 所有安全路径下的小写 .md 文档统一走只读文档门禁；异常路径和大小写扩展名退回完整门禁。
     param([Parameter(Mandatory = $true)][string]$Path)
 
     $normalizedPath = $Path.Replace("\", "/")
@@ -169,24 +169,29 @@ function Test-DocumentFastPath {
         )) {
         return $false
     }
-
-    if (@(
-        "AGENTS.md",
-        "README.md",
-        "Module/AGENTS.md",
-        "Module/README.md"
-    ) -ccontains $normalizedPath) {
-        return $true
-    }
-    if ($normalizedPath.StartsWith("docs/", [System.StringComparison]::Ordinal) -or
-            $normalizedPath.StartsWith(
-                ".codex/agents/",
-                [System.StringComparison]::Ordinal
-            )) {
-        return $true
-    }
-    return $false
+    return $true
 }
+
+function Assert-MarkdownDocumentPathClassification {
+    # 分类自检防止后续重新引入目录白名单，导致普通文档再触发无关的重测试。
+    $cases = @(
+        @{ Path = "AGENTS.md"; Expected = $true },
+        @{ Path = "docs/note.md"; Expected = $true },
+        @{ Path = "themes/README.md"; Expected = $true },
+        @{ Path = "Module/module_fs/README.md"; Expected = $true },
+        @{ Path = ".codex/agents/ui-design-lead/README.md"; Expected = $true },
+        @{ Path = "README.MD"; Expected = $false },
+        @{ Path = "docs/../AGENTS.md"; Expected = $false },
+        @{ Path = "scripts/gate.ps1"; Expected = $false }
+    )
+    foreach ($case in $cases) {
+        if ((Test-MarkdownDocumentPath -Path $case.Path) -ne $case.Expected) {
+            throw "Markdown 文档路径分类自检失败：$($case.Path)"
+        }
+    }
+}
+
+Assert-MarkdownDocumentPathClassification
 
 function Get-GateChangeSet {
     # porcelain -z 能处理特殊字符路径；重命名、冲突或未知状态标记为分类不确定，强制走完整分支。
@@ -305,21 +310,21 @@ try {
             [System.StringComparison]::Ordinal
         )
     })
-    $nonWhitelistedMarkdownPaths = @($changePaths | Where-Object {
+    $invalidMarkdownPaths = @($changePaths | Where-Object {
         [System.IO.Path]::GetExtension($_).Equals(
             ".md",
             [System.StringComparison]::Ordinal
-        ) -and -not (Test-DocumentFastPath -Path $_)
+        ) -and -not (Test-MarkdownDocumentPath -Path $_)
     })
-    # 只有非空、分类可信且全部为快速白名单 Markdown 时，才允许跳过构建和测试。
-    $isNonEmptyFastPathMarkdown = $changePaths.Count -gt 0 -and
+    # 只有非空、分类可信且全部为安全路径下的小写 Markdown 时，才允许跳过构建和重测试。
+    $isNonEmptyMarkdownChange = $changePaths.Count -gt 0 -and
         -not $changeSet.ClassificationUncertain -and
         $nonMarkdownPaths.Count -eq 0 -and
-        $nonWhitelistedMarkdownPaths.Count -eq 0
+        $invalidMarkdownPaths.Count -eq 0
 
-    # -DocumentOnly 是强制断言而不是优化选项：不满足白名单条件必须失败且不得启动构建。
+    # -DocumentOnly 是强制断言而不是优化选项：不满足纯 Markdown 条件必须失败且不得启动构建。
     if ($DocumentOnly) {
-        if (-not $isNonEmptyFastPathMarkdown) {
+        if (-not $isNonEmptyMarkdownChange) {
             $reason = if ($changePaths.Count -eq 0) {
                 "变更集为空"
             }
@@ -330,16 +335,16 @@ try {
                 "变更集包含非 Markdown 文件"
             }
             else {
-                "变更集包含不在快速白名单中的 Markdown 文件"
+                "变更集包含路径不合法的 Markdown 文件"
             }
-            throw "-DocumentOnly 要求非空快速白名单 Markdown 变更集；当前$reason。"
+            throw "-DocumentOnly 要求非空纯 Markdown 变更集；当前$reason。"
         }
-        Write-Host "门禁通过：-DocumentOnly 检测到 $($changePaths.Count) 个快速白名单 Markdown 变更；未运行 Maven/前端测试。"
+        Write-Host "门禁通过：-DocumentOnly 检测到 $($changePaths.Count) 个纯 Markdown 文档变更；未运行 Maven/前端测试。"
         exit 0
     }
 
-    if ($isNonEmptyFastPathMarkdown) {
-        Write-Host "门禁通过：快速白名单 Markdown 分支，检测到 $($changePaths.Count) 个变更；未运行 Maven/前端测试。"
+    if ($isNonEmptyMarkdownChange) {
+        Write-Host "门禁通过：纯 Markdown 文档分支，检测到 $($changePaths.Count) 个变更；未运行 Maven/前端测试。"
         exit 0
     }
 
@@ -353,7 +358,7 @@ try {
         "变更集包含非 Markdown 文件"
     }
     else {
-        "变更集包含不在快速白名单中的 Markdown 文件"
+        "变更集包含路径不合法的 Markdown 文件"
     }
     Write-Host "完整门禁：$fullGateReason，继续执行 Maven、前端和边界检查。"
 

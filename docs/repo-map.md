@@ -136,7 +136,7 @@
 | 上下文脚本语法 | PowerShell 解析 `scripts/context.ps1` |
 | 上下文配置审计 | `.\scripts\context.ps1 -Mode audit` |
 | Codex 严格配置 | `codex --strict-config doctor --summary --no-color --ascii` |
-| 白名单 Markdown 快速门禁 | `.\scripts\doc-gate.ps1` |
+| 纯 Markdown 文档门禁 | `.\scripts\doc-gate.ps1` |
 | 完整门禁 | `.\scripts\gate.ps1` |
 | 模块化验收 | `.\scripts\modularity.ps1` |
 | 构建与并行回归 | `.\scripts\build.ps1 -MaxParallel 3`；默认串行共享仓库、仓库级互斥锁，回归用 `.\scripts\test-build-parallel.ps1` |
