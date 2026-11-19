@@ -342,6 +342,7 @@ export function executionCompletedModules(execution) {
  * @param {() => Promise<{ok?: boolean, message?: string}>} [options.testAiSettings] 测试模型连接
  * @param {(request: object) => Promise<object>} [options.interpretGoal] 提交带 clientRequestId 的 AI 回合
  * @param {(planId: string) => Promise<object>} [options.confirmAiPlan] 请求宿主确认并执行独立 AI 计划
+ * @param {(request: object) => Promise<boolean>} [options.beforeAiTurn] 在请求模型前等待模块构建完成
  * @param {(settings: object) => void} [options.onAiSettingsChanged] 回传已归一化设置
  * @param {(execution: object | null) => void} [options.onExecutionFinished] 通知框架刷新受影响模块
  * @param {(message: string, options?: {error?: boolean}) => void} [options.onNotice] 显示框架级提示
@@ -370,6 +371,7 @@ export function mountAiDialog({
     confirmAiPlan = async () => {
         throw new Error("AI 计划确认接口未配置。");
     },
+    beforeAiTurn = async () => true,
     onAiSettingsChanged = () => {},
     onExecutionFinished = () => {},
     onNotice = () => {}
@@ -1545,6 +1547,18 @@ export function mountAiDialog({
             panelOpen: false
         });
         try {
+            const continueTurn = await beforeAiTurn({ goal });
+            if (generation !== dialog.requestGeneration) return;
+            if (!continueTurn) {
+                dialog.busy = false;
+                setState({
+                    mode: "composing",
+                    composerOpen: true,
+                    panelOpen: false,
+                    focus: nodes.composerInput
+                });
+                return;
+            }
             const response = await interpretGoal({
                 goal,
                 conversationId: dialog.conversationId || null,

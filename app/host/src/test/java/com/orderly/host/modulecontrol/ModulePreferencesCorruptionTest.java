@@ -46,7 +46,8 @@ class ModulePreferencesCorruptionTest {
             ModulePreferencesService preferences = new ModulePreferencesService(
                     catalog,
                     runtime,
-                    objectMapper
+                    objectMapper,
+                    root.resolve("sources").toString()
             );
             preferences.initialize();
 
@@ -55,7 +56,8 @@ class ModulePreferencesCorruptionTest {
             ModulePreferencesService corrupted = new ModulePreferencesService(
                     catalog,
                     runtime,
-                    objectMapper
+                    objectMapper,
+                    root.resolve("sources").toString()
             );
             assertThatThrownBy(corrupted::initialize)
                     .isInstanceOf(IllegalStateException.class)

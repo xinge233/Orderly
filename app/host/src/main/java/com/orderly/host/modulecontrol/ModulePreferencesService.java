@@ -9,20 +9,25 @@ import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.contract.ModuleSettingsDefinition;
 import com.orderly.host.runtime.WorkspaceRuntime;
 import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * 模块启用状态、两套排序、业务设置和接口 AI 开关的单文件持久化服务。
@@ -36,10 +41,13 @@ public class ModulePreferencesService {
 
     private static final int SCHEMA_VERSION = 1;
     private static final String FILE_NAME = "module-governance.json";
+    private static final String CONTROL_SOURCE = "module_control";
+    private static final Pattern MODULE_SOURCE = Pattern.compile("module_[a-z0-9_]+");
 
     private final ContractCatalog catalog;
     private final ObjectMapper objectMapper;
     private final Path stateFile;
+    private final Path moduleSourceDirectory;
 
     private Map<String, Boolean> enabled = new LinkedHashMap<>();
     private List<String> sidebarOrder = new ArrayList<>();
@@ -52,11 +60,13 @@ public class ModulePreferencesService {
     public ModulePreferencesService(
             ContractCatalog catalog,
             WorkspaceRuntime runtime,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            @Value("${orderly.module-source-dir:Module}") String moduleSourceDirectory
     ) {
         this.catalog = catalog;
         this.objectMapper = objectMapper;
         this.stateFile = runtime.dataRoot().resolve(FILE_NAME);
+        this.moduleSourceDirectory = Path.of(moduleSourceDirectory).toAbsolutePath().normalize();
     }
 
     /**
@@ -94,7 +104,11 @@ public class ModulePreferencesService {
 
     /** 返回两套顺序和设置的不可变视图。 */
     public synchronized ModulePreferences snapshot() {
-        return new ModulePreferences(sidebarOrder, managementOrder, deepCopy(moduleSettings));
+        return new ModulePreferences(
+                loadedOrder(sidebarOrder),
+                loadedOrder(managementOrder),
+                loadedSettings()
+        );
     }
 
     /** 返回 Action 动态 AI 开关的深复制快照。 */
@@ -158,13 +172,19 @@ public class ModulePreferencesService {
 
     /** 校验并保存完整的侧边栏顺序。 */
     public synchronized void updateSidebarOrder(List<String> moduleIds) {
-        sidebarOrder = validateOrder(moduleIds, catalog.modules());
+        sidebarOrder = mergePendingOrder(
+                validateOrder(moduleIds, catalog.modules()),
+                sidebarOrder
+        );
         persist();
     }
 
     /** 校验并保存完整的管理页顺序。 */
     public synchronized void updateManagementOrder(List<String> moduleIds) {
-        managementOrder = validateOrder(moduleIds, catalog.modules());
+        managementOrder = mergePendingOrder(
+                validateOrder(moduleIds, catalog.modules()),
+                managementOrder
+        );
         persist();
     }
 
@@ -246,35 +266,36 @@ public class ModulePreferencesService {
     private void reconcile() {
         List<ModuleContract> businessModules = catalog.businessModules();
         List<ModuleContract> allModules = catalog.modules();
-        Set<String> businessIds = businessModules.stream()
-                .map(ModuleContract::moduleId)
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        Set<String> businessIds = new LinkedHashSet<>(
+                businessModules.stream().map(ModuleContract::moduleId).toList()
+        );
+        List<String> pendingBusinessIds = pendingBusinessIds();
+        businessIds.addAll(pendingBusinessIds);
         Set<String> allIds = allModules.stream()
                 .map(ModuleContract::moduleId)
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        allIds.addAll(pendingBusinessIds);
 
         Map<String, Boolean> reconciledEnabled = new LinkedHashMap<>();
-        for (ModuleContract module : businessModules) {
-            reconciledEnabled.put(
-                    module.moduleId(),
-                    enabled.getOrDefault(module.moduleId(), true)
-            );
+        for (String moduleId : businessIds) {
+            reconciledEnabled.put(moduleId, enabled.getOrDefault(moduleId, true));
         }
         enabled = reconciledEnabled;
-        sidebarOrder = reconcileOrder(sidebarOrder, allModules, allIds);
-        managementOrder = reconcileOrder(managementOrder, allModules, allIds);
+        sidebarOrder = reconcileOrder(sidebarOrder, allModules, allIds, pendingBusinessIds);
+        managementOrder = reconcileOrder(managementOrder, allModules, allIds, pendingBusinessIds);
 
-        Map<String, Map<String, Object>> reconciledSettings = new LinkedHashMap<>();
+        Map<String, Map<String, Object>> reconciledSettings = deepCopy(moduleSettings);
+        reconciledSettings.keySet().removeIf(moduleId -> !businessIds.contains(moduleId));
         for (ModuleContract module : businessModules) {
             ModuleSettingsDefinition definition = catalog.settingsFor(module.moduleId());
             if (definition.isEmpty()) {
-                Map<String, Object> existing = moduleSettings.get(module.moduleId());
+                Map<String, Object> existing = reconciledSettings.get(module.moduleId());
                 if (existing != null && !existing.isEmpty()) {
                     reconciledSettings.put(module.moduleId(), Map.copyOf(existing));
                 }
                 continue;
             }
-            Map<String, Object> current = moduleSettings.getOrDefault(module.moduleId(), Map.of());
+            Map<String, Object> current = reconciledSettings.getOrDefault(module.moduleId(), Map.of());
             Map<String, Object> validated = definition.validateAndMerge(
                     objectMapper.valueToTree(current),
                     current,
@@ -284,8 +305,10 @@ public class ModulePreferencesService {
         }
         moduleSettings = reconciledSettings;
 
-        Map<String, Map<String, Boolean>> reconciledActions = new LinkedHashMap<>();
-        Map<String, Map<String, Boolean>> reconciledQueries = new LinkedHashMap<>();
+        Map<String, Map<String, Boolean>> reconciledActions = copyFlags(actionAiCallableEnabled);
+        Map<String, Map<String, Boolean>> reconciledQueries = copyFlags(queryAiCallableEnabled);
+        reconciledActions.keySet().removeIf(moduleId -> !businessIds.contains(moduleId));
+        reconciledQueries.keySet().removeIf(moduleId -> !businessIds.contains(moduleId));
         for (ModuleContract module : businessModules) {
             Map<String, Boolean> actionValues = new LinkedHashMap<>();
             for (var action : module.actions()) {
@@ -321,7 +344,8 @@ public class ModulePreferencesService {
     private List<String> reconcileOrder(
             List<String> existing,
             List<ModuleContract> modules,
-            Set<String> ids
+            Set<String> ids,
+            List<String> pendingBusinessIds
     ) {
         List<String> result = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
@@ -330,8 +354,53 @@ public class ModulePreferencesService {
                 result.add(id);
             }
         }
+        appendPendingIds(result, pendingBusinessIds, modules);
         appendMissing(result, modules);
         return result;
+    }
+
+    private void appendPendingIds(
+            List<String> order,
+            List<String> pendingBusinessIds,
+            List<ModuleContract> modules
+    ) {
+        Set<String> present = new LinkedHashSet<>(order);
+        Set<String> systemIds = modules.stream()
+                .filter(module -> module.system() != null)
+                .map(ModuleContract::moduleId)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        for (String moduleId : pendingBusinessIds) {
+            if (!present.add(moduleId)) {
+                continue;
+            }
+            int insertionIndex = order.size();
+            for (int index = 0; index < order.size(); index++) {
+                if (systemIds.contains(order.get(index))) {
+                    insertionIndex = index;
+                    break;
+                }
+            }
+            order.add(insertionIndex, moduleId);
+        }
+    }
+
+    private List<String> pendingBusinessIds() {
+        if (!Files.isDirectory(moduleSourceDirectory, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(moduleSourceDirectory)) {
+            return List.of();
+        }
+        try (Stream<Path> stream = Files.list(moduleSourceDirectory)) {
+            return stream
+                    .filter(path -> Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS))
+                    .filter(path -> !Files.isSymbolicLink(path))
+                    .map(path -> path.getFileName().toString())
+                    .filter(name -> MODULE_SOURCE.matcher(name).matches())
+                    .filter(name -> !CONTROL_SOURCE.equals(name))
+                    .sorted(Comparator.naturalOrder())
+                    .toList();
+        } catch (IOException exception) {
+            throw new IllegalStateException("扫描待构建模块源码失败：" + moduleSourceDirectory, exception);
+        }
     }
 
     /**
@@ -372,6 +441,62 @@ public class ModulePreferencesService {
             throw new IllegalArgumentException("模块排序必须无重复且完整包含当前运行模块");
         }
         return List.copyOf(supplied);
+    }
+
+    /**
+     * 对外排序只暴露当前已加载模块。
+     *
+     * <p>内部顺序仍可保留待构建源码的槽位，等模块追加成功后自然恢复；这样治理 API
+     * 不会返回 `/api/modules` 中不存在的模块 ID。</p>
+     */
+    private List<String> loadedOrder(List<String> order) {
+        Set<String> loadedIds = catalog.modules().stream()
+                .map(ModuleContract::moduleId)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        return order.stream().filter(loadedIds::contains).toList();
+    }
+
+    /** 对外设置快照同样只包含已加载业务模块，待构建设置保留在内部状态。 */
+    private Map<String, Map<String, Object>> loadedSettings() {
+        Set<String> loadedIds = catalog.modules().stream()
+                .map(ModuleContract::moduleId)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        Map<String, Map<String, Object>> snapshot = deepCopy(moduleSettings);
+        snapshot.keySet().removeIf(moduleId -> !loadedIds.contains(moduleId));
+        return snapshot;
+    }
+
+    /**
+     * 将用户提交的已加载顺序与内部待构建槽位合并。
+     *
+     * <p>待构建条目统一保留在首个系统模块之前；用户对已加载模块的排序不变。</p>
+     */
+    private List<String> mergePendingOrder(List<String> supplied, List<String> previous) {
+        Set<String> loadedIds = catalog.modules().stream()
+                .map(ModuleContract::moduleId)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        List<String> merged = new ArrayList<>(supplied);
+        List<String> pending = previous.stream()
+                .filter(moduleId -> !loadedIds.contains(moduleId))
+                .filter(moduleId -> MODULE_SOURCE.matcher(moduleId).matches())
+                .filter(moduleId -> !CONTROL_SOURCE.equals(moduleId))
+                .toList();
+        if (pending.isEmpty()) {
+            return List.copyOf(merged);
+        }
+        int insertionIndex = merged.size();
+        for (int index = 0; index < merged.size(); index++) {
+            if (catalog.isSystemModule(merged.get(index))) {
+                insertionIndex = index;
+                break;
+            }
+        }
+        for (String moduleId : pending) {
+            if (!merged.contains(moduleId)) {
+                merged.add(insertionIndex++, moduleId);
+            }
+        }
+        return List.copyOf(merged);
     }
 
     /** 要求目标模块为非系统业务模块；不检查模块启用状态。 */

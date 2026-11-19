@@ -23,9 +23,12 @@
 
 ```powershell
 .\scripts\start.ps1
+.\scripts\start.ps1 -BackgroundModules
 ```
 
-首次启动前，`start.ps1` 会调用 `scripts/build.ps1`：自动扫描 `Module/module_*`，对模块执行 Maven `clean verify`，全部通过后把 JAR 发布到 `target/orderly-modules/`，再由主进程构建宿主 fat JAR。直接运行 `build.ps1` 默认执行模块与宿主测试；`-SkipTests` 仅用于明确的快速启动或验收路径。模块构建默认串行；只有显式传入大于 1 的 `-MaxParallel` 才并行，且并行范围仅限相互独立的模块 Maven 构建。
+默认启动会先完整构建全部模块和宿主。`-BackgroundModules` 则只先构建 `module_control` 与宿主，Java 健康检查通过并打开界面后，由 `scripts/build-module-background.ps1` 按队列逐个构建业务模块。每完成一个 JAR，后台构建器调用宿主刷新接口；只有通过契约、SPI 与 UI 校验的模块才会原子追加为可执行模块。启动入口 `启动归序.cmd` 默认使用该模式。
+
+直接运行 `build.ps1` 默认执行模块与宿主测试；`-SkipTests` 仅用于明确的快速启动或验收路径。`-BootstrapOnly` 只构建控制模块与宿主，`-ModulesOnly -ModuleName <module_*>` 只构建一个业务模块且不重建宿主，`-SkipKernelInstall` 复用已安装 kernel。模块构建默认串行；只有显式传入大于 1 的 `-MaxParallel` 才并行，且并行范围仅限相互独立的模块 Maven 构建。后台启动队列固定一次构建一个模块，避免多个 `clean verify` 争用 CPU 和共享 Maven 仓库。
 
 `build.ps1` 会在整个构建期间持有基于规范化 `repoRoot` 哈希命名的仓库级互斥锁，防止两个外部构建同时写共享 Maven 仓库、模块暂存或宿主 target。`modularity.ps1` 从首次移动模块源码前开始持有同一把锁，直到源码恢复、最终重建和清理结束；它嵌套调用 `build.ps1` 时使用同一线程的可重入所有权。默认等待上限为 120 秒，超时或获取失败会报告 `repoRoot`、锁名和原因。
 
@@ -34,7 +37,10 @@
 ```powershell
 .\scripts\build.ps1
 .\scripts\build.ps1 -MaxParallel 3
+.\scripts\build.ps1 -BootstrapOnly -SkipTests
+.\scripts\build.ps1 -ModulesOnly -ModuleName module_fs -SkipKernelInstall
 .\scripts\start.ps1 -SkipBuild
+.\scripts\start.ps1 -BackgroundModules
 ```
 
 开发构建默认使用仓库内 `.m2-repository`。`MaxParallel=1` 或有效模块并发只有 1 时，模块 Maven 直接使用共享 `maven.repo.local`，不创建 worker 隔离仓库，也不传 `maven.repo.local.tail`。只有有效并发大于 1 时，每个模块 worker 才在 `target/build-parallel-*` 下使用独立可写仓库，共享预热仓库只作为 Maven 3.9+ 的只读 tail。kernel 安装、模块 JAR 校验、候选暂存发布、宿主编译和宿主 JAR 检查始终由主进程串行完成。任一 worker 失败时会收尾已启动 worker，并报告模块名、Maven 原始退出码和日志路径。
@@ -52,7 +58,9 @@
 
 `gate.ps1`、`start.ps1`、`modularity.ps1` 与 `verify-offline.ps1` 接受相同的 `-MaxParallel` 并只透传给 `build.ps1`，不复制并行调度逻辑。`gate.ps1`、`start.ps1` 与 `modularity.ps1` 也透传 `-Offline`、`-MavenRepository`。`start.ps1 -MavenOffline` 只让 Maven 使用仓库根目录下的 `maven-repository` 严格离线构建，Python 环境仍由 `ensure-env.ps1` 正常准备；`-Offline` 则进一步要求直接复用现有 `ai/.venv`，不会联网准备 Python 环境。离线范围只覆盖 Maven 构建，不代表 Python、Node 或整个应用已经支持离线安装。
 
-Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配的 `127.0.0.1` 临时端口和随机 Bearer Token。打开 <http://127.0.0.1:8080/>。宿主或 AI 服务异常退出时，启动脚本会清理本次启动的另一个子进程。
+Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配的 `127.0.0.1` 临时端口和随机 Bearer Token。打开 <http://127.0.0.1:8080/>。后台模式先等待 Java 健康检查，再启动模块构建；Python 环境准备与 AI 服务启动同时进行，不会阻塞框架首屏。宿主或 AI 服务异常退出时，启动脚本会清理本次启动的子进程。后台日志与模块状态分别位于 `target/background/`、`target/module-build-status.json` 和 `target/module-build-priority.json`。
+
+待构建模块会以真实构建状态显示在侧边栏和总览。点击待构建模块会写入优先请求；正在运行的 Maven 不会被抢占，队列在当前模块结束后选择它。存在未就绪模块时，AI 输入会先提示等待；用户确认后，AI 在全部模块完成或失败前不会提交模型回合，也不会执行部分 Action。
 
 程序首次运行会在仓库根目录创建 `.orderly-data/`：
 
@@ -113,10 +121,10 @@ DOCX 结构校验不判断文字内容和页面排版。实际修改 DOCX 内容
 
 仅用于本地验收脏工作树时，可使用 `.\scripts\package-offline.ps1 -AllowDirtySnapshot`。该包会在 manifest 中记录 `gitDirty=true`，不属于正式干净发布；正式包的 `gitDirty` 必须为 `false`。`sourceTreeSha256` 是对排序后的源码路径、文件大小和 SHA-256 组成规范文本计算的稳定摘要，`sourceFiles` 同时记录每个源码文件的大小和哈希。
 
-解压正式离线包后，直接运行根目录的 `启动归序.cmd`。该入口发现同目录存在 `maven-repository` 时，会无参数调用 `start.ps1 -MavenOffline -MaxParallel 2`，因此 Maven 依赖和构建插件只从包内仓库读取，同时并行构建相互独立的模块。需要自定义端口等启动参数时，可显式执行：
+解压正式离线包后，直接运行根目录的 `启动归序.cmd`。该入口发现同目录存在 `maven-repository` 时，会无参数调用 `start.ps1 -MavenOffline -BackgroundModules`，因此 Maven 依赖和构建插件只从包内仓库读取，并先打开框架、再逐个准备业务模块。需要自定义端口等启动参数时，可显式执行：
 
 ```powershell
-.\scripts\start.ps1 -MavenOffline -MaxParallel 3 -Port 8081
+.\scripts\start.ps1 -MavenOffline -BackgroundModules -Port 8081
 ```
 
 验证脚本要求 ZIP 旁存在同名 `.sha256`，会先拒绝禁止路径，再安全解压到 `target/orderly-offline/verify-*`，双向核对源码、POM、Maven 仓库和第三方 JAR/POM 集合及大小、SHA-256、重解析点，最后在包内运行 `build.ps1 -Offline -MavenRepository <包内 maven-repository>`；可通过 `verify-offline.ps1 -MaxParallel <int>` 显式启用模块并行。验证只执行 Maven 构建与 Java 测试，不要求或运行 Node/Python 测试。离线范围仍仅限 Maven，不代表整个应用可以离线安装。

@@ -115,7 +115,6 @@ public class ModuleRefreshService {
     private ModuleRefreshResult doRefresh() {
         Set<String> currentSources = new LinkedHashSet<>(scanSourceDirectories());
         List<ModuleRefreshIssue> issues = new ArrayList<>();
-        Set<String> changedExistingModules = new LinkedHashSet<>();
 
         for (ModuleContract module : catalog.modules()) {
             ArtifactFingerprint baseline = baselineArtifacts.get(module.moduleId());
@@ -127,7 +126,6 @@ public class ModuleRefreshService {
                 continue;
             }
             if (!currentSources.contains(baseline.sourceName())) {
-                changedExistingModules.add(module.moduleId());
                 issues.add(new ModuleRefreshIssue(
                         "RESTART_REQUIRED",
                         "模块 " + module.moduleId() + " 的源码目录已删除，必须重启宿主"
@@ -136,7 +134,6 @@ public class ModuleRefreshService {
             }
             String currentFingerprint = sourceFingerprint(baseline.sourceName());
             if (!baselineSourceFingerprints.getOrDefault(baseline.sourceName(), "").equals(currentFingerprint)) {
-                changedExistingModules.add(module.moduleId());
                 issues.add(new ModuleRefreshIssue(
                         "RESTART_REQUIRED",
                         "模块 " + module.moduleId() + " 的源码已更新，必须重启宿主"
@@ -146,7 +143,6 @@ public class ModuleRefreshService {
             if (!Files.isRegularFile(jar, LinkOption.NOFOLLOW_LINKS)
                     || Files.isSymbolicLink(jar)
                     || !artifactFingerprint(jar).equals(baseline)) {
-                changedExistingModules.add(module.moduleId());
                 issues.add(new ModuleRefreshIssue(
                         "RESTART_REQUIRED",
                         "模块 " + module.moduleId() + " 的 JAR 已变化，必须重启宿主"
@@ -158,9 +154,9 @@ public class ModuleRefreshService {
         Map<String, String> updatedSourceFingerprints = new LinkedHashMap<>(baselineSourceFingerprints);
         Map<String, ArtifactFingerprint> updatedArtifacts = new LinkedHashMap<>(baselineArtifacts);
         for (String sourceName : currentSources.stream().sorted().toList()) {
-            if (baselineSourceFingerprints.containsKey(sourceName)
-                    || changedExistingModules.stream().anyMatch(moduleId ->
-                    sourceName.equals(baselineArtifacts.get(moduleId).sourceName()))) {
+            boolean alreadyLoadedSource = baselineArtifacts.values().stream()
+                    .anyMatch(artifact -> sourceName.equals(artifact.sourceName()));
+            if (alreadyLoadedSource) {
                 continue;
             }
             Path jar = modulesDirectory.resolve(sourceName + ".jar").normalize();

@@ -110,6 +110,8 @@ test("AI dialog delegates model work through injected callbacks", async () => {
     assert.doesNotMatch(component, /OrderlyApi|draftPlan|executeAiActions/);
     assert.match(component, /interpretGoal/);
     assert.match(component, /confirmAiPlan/);
+    assert.match(component, /beforeAiTurn/);
+    assert.match(component, /await beforeAiTurn\(\{ goal \}\)/);
     assert.match(component, /clientRequestId:/);
     assert.match(component, /API Key/);
 });

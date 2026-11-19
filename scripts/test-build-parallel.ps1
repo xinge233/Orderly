@@ -131,6 +131,16 @@ function Get-ArtifactFingerprint {
     }
 }
 
+function Get-StagedModuleNames {
+    $modulesDirectory = Join-Path $fixtureRoot "target\orderly-modules"
+    if (-not (Test-Path -LiteralPath $modulesDirectory -PathType Container)) {
+        return @()
+    }
+    return @(Get-ChildItem -LiteralPath $modulesDirectory -Filter "*.jar" -File |
+        Sort-Object Name |
+        ForEach-Object { $_.BaseName })
+}
+
 function Assert-ArtifactFingerprintEqual {
     param(
         [Parameter(Mandatory = $true)]$Before,
@@ -641,7 +651,7 @@ try {
     Initialize-Fixture
     [Environment]::SetEnvironmentVariable("PATH", "$wrapperRoot;$originalPath", "Process")
 
-    Write-Host "[1/6] 验证默认串行使用共享仓库"
+    Write-Host "[1/8] 验证默认串行使用共享仓库"
     $serialResult = Invoke-FixtureBuild `
         -Scenario "serial" `
         -BuildArguments @("-SkipTests") `
@@ -680,7 +690,7 @@ try {
         throw "默认串行构建不应创建 maven-repositories 隔离仓库目录。"
     }
 
-    Write-Host "[2/6] 验证显式并发重叠与仓库隔离"
+    Write-Host "[2/8] 验证显式并发重叠与仓库隔离"
     $parallelResult = Invoke-FixtureBuild `
         -Scenario "parallel" `
         -BuildArguments @("-SkipTests", "-MaxParallel", "3") `
@@ -719,7 +729,7 @@ try {
         throw "并发成功后未生成模块暂存或宿主 JAR 基线。"
     }
 
-    Write-Host "[3/6] 验证模块 worker 失败、原始退出码、日志和产物不变"
+    Write-Host "[3/8] 验证模块 worker 失败、原始退出码、日志和产物不变"
     $moduleFailure = Invoke-FixtureBuild `
         -Scenario "module-failure" `
         -BuildArguments @("-SkipTests", "-MaxParallel", "2") `
@@ -747,7 +757,7 @@ try {
     }
     Assert-ArtifactFingerprintEqual $baseline (Get-ArtifactFingerprint) "模块失败后"
 
-    Write-Host "[4/6] 验证宿主阶段失败恢复上一套模块暂存和宿主 JAR"
+    Write-Host "[4/8] 验证宿主阶段失败恢复上一套模块暂存和宿主 JAR"
     $hostFailure = Invoke-FixtureBuild `
         -Scenario "host-failure" `
         -BuildArguments @("-SkipTests", "-MaxParallel", "2") `
@@ -767,7 +777,7 @@ try {
     }
     Assert-ArtifactFingerprintEqual $baseline (Get-ArtifactFingerprint) "宿主失败后"
 
-    Write-Host "[5/6] 验证严格离线每次 Maven 调用都保留 -o"
+    Write-Host "[5/8] 验证严格离线每次 Maven 调用都保留 -o"
     $offlineRepository = Join-Path $fixtureRoot "maven-repository"
     $offlineResult = Invoke-FixtureBuild `
         -Scenario "offline" `
@@ -795,7 +805,67 @@ try {
         }
     }
 
-    Write-Host "[6/6] 验证两个外部 build.ps1 通过同一仓库锁串行等待"
+    $unrelatedBrokenModule = Assert-PathWithin `
+        (Join-Path $fixtureRoot "Module\module_broken") `
+        $fixtureRoot `
+        "无关缺 POM 模块目录"
+    [System.IO.Directory]::CreateDirectory($unrelatedBrokenModule) | Out-Null
+
+    Write-Host "[6/8] 验证 BootstrapOnly 只发布控制模块并重建宿主"
+    $bootstrapResult = Invoke-FixtureBuild `
+        -Scenario "bootstrap-only" `
+        -BuildArguments @("-SkipTests", "-BootstrapOnly")
+    if ($bootstrapResult.ExitCode -ne 0) {
+        throw "BootstrapOnly 构建失败，退出码：$($bootstrapResult.ExitCode)`n$(Get-CombinedOutput $bootstrapResult)"
+    }
+    $bootstrapModules = @(Get-TraceEvents $bootstrapResult.TraceDirectory |
+        Where-Object { $_.kind -eq "module" })
+    if ($bootstrapModules.Count -ne 1 -or $bootstrapModules[0].module -ne "module_control") {
+        throw "BootstrapOnly 应只构建 module_control，实际：$($bootstrapModules.module -join ', ')"
+    }
+    $bootstrapStaged = @(Get-StagedModuleNames)
+    if ($bootstrapStaged.Count -ne 1 -or $bootstrapStaged[0] -ne "module_control") {
+        throw "BootstrapOnly 发布目录应只含 module_control.jar，实际：$($bootstrapStaged -join ', ')"
+    }
+    $bootstrapHost = Get-HostFingerprint
+    if ([string]::IsNullOrWhiteSpace($bootstrapHost)) {
+        throw "BootstrapOnly 未生成宿主 JAR。"
+    }
+
+    Write-Host "[7/8] 验证 ModulesOnly 单模块发布且不重建宿主"
+    $moduleOnlyResult = Invoke-FixtureBuild `
+        -Scenario "module-only" `
+        -BuildArguments @(
+            "-SkipTests",
+            "-ModulesOnly",
+            "-ModuleName", "module_alpha",
+            "-SkipKernelInstall"
+        )
+    if ($moduleOnlyResult.ExitCode -ne 0) {
+        throw "ModulesOnly 构建失败，退出码：$($moduleOnlyResult.ExitCode)`n$(Get-CombinedOutput $moduleOnlyResult)"
+    }
+    $moduleOnlyModules = @(Get-TraceEvents $moduleOnlyResult.TraceDirectory |
+        Where-Object { $_.kind -eq "module" })
+    if ($moduleOnlyModules.Count -ne 1 -or $moduleOnlyModules[0].module -ne "module_alpha") {
+        throw "ModulesOnly 应只构建 module_alpha，实际：$($moduleOnlyModules.module -join ', ')"
+    }
+    $moduleOnlyKernel = @(Get-TraceEvents $moduleOnlyResult.TraceDirectory |
+        Where-Object { $_.kind -eq "kernel" })
+    if ($moduleOnlyKernel.Count -ne 0) {
+        throw "SkipKernelInstall 仍触发了 kernel Maven 安装。"
+    }
+    if ((Get-HostFingerprint) -ne $bootstrapHost) {
+        throw "ModulesOnly 重建或改变了宿主 JAR。"
+    }
+    $moduleOnlyStaged = @(Get-StagedModuleNames)
+    if ($moduleOnlyStaged.Count -ne 2 -or
+            $moduleOnlyStaged -notcontains "module_control" -or
+            $moduleOnlyStaged -notcontains "module_alpha") {
+        throw "ModulesOnly 发布结果不正确：$($moduleOnlyStaged -join ', ')"
+    }
+    Remove-Item -LiteralPath $unrelatedBrokenModule -Force
+
+    Write-Host "[8/8] 验证两个外部 build.ps1 通过同一仓库锁串行等待"
     $lockEnvironment = @{ ORDERLY_TEST_MVN_DELAY_MS = "700" }
     $firstBuild = Start-FixtureBuildProcess `
         -Scenario "lock-first" `
@@ -824,7 +894,7 @@ try {
     Assert-NoCrossBuildOverlap $firstBuildModules $secondBuildModules
 
     $succeeded = $true
-    Write-Host "并行构建测试通过：仓库锁等待、默认串行共享仓库、显式并发隔离仓库、失败退出码、原始日志、模块/宿主产物恢复和离线 -o 均符合预期。"
+    Write-Host "并行构建测试通过：仓库锁等待、默认串行共享仓库、显式并发隔离仓库、失败退出码、原始日志、模块/宿主产物恢复、离线 -o、BootstrapOnly 和 ModulesOnly 均符合预期。"
 }
 catch {
     if (Test-Path -LiteralPath $testRoot) {

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/module-build-status.schema.json",
+  "title": "Orderly module build status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "mode",
+    "updatedAt",
+    "complete",
+    "modules"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "mode": { "enum": ["background", "eager"] },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "complete": { "type": "boolean" },
+    "modules": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/module" }
+    }
+  },
+  "$defs": {
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceName",
+        "moduleId",
+        "title",
+        "caption",
+        "icon",
+        "status",
+        "priority"
+      ],
+      "properties": {
+        "sourceName": {
+          "type": "string",
+          "pattern": "^module_[a-z0-9_]+$"
+        },
+        "moduleId": {
+          "type": "string",
+          "pattern": "^module_[a-z0-9_]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "caption": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "icon": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "status": {
+          "enum": ["QUEUED", "BUILDING", "READY", "FAILED"]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finishedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

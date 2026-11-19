@@ -18,6 +18,7 @@ import com.orderly.host.execution.AiActionService;
 import com.orderly.host.modulecontrol.ModuleControlService;
 import com.orderly.host.modulecontrol.ModuleFolderService;
 import com.orderly.host.modulecontrol.ModuleInterfaceState;
+import com.orderly.host.modulecontrol.ModuleLifecycleService;
 import com.orderly.host.modulecontrol.ModulePreferences;
 import com.orderly.host.modulecontrol.ModuleRefreshResult;
 import com.orderly.host.modulecontrol.ModuleRefreshService;
@@ -75,6 +76,7 @@ public class OrderlyController {
     private final WorkspaceRuntime runtime;
     private final ThemeCatalog themes;
     private final ModuleControlService moduleControl;
+    private final ModuleLifecycleService moduleLifecycle;
     private final ModuleRefreshService moduleRefresh;
     private final ModuleFolderService moduleFolder;
     private final ModuleDataService moduleData;
@@ -93,6 +95,7 @@ public class OrderlyController {
             WorkspaceRuntime runtime,
             ThemeCatalog themes,
             ModuleControlService moduleControl,
+            ModuleLifecycleService moduleLifecycle,
             ModuleRefreshService moduleRefresh,
             ModuleFolderService moduleFolder,
             ModuleDataService moduleData,
@@ -110,6 +113,7 @@ public class OrderlyController {
         this.runtime = runtime;
         this.themes = themes;
         this.moduleControl = moduleControl;
+        this.moduleLifecycle = moduleLifecycle;
         this.moduleRefresh = moduleRefresh;
         this.moduleFolder = moduleFolder;
         this.moduleData = moduleData;
@@ -174,6 +178,27 @@ public class OrderlyController {
     @GetMapping("/modules")
     public List<ModuleEntry> modules() {
         return moduleControl.businessModules();
+    }
+
+    /** 返回后台模块构建状态；源码描述只用于展示，不构成可执行契约。 */
+    @GetMapping("/system/module-builds")
+    public ModuleLifecycleService.Snapshot moduleBuilds() {
+        return moduleLifecycle.snapshot();
+    }
+
+    /** 请求后台构建脚本优先处理一个已发现的业务模块源码。 */
+    @PostMapping("/system/module-builds/prioritize")
+    public ModuleLifecycleService.Snapshot prioritizeModuleBuild(
+            @RequestBody ModuleBuildPriorityRequest request
+    ) {
+        if (request == null || request.sourceName() == null || request.sourceName().isBlank()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_REQUEST",
+                    "sourceName 不能为空"
+            );
+        }
+        return moduleLifecycle.prioritize(request.sourceName());
     }
 
     /** 返回不可作为普通业务模块治理的系统模块目录。 */
@@ -397,6 +422,7 @@ public class OrderlyController {
     /** 处理一个自然语言回合；最终动作仍由宿主校验和担保。 */
     @PostMapping("/ai/turns")
     public AiContracts.TurnResponse aiTurn(@RequestBody AiContracts.TurnRequest request) {
+        moduleLifecycle.requireReadyForAi();
         return aiInterpret.interpret(request);
     }
 
@@ -574,6 +600,10 @@ public class OrderlyController {
 
     /** 系统功能开关请求。 */
     public record PlanningFeatureRequest(Boolean enabled) {
+    }
+
+    /** 后台模块构建优先请求。 */
+    public record ModuleBuildPriorityRequest(String sourceName) {
     }
 
     /** 模块控制动作请求，包含用户确认标志和动作参数。 */

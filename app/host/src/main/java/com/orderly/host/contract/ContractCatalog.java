@@ -545,10 +545,22 @@ public class ContractCatalog implements AutoCloseable {
                     .filter(entry -> entry.getName().indexOf('/', CONTRACT_PREFIX.length()) < 0)
                     .sorted(Comparator.comparing(JarEntry::getName))
                     .toList();
+            if (contractEntries.size() != 1) {
+                throw new IllegalStateException(
+                        "模块 JAR 必须且只能声明一个契约：" + jarPath.getFileName()
+                );
+            }
             for (JarEntry entry : contractEntries) {
                 ModuleContract module;
                 try (var stream = jar.getInputStream(entry)) {
                     module = parseAndValidateModule(objectMapper.readTree(stream));
+                }
+                String sourceName = sourceName(jarPath.getFileName().toString());
+                if (!sourceName.equals(module.moduleId())) {
+                    throw new IllegalStateException(
+                            "模块目录名、JAR 名和契约 moduleId 必须一致："
+                                    + jarPath.getFileName() + " -> " + module.moduleId()
+                    );
                 }
                 if (loaded.putIfAbsent(module.moduleId(), module) != null) {
                     throw new IllegalStateException("检测到重复模块契约：" + module.moduleId());
@@ -582,6 +594,12 @@ public class ContractCatalog implements AutoCloseable {
         } catch (IOException exception) {
             throw new IllegalStateException("模块 JAR 路径非法：" + path.getFileName(), exception);
         }
+    }
+
+    private String sourceName(String jarFileName) {
+        return jarFileName.endsWith(".jar")
+                ? jarFileName.substring(0, jarFileName.length() - 4)
+                : jarFileName;
     }
 
     /**

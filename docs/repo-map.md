@@ -95,7 +95,7 @@
 | 模块动作变更 | 模块契约、模块 Java、模块 UI 清单、模块测试、宿主相关接口 |
 | 主题变更 | `themes/README.md`、目标 `theme.json`、`tokens.css`、`motion.css` |
 | 契约变更 | Schema、合法样例、非法样例、所有直接消费者 |
-| 构建或启动问题 | `README.md`、`启动归序.cmd`、`scripts/build.ps1`、`start.ps1`、`target/build-parallel-*` 中的目标日志行段 |
+| 构建或启动问题 | `README.md`、`启动归序.cmd`、`scripts/build.ps1`、`build-module-background.ps1`、`start.ps1`、`target/background/` 与 `target/build-parallel-*` 中的目标日志行段 |
 | 历史决策追溯 | `docs/agents/` 中相关交接文档的指定章节，按需读取 |
 
 历史交接文档只用于追溯事实、验证证据和已知风险，不单独构成实施授权。
@@ -139,10 +139,10 @@
 | 纯 Markdown/DOCX 文档门禁 | `.\scripts\doc-gate.ps1` |
 | 完整门禁 | `.\scripts\gate.ps1` |
 | 模块化验收 | `.\scripts\modularity.ps1` |
-| 构建与并行回归 | `.\scripts\build.ps1 -MaxParallel 3`；默认串行共享仓库、仓库级互斥锁，回归用 `.\scripts\test-build-parallel.ps1` |
+| 构建与分层启动 | `.\scripts\build.ps1 -MaxParallel 3` 或 `.\scripts\test-build-parallel.ps1`；分层启动用 `.\scripts\start.ps1 -BackgroundModules` 先启动控制模块与宿主，再逐个构建业务模块 |
 | 生成离线源码包 | 默认要求干净 Git 和索引化源码；仅本地脏快照使用 `.\scripts\package-offline.ps1 -AllowDirtySnapshot` |
 | 验证离线源码包 | `.\scripts\verify-offline.ps1 .\target\orderly-offline\Orderly-0.1.0-SNAPSHOT-offline-source.zip`；可加 `-MaxParallel <int>` |
-| 启动 | 开发路径用 `.\scripts\start.ps1`；解压 GitHub Release 后运行 `.\启动归序.cmd`，自动使用包内 `maven-repository` 与 `-MaxParallel 2` |
+| 启动 | 开发路径用 `.\scripts\start.ps1 -BackgroundModules`；解压 GitHub Release 后运行 `.\启动归序.cmd`，自动使用包内 `maven-repository` 和后台模块队列 |
 | HTTP 烟测 | `.\scripts\smoke.ps1` |
 
 构建与门禁产生真实退出码。未实际运行的命令应标记为未验证，不能引用历史结果代替当前结果。

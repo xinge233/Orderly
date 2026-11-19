@@ -203,7 +203,8 @@ class ModuleControlIntegrationTest {
         ModulePreferencesService reloaded = new ModulePreferencesService(
                 catalog,
                 runtime,
-                objectMapper
+                objectMapper,
+                SOURCES.toString()
         );
         reloaded.initialize();
         assertThat(reloaded.isEnabled("module_business")).isFalse();
@@ -458,7 +459,8 @@ class ModuleControlIntegrationTest {
         ModulePreferencesService reloaded = new ModulePreferencesService(
                 catalog,
                 runtime,
-                objectMapper
+                objectMapper,
+                SOURCES.toString()
         );
         reloaded.initialize();
         assertThat(reloaded.isActionAiCallableEnabled(

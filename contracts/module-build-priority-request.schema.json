@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/module-build-priority-request.schema.json",
+  "title": "Orderly module build priority request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sourceName"],
+  "properties": {
+    "sourceName": {
+      "type": "string",
+      "pattern": "^module_[a-z0-9_]+$"
+    }
+  }
+}

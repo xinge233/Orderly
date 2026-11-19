@@ -469,11 +469,17 @@ try {
         "contracts\ai-service-turn-request.schema.json",
         "contracts\ai-service-decision.schema.json",
         "contracts\ai-query-continuation-request.schema.json",
+        "contracts\module-build-status.schema.json",
+        "contracts\module-build-priority-request.schema.json",
         "contracts\samples\valid\ai-service-turn-request.json",
         "contracts\samples\valid\ai-service-decision-query.json",
         "contracts\samples\valid\ai-query-continuation-request.json",
+        "contracts\samples\valid\module-build-status.json",
+        "contracts\samples\valid\module-build-priority-request.json",
         "contracts\samples\invalid\ai-query-continuation-request-failed-payload.json",
-        "contracts\samples\invalid\ai-service-decision-query-with-actions.json"
+        "contracts\samples\invalid\ai-service-decision-query-with-actions.json",
+        "contracts\samples\invalid\module-build-status-unsafe-source.json",
+        "contracts\samples\invalid\module-build-priority-request-unsafe-source.json"
     )) {
         if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $requiredContract) -PathType Leaf)) {
             throw "缺少 Action 直执契约或样例：$requiredContract"
@@ -493,7 +499,11 @@ try {
         @{ Schema = "contracts\ai-service-decision.schema.json"; Sample = "contracts\samples\invalid\ai-service-decision-query-five.json"; Expected = $false },
         @{ Schema = "contracts\ai-service-decision.schema.json"; Sample = "contracts\samples\invalid\ai-service-decision-query-with-actions.json"; Expected = $false },
         @{ Schema = "contracts\ai-query-continuation-request.schema.json"; Sample = "contracts\samples\valid\ai-query-continuation-request.json"; Expected = $true },
-        @{ Schema = "contracts\ai-query-continuation-request.schema.json"; Sample = "contracts\samples\invalid\ai-query-continuation-request-failed-payload.json"; Expected = $false }
+        @{ Schema = "contracts\ai-query-continuation-request.schema.json"; Sample = "contracts\samples\invalid\ai-query-continuation-request-failed-payload.json"; Expected = $false },
+        @{ Schema = "contracts\module-build-status.schema.json"; Sample = "contracts\samples\valid\module-build-status.json"; Expected = $true },
+        @{ Schema = "contracts\module-build-status.schema.json"; Sample = "contracts\samples\invalid\module-build-status-unsafe-source.json"; Expected = $false },
+        @{ Schema = "contracts\module-build-priority-request.schema.json"; Sample = "contracts\samples\valid\module-build-priority-request.json"; Expected = $true },
+        @{ Schema = "contracts\module-build-priority-request.schema.json"; Sample = "contracts\samples\invalid\module-build-priority-request-unsafe-source.json"; Expected = $false }
     )) {
         $schemaPath = Join-Path $repoRoot $contractCase.Schema
         $samplePath = Join-Path $repoRoot $contractCase.Sample

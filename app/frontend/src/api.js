@@ -120,6 +120,18 @@ export class OrderlyApi {
         return this.request("/api/system-modules", options);
     }
 
+    getModuleBuilds(options) {
+        return this.request("/api/system/module-builds", options);
+    }
+
+    prioritizeModuleBuild(sourceName, options = {}) {
+        return this.request("/api/system/module-builds/prioritize", {
+            ...options,
+            method: "POST",
+            body: { sourceName }
+        });
+    }
+
     getModulePreferences(options) {
         return this.request("/api/system/module-preferences", options);
     }

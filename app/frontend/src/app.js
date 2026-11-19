@@ -41,9 +41,12 @@ import {
     isModuleVisible,
     moveModuleOrder,
     moveVisibleModuleOrder,
+    moduleBuildStatusLabel,
+    normalizeModuleBuildSnapshot,
     normalizeModuleCatalogs,
     normalizeModulePreferences,
     normalizeModuleUi,
+    pendingModuleBuilds,
     readCount,
     reconcileModulePreferences,
     reorderBefore,
@@ -144,6 +147,8 @@ const state = {
     aiSettingsTesting: false,
     aiSettingsError: "",
     modules: [],
+    moduleBuilds: normalizeModuleBuildSnapshot({}),
+    moduleBuildLoading: true,
     modulePreferences: normalizeModulePreferences({}),
     moduleInterfaceState: normalizeModuleInterfaceState({}),
     moduleCatalogIssues: [],
@@ -186,6 +191,8 @@ let sidebarCountTrackingFrame = null;
 let sidebarCountTrackingHandler = null;
 let sidebarCountRefreshTimer = null;
 let sidebarCountTransitionHandler = null;
+let moduleBuildPollTimer = null;
+let moduleBuildReloadInFlight = false;
 let aiDialog = null;
 const desktopSidebar = {
     active: false,
@@ -357,6 +364,7 @@ async function bootstrap() {
         testAiSettings: () => api.testAiSettings(),
         interpretGoal: (payload) => api.interpretAiTurn(payload),
         confirmAiPlan: (planId) => api.confirmAiPlan(planId),
+        beforeAiTurn: waitForModulesBeforeAiTurn,
         onAiSettingsChanged: (settings) => {
             state.aiSettings = normalizeAiSettings(settings);
             state.aiSettingsError = "";
@@ -374,14 +382,16 @@ async function bootstrap() {
         preferenceResult,
         themeResult,
         featureResult,
-        aiSettingsResult
+        aiSettingsResult,
+        moduleBuildResult
     ] = await Promise.allSettled([
         api.getModules(),
         api.getSystemModules(),
         api.getModulePreferences(),
         api.getThemes(),
         api.getSystemFeatures(),
-        api.getAiSettings()
+        api.getAiSettings(),
+        api.getModuleBuilds()
     ]);
     const catalogs = normalizeModuleCatalogs(
         moduleResult.status === "fulfilled" ? moduleResult.value : [],
@@ -396,6 +406,10 @@ async function bootstrap() {
         state.modules,
         preferenceResult.status === "fulfilled" ? preferenceResult.value : {}
     );
+    state.moduleBuilds = normalizeModuleBuildSnapshot(
+        moduleBuildResult.status === "fulfilled" ? moduleBuildResult.value : {}
+    );
+    state.moduleBuildLoading = false;
     const themeCatalog = normalizeThemeCatalog(
         themeResult.status === "fulfilled" ? themeResult.value : {}
     );
@@ -469,8 +483,14 @@ async function bootstrap() {
             error: true
         });
     }
+    if (moduleBuildResult.status === "rejected") {
+        toast(`模块构建状态读取失败：${errorMessage(moduleBuildResult.reason)}`, {
+            error: true
+        });
+    }
 
     void navigate("overview");
+    scheduleModuleBuildPoll();
 }
 
 /**
@@ -612,9 +632,14 @@ function applyCatalogState(catalogs, preferences) {
 }
 
 function activeViewBecameUnavailable() {
-    return state.activeView !== "overview"
-        && state.activeView !== "history"
-        && !moduleForView(state.activeView);
+    if (state.activeView === "overview" || state.activeView === "history") {
+        return false;
+    }
+    const buildSource = buildViewSource(state.activeView);
+    if (buildSource) {
+        return !pendingBuildEntry(buildSource);
+    }
+    return !moduleForView(state.activeView);
 }
 
 function refreshVisibleFrameworkViews() {
@@ -626,6 +651,205 @@ function refreshVisibleFrameworkViews() {
     if (document.querySelector("#settings-dialog")?.open) {
         renderSettings();
     }
+}
+
+function buildViewSource(view) {
+    const text = String(view ?? "");
+    return text.startsWith("build:") ? text.slice("build:".length) : "";
+}
+
+function buildViewId(sourceName) {
+    return `build:${sourceName}`;
+}
+
+function pendingBuildEntry(sourceName) {
+    return pendingModuleBuilds(state.moduleBuilds, state.modules)
+        .find((entry) => entry.sourceName === sourceName) ?? null;
+}
+
+function refreshModuleBuildViews() {
+    renderNavigation(document.querySelector("#nav-search")?.value ?? "");
+    const sourceName = buildViewSource(state.activeView);
+    if (sourceName) {
+        renderModuleBuildView(sourceName);
+    }
+    if (state.activeView === "overview" && document.querySelector("#module-build-strip")) {
+        renderModuleBuildOverview();
+    }
+}
+
+/**
+ * 轮询后台构建快照，并在模块就绪后重新读取宿主目录。
+ *
+ * @returns {Promise<void>}
+ */
+async function refreshModuleBuilds() {
+    if (moduleBuildReloadInFlight) {
+        return;
+    }
+    moduleBuildReloadInFlight = true;
+    try {
+        const payload = await api.getModuleBuilds();
+        state.moduleBuilds = normalizeModuleBuildSnapshot(payload);
+        state.moduleBuildLoading = false;
+        const readySources = pendingModuleBuilds(state.moduleBuilds, state.modules)
+            .filter((entry) => entry.status === "READY")
+            .map((entry) => entry.sourceName);
+        if (readySources.length > 0) {
+            const activeSource = buildViewSource(state.activeView);
+            await reloadModuleCatalogAfterRefresh({});
+            const loaded = state.modules.find((module) =>
+                readySources.includes(module.moduleId));
+            if (loaded && activeSource && readySources.includes(activeSource)) {
+                await navigate(moduleNavigationItem(loaded).id);
+                return;
+            }
+        }
+        refreshModuleBuildViews();
+    } catch (error) {
+        state.moduleBuildLoading = false;
+        toast(`模块构建状态刷新失败：${errorMessage(error)}`, { error: true });
+    } finally {
+        moduleBuildReloadInFlight = false;
+    }
+}
+
+function scheduleModuleBuildPoll() {
+    if (moduleBuildPollTimer != null) {
+        window.clearTimeout(moduleBuildPollTimer);
+        moduleBuildPollTimer = null;
+    }
+    const pending = pendingModuleBuilds(state.moduleBuilds, state.modules);
+    const active = pending.some((entry) =>
+        entry.status === "QUEUED" || entry.status === "BUILDING");
+    if (state.moduleBuilds.mode !== "background" || (!active && !buildViewSource(state.activeView))) {
+        return;
+    }
+    moduleBuildPollTimer = window.setTimeout(async () => {
+        moduleBuildPollTimer = null;
+        await refreshModuleBuilds();
+        scheduleModuleBuildPoll();
+    }, 1000);
+}
+
+async function openModuleBuild(sourceName) {
+    const entry = pendingBuildEntry(sourceName);
+    if (!entry) {
+        toast("该模块已不在后台构建队列中，正在刷新目录。", { error: true });
+        await refreshModuleBuilds();
+        return;
+    }
+    try {
+        const payload = await api.prioritizeModuleBuild(sourceName);
+        state.moduleBuilds = normalizeModuleBuildSnapshot(payload);
+        toast(`已将 ${entry.title} 移到优先构建位置。`);
+    } catch (error) {
+        toast(`优先构建请求失败：${errorMessage(error)}`, { error: true });
+        return;
+    }
+    await navigate(buildViewId(sourceName));
+    scheduleModuleBuildPoll();
+}
+
+function renderModuleBuildView(sourceName) {
+    const main = document.querySelector("#main-content");
+    if (!main) {
+        return;
+    }
+    const entry = pendingBuildEntry(sourceName);
+    if (!entry) {
+        return;
+    }
+    const panel = element("section", "panel module-build-panel");
+    panel.dataset.buildStatus = entry.status;
+    const header = element("header", "panel__header");
+    const copy = element("div");
+    copy.append(
+        element("p", "eyebrow", "MODULE BUILD"),
+        element("h1", "", entry.title),
+        element("p", "", entry.caption || "该模块正在由后台准备。")
+    );
+    header.append(copy, element(
+        "span",
+        `status-chip module-build-chip module-build-chip--${entry.status.toLowerCase()}`,
+        moduleBuildStatusLabel(entry.status)
+    ));
+    const body = element("div", "module-build-panel__body");
+    body.append(
+        element(
+            "p",
+            "module-build-message",
+            entry.message || "后台构建器将在当前模块完成后自动启用它。"
+        ),
+        element(
+            "p",
+            "muted",
+            entry.status === "FAILED"
+                ? "可点击“重试并优先构建”重新排队；失败模块不会提供任何动作或查询。"
+                : "框架和其他已加载模块可继续使用；此页面不会伪造模块能力。"
+        )
+    );
+    const actions = element("div", "module-build-actions");
+    const retry = element(
+        "button",
+        "primary-button",
+        entry.status === "FAILED" ? "重试并优先构建" : "优先构建此模块"
+    );
+    retry.type = "button";
+    retry.addEventListener("click", () => void openModuleBuild(sourceName));
+    const back = element("button", "text-button", "返回总览");
+    back.type = "button";
+    back.addEventListener("click", () => void navigate("overview"));
+    actions.append(retry, back);
+    body.append(actions);
+    panel.append(header, body);
+    main.replaceChildren(panel);
+}
+
+/**
+ * AI 请求前等待全部业务模块完成构建。
+ *
+ * 用户明确取消等待时返回 false；存在失败模块或等待超时会抛出错误，调用方不会提交
+ * 半套工具目录给模型。等待阶段不产生任何 Action 或执行记录。
+ *
+ * @returns {Promise<boolean>} 是否继续 AI 回合
+ */
+async function waitForModulesBeforeAiTurn() {
+    const pending = pendingModuleBuilds(state.moduleBuilds, state.modules);
+    if (pending.length === 0) {
+        return true;
+    }
+    const waiting = pending.filter((entry) =>
+        entry.status === "QUEUED" || entry.status === "BUILDING" || entry.status === "READY");
+    const failed = pending.filter((entry) => entry.status === "FAILED");
+    if (waiting.length === 0 && failed.length > 0) {
+        throw new Error("仍有模块构建失败，请先在模块导航中重试或打开模块设置。");
+    }
+    if (!window.confirm(
+        `还有 ${pending.length} 个模块尚未全部就绪。AI 将在模块构建完成后继续本次指令。是否等待？`
+    )) {
+        toast("已取消本次 AI 指令；模块不会因此停止构建。");
+        return false;
+    }
+
+    toast("AI 已暂存本次指令，等待模块全部就绪后继续。");
+    const deadline = Date.now() + (10 * 60 * 1000);
+    while (Date.now() < deadline) {
+        const current = pendingModuleBuilds(state.moduleBuilds, state.modules);
+        if (current.length === 0) {
+            return true;
+        }
+        const currentFailed = current.filter((entry) => entry.status === "FAILED");
+        if (currentFailed.length > 0
+            && current.every((entry) => entry.status === "FAILED")) {
+            throw new Error(
+                `模块构建失败：${currentFailed.map((entry) => entry.title).join("、")}`
+            );
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        await refreshModuleBuilds();
+    }
+    throw new Error("等待模块构建完成超时，请稍后重试。");
 }
 
 /**
@@ -652,10 +876,11 @@ function refreshAfterAiExecution(execution) {
  * 重新渲染”。若当前视图随模块停用而失效，则回到总览；刷新失败保留现有可用视图。
  */
 async function reloadModuleCatalogAfterRefresh(refreshPayload) {
-    const [moduleResult, systemModuleResult, preferenceResult] = await Promise.allSettled([
+    const [moduleResult, systemModuleResult, preferenceResult, buildResult] = await Promise.allSettled([
         api.getModules(),
         api.getSystemModules(),
-        api.getModulePreferences()
+        api.getModulePreferences(),
+        api.getModuleBuilds()
     ]);
     if (moduleResult.status === "rejected" || systemModuleResult.status === "rejected") {
         const failure = moduleResult.status === "rejected"
@@ -686,6 +911,10 @@ async function reloadModuleCatalogAfterRefresh(refreshPayload) {
             : state.modulePreferences.moduleSettings
     };
     applyCatalogState(catalogs, preservedPreferences);
+    if (buildResult.status === "fulfilled") {
+        state.moduleBuilds = normalizeModuleBuildSnapshot(buildResult.value);
+        state.moduleBuildLoading = false;
+    }
     await loadModuleUis();
     state.moduleAssetVersion = String(Date.now());
 
@@ -724,6 +953,7 @@ async function reloadModuleCatalogAfterRefresh(refreshPayload) {
     } else {
         refreshVisibleFrameworkViews();
     }
+    scheduleModuleBuildPoll();
     const source = refreshPayload && typeof refreshPayload === "object"
         ? refreshPayload
         : {};
@@ -1679,15 +1909,21 @@ function renderNavigation(query = "") {
     const moduleItems = sortModules(state.modules, state.modulePreferences.sidebarOrder)
         .filter(isModuleVisible)
         .map((module) => moduleNavigationItem(module));
+    const buildItems = pendingModuleBuilds(state.moduleBuilds, state.modules)
+        .map((entry) => moduleBuildNavigationItem(entry));
     const sections = [
-        { ...NAV_SECTIONS[0], items: [...NAV_SECTIONS[0].items, ...moduleItems] },
+        {
+            ...NAV_SECTIONS[0],
+            items: [...NAV_SECTIONS[0].items, ...moduleItems, ...buildItems]
+        },
         NAV_SECTIONS[1]
     ];
     container.replaceChildren();
 
     sections.forEach((section) => {
         const visibleItems = section.items.filter((item) => {
-            const haystack = `${item.label} ${item.caption}`.toLocaleLowerCase("zh-CN");
+            const haystack = `${item.label} ${item.caption} ${item.buildStatus ?? ""}`
+                .toLocaleLowerCase("zh-CN");
             return !normalizedQuery || haystack.includes(normalizedQuery);
         });
         if (!visibleItems.length) {
@@ -1719,6 +1955,11 @@ function renderNavigation(query = "") {
                 button.title = "长按拖动调整顺序；Alt+↑/↓ 也可排序";
                 button.setAttribute("aria-keyshortcuts", "Alt+ArrowUp Alt+ArrowDown");
             }
+            if (item.buildSource) {
+                button.classList.add("nav-item--build");
+                button.dataset.buildStatus = item.buildStatus;
+                button.title = `${item.caption}；${moduleBuildStatusLabel(item.buildStatus)}`;
+            }
             button.innerHTML = `<span class="nav-icon">${icon(item.icon)}</span>`;
             if (item.moduleId) {
                 const handle = element("span", "nav-drag-handle", "⋮");
@@ -1727,13 +1968,24 @@ function renderNavigation(query = "") {
             }
             const copy = element("span", "nav-copy");
             copy.append(element("strong", "", item.label));
+            if (item.buildSource) {
+                copy.append(element(
+                    "small",
+                    "nav-build-state",
+                    moduleBuildStatusLabel(item.buildStatus)
+                ));
+            }
             button.append(copy);
             button.addEventListener("click", (event) => {
                 if (performance.now() < suppressNavigationClickUntil) {
                     event.preventDefault();
                     return;
                 }
-                void navigate(item.id);
+                if (item.buildSource) {
+                    void openModuleBuild(item.buildSource);
+                } else {
+                    void navigate(item.id);
+                }
             });
             if (item.moduleId) {
                 button.addEventListener("pointerdown", (event) => {
@@ -1749,7 +2001,9 @@ function renderNavigation(query = "") {
             list.append(button);
         });
         group.append(list);
-        if (section.id === "workspace" && state.modules.length === 0) {
+        if (section.id === "workspace"
+            && state.modules.length === 0
+            && buildItems.length === 0) {
             group.append(element("p", "empty-state empty-state--nav", "尚未安装功能模块"));
         }
         container.append(group);
@@ -1941,6 +2195,17 @@ function moduleNavigationItem(module) {
     };
 }
 
+function moduleBuildNavigationItem(entry) {
+    return {
+        id: buildViewId(entry.sourceName),
+        label: entry.title,
+        caption: `${entry.caption} · ${moduleBuildStatusLabel(entry.status)}`,
+        icon: entry.icon,
+        buildSource: entry.sourceName,
+        buildStatus: entry.status
+    };
+}
+
 function moduleForView(view) {
     if (view === "overview" || view === "history") {
         return null;
@@ -1980,11 +2245,13 @@ async function navigate(view) {
     closeMobileNav();
     renderNavigation(document.querySelector("#nav-search")?.value ?? "");
     const selectedModule = moduleForView(view);
+    const buildSource = buildViewSource(view);
+    const buildEntry = buildSource ? pendingBuildEntry(buildSource) : null;
     const labels = {
         overview: "总览",
         history: "历史记录"
     };
-    const viewTitle = selectedModule?.title ?? labels[view] ?? "模块";
+    const viewTitle = selectedModule?.title ?? buildEntry?.title ?? labels[view] ?? "模块";
     const mobileTitle = document.querySelector("#mobile-view-title");
     if (mobileTitle) {
         mobileTitle.textContent = viewTitle;
@@ -2009,6 +2276,8 @@ async function navigate(view) {
             await loadHistory();
         } else if (selectedModule) {
             await mountModule(selectedModule);
+        } else if (buildSource) {
+            renderModuleBuildView(buildSource);
         } else {
             await loadOverview();
         }
@@ -2325,6 +2594,7 @@ function renderOverview() {
             </section>
 
             <section class="surface-grid" id="module-card-grid" aria-label="已安装模块摘要"></section>
+            <section class="module-build-strip" id="module-build-strip" aria-label="待构建模块" hidden></section>
             <p class="sr-only" id="module-order-status" aria-live="polite"></p>
 
             ${planningRegions}
@@ -2333,9 +2603,50 @@ function renderOverview() {
 
     hydrateIcons(main);
     renderModuleCards();
+    renderModuleBuildOverview();
     renderPlan();
     renderTimeline();
     renderRunSummary();
+}
+
+function renderModuleBuildOverview() {
+    const strip = document.querySelector("#module-build-strip");
+    if (!strip) {
+        return;
+    }
+    const entries = pendingModuleBuilds(state.moduleBuilds, state.modules);
+    strip.replaceChildren();
+    strip.hidden = entries.length === 0;
+    if (entries.length === 0) {
+        return;
+    }
+    const header = element("header", "module-build-strip__header");
+    header.append(
+        element("div", "module-build-strip__copy"),
+        element("span", "status-chip", `${entries.length} 个模块准备中`)
+    );
+    header.firstElementChild.append(
+        element("p", "eyebrow", "MODULE PIPELINE"),
+        element("h2", "", "框架已可用，业务模块正在后台就绪"),
+        element("p", "", "点击任一模块可请求优先构建；未加载模块不会提供动作或查询。")
+    );
+    const list = element("div", "module-build-strip__list");
+    entries.forEach((entry) => {
+        const button = element("button", "module-build-item");
+        button.type = "button";
+        button.dataset.buildStatus = entry.status;
+        const iconNode = element("span", "module-build-item__icon");
+        iconNode.innerHTML = icon(entry.icon, 18);
+        const copy = element("span", "module-build-item__copy");
+        copy.append(
+            element("strong", "", entry.title),
+            element("small", "", moduleBuildStatusLabel(entry.status))
+        );
+        button.append(iconNode, copy);
+        button.addEventListener("click", () => void openModuleBuild(entry.sourceName));
+        list.append(button);
+    });
+    strip.append(header, list);
 }
 
 async function loadOverviewCounts() {
@@ -2376,10 +2687,13 @@ function renderModuleCards() {
         });
     }
     if (!displayed.length) {
+        const pendingBuilds = pendingModuleBuilds(state.moduleBuilds, state.modules);
         grid.append(element(
             "div",
             "panel empty-state module-empty-state",
-            state.modules.length
+            pendingBuilds.length
+                ? "业务模块正在后台构建；可先从左侧选择模块并请求优先构建。"
+                : state.modules.length
                 ? "当前没有已启用的功能模块；可在模组设置中重新启用。"
                 : "尚未安装功能模块；添加 Module/module_* 并重新构建后会显示在这里。"
         ));

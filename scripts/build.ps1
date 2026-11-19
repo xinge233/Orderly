@@ -7,6 +7,9 @@
 #   -SkipTests 控制 Maven 构建是否跳测；-Offline 使用严格 Maven 离线模式；
 #   -MavenRepository 指定共享预热 Maven 仓库，默认开发使用 .m2-repository，离线使用包内 maven-repository。
 #   -MaxParallel 指定同时执行的模块 Maven clean verify 数量，默认 1 表示保持串行。
+#   -BootstrapOnly 只构建 module_control 和宿主，供框架先启动；业务模块由后台队列逐个构建。
+#   -ModulesOnly 只构建指定业务模块，不重建宿主；-ModuleName 限定单个 module_* 源码目录。
+#   -SkipKernelInstall 供后台队列复用 BootstrapOnly 已安装的 kernel，避免每模块重复安装。
 #   JDK 21 和 Maven 3.9+ 必须可从 JAVA_HOME/PATH 使用。
 #
 # 副作用：
@@ -24,8 +27,22 @@ param(
     [switch]$Offline,
     [string]$MavenRepository,
     [ValidateRange(1, 2147483647)]
-    [int]$MaxParallel = 1
+    [int]$MaxParallel = 1,
+    [switch]$BootstrapOnly,
+    [switch]$ModulesOnly,
+    [string]$ModuleName,
+    [switch]$SkipKernelInstall
 )
+
+if ($BootstrapOnly -and $ModulesOnly) {
+    throw "-BootstrapOnly 与 -ModulesOnly 不能同时使用。"
+}
+if ($BootstrapOnly -and -not [string]::IsNullOrWhiteSpace($ModuleName)) {
+    throw "-BootstrapOnly 不接受 -ModuleName；系统模块只能由 BootstrapOnly 路径构建。"
+}
+if (-not $ModulesOnly -and -not [string]::IsNullOrWhiteSpace($ModuleName)) {
+    throw "-ModuleName 只能与 -ModulesOnly 一起使用。"
+}
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -535,7 +552,8 @@ function Get-ModuleJar {
 
 function Publish-CandidateModules {
     param(
-        [Parameter(Mandatory = $true)][System.IO.DirectoryInfo[]]$ModuleDirectories
+        [Parameter(Mandatory = $true)][System.IO.DirectoryInfo[]]$ModuleDirectories,
+        [switch]$RequireControlModule
     )
     [System.IO.Directory]::CreateDirectory($candidateStagingRoot) | Out-Null
 
@@ -570,6 +588,9 @@ function Publish-CandidateModules {
                 finally {
                     $reader.Dispose()
                 }
+                if ([string]$contract.moduleId -ne $moduleDirectory.Name) {
+                    throw "模块目录名与契约 moduleId 不一致：$($moduleDirectory.Name) -> $($contract.moduleId)"
+                }
                 if ($null -ne $contract.system) {
                     if ($contract.system.role -ne "MODULE_CONTROL" -or $contract.system.protected -ne $true) {
                         throw "模块 $($moduleDirectory.Name) 的 system 元数据必须为受保护的 MODULE_CONTROL。"
@@ -594,9 +615,64 @@ function Publish-CandidateModules {
     }
 
     $systemModuleDirectories = @($systemModuleDirectories | Sort-Object -Unique)
-    if ($systemModuleDirectories.Count -ne 1 -or
-            $systemModuleDirectories[0] -ne "module_control") {
+    if ($RequireControlModule -and
+            ($systemModuleDirectories.Count -ne 1 -or
+                $systemModuleDirectories[0] -ne "module_control")) {
         throw "宿主构建要求且仅允许 module_control 声明 MODULE_CONTROL，实际：$($systemModuleDirectories -join ', ')"
+    }
+    if (-not $RequireControlModule -and $systemModuleDirectories.Count -ne 0) {
+        throw "业务模块构建不得包含系统模块契约，实际：$($systemModuleDirectories -join ', ')"
+    }
+}
+
+function Publish-RuntimeModuleJars {
+    param(
+        [Parameter(Mandatory = $true)][System.IO.DirectoryInfo[]]$ModuleDirectories
+    )
+    [System.IO.Directory]::CreateDirectory($stagingRoot) | Out-Null
+
+    foreach ($moduleDirectory in $ModuleDirectories) {
+        $moduleJar = Get-ModuleJar $moduleDirectory
+        $destination = Assert-PathWithin `
+            (Join-Path $stagingRoot "$($moduleDirectory.Name).jar") `
+            $stagingRoot `
+            "运行时模块 JAR"
+        if (Test-Path -LiteralPath $destination -PathType Container) {
+            throw "运行时模块目标不是普通 JAR 文件：$destination"
+        }
+        $destinationItem = Get-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
+        if ($destinationItem -and
+                ($destinationItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "运行时模块 JAR 不能是重解析点：$destination"
+        }
+        $temporaryName = ".$($moduleDirectory.Name).$([guid]::NewGuid().ToString('N')).tmp"
+        $temporary = Assert-PathWithin `
+            (Join-Path $stagingRoot $temporaryName) `
+            $stagingRoot `
+            "运行时模块临时 JAR"
+        try {
+            [System.IO.File]::Copy($moduleJar.FullName, $temporary, $true)
+            if (Test-Path -LiteralPath $destination -PathType Leaf) {
+                $backup = "$destination.backup-$([guid]::NewGuid().ToString('N'))"
+                try {
+                    [System.IO.File]::Replace($temporary, $destination, $backup, $true)
+                }
+                finally {
+                    if (Test-Path -LiteralPath $backup) {
+                        Remove-Item -LiteralPath $backup -Force
+                    }
+                }
+            }
+            else {
+                [System.IO.File]::Move($temporary, $destination)
+            }
+        }
+        finally {
+            if (Test-Path -LiteralPath $temporary) {
+                Remove-Item -LiteralPath $temporary -Force
+            }
+        }
+        Write-Host "已原子发布模块 JAR：$destination"
     }
 }
 
@@ -806,35 +882,84 @@ try {
         Sort-Object Name)
     $moduleNames = @($moduleDirectories | ForEach-Object { $_.Name })
     $controlModules = @($moduleDirectories | Where-Object { $_.Name -eq "module_control" })
-    # 系统模块是宿主治理能力的唯一入口，缺失或重复都不能得到一个可启动的模块目录。
-    if ($controlModules.Count -ne 1) {
+    if (-not $ModulesOnly -and $controlModules.Count -ne 1) {
+        # 系统模块是宿主治理能力的唯一入口，缺失或重复都不能得到一个可启动的模块目录。
         throw "宿主构建要求且仅允许一个 Module/module_control 源码目录，实际 $($controlModules.Count) 个。"
     }
-    foreach ($moduleDirectory in $moduleDirectories) {
+    Write-Host "扫描到 $($moduleNames.Count) 个模块源码：$($moduleNames -join ', ')"
+
+    $moduleDirectoriesToBuild = if ($BootstrapOnly) {
+        @($controlModules)
+    }
+    elseif ($ModulesOnly -and -not [string]::IsNullOrWhiteSpace($ModuleName)) {
+        if ($ModuleName -notmatch '^module_[a-z0-9_]+$' -or
+                $ModuleName -eq "module_control") {
+            throw "-ModuleName 必须是已发现的普通业务模块名，且不能为 module_control：$ModuleName"
+        }
+        $selected = @($moduleDirectories | Where-Object { $_.Name -eq $ModuleName })
+        if ($selected.Count -ne 1) {
+            throw "未发现指定业务模块源码：Module/$ModuleName"
+        }
+        $selected
+    }
+    elseif ($ModulesOnly) {
+        @($moduleDirectories | Where-Object { $_.Name -ne "module_control" })
+    }
+    else {
+        @($moduleDirectories)
+    }
+    if ($moduleDirectoriesToBuild.Count -eq 0) {
+        Write-Host "没有需要构建的模块。"
+        return
+    }
+    $moduleNamesToBuild = @($moduleDirectoriesToBuild | ForEach-Object { $_.Name })
+    foreach ($moduleDirectory in $moduleDirectoriesToBuild) {
         $pom = Join-Path $moduleDirectory.FullName "pom.xml"
         if (-not (Test-Path -LiteralPath $pom -PathType Leaf)) {
             throw "模块目录缺少 pom.xml：$($moduleDirectory.FullName)"
         }
     }
-    Write-Host "扫描到 $($moduleNames.Count) 个模块：$($moduleNames -join ', ')"
+    $buildMode = if ($BootstrapOnly) {
+        "bootstrap"
+    }
+    elseif ($ModulesOnly) {
+        "modules-only"
+    }
+    else {
+        "full"
+    }
+    Write-Host "构建模式：$buildMode；本次模块：$($moduleNamesToBuild -join ', ')"
 
     # kernel 是模块和宿主共享的 SPI，必须先安装到共享预热仓库；只有显式并行 worker 以只读 tail 读取它。
-    $kernelArguments = @(
-        "-pl", "app/kernel",
-        "-am",
-        "install"
-    )
-    if ($SkipTests) {
-        $kernelArguments += "-DskipTests"
+    if (-not $SkipKernelInstall) {
+        $kernelArguments = @(
+            "-pl", "app/kernel",
+            "-am",
+            "install"
+        )
+        if ($SkipTests) {
+            $kernelArguments += "-DskipTests"
+        }
+        Invoke-Maven $kernelArguments
     }
-    Invoke-Maven $kernelArguments
-
-    $workers = @(Invoke-ModuleWorkers -ModuleDirectories $moduleDirectories)
-    if ($workers.Count -ne $moduleDirectories.Count) {
-        throw "模块 worker 完成数与发现数不一致。发现=$($moduleDirectories.Count) 完成=$($workers.Count)"
+    else {
+        Write-Host "复用 BootstrapOnly 已安装的 kernel。"
     }
 
-    Publish-CandidateModules -ModuleDirectories $moduleDirectories
+    $workers = @(Invoke-ModuleWorkers -ModuleDirectories $moduleDirectoriesToBuild)
+    if ($workers.Count -ne $moduleDirectoriesToBuild.Count) {
+        throw "模块 worker 完成数与发现数不一致。发现=$($moduleDirectoriesToBuild.Count) 完成=$($workers.Count)"
+    }
+
+    Publish-CandidateModules `
+        -ModuleDirectories $moduleDirectoriesToBuild `
+        -RequireControlModule:(-not $ModulesOnly)
+
+    if ($ModulesOnly) {
+        Publish-RuntimeModuleJars -ModuleDirectories $moduleDirectoriesToBuild
+        Write-Host "业务模块构建完成，未重建宿主：$($moduleNamesToBuild -join ', ')"
+    }
+    else {
 
     $hostArguments = @(
         "-f", (Join-Path $repoRoot "app\host\pom.xml"),
@@ -892,11 +1017,12 @@ try {
     }
 
     Write-Host "构建完成。运行时模块目录：$stagingRoot"
-    if ($MaxParallel -gt 1 -and $moduleDirectories.Count -gt 1) {
+    if ($MaxParallel -gt 1 -and $moduleDirectoriesToBuild.Count -gt 1) {
         Write-Host "模块 worker 日志与隔离仓库：$runRoot"
     }
     else {
         Write-Host "模块 worker 日志：$runRoot；模块 Maven 使用共享仓库：$localRepository"
+    }
     }
 }
 finally {

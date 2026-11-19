@@ -5,6 +5,7 @@
 #
 # 输入：
 #   -Port 指定 Java HTTP 端口，默认 8080；-SkipBuild 复用已有 JAR。
+#   -BackgroundModules 先只构建控制模块与宿主，随后由后台队列逐个构建并追加业务模块。
 #   -Offline 将严格 Maven 离线模式及可选 -MavenRepository 透传给 build.ps1，
 #   并要求复用现有 ai/.venv；该开关不宣称 Node 或整个应用离线。
 #   -MavenOffline 只让 Maven 使用包内 maven-repository 严格离线构建，
@@ -28,7 +29,8 @@ param(
     [switch]$MavenOffline,
     [string]$MavenRepository,
     [ValidateRange(1, 2147483647)]
-    [int]$MaxParallel = 1
+    [int]$MaxParallel = 1,
+    [switch]$BackgroundModules
 )
 
 $ErrorActionPreference = "Stop"
@@ -113,6 +115,213 @@ function Wait-AiService {
     throw "Timed out waiting for Python AI service health: $BaseUrl"
 }
 
+function Wait-JavaHost {
+    param(
+        [string]$BaseUrl,
+        [System.Diagnostics.Process]$Process
+    )
+    $deadline = [DateTime]::UtcNow.AddSeconds(45)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        if ($Process.HasExited) {
+            throw "Java 宿主启动失败，退出码：$($Process.ExitCode)"
+        }
+        try {
+            $health = Invoke-RestMethod -Uri "$BaseUrl/api/health" -Method Get -TimeoutSec 2
+            if ([string]$health.status -eq "UP") {
+                return $health
+            }
+        }
+        catch {
+            # 首次启动时 Spring 尚未完成监听，继续轮询。
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    throw "等待 Java 宿主健康检查超时：$BaseUrl"
+}
+
+function ConvertTo-ProcessArgument {
+    param([string]$Value)
+    if ($Value -notmatch '[\s"]') {
+        return $Value
+    }
+    return '"' + ($Value -replace '"', '\"') + '"'
+}
+
+function Join-ProcessArguments {
+    param([string[]]$Arguments)
+    return (@($Arguments | ForEach-Object { ConvertTo-ProcessArgument ([string]$_) }) -join " ")
+}
+
+function Invoke-BackgroundStart {
+    param(
+        [Parameter(Mandatory = $true)][string]$JavaExecutable,
+        [Parameter(Mandatory = $true)][string]$HostJar,
+        [Parameter(Mandatory = $true)][string]$ModulesDirectory,
+        [Parameter(Mandatory = $true)][string]$ThemesDirectory,
+        [Parameter(Mandatory = $true)][int]$HttpPort,
+        [switch]$OfflineMode,
+        [switch]$SkipMavenTests,
+        [switch]$UseMavenOffline,
+        [string]$Repository
+    )
+    $logRoot = Join-Path $repoRoot "target\background"
+    [System.IO.Directory]::CreateDirectory($logRoot) | Out-Null
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $javaOut = Join-Path $logRoot "java-$stamp.out.log"
+    $javaErr = Join-Path $logRoot "java-$stamp.err.log"
+    $builderOut = Join-Path $logRoot "module-builder-$stamp.out.log"
+    $builderErr = Join-Path $logRoot "module-builder-$stamp.err.log"
+    $aiOut = Join-Path $logRoot "ai-$stamp.out.log"
+    $aiErr = Join-Path $logRoot "ai-$stamp.err.log"
+    $baseUrl = "http://127.0.0.1:$HttpPort"
+
+    $previousToken = $env:ORDERLY_AI_IPC_TOKEN
+    $previousAiPort = $env:ORDERLY_AI_PORT
+    $javaProcess = $null
+    $builderProcess = $null
+    $aiProcess = $null
+    Push-Location $repoRoot
+    try {
+        $aiPort = Get-FreeTcpPort
+        $aiBaseUrl = "http://127.0.0.1:$aiPort"
+        $env:ORDERLY_AI_IPC_TOKEN = New-IpcToken
+        $env:ORDERLY_AI_PORT = [string]$aiPort
+
+        $javaArguments = @(
+            "-Dorderly.modules-dir=$ModulesDirectory",
+            "-Dorderly.module-source-dir=$repoRoot\Module",
+            "-Dorderly.themes-dir=$ThemesDirectory",
+            "-Dorderly.background-modules-enabled=true",
+            "-Dorderly.module-build-status=$repoRoot\target\module-build-status.json",
+            "-Dorderly.module-build-priority=$repoRoot\target\module-build-priority.json",
+            "-Dorderly.ai-service.url=$aiBaseUrl",
+            "-jar",
+            $HostJar,
+            "--server.port=$HttpPort"
+        )
+        Write-Host "使用 Java：$JavaExecutable"
+        Write-Host "模块目录：$ModulesDirectory"
+        Write-Host "本地地址：$baseUrl/"
+        Write-Host "Java 日志：$javaOut"
+        $javaProcess = Start-Process `
+            -FilePath $JavaExecutable `
+            -ArgumentList (Join-ProcessArguments $javaArguments) `
+            -WorkingDirectory $repoRoot `
+            -WindowStyle Hidden `
+            -RedirectStandardOutput $javaOut `
+            -RedirectStandardError $javaErr `
+            -PassThru
+        Wait-JavaHost -BaseUrl $baseUrl -Process $javaProcess | Out-Null
+        Write-Host "框架已启动，开始后台准备业务模块。"
+        Write-Host "模块构建日志：$builderOut"
+
+        $builderArguments = @(
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            (Join-Path $PSScriptRoot "build-module-background.ps1"),
+            "-BaseUrl",
+            $baseUrl,
+            "-SkipKernelInstall"
+        )
+        if ($SkipMavenTests) {
+            $builderArguments += "-SkipTests"
+        }
+        if ($OfflineMode -or $UseMavenOffline) {
+            $builderArguments += "-Offline"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($Repository)) {
+            $builderArguments += @("-MavenRepository", $Repository)
+        }
+        $powerShellExecutable = (Get-Process -Id $PID).Path
+        $builderProcess = Start-Process `
+            -FilePath $powerShellExecutable `
+            -ArgumentList (Join-ProcessArguments $builderArguments) `
+            -WorkingDirectory $repoRoot `
+            -WindowStyle Hidden `
+            -RedirectStandardOutput $builderOut `
+            -RedirectStandardError $builderErr `
+            -PassThru
+
+        $aiPreparationError = $null
+        try {
+            if ($OfflineMode) {
+                $python = Join-Path $repoRoot "ai\.venv\Scripts\python.exe"
+                if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+                    throw "严格离线启动需要现有 ai/.venv。"
+                }
+            }
+            else {
+                if (-not (Test-Path -LiteralPath $aiEnvScript -PathType Leaf)) {
+                    throw "未找到 Python AI 环境脚本：$aiEnvScript"
+                }
+                $python = & $aiEnvScript
+            }
+            if (-not $python -or -not (Test-Path -LiteralPath $python -PathType Leaf)) {
+                throw "Python AI 环境准备失败。"
+            }
+            $aiProcess = Start-Process `
+                -FilePath $python `
+                -ArgumentList (Join-ProcessArguments @(
+                    "-m",
+                    "orderly_ai",
+                    "--port",
+                    [string]$aiPort
+                )) `
+                -WorkingDirectory $repoRoot `
+                -WindowStyle Hidden `
+                -RedirectStandardOutput $aiOut `
+                -RedirectStandardError $aiErr `
+                -PassThru
+            Wait-AiService -BaseUrl $aiBaseUrl -Token $env:ORDERLY_AI_IPC_TOKEN -Process $aiProcess
+            Write-Host "AI 服务已就绪：$aiBaseUrl"
+        }
+        catch {
+            $aiPreparationError = $_
+            Write-Warning "Java 与模块构建继续运行，但 AI 服务未就绪：$($_.Exception.Message)"
+        }
+
+        while (-not $javaProcess.HasExited) {
+            Start-Sleep -Milliseconds 500
+        }
+        $javaProcess.Refresh()
+        $appExitCode = [int]$javaProcess.ExitCode
+
+        if ($builderProcess.HasExited) {
+            $builderProcess.Refresh()
+            if ($builderProcess.ExitCode -ne 0) {
+                Write-Warning "后台模块构建器退出码：$($builderProcess.ExitCode)；日志：$builderErr"
+            }
+        }
+        if ($aiPreparationError) {
+            Write-Warning "AI 服务启动失败：$($aiPreparationError.Exception.Message)；日志：$aiErr"
+        }
+        if ($appExitCode -ne 0) {
+            throw "应用退出码：$appExitCode；Java 日志：$javaErr"
+        }
+    }
+    finally {
+        if ($builderProcess -and -not $builderProcess.HasExited) {
+            # build.ps1 会启动 Maven 子进程；按进程树终止，避免留下后台构建。
+            & taskkill.exe /PID $builderProcess.Id /T /F 2>&1 | Out-Null
+            $builderProcess.WaitForExit(5000) | Out-Null
+        }
+        if ($aiProcess -and -not $aiProcess.HasExited) {
+            Stop-Process -Id $aiProcess.Id -Force
+            $aiProcess.WaitForExit(5000) | Out-Null
+        }
+        if ($javaProcess -and -not $javaProcess.HasExited) {
+            Stop-Process -Id $javaProcess.Id -Force
+            $javaProcess.WaitForExit(5000) | Out-Null
+        }
+        $env:ORDERLY_AI_IPC_TOKEN = $previousToken
+        $env:ORDERLY_AI_PORT = $previousAiPort
+        Pop-Location
+    }
+}
+
 # 默认先构建，确保不会在源码已变化但运行 JAR 陈旧时启动应用。
 if (-not $SkipBuild) {
     $buildArguments = @{
@@ -127,7 +336,12 @@ if (-not $SkipBuild) {
     if (-not [string]::IsNullOrWhiteSpace($MavenRepository)) {
         $buildArguments.MavenRepository = $MavenRepository
     }
-    $buildArguments.MaxParallel = $MaxParallel
+    if ($BackgroundModules) {
+        $buildArguments.BootstrapOnly = $true
+    }
+    else {
+        $buildArguments.MaxParallel = $MaxParallel
+    }
     & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
 }
 
@@ -151,6 +365,20 @@ $jar = Get-ChildItem -LiteralPath (Join-Path $hostRoot "target") -Filter "*.jar"
     Select-Object -First 1
 if (-not $jar) {
     throw "未找到可运行的 host JAR。"
+}
+
+if ($BackgroundModules) {
+    Invoke-BackgroundStart `
+        -JavaExecutable $javaExe `
+        -HostJar $jar.FullName `
+        -ModulesDirectory $modulesRoot `
+        -ThemesDirectory $themesRoot `
+        -HttpPort $Port `
+        -OfflineMode:$Offline `
+        -SkipMavenTests `
+        -UseMavenOffline:($Offline -or $MavenOffline) `
+        -Repository $MavenRepository
+    return
 }
 
 if ($Offline) {

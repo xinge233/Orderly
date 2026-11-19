@@ -278,12 +278,14 @@ export default async function mount(root, context) {
 ```
 
 从 GitHub Release 解压的正式离线包会在根目录携带 `maven-repository`。无参数运行
-`启动归序.cmd` 时，该入口会自动使用 `-MavenOffline -MaxParallel 2`，让 Maven
-依赖和插件只从包内仓库读取，并并行构建相互独立的模块。GitHub 源码 ZIP 不包含
+`启动归序.cmd` 时，该入口会自动使用 `-MavenOffline -BackgroundModules`，让 Maven
+依赖和插件只从包内仓库读取，并先构建
+`module_control` 与宿主并打开界面，再逐个构建业务模块。GitHub 源码 ZIP 不包含
 这个发布目录，因此它仍使用开发构建的在线 Maven 解析路径。
 
-该入口会在全部模块成功后发布 `target/orderly-modules/`，然后启动宿主。不能在
-应用运行期间替换、更新或卸载模块。模块控制界面只允许显式刷新追加新模块，且新模块
+后台入口在框架启动前只把 `module_control.jar` 发布到 `target/orderly-modules/`；
+业务模块 JAR 生成并通过校验后逐个原子发布，再由宿主刷新追加。不能在应用运行期间
+替换、更新或卸载已有模块。模块控制界面只允许显式刷新追加新模块，且新模块
 必须已经构建到 `target/orderly-modules/`；未构建源码返回 `MODULE_NOT_BUILT`。已有模块
 更新或删除返回 `RESTART_REQUIRED`，需要停止服务、重新构建并重启。
 

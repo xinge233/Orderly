@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "mode": "background",
+  "updatedAt": "2026-11-20T01:00:00+08:00",
+  "complete": false,
+  "modules": [
+    {
+      "sourceName": "../module_fs",
+      "moduleId": "module_fs",
+      "title": "资料管理",
+      "caption": "资料管理",
+      "icon": "file",
+      "status": "QUEUED",
+      "priority": 0
+    }
+  ]
+}

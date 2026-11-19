@@ -147,6 +147,28 @@ test("API client uses the module governance endpoints and action header", async 
     );
 });
 
+test("API client reads and prioritizes background module builds", async () => {
+    const requests = [];
+    const api = new OrderlyApi({
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url, options });
+            return new Response("{}", { status: 200 });
+        }
+    });
+
+    await api.getModuleBuilds();
+    await api.prioritizeModuleBuild("module_todo");
+
+    assert.deepEqual(requests.map(({ url }) => url), [
+        "/api/system/module-builds",
+        "/api/system/module-builds/prioritize"
+    ]);
+    assert.equal(requests[1].options.method, "POST");
+    assert.deepEqual(JSON.parse(requests[1].options.body), {
+        sourceName: "module_todo"
+    });
+});
+
 test("API client addresses module UI and generic queries", async () => {
     const urls = [];
     const api = new OrderlyApi({

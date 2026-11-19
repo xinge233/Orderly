@@ -10,10 +10,13 @@ import {
     isSystemModule,
     moveModuleOrder,
     moveVisibleModuleOrder,
+    moduleBuildStatusLabel,
+    normalizeModuleBuildSnapshot,
     normalizeModuleCatalogs,
     normalizeModulePreferences,
     normalizeModuleSettingSchema,
     normalizeModuleUi,
+    pendingModuleBuilds,
     readCount,
     reconcileModulePreferences,
     reconcileModuleOrder,
@@ -175,6 +178,49 @@ test("disabled business modules are filtered while system modules remain availab
         reconcileModulePreferences(catalogs.modules, {}).sidebarOrder,
         ["module_disabled", "module_enabled", "module_control"]
     );
+});
+
+test("background module builds expose only safe pending display states", () => {
+    const snapshot = normalizeModuleBuildSnapshot({
+        mode: "background",
+        complete: false,
+        modules: [
+            {
+                sourceName: "module_todo",
+                title: "待办",
+                caption: "任务",
+                icon: "check",
+                status: "BUILDING",
+                message: "正在构建"
+            },
+            {
+                sourceName: "module_control",
+                status: "READY"
+            },
+            {
+                sourceName: "../escape",
+                status: "READY"
+            },
+            {
+                sourceName: "module_bad",
+                status: "PRECOMPILED"
+            }
+        ]
+    });
+
+    assert.equal(snapshot.mode, "background");
+    assert.equal(snapshot.complete, false);
+    assert.deepEqual(snapshot.modules.map((entry) => entry.sourceName), ["module_todo"]);
+    assert.deepEqual(
+        pendingModuleBuilds(snapshot, [{ moduleId: "module_control" }])
+            .map((entry) => [entry.moduleId, entry.status]),
+        [["module_todo", "BUILDING"]]
+    );
+    assert.deepEqual(
+        pendingModuleBuilds(snapshot, [{ moduleId: "module_todo" }]),
+        []
+    );
+    assert.equal(moduleBuildStatusLabel("FAILED"), "构建失败");
 });
 
 test("systemAdmin is injected only into the system module_control context", () => {

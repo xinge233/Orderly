@@ -15,6 +15,8 @@ const MODULE_ID = /^[a-z][a-z0-9_-]{0,63}$/;
 const VIEW_ID = /^[a-z][a-z0-9-]{0,63}$/;
 const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SETTING_KEY = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
+const MODULE_SOURCE_NAME = /^module_[a-z0-9_]+$/;
+const MODULE_BUILD_STATUSES = new Set(["QUEUED", "BUILDING", "READY", "FAILED"]);
 
 export const MODULE_SOURCE = Object.freeze({
     BUSINESS: "business",
@@ -613,6 +615,85 @@ export function normalizeModulePreferences(input) {
         managementOrder: uniqueStrings(source.managementOrder),
         moduleSettings
     };
+}
+
+/**
+ * 规范化后台模块构建快照。
+ *
+ * @param {unknown} input `/api/system/module-builds` 响应
+ * @returns {{mode: string, updatedAt: string, complete: boolean, modules: ReadonlyArray<object>}}
+ *
+ * 构建状态只用于框架导航与等待提示；条目被限制为已发现源码名和四种状态，不能借此
+ * 注入模块契约、动作或任意视图 ID。副作用：无。
+ */
+export function normalizeModuleBuildSnapshot(input) {
+    const source = plainObject(input) ?? {};
+    const modules = (Array.isArray(source.modules) ? source.modules : [])
+        .flatMap((item) => {
+            const entry = plainObject(item);
+            const sourceName = text(entry?.sourceName);
+            const status = text(entry?.status).toUpperCase();
+            if (!MODULE_SOURCE_NAME.test(sourceName)
+                || sourceName === "module_control"
+                || !MODULE_BUILD_STATUSES.has(status)) {
+                return [];
+            }
+            return [Object.freeze({
+                sourceName,
+                moduleId: sourceName,
+                title: text(entry.title, sourceName),
+                caption: text(entry.caption, "模块正在准备"),
+                icon: text(entry.icon, "modules"),
+                status,
+                message: text(entry.message),
+                priority: Number.isInteger(Number(entry.priority))
+                    ? Math.max(0, Number(entry.priority))
+                    : 0,
+                startedAt: text(entry.startedAt),
+                finishedAt: text(entry.finishedAt)
+            })];
+        });
+    return Object.freeze({
+        mode: source.mode === "background" ? "background" : "eager",
+        updatedAt: text(source.updatedAt),
+        complete: source.complete === true,
+        modules: Object.freeze(modules)
+    });
+}
+
+/**
+ * 返回尚未进入已加载目录的构建条目。
+ *
+ * @param {unknown} snapshot 构建快照
+ * @param {Array<object>} loadedModules 已加载模块目录
+ * @returns {Array<object>} 待构建条目
+ *
+ * READY 条目通常会在下一次目录重载后消失；在目录尚未刷新时仍保留为等待态，避免
+ * 用户点击后短暂回到不存在的旧视图。副作用：无。
+ */
+export function pendingModuleBuilds(snapshot, loadedModules = []) {
+    const loadedIds = new Set(
+        (Array.isArray(loadedModules) ? loadedModules : [])
+            .map((module) => module?.moduleId)
+            .filter(Boolean)
+    );
+    const normalized = normalizeModuleBuildSnapshot(snapshot);
+    return normalized.modules.filter((entry) => !loadedIds.has(entry.moduleId));
+}
+
+/**
+ * 返回构建状态的用户可见文案。
+ *
+ * @param {string} status 构建状态
+ * @returns {string} 文案
+ */
+export function moduleBuildStatusLabel(status) {
+    return {
+        QUEUED: "等待构建",
+        BUILDING: "正在构建",
+        READY: "正在启用",
+        FAILED: "构建失败"
+    }[String(status ?? "").toUpperCase()] ?? "状态未知";
 }
 
 /**

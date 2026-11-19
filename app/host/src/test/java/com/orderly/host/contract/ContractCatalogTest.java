@@ -35,15 +35,14 @@ class ContractCatalogTest {
     }
 
     @Test
-    void duplicateModuleJarsFailAtStartup() throws Exception {
-        Path directory = testDirectory("duplicate-module");
+    void jarNameMustMatchContractModuleId() throws Exception {
+        Path directory = testDirectory("module-id-mismatch");
         Path source = stagedJar("module_todo.jar");
         Files.copy(source, directory.resolve("a.jar"));
-        Files.copy(source, directory.resolve("b.jar"));
 
         assertThatThrownBy(() -> new ContractCatalog(objectMapper, directory.toString()))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("重复模块契约");
+                .hasMessageContaining("JAR 名和契约 moduleId 必须一致");
     }
 
     @Test
@@ -86,7 +85,7 @@ class ContractCatalogTest {
     @Test
     void contractWithoutMatchingExecutorFailsAtStartup() throws Exception {
         Path directory = testDirectory("contract-mismatch");
-        rewriteStagedJar(directory.resolve("module_todo.jar"), "module_todo.json", root ->
+        rewriteStagedJar(directory.resolve("module_without_executor.jar"), "module_todo.json", root ->
                 root.put("moduleId", "module_without_executor"));
 
         assertThatThrownBy(() -> new ContractCatalog(objectMapper, directory.toString()))

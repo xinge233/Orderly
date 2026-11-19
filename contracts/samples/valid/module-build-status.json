@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "mode": "background",
+  "updatedAt": "2026-11-20T01:00:00+08:00",
+  "complete": false,
+  "modules": [
+    {
+      "sourceName": "module_fs",
+      "moduleId": "module_fs",
+      "title": "资料管理",
+      "caption": "资料管理",
+      "icon": "file",
+      "status": "BUILDING",
+      "message": "正在执行 Maven clean verify",
+      "priority": 1,
+      "startedAt": "2026-11-20T00:59:50+08:00"
+    },
+    {
+      "sourceName": "module_todo",
+      "moduleId": "module_todo",
+      "title": "待办事项",
+      "caption": "待办事项",
+      "icon": "check",
+      "status": "QUEUED",
+      "priority": 0
+    }
+  ]
+}
