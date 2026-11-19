@@ -1,3 +1,4 @@
+﻿#requires -Version 5.1
 # 用途：
 #   为根目录 ai/ 服务准备 Python 3.14 隔离环境，并在依赖清单变化后同步安装依赖。
 #
@@ -37,7 +38,7 @@ $fingerprint = ($dependencyFiles | ForEach-Object {
     (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash
 }) -join ":"
 $installedFingerprint = if (Test-Path -LiteralPath $markerPath) {
-    (Get-Content -Raw -LiteralPath $markerPath).Trim()
+    (Get-Content -Raw -LiteralPath $markerPath -Encoding ASCII).Trim()
 } else {
     ""
 }
@@ -55,7 +56,7 @@ if ($installedFingerprint -ne $fingerprint) {
     if ($LASTEXITCODE -ne 0) {
         throw "安装 Orderly AI 依赖失败。"
     }
-    Set-Content -NoNewline -LiteralPath $markerPath -Value $fingerprint
+    Set-Content -NoNewline -LiteralPath $markerPath -Value $fingerprint -Encoding ASCII
 }
 
 Write-Output $venvPython

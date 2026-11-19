@@ -19,7 +19,7 @@
 
 ## 启动
 
-环境要求：JDK 21、Maven 3.9+、Python 3.14。脚本显式使用 `JAVA_HOME\bin\java.exe`，因此必须把 `JAVA_HOME` 指向 JDK 21；即使 PATH 中还有另一个 Java 版本，也不会用于构建或启动。启动脚本会创建或复用 `ai/.venv`，安装 FastAPI、Uvicorn 和测试依赖，然后启动仅监听回环地址的 Python AI 服务。
+环境要求：支持 Windows PowerShell 5.1 与 PowerShell 7+；另需 JDK 21、Maven 3.9+、Python 3.14。脚本显式使用 `JAVA_HOME\bin\java.exe`，因此必须把 `JAVA_HOME` 指向 JDK 21；即使 PATH 中还有另一个 Java 版本，也不会用于构建或启动。启动脚本会创建或复用 `ai/.venv`，安装 FastAPI、Uvicorn 和测试依赖，然后启动仅监听回环地址的 Python AI 服务。
 
 ```powershell
 .\scripts\start.ps1
@@ -75,7 +75,7 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 
 快速路径只接受明确的快速白名单 Markdown 文档：根 `AGENTS.md`、`README.md`、`Module/AGENTS.md`、`Module/README.md`、`docs/**/*.md` 和 `.codex/agents/**/*.md`。白名单路径大小写精确，扩展名只接受小写 `.md`；大写或混合大小写的目录、文件名和扩展名均回落完整门禁。`themes/**`、`contracts/**`、`Module/module_*` 以及任意未知根目录中的 `.md` 即使扩展名为 Markdown，也不得使用快速路径。
 
-`gate.ps1` 会先无条件调用 `scripts/doc-gate.ps1`。当变更集非空且每一项都属于快速白名单 Markdown 时，`gate.ps1` 自动走快速文档分支并直接成功退出；空变更集、任何非 Markdown 文件、快速白名单外 Markdown 或分类不确定的变更都继续完整门禁。完整分支执行模块化 Maven 测试与打包、框架与模块 UI 语法、前端 Node 测试，并检查物理删除调用、业务样式硬编码色值、固定模块映射和固定业务端点。`-DocumentOnly` 要求变更集必须是非空快速白名单 Markdown，否则失败且不启动构建。`modularity.ps1` 通过移动源码和重启宿主，验证全业务模块、移除单模块、零业务模块（保留 `module_control`）、恢复、临时模块自动发现与可逆移出、模块 UI/查询/计划规则、动态主题与已选主题失效回退；结束后恢复原生模块源码，并清理 `target` 验收临时目录。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
+`gate.ps1` 会先无条件调用 `scripts/doc-gate.ps1`。当变更集非空且每一项都属于快速白名单 Markdown 时，`gate.ps1` 自动走快速文档分支并直接成功退出；空变更集、任何非 Markdown 文件、快速白名单外 Markdown 或分类不确定的变更都继续完整门禁。完整分支使用标准 Python `jsonschema` 校验契约样例，并执行模块化 Maven 测试与打包、框架与模块 UI 语法、前端 Node 测试，同时检查物理删除调用、业务样式硬编码色值、固定模块映射和固定业务端点。`-DocumentOnly` 要求变更集必须是非空快速白名单 Markdown，否则失败且不启动构建。`modularity.ps1` 通过移动源码和重启宿主，验证全业务模块、移除单模块、零业务模块（保留 `module_control`）、恢复、临时模块自动发现与可逆移出、模块 UI/查询/计划规则、动态主题与已选主题失效回退；结束后恢复原生模块源码，并清理 `target` 验收临时目录。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
 
 ## 低 token 读取
 

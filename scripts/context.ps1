@@ -1,3 +1,4 @@
+﻿#requires -Version 5.1
 [CmdletBinding()]
 # 用途：
 #   提供只读、有界、仅限 Git 跟踪文件的上下文读取、搜索、差异统计和配置审计。

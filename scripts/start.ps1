@@ -1,4 +1,5 @@
-﻿[CmdletBinding()]
+﻿#requires -Version 5.1
+[CmdletBinding()]
 # 用途：
 #   构建或复用已有产物，启动本机 Python AI 服务和 Java 宿主，并在退出时清理本次启动的 AI 子进程。
 #
@@ -66,7 +67,13 @@ function Get-FreeTcpPort {
 function New-IpcToken {
     # 使用加密安全随机源生成单次进程令牌，避免可预测令牌被本机其他进程复用。
     $bytes = New-Object byte[] 32
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $random = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $random.GetBytes($bytes)
+    }
+    finally {
+        $random.Dispose()
+    }
     return [Convert]::ToBase64String($bytes)
 }
 

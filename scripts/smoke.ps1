@@ -19,6 +19,57 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Get-ErrorResponseBody {
+    # Windows PowerShell 5.1 可能不填充 ErrorDetails.Message；后备只读取既有失败响应的 UTF-8 正文。
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Management.Automation.ErrorRecord]$ErrorRecord
+    )
+
+    $detailsMessage = $null
+    try {
+        $detailsMessage = [string]$ErrorRecord.ErrorDetails.Message
+    }
+    catch {
+        $detailsMessage = $null
+    }
+    if (-not [string]::IsNullOrWhiteSpace($detailsMessage)) {
+        return $detailsMessage
+    }
+
+    $responseStream = $null
+    $reader = $null
+    try {
+        $responseStream = $ErrorRecord.Exception.Response.GetResponseStream()
+        if ($null -eq $responseStream) {
+            return $null
+        }
+        $reader = [System.IO.StreamReader]::new(
+            $responseStream,
+            [System.Text.UTF8Encoding]::new($false, $true),
+            $true
+        )
+        return $reader.ReadToEnd()
+    }
+    catch {
+        return $null
+    }
+    finally {
+        try {
+            if ($null -ne $reader) {
+                $reader.Dispose()
+                $responseStream = $null
+            }
+            if ($null -ne $responseStream) {
+                $responseStream.Dispose()
+            }
+        }
+        catch {
+            # 该 helper 只提供诊断正文，清理失败不得覆盖原始 HTTP 状态和错误码断言。
+        }
+    }
+}
+
 # 先验证健康快照，避免后续测试把“服务不可达”误报成单个业务接口错误。
 $health = Invoke-RestMethod -Uri "$BaseUrl/api/health" -Method Get
 if ($health.status -ne "UP") {
@@ -293,7 +344,8 @@ if ($moduleIds -contains "module_fs") {
         } catch {
             $blockedAiStatus = [int]$_.Exception.Response.StatusCode
             try {
-                $errorPayload = $_.ErrorDetails.Message | ConvertFrom-Json
+                $errorBody = Get-ErrorResponseBody -ErrorRecord $_
+                $errorPayload = $errorBody | ConvertFrom-Json
                 $blockedAiCode = [string]$errorPayload.code
             } catch {
                 $blockedAiCode = $null

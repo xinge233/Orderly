@@ -1,4 +1,5 @@
-﻿[CmdletBinding()]
+﻿#requires -Version 5.1
+[CmdletBinding()]
 # 用途：
 #   执行仓库完整质量门禁：快速文档门禁、上下文边界、Python 测试、模块化 Maven 构建、前端/模块 UI 测试和静态禁止模式扫描。
 #
@@ -25,6 +26,7 @@ $contextScript = Join-Path $PSScriptRoot "context.ps1"
 $docGateScript = Join-Path $PSScriptRoot "doc-gate.ps1"
 $aiRoot = Join-Path $repoRoot "ai"
 $aiEnvScript = Join-Path $aiRoot "scripts\ensure-env.ps1"
+$contractSampleValidator = Join-Path $PSScriptRoot "validate-contract-samples.py"
 $powerShellExecutable = (Get-Process -Id $PID).Path
 
 function Invoke-ContextProcess {
@@ -400,8 +402,20 @@ try {
         throw "上下文工具审计失败，退出码：$($audit.ExitCode)`n$($audit.Output)"
     }
 
+    if (-not (Test-Path -LiteralPath $aiEnvScript -PathType Leaf)) {
+        throw "缺少 Python AI 环境脚本：$aiEnvScript"
+    }
+    if (-not (Test-Path -LiteralPath $contractSampleValidator -PathType Leaf)) {
+        throw "缺少契约样例校验器：$contractSampleValidator"
+    }
+    # Python 环境可能在首次门禁联网安装依赖；后续契约、编译和测试复用同一个解释器。
+    $python = & $aiEnvScript
+    if (-not $python -or -not (Test-Path -LiteralPath $python -PathType Leaf)) {
+        throw "Python AI 环境准备失败。"
+    }
+
     # 仓库地图和模块规范是导航与模块边界的文档事实源，必须与脚本引用的关键约定一致。
-    $repoMapText = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "docs\repo-map.md")
+    $repoMapText = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $repoRoot "docs\repo-map.md")
     if ($repoMapText.Contains("``````")) {
         throw "docs/repo-map.md 不得包含代码围栏。"
     }
@@ -410,7 +424,7 @@ try {
     if (-not (Test-Path -LiteralPath $moduleRulesPath -PathType Leaf)) {
         throw "缺少模块目录规范：Module/AGENTS.md"
     }
-    $moduleRules = Get-Content -Raw -LiteralPath $moduleRulesPath
+    $moduleRules = Get-Content -Raw -Encoding UTF8 -LiteralPath $moduleRulesPath
     foreach ($requiredRule in @(
         "actionAiCallableEnabled",
         "queryAiCallableEnabled",
@@ -464,15 +478,30 @@ try {
         @{ Schema = "contracts\ai-query-continuation-request.schema.json"; Sample = "contracts\samples\valid\ai-query-continuation-request.json"; Expected = $true },
         @{ Schema = "contracts\ai-query-continuation-request.schema.json"; Sample = "contracts\samples\invalid\ai-query-continuation-request-failed-payload.json"; Expected = $false }
     )) {
-        $actual = (Get-Content -LiteralPath (Join-Path $repoRoot $contractCase.Sample) -Raw) |
-            Test-Json -SchemaFile (Join-Path $repoRoot $contractCase.Schema) `
-                -ErrorAction SilentlyContinue
+        $schemaPath = Join-Path $repoRoot $contractCase.Schema
+        $samplePath = Join-Path $repoRoot $contractCase.Sample
+        $null = Get-Content -Raw -Encoding UTF8 -LiteralPath $samplePath
+        $previousErrorActionPreference = $ErrorActionPreference
+        try {
+            # Windows PowerShell 5.1 会把原生 stderr 与 Stop 偏好组合成可终止异常；这里只读取真实退出码。
+            $ErrorActionPreference = "Continue"
+            $validationOutput = (& $python $contractSampleValidator $schemaPath $samplePath 2>&1) |
+                Out-String
+            $validationExitCode = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+        }
+        if ($validationExitCode -ne 0 -and $validationExitCode -ne 1) {
+            throw "契约样例校验器工具或 Schema 错误：$($contractCase.Sample)，退出码：$validationExitCode`n$($validationOutput.Trim())"
+        }
+        $actual = $validationExitCode -eq 0
         if ($actual -ne $contractCase.Expected) {
             throw "契约样例校验失败：$($contractCase.Sample) 期望 $($contractCase.Expected)，实际 $actual"
         }
     }
 
-    $ignoreLines = @(Get-Content -LiteralPath (Join-Path $repoRoot ".gitignore") |
+    $ignoreLines = @(Get-Content -Encoding UTF8 -LiteralPath (Join-Path $repoRoot ".gitignore") |
         ForEach-Object { $_.Trim() })
     foreach ($requiredIgnoreLine in @(
         ".m2-repository/",
@@ -487,14 +516,6 @@ try {
 
     Write-Host "上下文门禁通过：语法、成功读取、边界拒绝、正文不泄漏、审计、仓库地图与忽略规则均成功。"
 
-    if (-not (Test-Path -LiteralPath $aiEnvScript -PathType Leaf)) {
-        throw "缺少 Python AI 环境脚本：$aiEnvScript"
-    }
-    # Python 环境可能在首次门禁联网安装依赖；环境或任一编译/测试失败都阻止继续构建。
-    $python = & $aiEnvScript
-    if (-not $python -or -not (Test-Path -LiteralPath $python -PathType Leaf)) {
-        throw "Python AI 环境准备失败。"
-    }
     Push-Location $aiRoot
     try {
         & $python -m compileall -q src tests

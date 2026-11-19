@@ -1,3 +1,4 @@
+﻿#requires -Version 5.1
 # 用途：
 #   在前台启动已隔离的 Orderly Python AI 服务，作为 Java 宿主 IPC 网关的对端进程。
 #

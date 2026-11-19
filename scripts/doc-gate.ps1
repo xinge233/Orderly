@@ -1,9 +1,10 @@
+﻿#requires -Version 5.1
 [CmdletBinding()]
 # 用途：
-#   执行只读文档快速门禁：检查关键规则/契约文件、PowerShell AST、上下文审计、仓库地图和 Markdown 链接。
+#   执行只读文档快速门禁：检查关键规则/契约文件、PowerShell 双版本兼容、上下文审计、仓库地图和 Markdown 链接。
 #
 # 输入：
-#   Git 跟踪及未跟踪未忽略的 Markdown、关键仓库文件、脚本本身和 .codex/config.toml 审计结果。
+#   Git 跟踪及未跟踪未忽略的 Markdown/.ps1、关键仓库文件、脚本本身和 .codex/config.toml 审计结果。
 #
 # 副作用：
 #   不访问网络，不启动 Java、Maven 或 Node，不写运行数据；仅读取文件和调用只读 Git/PowerShell 命令。
@@ -122,6 +123,30 @@ function Invoke-GitText {
     return $output
 }
 
+function Get-RepoRelativePath {
+    # .NET Framework 没有 Path.GetRelativePath；通过已校验的仓库前缀生成跨 PowerShell 5.1/7 的相对路径。
+    param([Parameter(Mandatory = $true)][string]$FullPath)
+
+    $normalizedRoot = $repoRoot.TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    $normalizedPath = [System.IO.Path]::GetFullPath($FullPath)
+    if ($normalizedPath.Equals(
+            $normalizedRoot,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )) {
+        return ""
+    }
+    if (-not $normalizedPath.StartsWith(
+            $repoRootPrefix,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )) {
+        throw "路径越出仓库：$FullPath"
+    }
+    return $normalizedPath.Substring($repoRootPrefix.Length).Replace("\", "/")
+}
+
 function Test-TrackedPath {
     param([Parameter(Mandatory = $true)][string]$RelativePath)
 
@@ -148,10 +173,15 @@ function Test-TrackedPath {
     throw "无法检查 Markdown 跟踪状态：$RelativePath`n$($output.Trim())"
 }
 
-function Get-MarkdownPaths {
-    # 使用 NUL 分隔可安全处理空格和特殊字符；同时包含已跟踪和未跟踪未忽略 Markdown。
+function Get-WorkingTreePaths {
+    # 使用 NUL 分隔可安全处理空格和特殊字符；同时包含已跟踪和未跟踪未忽略文件。
+    param(
+        [Parameter(Mandatory = $true)][string]$Pattern,
+        [Parameter(Mandatory = $true)][string]$Purpose
+    )
+
     $output = Invoke-GitText `
-        -Purpose "读取 Git 跟踪及未跟踪未忽略 Markdown 清单" `
+        -Purpose $Purpose `
         -Arguments @(
             "-c",
             "core.quotepath=false",
@@ -161,7 +191,7 @@ function Get-MarkdownPaths {
             "--others",
             "--exclude-standard",
             "--",
-            "*.md"
+            $Pattern
         )
     $trimmed = $output.TrimEnd([char[]]@([char]0, [char]13, [char]10))
     if ([string]::IsNullOrEmpty($trimmed)) {
@@ -171,6 +201,28 @@ function Get-MarkdownPaths {
         Where-Object { -not [string]::IsNullOrEmpty($_) } |
         ForEach-Object { $_.Replace("\", "/") } |
         Sort-Object -Unique)
+}
+
+function Get-MarkdownPaths {
+    return @(Get-WorkingTreePaths `
+        -Pattern "*.md" `
+        -Purpose "读取 Git 跟踪及未跟踪未忽略 Markdown 清单")
+}
+
+function Get-PowerShellPaths {
+    return @(Get-WorkingTreePaths `
+        -Pattern "*.ps1" `
+        -Purpose "读取 Git 跟踪及未跟踪未忽略 PowerShell 清单")
+}
+
+function Test-Utf8Bom {
+    param([Parameter(Mandatory = $true)][string]$FullPath)
+
+    $bytes = [System.IO.File]::ReadAllBytes($FullPath)
+    return $bytes.Length -ge 3 -and
+        $bytes[0] -eq 0xEF -and
+        $bytes[1] -eq 0xBB -and
+        $bytes[2] -eq 0xBF
 }
 
 function Assert-NoMergeConflictMarkers {
@@ -318,7 +370,7 @@ function Assert-LocalMarkdownLink {
         throw "Markdown 本地链接越出仓库：$SourceRelativePath`:$LineNumber -> $RawTarget"
     }
 
-    $targetRelativePath = [System.IO.Path]::GetRelativePath($repoRoot, $targetFullPath).Replace("\", "/")
+    $targetRelativePath = Get-RepoRelativePath -FullPath $targetFullPath
     if (-not [string]::IsNullOrEmpty($targetRelativePath)) {
         Assert-NoReparsePoint -RelativePath $targetRelativePath
     }
@@ -340,6 +392,7 @@ try {
         "scripts/doc-gate.ps1",
         "scripts/gate.ps1",
         "scripts/context.ps1",
+        "scripts/validate-contract-samples.py",
         "contracts/action-execution.schema.json",
         "contracts/samples/valid/action-execution.json",
         "contracts/samples/invalid/action-execution-empty.json",
@@ -384,25 +437,77 @@ try {
         Add-Check
     }
 
-    # 先对所有 scripts/*.ps1 做 AST 解析，语法错误必须在任何运行型门禁之前暴露。
-    $scriptFiles = @(Get-ChildItem `
-        -LiteralPath (Join-Path $repoRoot "scripts") `
-        -File `
-        -Filter "*.ps1" |
-        Sort-Object Name)
-    if ($scriptFiles.Count -eq 0) {
-        throw "scripts/ 下没有可解析的 PowerShell 脚本。"
+    # 所有跟踪及未跟踪未忽略 .ps1 都要在两种解释器实际执行前通过 BOM、AST 和兼容 API 扫描。
+    $scriptPaths = @(Get-PowerShellPaths)
+    if ($scriptPaths.Count -eq 0) {
+        throw "Git PowerShell 清单为空。"
     }
-    foreach ($scriptFile in $scriptFiles) {
-        $relativeScript = [System.IO.Path]::GetRelativePath(
-            $repoRoot,
-            $scriptFile.FullName
-        ).Replace("\", "/")
+    $requiresScripts = @(
+        "scripts/context.ps1",
+        "scripts/doc-gate.ps1",
+        "scripts/gate.ps1",
+        "scripts/start.ps1",
+        "ai/scripts/ensure-env.ps1",
+        "ai/scripts/start.ps1"
+    )
+    $requiresScriptLookup = @{}
+    foreach ($requiresScript in $requiresScripts) {
+        $requiresScriptLookup[$requiresScript] = $true
+    }
+    $forbiddenPowerShellTokens = @(
+        [pscustomobject]@{
+            Token = "[System.IO.Path]::Get" + "RelativePath"
+            Reason = ".NET Core 相对路径 API"
+        },
+        [pscustomobject]@{
+            Token = "[System.Security.Cryptography.RandomNumberGenerator]::" + "Fill"
+            Reason = ".NET Core 随机数 API"
+        },
+        [pscustomobject]@{
+            Token = "Test-" + "Json"
+            Reason = "PowerShell 7 专属 JSON cmdlet"
+        }
+    )
+    foreach ($relativeScript in $scriptPaths) {
+        $scriptFullPath = [System.IO.Path]::GetFullPath(
+            (Join-Path $repoRoot $relativeScript)
+        )
         Assert-NoReparsePoint -RelativePath $relativeScript
+        if (-not (Test-Path -LiteralPath $scriptFullPath -PathType Leaf)) {
+            throw "PowerShell 清单中的文件不存在：$relativeScript"
+        }
+        if (-not (Test-Utf8Bom -FullPath $scriptFullPath)) {
+            throw "PowerShell 脚本必须保存为 UTF-8 BOM：$relativeScript"
+        }
+        Add-Check
+
+        $scriptText = Read-TextFile `
+            -RelativePath $relativeScript `
+            -Purpose "PowerShell"
+        foreach ($forbiddenToken in $forbiddenPowerShellTokens) {
+            if ($scriptText.IndexOf(
+                    $forbiddenToken.Token,
+                    [System.StringComparison]::OrdinalIgnoreCase
+                ) -ge 0) {
+                throw "PowerShell 脚本包含非 5.1 兼容 API（$($forbiddenToken.Reason)）：$relativeScript"
+            }
+        }
+
+        if ($requiresScriptLookup.ContainsKey($relativeScript)) {
+            $withoutBom = $scriptText.TrimStart([char]0xFEFF)
+            if (-not [regex]::IsMatch(
+                    $withoutBom,
+                    "(?i)^#requires\s+-Version\s+5\.1(?:\s|$)"
+                )) {
+                throw "PowerShell 脚本首行缺少 #requires -Version 5.1：$relativeScript"
+            }
+            Add-Check
+        }
+
         $tokens = $null
         $parseErrors = $null
         [System.Management.Automation.Language.Parser]::ParseFile(
-            $scriptFile.FullName,
+            $scriptFullPath,
             [ref]$tokens,
             [ref]$parseErrors
         ) | Out-Null
@@ -413,6 +518,11 @@ try {
             throw "PowerShell AST 语法解析失败：$relativeScript`n$details"
         }
         Add-Check
+    }
+    foreach ($requiresScript in $requiresScripts) {
+        if (-not ($scriptPaths -contains $requiresScript)) {
+            throw "PowerShell 清单缺少兼容入口：$requiresScript"
+        }
     }
 
     $contextScript = Join-Path $repoRoot "scripts\context.ps1"
@@ -440,6 +550,15 @@ try {
     Add-Check
 
     $readmeText = Read-TextFile -RelativePath "README.md" -Purpose "README"
+    foreach ($sentinel in @(
+        "Windows PowerShell 5.1",
+        "PowerShell 7+"
+    )) {
+        if (-not $readmeText.Contains($sentinel)) {
+            throw "README.md 缺少 PowerShell 双兼容说明：$sentinel"
+        }
+        Add-Check
+    }
     foreach ($registration in @(
         [pscustomobject]@{
             Path = "README.md"
@@ -523,7 +642,8 @@ try {
     # 成功摘要列出关键计数；任何异常都会落入 catch 并转换为退出码 1。
     Write-Output (
         "DOC GATE PASS checks=$script:CheckCount " +
-        "scripts=$($scriptFiles.Count) " +
+        "scripts=$($scriptPaths.Count) " +
+        "powerShellCompatibility=ast+bom+requires " +
         "keyFiles=$($requiredFiles.Count) " +
         "rules=7 " +
         "markdownFiles=$($markdownPaths.Count) " +
