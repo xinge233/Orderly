@@ -50,7 +50,7 @@
 .\scripts\build.ps1 -Offline -MavenRepository .\.m2-repository -MaxParallel 3
 ```
 
-`gate.ps1`、`start.ps1`、`modularity.ps1` 与 `verify-offline.ps1` 接受相同的 `-MaxParallel` 并只透传给 `build.ps1`，不复制并行调度逻辑。`gate.ps1`、`start.ps1` 与 `modularity.ps1` 也透传 `-Offline`、`-MavenRepository`。严格离线模式不会调用 `ensure-env.ps1` 联网准备 Python 环境，而是要求现有 `ai/.venv` 可用；离线范围只覆盖 Maven 构建，不代表 Python、Node 或整个应用已经支持离线安装。
+`gate.ps1`、`start.ps1`、`modularity.ps1` 与 `verify-offline.ps1` 接受相同的 `-MaxParallel` 并只透传给 `build.ps1`，不复制并行调度逻辑。`gate.ps1`、`start.ps1` 与 `modularity.ps1` 也透传 `-Offline`、`-MavenRepository`。`start.ps1 -MavenOffline` 只让 Maven 使用仓库根目录下的 `maven-repository` 严格离线构建，Python 环境仍由 `ensure-env.ps1` 正常准备；`-Offline` 则进一步要求直接复用现有 `ai/.venv`，不会联网准备 Python 环境。离线范围只覆盖 Maven 构建，不代表 Python、Node 或整个应用已经支持离线安装。
 
 Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配的 `127.0.0.1` 临时端口和随机 Bearer Token。打开 <http://127.0.0.1:8080/>。宿主或 AI 服务异常退出时，启动脚本会清理本次启动的另一个子进程。
 
@@ -100,7 +100,9 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 
 ### 离线源码包
 
-正式包默认要求 Git 工作树干净。以下命令在 `target/orderly-offline` 中从空 Maven 仓库执行一次在线预热构建和 Java/Maven 测试，再生成包含源码、`maven-repository`、`maven-manifest.json`、`files.sha256`、第三方制品清单和许可风险提示的 ZIP。源码路径只来自 Git 索引，新增文件必须先显式加入索引。产物不会自动上传：
+请从 [GitHub Releases](https://github.com/xinge233/Orderly/releases) 下载正式离线包。GitHub 的 `Code -> Download ZIP` 只包含受版本控制的源码，不包含发布资产中的 `maven-repository`、第三方制品清单和离线校验元数据；使用源码 ZIP 启动时仍会按开发构建路径解析 Maven 依赖。应下载名称形如 `Orderly-0.1.0-SNAPSHOT-offline-source.zip` 的 Release 资产及同名 `.sha256`。
+
+正式包默认要求 Git 工作树干净。维护者可通过以下命令在 `target/orderly-offline` 中从空 Maven 仓库执行一次在线预热构建和 Java/Maven 测试，再生成包含源码、`maven-repository`、`maven-manifest.json`、`files.sha256`、第三方制品清单和许可风险提示的 ZIP。源码路径只来自 Git 索引，新增文件必须先显式加入索引。打包脚本不代替发布步骤，正式 ZIP 必须由维护者上传到对应 Git Tag 的 GitHub Release：
 
 ```powershell
 .\scripts\package-offline.ps1
@@ -108,6 +110,12 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 ```
 
 仅用于本地验收脏工作树时，可使用 `.\scripts\package-offline.ps1 -AllowDirtySnapshot`。该包会在 manifest 中记录 `gitDirty=true`，不属于正式干净发布；正式包的 `gitDirty` 必须为 `false`。`sourceTreeSha256` 是对排序后的源码路径、文件大小和 SHA-256 组成规范文本计算的稳定摘要，`sourceFiles` 同时记录每个源码文件的大小和哈希。
+
+解压正式离线包后，直接运行根目录的 `启动归序.cmd`。该入口发现同目录存在 `maven-repository` 时，会无参数调用 `start.ps1 -MavenOffline -MaxParallel 2`，因此 Maven 依赖和构建插件只从包内仓库读取，同时并行构建相互独立的模块。需要自定义端口等启动参数时，可显式执行：
+
+```powershell
+.\scripts\start.ps1 -MavenOffline -MaxParallel 3 -Port 8081
+```
 
 验证脚本要求 ZIP 旁存在同名 `.sha256`，会先拒绝禁止路径，再安全解压到 `target/orderly-offline/verify-*`，双向核对源码、POM、Maven 仓库和第三方 JAR/POM 集合及大小、SHA-256、重解析点，最后在包内运行 `build.ps1 -Offline -MavenRepository <包内 maven-repository>`；可通过 `verify-offline.ps1 -MaxParallel <int>` 显式启用模块并行。验证只执行 Maven 构建与 Java 测试，不要求或运行 Node/Python 测试。离线范围仍仅限 Maven，不代表整个应用可以离线安装。
 

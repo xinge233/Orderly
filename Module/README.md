@@ -277,6 +277,11 @@ export default async function mount(root, context) {
 .\启动归序.cmd
 ```
 
+从 GitHub Release 解压的正式离线包会在根目录携带 `maven-repository`。无参数运行
+`启动归序.cmd` 时，该入口会自动使用 `-MavenOffline -MaxParallel 2`，让 Maven
+依赖和插件只从包内仓库读取，并并行构建相互独立的模块。GitHub 源码 ZIP 不包含
+这个发布目录，因此它仍使用开发构建的在线 Maven 解析路径。
+
 该入口会在全部模块成功后发布 `target/orderly-modules/`，然后启动宿主。不能在
 应用运行期间替换、更新或卸载模块。模块控制界面只允许显式刷新追加新模块，且新模块
 必须已经构建到 `target/orderly-modules/`；未构建源码返回 `MODULE_NOT_BUILT`。已有模块
@@ -307,6 +312,9 @@ kernel 安装、JAR 内容检查、候选暂存发布、宿主编译和宿主 JA
 严格离线模式会给每次 Maven 调用添加 `-o` 和指定仓库；并行 worker 不会写入共享
 tail，也不会联网补件。离线范围只覆盖 Maven 构建，不代表 Python、Node 或整个应用
 可以离线安装。
+
+正式离线包解压后，也可从包根目录直接执行 `scripts/start.ps1 -MavenOffline`；
+该开关默认使用包内 `maven-repository`，但不会跳过 Python 环境的正常准备。
 
 `package-offline.ps1` 的预热调用不传 `-MaxParallel`，因此保持默认串行并让所有模块
 依赖进入同一个共享仓库，随后由打包脚本完整复制。只有包内验证显式使用

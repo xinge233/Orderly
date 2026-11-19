@@ -5,13 +5,15 @@
 #
 # 输入：
 #   -Port 指定 Java HTTP 端口，默认 8080；-SkipBuild 复用已有 JAR。
-#   -Offline 将严格 Maven 离线模式及可选 -MavenRepository 透传给 build.ps1；
-#   该开关只覆盖 Maven 构建，不宣称 Python/Node 或整个应用离线。
+#   -Offline 将严格 Maven 离线模式及可选 -MavenRepository 透传给 build.ps1，
+#   并要求复用现有 ai/.venv；该开关不宣称 Node 或整个应用离线。
+#   -MavenOffline 只让 Maven 使用包内 maven-repository 严格离线构建，
+#   Python 环境仍由 ensure-env.ps1 正常准备。
 #   -MaxParallel 原样透传给 build.ps1，默认 1；运行中不重建或替换模块目录。
 #   JAVA_HOME 必须指向 JDK 21，模块和主题目录由仓库根目录推导。
 #
 # 副作用：
-#   未跳过构建时写入 target、.m2-repository 和 ai/.venv；启动期间占用 Java 端口及一个临时回环端口，
+#   未跳过构建时写入 target、对应 Maven 本地仓库和 ai/.venv；启动期间占用 Java 端口及一个临时回环端口，
 #   Python 子进程当前以隐藏窗口启动且未捕获或转发标准日志，失败主要由启动健康检查和退出码体现；
 #   Java 退出后脚本也会终止本次创建的 Python 进程。
 #
@@ -23,6 +25,7 @@ param(
     [int]$Port = 8080,
     [switch]$SkipBuild,
     [switch]$Offline,
+    [switch]$MavenOffline,
     [string]$MavenRepository,
     [ValidateRange(1, 2147483647)]
     [int]$MaxParallel = 1
@@ -115,8 +118,11 @@ if (-not $SkipBuild) {
     $buildArguments = @{
         SkipTests = $true
     }
-    if ($Offline) {
+    if ($Offline -or $MavenOffline) {
         $buildArguments.Offline = $true
+    }
+    if ($MavenOffline -and [string]::IsNullOrWhiteSpace($MavenRepository)) {
+        $MavenRepository = Join-Path $repoRoot "maven-repository"
     }
     if (-not [string]::IsNullOrWhiteSpace($MavenRepository)) {
         $buildArguments.MavenRepository = $MavenRepository
