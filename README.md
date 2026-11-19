@@ -92,11 +92,13 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 .\scripts\test-build-parallel.ps1
 ```
 
-`scripts/doc-gate.ps1` 是只读快速门禁，不访问网络，不启动 Java、Maven 或 Node，也不写运行数据。它解析 `scripts/*.ps1` 的 PowerShell AST，检查关键规则、契约样例、上下文配置、仓库地图脚本引用，以及 Git 跟踪和未跟踪未忽略 Markdown 的合并冲突标记和本地相对链接。已跟踪但工作区删除的普通 Markdown 会跳过正文读取，但其他文档指向它的本地链接仍会失败，关键文件仍必须存在。`scripts/test-build-parallel.ps1` 不依赖 Pester，在 `target` 下用临时 Maven 包装器验证默认串行、显式并发、隔离仓库、失败退出码、原始日志、失败后产物不变和严格离线 `-o`。
+`scripts/doc-gate.ps1` 是只读快速门禁，不访问网络，不启动 Java、Maven 或 Node，也不写运行数据。它解析 `scripts/*.ps1` 的 PowerShell AST，检查关键规则、契约样例、上下文配置、仓库地图脚本引用，以及 Git 跟踪和未跟踪未忽略 Markdown 的合并冲突标记和本地相对链接。DOCX 会检查 OOXML ZIP 结构、必需部件、路径安全、宏部件和 XML 完整性。已跟踪但工作区删除的文档会跳过正文读取，但其他文档指向它的本地链接仍会失败，关键文件仍必须存在。`scripts/test-build-parallel.ps1` 不依赖 Pester，在 `target` 下用临时 Maven 包装器验证默认串行、显式并发、隔离仓库、失败退出码、原始日志、失败后产物不变和严格离线 `-o`。
 
-纯 Markdown 文档只需变更集非空、分类可信且每一项都是安全路径下的小写 `.md`。该规则适用于所有 Markdown 文档，包括 `AGENTS.md` 和 `.codex/agents/**` 角色卡；它们仍必须通过文档门禁中的关键规则和本地链接检查。
+纯文档变更需要变更集非空、分类可信且每一项都是安全路径下的小写 `.md` 或 `.docx`。Markdown 规则适用于所有 Markdown 文档，包括 `AGENTS.md` 和 `.codex/agents/**` 角色卡；它们仍必须通过关键规则和本地链接检查。
 
-`gate.ps1` 会先无条件调用 `scripts/doc-gate.ps1`。当变更是纯 Markdown 文档时，`gate.ps1` 在文档门禁成功后直接退出，不运行 Maven、Node 或 Python 测试；空变更集、任何非 Markdown 文件、混合变更或分类不确定的变更继续完整门禁。完整分支使用标准 Python `jsonschema` 校验契约样例，并执行模块化 Maven 测试与打包、框架与模块 UI 语法、前端 Node 测试，同时检查物理删除调用、业务样式硬编码色值、固定模块映射和固定业务端点。`-DocumentOnly` 要求变更集必须是非空纯 Markdown，否则失败且不启动构建。`modularity.ps1` 通过移动源码和重启宿主，验证全业务模块、移除单模块、零业务模块（保留 `module_control`）、恢复、临时模块自动发现与可逆移出、模块 UI/查询/计划规则、动态主题与已选主题失效回退；结束后恢复原生模块源码，并清理 `target` 验收临时目录。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
+DOCX 结构校验不判断文字内容和页面排版。实际修改 DOCX 内容或排版时，仍须渲染受影响页面并核对版式，不能把包结构通过当作视觉验收通过。
+
+`gate.ps1` 会先无条件调用 `scripts/doc-gate.ps1`。当变更是纯 Markdown/DOCX 文档时，`gate.ps1` 在文档门禁成功后直接退出，不运行 Maven、Node 或 Python 测试；空变更集、其他文件类型、混合变更或分类不确定的变更继续完整门禁。完整分支使用标准 Python `jsonschema` 校验契约样例，并执行模块化 Maven 测试与打包、框架与模块 UI 语法、前端 Node 测试，同时检查物理删除调用、业务样式硬编码色值、固定模块映射和固定业务端点。`-DocumentOnly` 要求变更集必须是非空纯 Markdown/DOCX，否则失败且不启动构建。`modularity.ps1` 通过移动源码和重启宿主，验证全业务模块、移除单模块、零业务模块（保留 `module_control`）、恢复、临时模块自动发现与可逆移出、模块 UI/查询/计划规则、动态主题与已选主题失效回退；结束后恢复原生模块源码，并清理 `target` 验收临时目录。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
 
 ### 离线源码包
 

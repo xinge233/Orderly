@@ -121,7 +121,7 @@
 | `target/`、`**/target/` | Maven 与测试生成物，不读取、不搜索、不提交 |
 | `.m2-repository/` | 本地 Maven 缓存，不读取、不搜索、不提交 |
 | `.orderly-data/` | 本地运行数据、回收站和状态，不读取、不搜索、不提交 |
-| `output/~$*` | Office 临时锁文件，不读取、不搜索、不提交 |
+| `~$*` | Office 临时锁文件，不读取、不搜索、不提交 |
 | `*.log`、`*.pid` | 诊断和进程文件，只按报错行段定向查看 |
 | `docs/归序Orderly-项目策划书-v7.docx` | 产品事实二进制资料，仅在任务需要且用户授权时读取 |
 | `output/归序模块化架构图.png` | 已跟踪的二进制图片资产，不用文本读取 |
@@ -136,7 +136,7 @@
 | 上下文脚本语法 | PowerShell 解析 `scripts/context.ps1` |
 | 上下文配置审计 | `.\scripts\context.ps1 -Mode audit` |
 | Codex 严格配置 | `codex --strict-config doctor --summary --no-color --ascii` |
-| 纯 Markdown 文档门禁 | `.\scripts\doc-gate.ps1` |
+| 纯 Markdown/DOCX 文档门禁 | `.\scripts\doc-gate.ps1` |
 | 完整门禁 | `.\scripts\gate.ps1` |
 | 模块化验收 | `.\scripts\modularity.ps1` |
 | 构建与并行回归 | `.\scripts\build.ps1 -MaxParallel 3`；默认串行共享仓库、仓库级互斥锁，回归用 `.\scripts\test-build-parallel.ps1` |

@@ -1,22 +1,24 @@
 ﻿#requires -Version 5.1
 [CmdletBinding()]
 # 用途：
-#   执行只读文档快速门禁：检查关键规则/契约文件、PowerShell 双版本兼容、上下文审计、仓库地图和 Markdown 链接。
+#   执行只读文档快速门禁：检查关键规则/契约文件、PowerShell 双版本兼容、上下文审计、仓库地图、Markdown 链接和 DOCX 包完整性。
 #
 # 输入：
-#   Git 跟踪及未跟踪未忽略的 Markdown/.ps1、关键仓库文件、脚本本身和 .codex/config.toml 审计结果。
+#   Git 跟踪及未跟踪未忽略的 Markdown/DOCX/.ps1、关键仓库文件、脚本本身和 .codex/config.toml 审计结果。
 #
 # 副作用：
 #   不访问网络，不启动 Java、Maven 或 Node，不写运行数据；仅读取文件和调用只读 Git/PowerShell 命令。
 #
 # 安全边界：
-#   所有读取限制在仓库内并拒绝重解析点；Markdown 只校验本地相对链接。发现语法、规则、链接或审计错误时
+#   所有读取限制在仓库内并拒绝重解析点；Markdown 只校验本地相对链接，DOCX 只做只读 OOXML 完整性检查。发现错误时
 #   返回退出码 1，不能把部分检查通过当作整体通过。
 
 param()
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $repoRootPrefix = $repoRoot.TrimEnd(
@@ -209,10 +211,132 @@ function Get-MarkdownPaths {
         -Purpose "读取 Git 跟踪及未跟踪未忽略 Markdown 清单")
 }
 
+function Get-DocxPaths {
+    return @(Get-WorkingTreePaths `
+        -Pattern "*.docx" `
+        -Purpose "读取 Git 跟踪及未跟踪未忽略 DOCX 清单")
+}
+
 function Get-PowerShellPaths {
     return @(Get-WorkingTreePaths `
         -Pattern "*.ps1" `
         -Purpose "读取 Git 跟踪及未跟踪未忽略 PowerShell 清单")
+}
+
+function Assert-DocxPackage {
+    # 仅解析 OOXML 必需部件和 XML 结构，不执行宏、不访问外部关系，也不修改文档。
+    param(
+        [Parameter(Mandatory = $true)][string]$FullPath,
+        [Parameter(Mandatory = $true)][string]$RelativePath
+    )
+
+    $fileStream = $null
+    $archive = $null
+    try {
+        # Office 常以共享读写方式持有文档；只读文件流避免把正常编辑占用误判为 DOCX 损坏。
+        $fileStream = [System.IO.File]::Open(
+            $FullPath,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::ReadWrite
+        )
+        $archive = [System.IO.Compression.ZipArchive]::new(
+            $fileStream,
+            [System.IO.Compression.ZipArchiveMode]::Read,
+            $false
+        )
+        if ($archive.Entries.Count -eq 0) {
+            throw "DOCX ZIP 为空：$RelativePath"
+        }
+
+        $entryNames = @{}
+        $xmlByteCount = 0
+        foreach ($entry in $archive.Entries) {
+            $normalizedName = $entry.FullName.Replace("\", "/")
+            if ([string]::IsNullOrWhiteSpace($normalizedName)) {
+                throw "DOCX ZIP 含空部件名：$RelativePath"
+            }
+            $trimmedName = $normalizedName.TrimEnd("/")
+            $segments = @($trimmedName -split "/")
+            if ($trimmedName.StartsWith("/", [System.StringComparison]::Ordinal) -or
+                    @($segments | Where-Object {
+                        [string]::IsNullOrEmpty($_) -or $_ -eq "." -or $_ -eq ".."
+                    }).Count -gt 0) {
+                throw "DOCX ZIP 含不安全部件路径：$RelativePath -> $normalizedName"
+            }
+            if ($entryNames.ContainsKey($trimmedName)) {
+                throw "DOCX ZIP 含重复部件：$RelativePath -> $trimmedName"
+            }
+            $entryNames[$trimmedName] = $true
+            if ($trimmedName.Equals(
+                    "word/vbaProject.bin",
+                    [System.StringComparison]::OrdinalIgnoreCase
+                )) {
+                throw "DOCX 不得包含 VBA 宏部件：$RelativePath"
+            }
+
+            if ($trimmedName.EndsWith(".xml", [System.StringComparison]::OrdinalIgnoreCase) -or
+                    $trimmedName.EndsWith(".rels", [System.StringComparison]::OrdinalIgnoreCase)) {
+                if ($entry.Length -gt 64MB) {
+                    throw "DOCX XML 部件超过 64 MiB：$RelativePath -> $trimmedName"
+                }
+                $xmlByteCount += $entry.Length
+                if ($xmlByteCount -gt 256MB) {
+                    throw "DOCX XML 部件总大小超过 256 MiB：$RelativePath"
+                }
+
+                $stream = $null
+                $reader = $null
+                try {
+                    $settings = [System.Xml.XmlReaderSettings]::new()
+                    $settings.DtdProcessing = [System.Xml.DtdProcessing]::Prohibit
+                    $settings.XmlResolver = $null
+                    $stream = $entry.Open()
+                    $reader = [System.Xml.XmlReader]::Create($stream, $settings)
+                    while ($reader.Read()) {
+                    }
+                }
+                catch {
+                    throw "DOCX XML 部件无法解析：$RelativePath -> $trimmedName；$($_.Exception.Message)"
+                }
+                finally {
+                    if ($null -ne $reader) {
+                        $reader.Dispose()
+                    }
+                    elseif ($null -ne $stream) {
+                        $stream.Dispose()
+                    }
+                }
+            }
+        }
+
+        foreach ($requiredPart in @(
+            "[Content_Types].xml",
+            "_rels/.rels",
+            "word/document.xml"
+        )) {
+            if (-not $entryNames.ContainsKey($requiredPart)) {
+                throw "DOCX 缺少必需部件：$RelativePath -> $requiredPart"
+            }
+        }
+    }
+    catch {
+        if ($_.Exception.Message.StartsWith(
+                "DOCX ",
+                [System.StringComparison]::Ordinal
+            )) {
+            throw
+        }
+        throw "DOCX 包结构无效：$RelativePath；$($_.Exception.Message)"
+    }
+    finally {
+        if ($null -ne $archive) {
+            $archive.Dispose()
+        }
+        if ($null -ne $fileStream) {
+            $fileStream.Dispose()
+        }
+    }
 }
 
 function Test-Utf8Bom {
@@ -599,6 +723,34 @@ try {
         Add-Check
     }
 
+    # DOCX 只读校验 OOXML 包结构；已跟踪但工作区删除的文档只跳过正文。
+    $docxPaths = @(Get-DocxPaths)
+    $deletedDocxCount = 0
+    $docxPackageCount = 0
+    foreach ($docxPath in $docxPaths) {
+        $docxFullPath = [System.IO.Path]::GetFullPath(
+            (Join-Path $repoRoot $docxPath)
+        )
+        if (-not $docxFullPath.StartsWith(
+                $repoRootPrefix,
+                [System.StringComparison]::OrdinalIgnoreCase
+            )) {
+            throw "DOCX 路径越出仓库：$docxPath"
+        }
+        if (-not (Test-Path -LiteralPath $docxFullPath -PathType Leaf)) {
+            if (Test-TrackedPath -RelativePath $docxPath) {
+                $deletedDocxCount++
+                Add-Check
+                continue
+            }
+            throw "DOCX 清单中的未跟踪文件不存在：$docxPath"
+        }
+        Assert-NoReparsePoint -RelativePath $docxPath
+        Assert-DocxPackage -FullPath $docxFullPath -RelativePath $docxPath
+        $docxPackageCount++
+        Add-Check
+    }
+
     # 最后一轮同时扫描合并冲突和本地链接；已跟踪但工作区删除的普通 Markdown 只跳过正文。
     $markdownPaths = @(Get-MarkdownPaths)
     if ($markdownPaths.Count -eq 0) {
@@ -651,6 +803,9 @@ try {
         "powerShellCompatibility=ast+bom+requires " +
         "keyFiles=$($requiredFiles.Count) " +
         "rules=7 " +
+        "docxFiles=$($docxPaths.Count) " +
+        "docxPackages=$docxPackageCount " +
+        "deletedDocxSkipped=$deletedDocxCount " +
         "markdownFiles=$($markdownPaths.Count) " +
         "deletedMarkdownSkipped=$deletedMarkdownCount " +
         "localLinks=$linkCount " +

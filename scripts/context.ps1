@@ -609,7 +609,7 @@ function Invoke-AuditMode {
             ".m2-repository/",
             "target/",
             ".orderly-data/",
-            "output/~$*"
+            "~$*"
         )) {
             if ($ignoreLines -notcontains $requiredIgnoreLine) {
                 $issues.Add("忽略规则缺失：$requiredIgnoreLine")
