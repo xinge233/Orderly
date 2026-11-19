@@ -5,6 +5,8 @@
 #
 # 输入：
 #   -Port 指定 Java HTTP 端口，默认 8080；-SkipBuild 复用已有 JAR。
+#   -Offline 将严格 Maven 离线模式及可选 -MavenRepository 透传给 build.ps1；
+#   该开关只覆盖 Maven 构建，不宣称 Python/Node 或整个应用离线。
 #   JAVA_HOME 必须指向 JDK 21，模块和主题目录由仓库根目录推导。
 #
 # 副作用：
@@ -18,7 +20,9 @@
 
 param(
     [int]$Port = 8080,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$Offline,
+    [string]$MavenRepository
 )
 
 $ErrorActionPreference = "Stop"
@@ -105,7 +109,16 @@ function Wait-AiService {
 
 # 默认先构建，确保不会在源码已变化但运行 JAR 陈旧时启动应用。
 if (-not $SkipBuild) {
-    & (Join-Path $PSScriptRoot "build.ps1") -SkipTests
+    $buildArguments = @{
+        SkipTests = $true
+    }
+    if ($Offline) {
+        $buildArguments.Offline = $true
+    }
+    if (-not [string]::IsNullOrWhiteSpace($MavenRepository)) {
+        $buildArguments.MavenRepository = $MavenRepository
+    }
+    & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
 }
 
 # 显式校验 JAVA_HOME，而不依赖 PATH，防止构建或启动阶段悄悄切换到其他 JDK。
@@ -130,10 +143,19 @@ if (-not $jar) {
     throw "未找到可运行的 host JAR。"
 }
 
-if (-not (Test-Path -LiteralPath $aiEnvScript -PathType Leaf)) {
-    throw "未找到 Python AI 环境脚本：$aiEnvScript"
+if ($Offline) {
+    # 严格 Maven 离线启动不得触发 ensure-env 的 pip 网络安装；复用已准备好的 AI 环境。
+    $python = Join-Path $repoRoot "ai\.venv\Scripts\python.exe"
+    if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+        throw "严格离线启动需要现有 ai/.venv；未运行 ensure-env.ps1，也不会联网安装 Python 依赖。"
+    }
 }
-$python = & $aiEnvScript
+else {
+    if (-not (Test-Path -LiteralPath $aiEnvScript -PathType Leaf)) {
+        throw "未找到 Python AI 环境脚本：$aiEnvScript"
+    }
+    $python = & $aiEnvScript
+}
 if (-not $python -or -not (Test-Path -LiteralPath $python -PathType Leaf)) {
     throw "Python AI 环境准备失败。"
 }

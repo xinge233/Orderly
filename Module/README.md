@@ -9,7 +9,8 @@
 模块从源码到运行的路径如下：
 
 1. [`scripts/build.ps1`](../scripts/build.ps1) 扫描 `Module/module_*` 目录。
-2. 每个模块目录独立执行 Maven 构建。
+2. 每个模块目录独立执行 Maven `clean verify`；默认运行模块测试，
+   只有显式传入 `-SkipTests` 或使用快速启动/模块化验收路径时才跳过。
 3. 构建脚本校验模块 JAR 包含 `orderly-ui/module.json`、`orderly-ui/module.js`
    和 `orderly-ui/module.css`。
 4. 构建脚本把模块 JAR 放入 `target/orderly-modules/`，并在构建前清空该目录，
@@ -280,6 +281,14 @@ export default async function mount(root, context) {
 必须已经构建到 `target/orderly-modules/`；未构建源码返回 `MODULE_NOT_BUILT`。已有模块
 更新或删除返回 `RESTART_REQUIRED`，需要重新构建并重启。
 
+模块构建默认使用 `.m2-repository`。需要从已有本地仓库执行严格 Maven 离线构建时：
+
+```powershell
+.\scripts\build.ps1 -Offline -MavenRepository .\.m2-repository
+```
+
+严格离线模式会给每次 Maven 调用添加 `-o` 和指定仓库，不会联网补件。
+
 如只需要使用已经构建好的模块 JAR，可执行：
 
 ```powershell
@@ -316,6 +325,16 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\start.ps1 -SkipBuild
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\gate.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\modularity.ps1
 ```
+
+正式离线源码包默认要求 Git 工作树干净，且源码只从 Git 索引收集。新增背景脚本或源码必须先显式加入索引；仅本地验收脏工作树时才使用 `-AllowDirtySnapshot`：
+
+```powershell
+.\scripts\package-offline.ps1
+.\scripts\package-offline.ps1 -AllowDirtySnapshot
+.\scripts\verify-offline.ps1 .\target\orderly-offline\Orderly-0.1.0-SNAPSHOT-offline-source.zip
+```
+
+正式干净包的 manifest 必须记录 `gitDirty=false`。`sourceTreeSha256` 是排序后的源码路径、大小和 SHA-256 的稳定摘要，验证时还会双向核对 `sourceFiles`。包生成与验证只要求 JDK、Maven 和 Java 测试环境，不要求或运行 Node/Python 测试。离线承诺只覆盖包内 Maven 构建，不代表整个应用可以离线安装。
 
 启动测试实例后，再在另一个终端执行：
 

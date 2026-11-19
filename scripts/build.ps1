@@ -1,9 +1,12 @@
-﻿[CmdletBinding()]
+﻿#requires -Version 5.1
+[CmdletBinding()]
 # 用途：
 #   按运行时目录约定构建 kernel、所有 Module/module_* JAR 和 Java 宿主 fat JAR。
 #
 # 输入：
-#   -SkipTests 控制宿主构建是否跳测；JDK 21 和 Maven 3.9+ 必须可从 JAVA_HOME/PATH 使用。
+#   -SkipTests 控制 Maven 构建是否跳测；-Offline 使用严格 Maven 离线模式；
+#   -MavenRepository 指定本地 Maven 仓库，默认开发使用 .m2-repository，离线使用包内 maven-repository。
+#   JDK 21 和 Maven 3.9+ 必须可从 JAVA_HOME/PATH 使用。
 #
 # 副作用：
 #   写入 target、.m2-repository 和模块/宿主 target，重建 target/orderly-modules 运行时暂存目录，
@@ -14,12 +17,25 @@
 #   宿主 fat JAR 不得包含具体模块或用户主题，构建失败必须以非零退出状态阻止启动。
 
 param(
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [switch]$Offline,
+    [string]$MavenRepository
 )
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$localRepository = Join-Path $repoRoot ".m2-repository"
+$defaultRepository = if ($Offline) {
+    Join-Path $repoRoot "maven-repository"
+}
+else {
+    Join-Path $repoRoot ".m2-repository"
+}
+$localRepository = if ([string]::IsNullOrWhiteSpace($MavenRepository)) {
+    $defaultRepository
+}
+else {
+    [System.IO.Path]::GetFullPath($MavenRepository)
+}
 $targetRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "target"))
 $stagingRoot = [System.IO.Path]::GetFullPath((Join-Path $targetRoot "orderly-modules"))
 
@@ -47,19 +63,36 @@ function Invoke-NativeCapture {
 
 function Invoke-Maven {
     param([string[]]$MavenArguments)
+    $effectiveArguments = @()
+    if ($Offline) {
+        $effectiveArguments += "-o"
+    }
+    $effectiveArguments += "-Dmaven.repo.local=$localRepository"
+    $effectiveArguments += $MavenArguments
+
     # Maven 失败要保留完整输出并带上退出码，避免调用方只看到笼统的 PowerShell 失败。
     $previousErrorActionPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = "Continue"
-        & mvn @MavenArguments
+        & mvn @effectiveArguments
         $exitCode = $LASTEXITCODE
     }
     finally {
         $ErrorActionPreference = $previousErrorActionPreference
     }
     if ($exitCode -ne 0) {
-        throw "Maven 执行失败，退出码：$exitCode；参数：$($MavenArguments -join ' ')"
+        throw "Maven 执行失败，退出码：$exitCode；参数：$($effectiveArguments -join ' ')"
     }
+}
+
+function Get-MavenVersionArguments {
+    $arguments = @()
+    if ($Offline) {
+        $arguments += "-o"
+    }
+    $arguments += "-Dmaven.repo.local=$localRepository"
+    $arguments += "-version"
+    return $arguments
 }
 
 function Assert-Jdk21 {
@@ -78,9 +111,22 @@ function Assert-Jdk21 {
     if ([int]$Matches.major -ne 21) {
         throw "构建需要 JDK 21，当前 JAVA_HOME Java 主版本为 $($Matches.major)：$javaExe"
     }
-    $mavenVersion = Invoke-NativeCapture -FilePath "mvn" -Arguments @("-version")
+    $mavenVersion = Invoke-NativeCapture -FilePath "mvn" -Arguments (Get-MavenVersionArguments)
     if ($mavenVersion.ExitCode -ne 0 -or $mavenVersion.Output -notmatch 'Java version:\s+21(?:\.|\s|,)') {
         throw "Maven 未使用 JDK 21。mvn -version 输出：`n$($mavenVersion.Output)"
+    }
+}
+
+function Assert-OfflineRepository {
+    if (-not $Offline) {
+        return
+    }
+    if (-not (Test-Path -LiteralPath $localRepository -PathType Container)) {
+        throw "严格离线构建要求现有本地 Maven 仓库：$localRepository"
+    }
+    $repositoryItem = Get-Item -LiteralPath $localRepository -Force
+    if (($repositoryItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "严格离线构建拒绝使用重解析点 Maven 仓库：$localRepository"
     }
 }
 
@@ -132,6 +178,7 @@ function Reset-OrderlyStaging {
 
 Push-Location $repoRoot
 try {
+    Assert-OfflineRepository
     Assert-Jdk21
 
     # 模块直接从源码目录发现，不维护静态索引；排序保证构建输出和日志顺序稳定。
@@ -148,13 +195,15 @@ try {
     Reset-OrderlyStaging
 
     # kernel 是模块和宿主共享的 SPI，必须先在本地仓库安装，后续独立模块才能编译。
-    Invoke-Maven @(
-        "-Dmaven.repo.local=$localRepository",
+    $kernelArguments = @(
         "-pl", "app/kernel",
         "-am",
-        "install",
-        "-DskipTests"
+        "install"
     )
+    if ($SkipTests) {
+        $kernelArguments += "-DskipTests"
+    }
+    Invoke-Maven $kernelArguments
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $systemModuleDirectories = @()
@@ -165,12 +214,14 @@ try {
             throw "模块目录缺少 pom.xml：$($moduleDirectory.FullName)"
         }
         Write-Host "构建模块：$($moduleDirectory.Name)"
-        Invoke-Maven @(
-            "-Dmaven.repo.local=$localRepository",
+        $moduleArguments = @(
             "-f", $pom,
-            "clean", "package",
-            "-DskipTests"
+            "clean", "verify"
         )
+        if ($SkipTests) {
+            $moduleArguments += "-DskipTests"
+        }
+        Invoke-Maven $moduleArguments
         $moduleJars = @(Get-ChildItem -LiteralPath (Join-Path $moduleDirectory.FullName "target") -Filter "*.jar" -File |
             Where-Object {
                 $_.Name -notlike "*.original" -and
@@ -233,11 +284,10 @@ try {
     }
 
     $hostArguments = @(
-        "-Dmaven.repo.local=$localRepository",
         "-f", (Join-Path $repoRoot "app\host\pom.xml"),
         "clean", "package"
     )
-    # -SkipTests 只影响宿主 Maven 测试；模块 JAR 的发现和自包含检查仍无条件执行。
+    # -SkipTests 只影响 Maven 测试；模块 JAR 的发现和自包含检查仍无条件执行。
     if ($SkipTests) {
         $hostArguments += "-DskipTests"
     }

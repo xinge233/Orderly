@@ -5,6 +5,8 @@
 #
 # 输入：
 #   -DocumentOnly 要求变更集必须是非空且完全属于快速白名单的 Markdown。
+#   -Offline 将严格 Maven 离线模式和可选 -MavenRepository 透传给 build.ps1；
+#   严格离线分支复用现有 ai/.venv，不调用 ensure-env.ps1 联网安装 Python 依赖。
 #   完整分支读取 Git 变更集、契约样例、源码和测试，并使用当前 JDK 21、Maven、Node 和 Python 3.14。
 #
 # 副作用：
@@ -16,7 +18,9 @@
 #   二进制拒读夹具只写入系统临时目录并在严格前缀校验后清理；任何失败都保留原始输出并返回非零退出码。
 
 param(
-    [switch]$DocumentOnly
+    [switch]$DocumentOnly,
+    [switch]$Offline,
+    [string]$MavenRepository
 )
 
 $ErrorActionPreference = "Stop"
@@ -402,14 +406,23 @@ try {
         throw "上下文工具审计失败，退出码：$($audit.ExitCode)`n$($audit.Output)"
     }
 
-    if (-not (Test-Path -LiteralPath $aiEnvScript -PathType Leaf)) {
-        throw "缺少 Python AI 环境脚本：$aiEnvScript"
-    }
     if (-not (Test-Path -LiteralPath $contractSampleValidator -PathType Leaf)) {
         throw "缺少契约样例校验器：$contractSampleValidator"
     }
-    # Python 环境可能在首次门禁联网安装依赖；后续契约、编译和测试复用同一个解释器。
-    $python = & $aiEnvScript
+    if ($Offline) {
+        # 严格 Maven 离线门禁不运行 ensure-env，避免意外触发 pip 网络安装。
+        $python = Join-Path $aiRoot ".venv\Scripts\python.exe"
+        if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+            throw "严格离线门禁需要现有 ai/.venv；未运行 ensure-env.ps1，也不会联网安装 Python 依赖。"
+        }
+    }
+    else {
+        if (-not (Test-Path -LiteralPath $aiEnvScript -PathType Leaf)) {
+            throw "缺少 Python AI 环境脚本：$aiEnvScript"
+        }
+        # Python 环境可能在首次门禁联网安装依赖；后续契约、编译和测试复用同一个解释器。
+        $python = & $aiEnvScript
+    }
     if (-not $python -or -not (Test-Path -LiteralPath $python -PathType Leaf)) {
         throw "Python AI 环境准备失败。"
     }
@@ -530,7 +543,14 @@ try {
         Pop-Location
     }
 
-    & (Join-Path $PSScriptRoot "build.ps1")
+    $buildArguments = @{}
+    if ($Offline) {
+        $buildArguments.Offline = $true
+    }
+    if (-not [string]::IsNullOrWhiteSpace($MavenRepository)) {
+        $buildArguments.MavenRepository = $MavenRepository
+    }
+    & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
     if ($LASTEXITCODE -ne 0) {
         throw "模块化构建失败，退出码：$LASTEXITCODE"
     }

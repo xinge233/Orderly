@@ -25,12 +25,20 @@
 .\scripts\start.ps1
 ```
 
-首次启动前，`start.ps1` 会调用 `scripts/build.ps1`：自动扫描 `Module/module_*`，逐个构建模块 JAR 到 `target/orderly-modules/`，再构建宿主 fat JAR。构建会先清空运行模块暂存目录，因此删除模块源码后不会继续加载陈旧 JAR。可用以下命令单独构建并以已有产物启动：
+首次启动前，`start.ps1` 会调用 `scripts/build.ps1`：自动扫描 `Module/module_*`，逐个执行 Maven `verify` 并把模块 JAR 放到 `target/orderly-modules/`，再构建宿主 fat JAR。直接运行 `build.ps1` 默认执行模块与宿主测试；`-SkipTests` 仅用于明确的快速启动或验收路径。构建会先清空运行模块暂存目录，因此删除模块源码后不会继续加载陈旧 JAR。可用以下命令单独构建并以已有产物启动：
 
 ```powershell
 .\scripts\build.ps1
 .\scripts\start.ps1 -SkipBuild
 ```
+
+开发构建默认使用仓库内 `.m2-repository`。需要验证已有本地仓库不含远端回退时，可使用严格 Maven 离线模式；每次 Maven 调用都会带 `-o` 和指定仓库：
+
+```powershell
+.\scripts\build.ps1 -Offline -MavenRepository .\.m2-repository
+```
+
+`gate.ps1`、`start.ps1` 与 `modularity.ps1` 接受相同的 `-Offline`、`-MavenRepository` 参数并透传给 Maven 构建。严格离线模式不会调用 `ensure-env.ps1` 联网准备 Python 环境，而是要求现有 `ai/.venv` 可用；它不代表 Python、Node 或整个应用已经支持离线安装。
 
 Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配的 `127.0.0.1` 临时端口和随机 Bearer Token。打开 <http://127.0.0.1:8080/>。宿主或 AI 服务异常退出时，启动脚本会清理本次启动的另一个子进程。
 
@@ -76,6 +84,19 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 快速路径只接受明确的快速白名单 Markdown 文档：根 `AGENTS.md`、`README.md`、`Module/AGENTS.md`、`Module/README.md`、`docs/**/*.md` 和 `.codex/agents/**/*.md`。白名单路径大小写精确，扩展名只接受小写 `.md`；大写或混合大小写的目录、文件名和扩展名均回落完整门禁。`themes/**`、`contracts/**`、`Module/module_*` 以及任意未知根目录中的 `.md` 即使扩展名为 Markdown，也不得使用快速路径。
 
 `gate.ps1` 会先无条件调用 `scripts/doc-gate.ps1`。当变更集非空且每一项都属于快速白名单 Markdown 时，`gate.ps1` 自动走快速文档分支并直接成功退出；空变更集、任何非 Markdown 文件、快速白名单外 Markdown 或分类不确定的变更都继续完整门禁。完整分支使用标准 Python `jsonschema` 校验契约样例，并执行模块化 Maven 测试与打包、框架与模块 UI 语法、前端 Node 测试，同时检查物理删除调用、业务样式硬编码色值、固定模块映射和固定业务端点。`-DocumentOnly` 要求变更集必须是非空快速白名单 Markdown，否则失败且不启动构建。`modularity.ps1` 通过移动源码和重启宿主，验证全业务模块、移除单模块、零业务模块（保留 `module_control`）、恢复、临时模块自动发现与可逆移出、模块 UI/查询/计划规则、动态主题与已选主题失效回退；结束后恢复原生模块源码，并清理 `target` 验收临时目录。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
+
+### 离线源码包
+
+正式包默认要求 Git 工作树干净。以下命令在 `target/orderly-offline` 中从空 Maven 仓库执行一次在线预热构建和 Java/Maven 测试，再生成包含源码、`maven-repository`、`maven-manifest.json`、`files.sha256`、第三方制品清单和许可风险提示的 ZIP。源码路径只来自 Git 索引，新增文件必须先显式加入索引。产物不会自动上传：
+
+```powershell
+.\scripts\package-offline.ps1
+.\scripts\verify-offline.ps1 .\target\orderly-offline\Orderly-0.1.0-SNAPSHOT-offline-source.zip
+```
+
+仅用于本地验收脏工作树时，可使用 `.\scripts\package-offline.ps1 -AllowDirtySnapshot`。该包会在 manifest 中记录 `gitDirty=true`，不属于正式干净发布；正式包的 `gitDirty` 必须为 `false`。`sourceTreeSha256` 是对排序后的源码路径、文件大小和 SHA-256 组成规范文本计算的稳定摘要，`sourceFiles` 同时记录每个源码文件的大小和哈希。
+
+验证脚本要求 ZIP 旁存在同名 `.sha256`，会先拒绝禁止路径，再安全解压到 `target/orderly-offline/verify-*`，双向核对源码、POM、Maven 仓库和第三方 JAR/POM 集合及大小、SHA-256、重解析点，最后在包内运行 `build.ps1 -Offline -MavenRepository <包内 maven-repository>`。验证只执行 Maven 构建与 Java 测试，不要求或运行 Node/Python 测试。离线范围仍仅限 Maven，不代表整个应用可以离线安装。第三方清单中的许可状态固定为 `NOT_DETERMINED`，不是法律或许可兼容性结论。
 
 ## 低 token 读取
 

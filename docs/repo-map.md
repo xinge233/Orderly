@@ -140,6 +140,8 @@
 | 完整门禁 | `.\scripts\gate.ps1` |
 | 模块化验收 | `.\scripts\modularity.ps1` |
 | 构建 | `.\scripts\build.ps1` |
+| 生成离线源码包 | 默认要求干净 Git 和索引化源码；仅本地脏快照使用 `.\scripts\package-offline.ps1 -AllowDirtySnapshot` |
+| 验证离线源码包 | `.\scripts\verify-offline.ps1 .\target\orderly-offline\Orderly-0.1.0-SNAPSHOT-offline-source.zip` |
 | 启动 | `.\scripts\start.ps1` |
 | HTTP 烟测 | `.\scripts\smoke.ps1` |
 

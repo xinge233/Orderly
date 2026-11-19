@@ -1,9 +1,11 @@
-﻿[CmdletBinding()]
+﻿#requires -Version 5.1
+[CmdletBinding()]
 # 用途：
 #   执行模块与目录主题的可逆验收：全模块、移除单模块、零业务模块、恢复、临时模块自动发现、主题增删与回退。
 #
 # 输入：
 #   -Port 指定验收宿主端口，默认 18081；JAVA_HOME 必须指向 JDK 21。
+#   -Offline 和可选 -MavenRepository 透传给所有 build.ps1 调用，模块化测试继续显式跳过测试。
 #
 # 副作用：
 #   会构建 Maven 产物，临时移动 Module/module_* 源码和 themes 目录主题到仓库 target 备份，
@@ -13,7 +15,11 @@
 #   源码移动、备份和清理前都校验路径位于仓库 Module、themes 或 target 内；验收宿主只访问 127.0.0.1 和隔离数据目录。
 #   任一步骤失败仍会进入 finally 执行恢复；恢复不完整必须抛错，不能掩盖源文件状态。
 
-param([int]$Port = 18081)
+param(
+    [int]$Port = 18081,
+    [switch]$Offline,
+    [string]$MavenRepository
+)
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -35,15 +41,32 @@ function Assert-Java21 {
     if ([string]::IsNullOrWhiteSpace($env:JAVA_HOME)) { throw "JAVA_HOME 未设置。" }
     $javaExe = Join-Path $env:JAVA_HOME "bin\java.exe"
     if (-not (Test-Path -LiteralPath $javaExe -PathType Leaf)) { throw "未找到 JAVA_HOME Java：$javaExe" }
-    $version = (& $javaExe -version 2>&1) | Out-String
-    if ($LASTEXITCODE -ne 0 -or $version -notmatch 'version "(?<major>\d+)' -or [int]$Matches.major -ne 21) {
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $version = (& $javaExe -version 2>&1) | Out-String
+        $versionExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($versionExitCode -ne 0 -or $version -notmatch 'version "(?<major>\d+)' -or [int]$Matches.major -ne 21) {
         throw "模块化验收需要 JDK 21：`n$version"
     }
     return $javaExe
 }
 
 function Invoke-Build {
-    & (Join-Path $PSScriptRoot "build.ps1") -SkipTests
+    $buildArguments = @{
+        SkipTests = $true
+    }
+    if ($Offline) {
+        $buildArguments.Offline = $true
+    }
+    if (-not [string]::IsNullOrWhiteSpace($MavenRepository)) {
+        $buildArguments.MavenRepository = $MavenRepository
+    }
+    & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
     if ($LASTEXITCODE -ne 0) { throw "模块化构建失败，退出码：$LASTEXITCODE" }
 }
 
