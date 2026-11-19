@@ -7,6 +7,7 @@
 #   -DocumentOnly 要求变更集必须是非空且完全属于快速白名单的 Markdown。
 #   -Offline 将严格 Maven 离线模式和可选 -MavenRepository 透传给 build.ps1；
 #   严格离线分支复用现有 ai/.venv，不调用 ensure-env.ps1 联网安装 Python 依赖。
+#   -MaxParallel 原样透传给 build.ps1，默认 1；门禁本身不实现模块调度。
 #   完整分支读取 Git 变更集、契约样例、源码和测试，并使用当前 JDK 21、Maven、Node 和 Python 3.14。
 #
 # 副作用：
@@ -20,7 +21,9 @@
 param(
     [switch]$DocumentOnly,
     [switch]$Offline,
-    [string]$MavenRepository
+    [string]$MavenRepository,
+    [ValidateRange(1, 2147483647)]
+    [int]$MaxParallel = 1
 )
 
 $ErrorActionPreference = "Stop"
@@ -550,6 +553,7 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($MavenRepository)) {
         $buildArguments.MavenRepository = $MavenRepository
     }
+    $buildArguments.MaxParallel = $MaxParallel
     & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
     if ($LASTEXITCODE -ne 0) {
         throw "模块化构建失败，退出码：$LASTEXITCODE"

@@ -9,12 +9,13 @@
 模块从源码到运行的路径如下：
 
 1. [`scripts/build.ps1`](../scripts/build.ps1) 扫描 `Module/module_*` 目录。
-2. 每个模块目录独立执行 Maven `clean verify`；默认运行模块测试，
+2. 每个模块目录独立执行 Maven `clean verify`；默认一次构建一个模块，
+   只有显式传入大于 1 的 `-MaxParallel` 才并行。默认运行模块测试，
    只有显式传入 `-SkipTests` 或使用快速启动/模块化验收路径时才跳过。
 3. 构建脚本校验模块 JAR 包含 `orderly-ui/module.json`、`orderly-ui/module.js`
    和 `orderly-ui/module.css`。
-4. 构建脚本把模块 JAR 放入 `target/orderly-modules/`，并在构建前清空该目录，
-   防止已经移除的模块继续从旧 JAR 加载。
+4. 全部模块成功后，构建脚本才把候选 JAR 发布到 `target/orderly-modules/`；
+   因此删除模块源码并重新构建后不会继续加载陈旧 JAR，模块失败也不会破坏上一套暂存。
 5. 宿主启动时扫描 `orderly.modules-dir` 指向的目录，通过 `ServiceLoader` 加载
    `OrderlyModule` 执行器，并读取 JAR 中的契约和 UI 资源。
 6. 前端分别从 `/api/modules` 与 `/api/system-modules` 获取业务和系统模块目录，
@@ -276,18 +277,45 @@ export default async function mount(root, context) {
 .\启动归序.cmd
 ```
 
-该入口会重新构建模块、清空并重建 `target/orderly-modules/`，然后启动宿主。不能在
+该入口会在全部模块成功后发布 `target/orderly-modules/`，然后启动宿主。不能在
 应用运行期间替换、更新或卸载模块。模块控制界面只允许显式刷新追加新模块，且新模块
 必须已经构建到 `target/orderly-modules/`；未构建源码返回 `MODULE_NOT_BUILT`。已有模块
-更新或删除返回 `RESTART_REQUIRED`，需要重新构建并重启。
+更新或删除返回 `RESTART_REQUIRED`，需要停止服务、重新构建并重启。
 
-模块构建默认使用 `.m2-repository`。需要从已有本地仓库执行严格 Maven 离线构建时：
+`build.ps1` 在整个构建期间持有按仓库根路径哈希命名的跨进程互斥锁；
+`modularity.ps1` 从移动源码前到恢复、重建和清理结束持有同一把锁，并与嵌套
+`build.ps1` 调用可重入。默认等待上限为 120 秒，超时或获取失败会报告
+`repoRoot`、锁名和原因。
+
+模块构建默认串行使用共享 `.m2-repository`；只有当显式 `-MaxParallel` 产生的
+有效并发大于 1 时，每个模块 worker 才在 `target/build-parallel-*` 下拥有独立可写的
+Maven 本地仓库，共享预热仓库只作为 Maven 3.9+ 的只读 `maven.repo.local.tail`。
+worker 原始 `stdout` 与 `stderr` 分别保存在同一运行目录的模块日志子目录。
+kernel 安装、JAR 内容检查、候选暂存发布、宿主编译和宿主 JAR 检查仍由主进程串行执行：
+
+```powershell
+.\scripts\build.ps1 -MaxParallel 3
+```
+
+需要从已有本地仓库执行严格 Maven 离线构建时：
 
 ```powershell
 .\scripts\build.ps1 -Offline -MavenRepository .\.m2-repository
+.\scripts\build.ps1 -Offline -MavenRepository .\.m2-repository -MaxParallel 3
 ```
 
-严格离线模式会给每次 Maven 调用添加 `-o` 和指定仓库，不会联网补件。
+严格离线模式会给每次 Maven 调用添加 `-o` 和指定仓库；并行 worker 不会写入共享
+tail，也不会联网补件。离线范围只覆盖 Maven 构建，不代表 Python、Node 或整个应用
+可以离线安装。
+
+`package-offline.ps1` 的预热调用不传 `-MaxParallel`，因此保持默认串行并让所有模块
+依赖进入同一个共享仓库，随后由打包脚本完整复制。只有包内验证显式使用
+`-MaxParallel > 1` 时才创建临时 worker 隔离仓库。
+
+`target/build-parallel-*` 中的日志与显式并行时的隔离仓库用于失败复现和依赖诊断，
+因此构建不会自动删除当前及历史运行目录。受控清理必须确认同一仓库没有构建、
+模块化验收或启动流程正在使用相关产物，再只按 `build-parallel-*` 专用前缀处理旧目录；
+不得清理整个 `target/`、`target/orderly-modules/` 或宿主 target。
 
 如只需要使用已经构建好的模块 JAR，可执行：
 
@@ -295,9 +323,10 @@ export default async function mount(root, context) {
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\start.ps1 -SkipBuild
 ```
 
-注意：正常启动入口会重建运行模块目录，因此不要把手工放入
+注意：正常启动入口会在构建成功后发布运行模块目录，因此不要把手工放入
 `target/orderly-modules/` 的 JAR 当作长期模块来源。长期模块应保留完整的
-`Module/module_*` 源码目录。
+`Module/module_*` 源码目录。应用运行期间不能重建、替换或删除其模块目录；源码增删后
+必须停止服务、重新构建并重启。
 
 ## 9. 验证与排查
 
@@ -324,6 +353,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\start.ps1 -SkipBuild
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\gate.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\modularity.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-build-parallel.ps1
 ```
 
 正式离线源码包默认要求 Git 工作树干净，且源码只从 Git 索引收集。新增背景脚本或源码必须先显式加入索引；仅本地验收脏工作树时才使用 `-AllowDirtySnapshot`：

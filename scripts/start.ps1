@@ -7,6 +7,7 @@
 #   -Port 指定 Java HTTP 端口，默认 8080；-SkipBuild 复用已有 JAR。
 #   -Offline 将严格 Maven 离线模式及可选 -MavenRepository 透传给 build.ps1；
 #   该开关只覆盖 Maven 构建，不宣称 Python/Node 或整个应用离线。
+#   -MaxParallel 原样透传给 build.ps1，默认 1；运行中不重建或替换模块目录。
 #   JAVA_HOME 必须指向 JDK 21，模块和主题目录由仓库根目录推导。
 #
 # 副作用：
@@ -22,7 +23,9 @@ param(
     [int]$Port = 8080,
     [switch]$SkipBuild,
     [switch]$Offline,
-    [string]$MavenRepository
+    [string]$MavenRepository,
+    [ValidateRange(1, 2147483647)]
+    [int]$MaxParallel = 1
 )
 
 $ErrorActionPreference = "Stop"
@@ -118,6 +121,7 @@ if (-not $SkipBuild) {
     if (-not [string]::IsNullOrWhiteSpace($MavenRepository)) {
         $buildArguments.MavenRepository = $MavenRepository
     }
+    $buildArguments.MaxParallel = $MaxParallel
     & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
 }
 

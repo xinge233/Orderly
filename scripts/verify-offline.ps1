@@ -6,6 +6,7 @@
 # 输入：
 #   -PackagePath 指向 package-offline.ps1 生成的 ZIP；同目录必须存在同名 .sha256。
 #   验证机必须使用与清单一致的 JDK 主版本和精确 Maven 版本。
+#   -MaxParallel 原样透传给包内 build.ps1，默认 1；验证器本身不实现调度。
 #   验证只执行包内 Maven 构建与 Java 测试，不要求 Node/Python 测试环境，也不运行 Node/Python 测试。
 #
 # 副作用：
@@ -19,7 +20,9 @@
 
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [string]$PackagePath
+    [string]$PackagePath,
+    [ValidateRange(1, 2147483647)]
+    [int]$MaxParallel = 1
 )
 
 $ErrorActionPreference = "Stop"
@@ -829,7 +832,7 @@ try {
     Push-Location $verificationRoot
     try {
         Write-Host "在包内执行严格离线 Maven 构建。"
-        & $buildScript -Offline -MavenRepository $repositoryPath
+        & $buildScript -Offline -MavenRepository $repositoryPath -MaxParallel $MaxParallel
         if (-not $? -or $LASTEXITCODE -ne 0) {
             throw "包内严格离线构建失败，退出码：$LASTEXITCODE"
         }

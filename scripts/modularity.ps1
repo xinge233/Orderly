@@ -6,6 +6,7 @@
 # 输入：
 #   -Port 指定验收宿主端口，默认 18081；JAVA_HOME 必须指向 JDK 21。
 #   -Offline 和可选 -MavenRepository 透传给所有 build.ps1 调用，模块化测试继续显式跳过测试。
+#   -MaxParallel 原样透传给 build.ps1，默认 1；源码移动阶段不与任何构建并行。
 #
 # 副作用：
 #   会构建 Maven 产物，临时移动 Module/module_* 源码和 themes 目录主题到仓库 target 备份，
@@ -18,7 +19,9 @@
 param(
     [int]$Port = 18081,
     [switch]$Offline,
-    [string]$MavenRepository
+    [string]$MavenRepository,
+    [ValidateRange(1, 2147483647)]
+    [int]$MaxParallel = 1
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,6 +38,77 @@ $script:movedTheme = $null
 $script:generatedTheme = $null
 $script:generatedModule = $null
 $script:succeeded = $false
+$buildLockTimeoutMilliseconds = 120000
+
+function Get-BuildLockName {
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $normalizedRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    ).ToLowerInvariant()
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($normalizedRoot)
+        $hash = ([System.BitConverter]::ToString(
+            $algorithm.ComputeHash($bytes)
+        ) -replace "-", "").ToLowerInvariant()
+    }
+    finally {
+        $algorithm.Dispose()
+    }
+    return "Local\Orderly.Build.$hash"
+}
+
+function Enter-BuildLock {
+    $lockName = Get-BuildLockName $repoRoot
+    $mutex = $null
+    try {
+        $mutex = [System.Threading.Mutex]::new($false, $lockName)
+    }
+    catch {
+        throw "创建仓库构建互斥锁失败。repoRoot=$repoRoot；lockName=$lockName；原因：$($_.Exception.Message)"
+    }
+
+    $acquired = $false
+    try {
+        $acquired = $mutex.WaitOne($buildLockTimeoutMilliseconds, $false)
+    }
+    catch [System.Threading.AbandonedMutexException] {
+        $acquired = $true
+        Write-Warning "仓库构建互斥锁此前由异常退出进程持有；已接管。repoRoot=$repoRoot；lockName=$lockName"
+    }
+    catch {
+        $reason = $_.Exception.Message
+        $mutex.Dispose()
+        throw "获取仓库构建互斥锁失败。repoRoot=$repoRoot；lockName=$lockName；原因：$reason"
+    }
+    if (-not $acquired) {
+        $mutex.Dispose()
+        throw "等待仓库构建互斥锁超时。repoRoot=$repoRoot；lockName=$lockName；timeoutMilliseconds=$buildLockTimeoutMilliseconds；原因：同一仓库已有 build.ps1 或 modularity.ps1 正在运行。"
+    }
+    return [pscustomobject]@{
+        Mutex = $mutex
+        Name = $lockName
+        Held = $true
+    }
+}
+
+function Exit-BuildLock {
+    param($BuildLock)
+    if ($null -eq $BuildLock -or -not $BuildLock.Held) {
+        return
+    }
+    try {
+        $BuildLock.Mutex.ReleaseMutex()
+        $BuildLock.Held = $false
+    }
+    catch {
+        throw "释放仓库构建互斥锁失败。repoRoot=$repoRoot；lockName=$($BuildLock.Name)；原因：$($_.Exception.Message)"
+    }
+    finally {
+        $BuildLock.Mutex.Dispose()
+    }
+}
 
 function Assert-Java21 {
     # 验收同时依赖宿主和 Maven 产物，先锁定 JAVA_HOME 的 Java 主版本，避免旧 JDK 产生误导性失败。
@@ -66,6 +140,7 @@ function Invoke-Build {
     if (-not [string]::IsNullOrWhiteSpace($MavenRepository)) {
         $buildArguments.MavenRepository = $MavenRepository
     }
+    $buildArguments.MaxParallel = $MaxParallel
     & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
     if ($LASTEXITCODE -ne 0) { throw "模块化构建失败，退出码：$LASTEXITCODE" }
 }
@@ -517,8 +592,10 @@ function Assert-ModuleSurface([string[]]$ExpectedIds) {
 }
 
 # 验收会临时改变源码布局；从仓库根执行并在 finally 恢复调用方目录。
+$buildLock = $null
 Push-Location $repoRoot
 try {
+    $buildLock = Enter-BuildLock
     $javaExe = Assert-Java21
     New-Item -ItemType Directory -Path $backupRoot | Out-Null
     New-Item -ItemType Directory -Path $dataRoot | Out-Null
@@ -751,15 +828,38 @@ try {
 finally {
     # 清理顺序先停进程、恢复源码、移除临时内容，再重建真实模块产物并清理 target 验收目录。
     # 恢复或重建失败会从 finally 抛出，保留非零结果，不把不完整的工作区伪装为通过。
-    Stop-Orderly
+    $cleanupFailure = $null
+    if ($null -ne $buildLock -and $buildLock.Held) {
+        try {
+            Stop-Orderly
+            Restore-MovedSources
+            Remove-GeneratedTheme
+            Remove-GeneratedModule
+            if (Test-Path -LiteralPath (Join-Path $repoRoot "Module")) { Invoke-Build }
+            Remove-ModularityTargetArtifacts
+            Write-Host "模块化验收临时路径已清理。"
+        }
+        catch {
+            $cleanupFailure = $_
+        }
+    }
+
+    $releaseFailure = $null
     try {
-        Restore-MovedSources
-        Remove-GeneratedTheme
-        Remove-GeneratedModule
-        if (Test-Path -LiteralPath (Join-Path $repoRoot "Module")) { Invoke-Build }
-        Remove-ModularityTargetArtifacts
-        Write-Host "模块化验收临时路径已清理。"
-    } finally {
-        Pop-Location
+        Exit-BuildLock $buildLock
+    }
+    catch {
+        $releaseFailure = $_
+    }
+    Pop-Location
+
+    if ($null -ne $cleanupFailure -and $null -ne $releaseFailure) {
+        throw "模块化清理失败，且释放仓库构建互斥锁也失败。清理错误：$($cleanupFailure.Exception.Message)；释放错误：$($releaseFailure.Exception.Message)"
+    }
+    if ($null -ne $cleanupFailure) {
+        throw $cleanupFailure
+    }
+    if ($null -ne $releaseFailure) {
+        throw $releaseFailure
     }
 }

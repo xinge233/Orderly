@@ -95,7 +95,7 @@
 | 模块动作变更 | 模块契约、模块 Java、模块 UI 清单、模块测试、宿主相关接口 |
 | 主题变更 | `themes/README.md`、目标 `theme.json`、`tokens.css`、`motion.css` |
 | 契约变更 | Schema、合法样例、非法样例、所有直接消费者 |
-| 构建或启动问题 | `README.md`、`scripts/build.ps1`、`start.ps1`、目标日志行段 |
+| 构建或启动问题 | `README.md`、`scripts/build.ps1`、`start.ps1`、`target/build-parallel-*` 中的目标日志行段 |
 | 历史决策追溯 | `docs/agents/` 中相关交接文档的指定章节，按需读取 |
 
 历史交接文档只用于追溯事实、验证证据和已知风险，不单独构成实施授权。
@@ -139,9 +139,9 @@
 | 白名单 Markdown 快速门禁 | `.\scripts\doc-gate.ps1` |
 | 完整门禁 | `.\scripts\gate.ps1` |
 | 模块化验收 | `.\scripts\modularity.ps1` |
-| 构建 | `.\scripts\build.ps1` |
+| 构建与并行回归 | `.\scripts\build.ps1 -MaxParallel 3`；默认串行共享仓库、仓库级互斥锁，回归用 `.\scripts\test-build-parallel.ps1` |
 | 生成离线源码包 | 默认要求干净 Git 和索引化源码；仅本地脏快照使用 `.\scripts\package-offline.ps1 -AllowDirtySnapshot` |
-| 验证离线源码包 | `.\scripts\verify-offline.ps1 .\target\orderly-offline\Orderly-0.1.0-SNAPSHOT-offline-source.zip` |
+| 验证离线源码包 | `.\scripts\verify-offline.ps1 .\target\orderly-offline\Orderly-0.1.0-SNAPSHOT-offline-source.zip`；可加 `-MaxParallel <int>` |
 | 启动 | `.\scripts\start.ps1` |
 | HTTP 烟测 | `.\scripts\smoke.ps1` |
 
