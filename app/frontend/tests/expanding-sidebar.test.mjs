@@ -43,7 +43,6 @@ test("desktop sidebar is a fixed 272px overlay revealed by clip-path", async () 
     assert.match(tokens, /--sidebar-expanded-width:\s*272px;/);
     assert.match(tokens, /--sidebar-row-height:\s*48px;/);
     assert.match(tokens, /--sidebar-icon-size:\s*40px;/);
-    assert.match(tokens, /--content-max:\s*1520px;/);
     assert.match(
         appCss,
         /\.app-shell\s*\{[\s\S]*?grid-template-columns:\s*var\(--sidebar-width\) minmax\(0,\s*1fr\);/

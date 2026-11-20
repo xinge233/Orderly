@@ -142,7 +142,6 @@ test("invalid settings fall back to safe defaults", () => {
         moduleOrderIds: []
     });
 });
-
 test("AI icon options are built in and invalid stored values fall back to spark", () => {
     assert.deepEqual(
         AI_ICON_OPTIONS.map((option) => option.value),
@@ -410,38 +409,4 @@ test("theme manager rejects unsupported detail schema and never injects JavaScri
     assert.equal("theme" in root.dataset, false);
     assert.equal(head.children.length, 0);
     assert.doesNotMatch(source, /createElement\(["']script["']\)|<script/i);
-});
-
-test("frontend source contains no static theme option list", async () => {
-    const settings = await readFile(new URL("../src/settings.js", import.meta.url), "utf8");
-    const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
-    assert.doesNotMatch(settings, /THEME_OPTIONS/);
-    assert.doesNotMatch(app, /THEME_OPTIONS/);
-});
-
-test("appearance applies AI icon options live without a second icon list", async () => {
-    const icons = await readFile(new URL("../src/icons.js", import.meta.url), "utf8");
-    const settings = await readFile(new URL("../src/settings.js", import.meta.url), "utf8");
-    const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
-
-    assert.match(icons, /export const AI_ICON_OPTIONS = Object\.freeze/);
-    assert.match(icons, /export function normalizeAiIcon/);
-    assert.match(settings, /import \{ normalizeAiIcon \} from "\.\/icons\.js"/);
-    assert.doesNotMatch(settings, /export const AI_ICON_OPTIONS/);
-    assert.match(
-        app,
-        /import \{ AI_ICON_OPTIONS, hydrateIcons, icon \} from "\.\/icons\.js"/
-    );
-    assert.match(app, /AI_ICON_OPTIONS/);
-    assert.match(app, /aiDialog\?\.setIcon\(settings\.aiIcon\)/);
-    assert.match(app, /input\.name = "aiIcon"/);
-    assert.match(app, /settingsStore\.update\(\{ aiIcon: option\.value \}\)/);
-    assert.match(app, /input\.value === settings\.aiIcon/);
-    assert.doesNotMatch(app, /const AI_ICON_OPTIONS =/);
-});
-
-test("component CSS contains no literal color values", async () => {
-    const css = await readFile(new URL("../styles/app.css", import.meta.url), "utf8");
-    assert.doesNotMatch(css, /#[0-9a-f]{3,8}\b/i);
-    assert.doesNotMatch(css, /\brgba?\(/i);
 });

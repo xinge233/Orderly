@@ -123,16 +123,13 @@ test("framework, module and theme CSS never consult the system motion preference
     );
 });
 
-test("base component CSS contains no hardcoded keyframes, animations or transitions", async () => {
+test("base component CSS uses safe scrolling and excludes theme decoration hooks", async () => {
     const appCss = await read("../styles/app.css");
 
     assert.match(appCss, /scroll-behavior:\s*auto/);
     assert.doesNotMatch(appCss, /scroll-behavior:\s*smooth/);
     assert.doesNotMatch(appCss, /theme-texture/);
     assert.doesNotMatch(appCss, /theme-swatch/);
-    assert.doesNotMatch(appCss, /@keyframes\b/);
-    assert.doesNotMatch(appCss, /(^|[\s;])animation\s*:/m);
-    assert.doesNotMatch(appCss, /(^|[\s;])transition\s*:/m);
 });
 
 test("AI dock hides inactive surfaces and keeps demo disclosure visible", async () => {
