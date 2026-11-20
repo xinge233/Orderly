@@ -495,16 +495,6 @@
     padding-top: var(--space-2);
 }
 
-/* 宽屏下让系统治理面板接近工作区全宽，但不改变框架的内容轨道。 */
-@media (min-width: 1440px) {
-    .module-control-ui-panel {
-        position: relative;
-        left: 50%;
-        width: min(104rem, calc(100vw - var(--sidebar-width) - var(--space-12)));
-        transform: translateX(-50%);
-    }
-}
-
 /* 手机端由桌面整行治理改为可回流网格，但所有开关、说明和焦点顺序继续保留。 */
 @media (max-width: 640px) {
     .module-control-ui-panel {
