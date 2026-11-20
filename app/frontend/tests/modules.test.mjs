@@ -327,12 +327,23 @@ test("module_control renders interface AI switches with locking states", async (
     assert.match(control, /actionIsInUse\(state\.interfaceState,/);
     assert.match(control, /const previous = interfaceStateFor\(/);
     assert.match(control, /canExpandInterfaces/);
-    assert.match(control, /if \(canExpandInterfaces && expanded\) \{\s*row\.classList\.add\("is-expanded"\);/);
+    assert.match(control, /const nextExpanded = !state\.expandedIds\.has\(module\.moduleId\);/);
+    assert.match(control, /row\.classList\.toggle\("is-expanded", nextExpanded\);/);
+    assert.match(control, /interfacePanel\.hidden = !nextExpanded;/);
     assert.match(control, /classList\.add\("is-static"\)/);
     assert.match(control, /context\.subscribeEvents/);
+    const expandListener = control.match(
+        /copy\.addEventListener\("click", \(\) => \{([\s\S]*?)\n\s*\}\);/
+    )?.[1] ?? "";
+    assert.match(expandListener, /interfacePanel\.hidden = !nextExpanded;/);
+    assert.doesNotMatch(expandListener, /\brender\(\)/);
     assert.match(style, /\.module-control-ui-interfaces\[hidden\]\s*\{\s*display:\s*none;/);
     assert.match(style, /\.module-control-ui-copy\.is-static\s*\{\s*cursor:\s*default;/);
-    assert.match(style, /\.module-control-ui-row\.is-expanded\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?max-height:\s*none;/);
+    const rowRule = style.match(/\.module-control-ui-row\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+    assert.match(rowRule, /flex:\s*0 0 auto;/);
+    assert.match(rowRule, /min-height:\s*5rem;/);
+    assert.doesNotMatch(rowRule, /flex:\s*1 1/);
+    assert.match(style, /\.module-control-ui-list-scroll\s*\{\s*overflow-anchor:\s*none;/);
     assert.doesNotMatch(style, /grid-auto-rows:\s*minmax\(4\.75rem,\s*1fr\)/);
 });
 

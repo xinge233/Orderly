@@ -777,6 +777,10 @@ export default async function mount(root, context) {
         moduleIcon.innerHTML = context.icon(module.icon, 20);
         const expanded = state.expandedIds.has(module.moduleId);
         const canExpandInterfaces = !(module.protected || module.role === MODULE_CONTROL_ROLE);
+        const interfacePanel = canExpandInterfaces ? buildInterfacePanel(module) : null;
+        if (interfacePanel) {
+            interfacePanel.hidden = !expanded;
+        }
         if (canExpandInterfaces && expanded) {
             row.classList.add("is-expanded");
         }
@@ -796,13 +800,15 @@ export default async function mount(root, context) {
         );
         if (canExpandInterfaces) {
             copy.addEventListener("click", () => {
-                if (expanded) {
-                    state.expandedIds.delete(module.moduleId);
-                } else {
+                const nextExpanded = !state.expandedIds.has(module.moduleId);
+                if (nextExpanded) {
                     state.expandedIds.add(module.moduleId);
+                } else {
+                    state.expandedIds.delete(module.moduleId);
                 }
-                render();
-                root.querySelector(`[data-expand-id="${module.moduleId}"]`)?.focus();
+                row.classList.toggle("is-expanded", nextExpanded);
+                copy.setAttribute("aria-expanded", String(nextExpanded));
+                interfacePanel.hidden = !nextExpanded;
             });
         }
 
@@ -833,9 +839,7 @@ export default async function mount(root, context) {
 
         header.append(handle, moduleIcon, copy, rowActions);
         row.append(header);
-        if (canExpandInterfaces) {
-            const interfacePanel = buildInterfacePanel(module);
-            interfacePanel.hidden = !expanded;
+        if (interfacePanel) {
             row.append(interfacePanel);
         }
         return row;
