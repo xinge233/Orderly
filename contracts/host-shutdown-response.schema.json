@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/host-shutdown-response.schema.json",
+  "title": "Orderly host shutdown response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "message"],
+  "properties": {
+    "status": {
+      "const": "STOPPING"
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    }
+  }
+}

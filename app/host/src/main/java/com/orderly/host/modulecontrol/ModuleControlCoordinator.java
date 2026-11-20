@@ -21,6 +21,7 @@ public class ModuleControlCoordinator {
     private final ReentrantLock lifecycleLock = new ReentrantLock(true);
     private final ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock(true);
     private int activeExecutions;
+    private boolean shutdownRequested;
 
     /** 在共享状态读锁内执行只读操作，结束后必定释放锁。 */
     public <T> T read(Supplier<T> operation) {
@@ -55,9 +56,46 @@ public class ModuleControlCoordinator {
     public ExecutionPermit beginExecution() {
         lifecycleLock.lock();
         try {
+            requireNotShuttingDown();
             stateLock.readLock().lock();
             activeExecutions++;
             return new ExecutionPermit(this);
+        } finally {
+            lifecycleLock.unlock();
+        }
+    }
+
+    /**
+     * 冻结新的执行许可，并要求当前没有执行中的动作。
+     *
+     * <p>返回 false 表示宿主已经进入退出流程；已有 Action 或计划执行时抛出 409，
+     * 避免在写入、快照或回滚边界中途终止进程。</p>
+     */
+    public boolean beginShutdown() {
+        lifecycleLock.lock();
+        try {
+            if (shutdownRequested) {
+                return false;
+            }
+            if (activeExecutions > 0) {
+                throw new ApiException(
+                        HttpStatus.CONFLICT,
+                        "HOST_EXECUTION_IN_PROGRESS",
+                        "当前仍有 Action 或计划正在执行，完成或失败后再退出"
+                );
+            }
+            shutdownRequested = true;
+            return true;
+        } finally {
+            lifecycleLock.unlock();
+        }
+    }
+
+    /** 退出请求未能调度时撤销冻结，避免宿主永久停留在不可执行状态。 */
+    public void cancelShutdown() {
+        lifecycleLock.lock();
+        try {
+            shutdownRequested = false;
         } finally {
             lifecycleLock.unlock();
         }
@@ -72,6 +110,7 @@ public class ModuleControlCoordinator {
     private <T> T mutate(boolean rejectDuringExecution, Supplier<T> operation) {
         lifecycleLock.lock();
         try {
+            requireNotShuttingDown();
             if (rejectDuringExecution && activeExecutions > 0) {
                 throw new ApiException(
                         HttpStatus.CONFLICT,
@@ -87,6 +126,16 @@ public class ModuleControlCoordinator {
             }
         } finally {
             lifecycleLock.unlock();
+        }
+    }
+
+    private void requireNotShuttingDown() {
+        if (shutdownRequested) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "HOST_SHUTTING_DOWN",
+                    "宿主正在退出，不能开始新的执行或治理变更"
+            );
         }
     }
 

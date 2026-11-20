@@ -3,11 +3,13 @@ package com.orderly.host;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderly.host.event.ExecutionJournal;
 import com.orderly.host.runtime.WorkspaceRuntime;
+import com.orderly.host.system.HostShutdownService;
 import com.orderly.host.system.SystemFeatureService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -17,6 +19,7 @@ import java.nio.file.Files;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -49,6 +52,9 @@ class SystemFeatureIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockBean
+    private HostShutdownService hostShutdown;
 
     @Test
     void planningDefaultsOffAndPersistsAcrossServiceReload() throws Exception {
@@ -99,5 +105,24 @@ class SystemFeatureIntegrationTest {
                 "SYSTEM_FEATURE".equals(event.type())
                         && "SYSTEM".equals(event.origin())
                         && "ai-plan".equals(event.actionId()));
+    }
+
+    @Test
+    void shutdownRequiresActionHeaderAndReturnsAcceptedResponse() throws Exception {
+        mockMvc.perform(post("/api/system/shutdown"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_SHUTDOWN_REQUEST"));
+
+        when(hostShutdown.requestShutdown()).thenReturn(
+                new HostShutdownService.ShutdownAccepted(
+                        "STOPPING",
+                        "正在停止本地宿主与相关进程"
+                )
+        );
+        mockMvc.perform(post("/api/system/shutdown")
+                        .header("X-Orderly-Action", "shutdown"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("STOPPING"))
+                .andExpect(jsonPath("$.message").value("正在停止本地宿主与相关进程"));
     }
 }

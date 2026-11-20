@@ -132,6 +132,17 @@ export class OrderlyApi {
         });
     }
 
+    shutdownHost(options = {}) {
+        return this.request("/api/system/shutdown", {
+            ...options,
+            method: "POST",
+            headers: {
+                ...options.headers,
+                "X-Orderly-Action": "shutdown"
+            }
+        });
+    }
+
     getModulePreferences(options) {
         return this.request("/api/system/module-preferences", options);
     }

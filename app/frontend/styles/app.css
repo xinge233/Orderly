@@ -468,6 +468,17 @@ body.is-navigation-dragging * {
     background: var(--color-surface);
 }
 
+.exit-trigger:hover {
+    border-color: color-mix(in srgb, var(--color-danger) 44%, var(--color-line));
+    background: var(--color-danger-soft);
+    color: var(--color-danger);
+}
+
+.exit-trigger:disabled {
+    cursor: wait;
+    opacity: 0.58;
+}
+
 /* 桌面侧栏以 272px 覆盖层承载完整内容，通过 clip-path 只露出 72px，展开态由脚本切换类名。 */
 @media (min-width: 821px) {
     .sidebar {

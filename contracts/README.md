@@ -1,6 +1,6 @@
 # 契约目录
 
-`plan.schema.json` 定义计划与澄清问题的公开结构，`module.schema.json` 定义模块契约，`module-ui.schema.json` 定义模块自带 UI 清单，`module-build-status.schema.json` 定义后台模块构建状态，`module-build-priority-request.schema.json` 定义受限优先构建请求，`theme.schema.json` 定义目录主题包的 `theme.json`，`study-data.schema.json` 定义学习相关模块的只读数据边界，`samples/` 提供前端和测试共享的示例。
+`plan.schema.json` 定义计划与澄清问题的公开结构，`module.schema.json` 定义模块契约，`module-ui.schema.json` 定义模块自带 UI 清单，`module-build-status.schema.json` 定义后台模块构建状态，`module-build-priority-request.schema.json` 定义受限优先构建请求，`host-shutdown-response.schema.json` 定义本地宿主安全退出的稳定响应，`theme.schema.json` 定义目录主题包的 `theme.json`，`study-data.schema.json` 定义学习相关模块的只读数据边界，`samples/` 提供前端和测试共享的示例。
 
 `samples/valid/module.json`、`module-control.json` 与模块 UI 样例是宿主和前端实际校验逻辑接受的合法样例；`samples/invalid/` 中的模块契约和 UI 清单会被对应逻辑明确拒绝。模块 JAR 契约不得声明静态 `aiCallable`，其属性在 `module.schema.json` 中因 `additionalProperties: false` 被拒绝；动态用户开关不属于模块 JAR 契约。`gate.ps1` 同时执行 Java 模块契约样例测试与 Node 模块 UI 样例测试，防止 schema、样例和运行时规则漂移。
 
@@ -17,6 +17,8 @@
 运行中刷新只允许显式追加新模块。新源码目录必须已有同名 JAR，宿主不会自动编译；未构建返回 `MODULE_NOT_BUILT`。已有模块更新或删除返回 `RESTART_REQUIRED`，不会替换当前运行快照。API 约定见根 README。
 
 后台模块构建状态只由宿主构建链路写入，模块和前端不能自行声明 `READY`。状态中的源码名必须直接对应 `Module/module_*` 目录，禁止路径、空段和保留名称。优先构建请求只能引用已发现的业务模块源码名；构建脚本仍按自身队列决定何时生效，不承诺抢占已经运行的 Maven 任务。
+
+宿主退出接口只接受带 `X-Orderly-Action: shutdown` 的本地 POST 请求。存在执行中的 Action 或计划时拒绝退出；接受后先返回 `STOPPING`，再异步停止 Java 宿主，由启动脚本清理 AI 与后台模块构建进程。
 
 `trash` 是文件模块唯一的删除语义：对象从工作区移动到 `.orderly-data/trash`，从不执行物理删除。
 

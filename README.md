@@ -60,6 +60,8 @@
 
 Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配的 `127.0.0.1` 临时端口和随机 Bearer Token。打开 <http://127.0.0.1:8080/>。后台模式先等待 Java 健康检查，再启动模块构建；Python 环境准备与 AI 服务启动同时进行，不会阻塞框架首屏。宿主或 AI 服务异常退出时，启动脚本会清理本次启动的子进程。后台日志与模块状态分别位于 `target/background/`、`target/module-build-status.json` 和 `target/module-build-priority.json`。
 
+侧边栏底部的“退出归序”会在二次确认后停止 Java 宿主、AI 服务和后台模块构建。Action 或计划执行期间禁止退出；退出后重新运行 `启动归序.cmd` 即可恢复，未完成的模块构建会重新进入后台队列。
+
 待构建模块会以真实构建状态显示在侧边栏和总览。点击待构建模块会写入优先请求；正在运行的 Maven 不会被抢占，队列在当前模块结束后选择它。存在未就绪模块时，AI 输入会先提示等待；用户确认后，AI 在全部模块完成或失败前不会提交模型回合，也不会执行部分 Action。
 
 程序首次运行会在仓库根目录创建 `.orderly-data/`：
@@ -177,6 +179,8 @@ POST  /api/system/module-folder/open
 ```
 
 `module-folder/open` 只接受 `X-Orderly-Action: open-module-folder`，只在 Windows 上打开配置的 `orderly.module-source-dir`，不接受客户端路径。模块查询、计划规则、计划生成、确认和执行都检查 `enabled`；执行中拒绝停用，回滚始终允许。开关、设置、排序、刷新和打开目录会写入审计事件。
+
+`POST /api/system/shutdown` 只接受 `X-Orderly-Action: shutdown`。存在执行中的 Action 或计划时返回 `HOST_EXECUTION_IN_PROGRESS`；接受后返回 `202` 和 `STOPPING`，随后由启动脚本清理相关子进程。
 
 业务 Action 和 Query 不在模块契约中声明静态 AI 权限。宿主在 `.orderly-data/module-governance.json` 中保存用户级 `actionAiCallableEnabled` 与 `queryAiCallableEnabled`，所有业务接口默认开启且可由 `module_control` 动态切换；系统模块 `module_control` 不参与治理。动态开关只限制 AI：Action 影响 AI 计划与 AI 直执，Query 影响已接入的 AI Query，模块自身查询和总览不会受影响。独立 AI 计划引用中的 Action 显示“使用中”，确认时原子转换为整次执行占用，并在结束或失败后释放；过期提案也会释放。旧版计划不参与。
 

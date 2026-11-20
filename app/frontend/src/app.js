@@ -146,6 +146,7 @@ const state = {
     aiSettingsSaving: false,
     aiSettingsTesting: false,
     aiSettingsError: "",
+    shutdownRequested: false,
     modules: [],
     moduleBuilds: normalizeModuleBuildSnapshot({}),
     moduleBuildLoading: true,
@@ -1108,6 +1109,11 @@ function createSystemAdminApi() {
  */
 function bindGlobalControls() {
     document.querySelector("#open-settings")?.addEventListener("click", openSettings);
+    document.querySelector("#exit-orderly")?.addEventListener(
+        "click",
+        () => void requestHostShutdown()
+    );
+    syncExitTrigger();
     document.querySelector("#mobile-menu")?.addEventListener("click", openMobileNav);
     document.querySelector("#mobile-scrim")?.addEventListener("click", () => closeMobileNav());
 
@@ -1891,6 +1897,67 @@ function updateHealth(error = null) {
         planner.textContent = plannerStatus === "LOCAL_RULES"
             ? "本地规则计划器 · 未连接外部模型"
             : `${String(state.health?.planner ?? "计划器状态未知")} · 外部模型连接状态未声明`;
+    }
+}
+
+function syncExitTrigger() {
+    const button = document.querySelector("#exit-orderly");
+    if (!button) {
+        return;
+    }
+    button.disabled = state.executing || state.shutdownRequested;
+    button.setAttribute("aria-busy", state.shutdownRequested ? "true" : "false");
+    button.title = state.shutdownRequested
+        ? "归序正在退出"
+        : state.executing
+            ? "执行中的任务完成后再退出"
+            : "退出归序并停止本地服务";
+}
+
+/**
+ * 请求宿主安全退出。
+ *
+ * 前端只负责确认和状态提示；执行互锁、审计和进程退出由宿主保证。宿主接受请求后，
+ * start.ps1 会检测 Java 退出并清理 AI 服务与后台模块构建器。
+ *
+ * @returns {Promise<void>}
+ */
+async function requestHostShutdown() {
+    if (state.shutdownRequested) {
+        return;
+    }
+    if (state.executing) {
+        toast("当前仍有 Action 或计划正在执行，完成后再退出。", { error: true });
+        return;
+    }
+    const pendingBuilds = pendingModuleBuilds(state.moduleBuilds, state.modules)
+        .filter((entry) => ["QUEUED", "BUILDING", "READY"].includes(entry.status));
+    const buildNotice = pendingBuilds.length > 0
+        ? `后台仍有 ${pendingBuilds.length} 个模块未完成构建，退出后将在下次启动时继续。\n`
+        : "";
+    if (!window.confirm(
+        `退出归序将停止 Java 宿主、AI 服务和后台模块构建。\n${buildNotice}确认退出？`
+    )) {
+        return;
+    }
+
+    state.shutdownRequested = true;
+    syncExitTrigger();
+    document.querySelector(".app-shell")?.setAttribute("data-host-state", "stopping");
+    setSettingsStatus("正在停止本地宿主与相关进程…");
+    toast("正在退出归序，本地服务停止后此页面将无法继续操作。");
+    try {
+        const response = await api.shutdownHost();
+        const message = response?.message || "正在停止本地宿主与相关进程";
+        setSettingsStatus(message);
+        toast(message);
+    } catch (error) {
+        state.shutdownRequested = false;
+        document.querySelector(".app-shell")?.removeAttribute("data-host-state");
+        syncExitTrigger();
+        const message = `退出失败：${errorMessage(error)}`;
+        setSettingsStatus(message, { error: true });
+        toast(message, { error: true });
     }
 }
 
@@ -3096,6 +3163,7 @@ async function executePlan() {
     }
 
     state.executing = true;
+    syncExitTrigger();
     const shell = document.querySelector(".app-shell");
     shell?.setAttribute("data-motion-state", "busy");
     state.currentRun = {
@@ -3132,6 +3200,7 @@ async function executePlan() {
         toast(errorMessage(error), { error: true });
     } finally {
         state.executing = false;
+        syncExitTrigger();
         shell?.setAttribute("data-motion-state", "ready");
         renderPlan();
         renderTimeline();

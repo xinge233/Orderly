@@ -169,6 +169,30 @@ test("API client reads and prioritizes background module builds", async () => {
     });
 });
 
+test("API client requests host shutdown with a non-simple action header", async () => {
+    let captured;
+    const api = new OrderlyApi({
+        fetchImpl: async (url, options) => {
+            captured = { url, options };
+            return new Response(JSON.stringify({
+                status: "STOPPING",
+                message: "正在停止本地宿主与相关进程"
+            }), {
+                status: 202,
+                headers: { "Content-Type": "application/json" }
+            });
+        }
+    });
+
+    const response = await api.shutdownHost();
+
+    assert.equal(captured.url, "/api/system/shutdown");
+    assert.equal(captured.options.method, "POST");
+    assert.equal(captured.options.headers["X-Orderly-Action"], "shutdown");
+    assert.equal(captured.options.body, undefined);
+    assert.equal(response.status, "STOPPING");
+});
+
 test("API client addresses module UI and generic queries", async () => {
     const urls = [];
     const api = new OrderlyApi({

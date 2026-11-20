@@ -278,6 +278,26 @@ test("mobile navigation layers scrim above the AI dock and sidebar above both", 
     );
 });
 
+test("sidebar exposes a confirmed global host exit action", async () => {
+    const html = await read("../index.html");
+    const app = await read("../src/app.js");
+    const appCss = await read("../styles/app.css");
+
+    assert.match(
+        html,
+        /id="open-settings"[\s\S]*?id="exit-orderly"[\s\S]*?data-icon="power"[\s\S]*?退出归序/
+    );
+    assert.match(
+        app,
+        /async function requestHostShutdown\(\)[\s\S]*?window\.confirm\([\s\S]*?api\.shutdownHost\(\)/
+    );
+    assert.match(app, /state\.executing \|\| state\.shutdownRequested/);
+    assert.match(
+        appCss,
+        /\.exit-trigger:hover\s*\{[\s\S]*?var\(--color-danger-soft\)/
+    );
+});
+
 test("topbar motion hook is removed from public theme documentation", async () => {
     const themesReadme = await read("../../../themes/README.md");
     const handoff = await read("../../../docs/agents/ORDERLY-FRONTEND-THEME-MODULARIZATION-HANDOFF.md");

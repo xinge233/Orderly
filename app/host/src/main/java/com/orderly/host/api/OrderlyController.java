@@ -26,6 +26,7 @@ import com.orderly.host.moduledata.ModuleDataService;
 import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanView;
 import com.orderly.host.runtime.WorkspaceRuntime;
+import com.orderly.host.system.HostShutdownService;
 import com.orderly.host.system.SystemFeatureService;
 import com.orderly.host.theme.ThemeAsset;
 import com.orderly.host.theme.ThemeCatalog;
@@ -76,6 +77,7 @@ public class OrderlyController {
     private final WorkspaceRuntime runtime;
     private final ThemeCatalog themes;
     private final ModuleControlService moduleControl;
+    private final HostShutdownService hostShutdown;
     private final ModuleLifecycleService moduleLifecycle;
     private final ModuleRefreshService moduleRefresh;
     private final ModuleFolderService moduleFolder;
@@ -95,6 +97,7 @@ public class OrderlyController {
             WorkspaceRuntime runtime,
             ThemeCatalog themes,
             ModuleControlService moduleControl,
+            HostShutdownService hostShutdown,
             ModuleLifecycleService moduleLifecycle,
             ModuleRefreshService moduleRefresh,
             ModuleFolderService moduleFolder,
@@ -113,6 +116,7 @@ public class OrderlyController {
         this.runtime = runtime;
         this.themes = themes;
         this.moduleControl = moduleControl;
+        this.hostShutdown = hostShutdown;
         this.moduleLifecycle = moduleLifecycle;
         this.moduleRefresh = moduleRefresh;
         this.moduleFolder = moduleFolder;
@@ -142,6 +146,23 @@ public class OrderlyController {
     @GetMapping("/system/features")
     public Map<String, Object> systemFeatures() {
         return features.features();
+    }
+
+    /**
+     * 请求安全退出本地宿主。自定义请求头使浏览器跨站表单无法直接触发该操作。
+     */
+    @PostMapping("/system/shutdown")
+    public ResponseEntity<HostShutdownService.ShutdownAccepted> shutdownHost(
+            @RequestHeader(name = "X-Orderly-Action", defaultValue = "") String action
+    ) {
+        if (!"shutdown".equals(action)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_SHUTDOWN_REQUEST",
+                    "退出请求缺少有效的 X-Orderly-Action 请求头"
+            );
+        }
+        return ResponseEntity.accepted().body(hostShutdown.requestShutdown());
     }
 
     /** 更新受控的旧版计划审查功能开关。 */
