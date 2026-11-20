@@ -327,10 +327,13 @@ test("module_control renders interface AI switches with locking states", async (
     assert.match(control, /actionIsInUse\(state\.interfaceState,/);
     assert.match(control, /const previous = interfaceStateFor\(/);
     assert.match(control, /canExpandInterfaces/);
+    assert.match(control, /if \(canExpandInterfaces && expanded\) \{\s*row\.classList\.add\("is-expanded"\);/);
     assert.match(control, /classList\.add\("is-static"\)/);
     assert.match(control, /context\.subscribeEvents/);
     assert.match(style, /\.module-control-ui-interfaces\[hidden\]\s*\{\s*display:\s*none;/);
     assert.match(style, /\.module-control-ui-copy\.is-static\s*\{\s*cursor:\s*default;/);
+    assert.match(style, /\.module-control-ui-row\.is-expanded\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?max-height:\s*none;/);
+    assert.doesNotMatch(style, /grid-auto-rows:\s*minmax\(4\.75rem,\s*1fr\)/);
 });
 
 test("host preferences preserve valid order and reject stale module settings", () => {

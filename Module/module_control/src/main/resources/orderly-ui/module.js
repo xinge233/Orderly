@@ -777,6 +777,9 @@ export default async function mount(root, context) {
         moduleIcon.innerHTML = context.icon(module.icon, 20);
         const expanded = state.expandedIds.has(module.moduleId);
         const canExpandInterfaces = !(module.protected || module.role === MODULE_CONTROL_ROLE);
+        if (canExpandInterfaces && expanded) {
+            row.classList.add("is-expanded");
+        }
         const copy = make(canExpandInterfaces ? "button" : "div", "module-control-ui-copy");
         if (canExpandInterfaces) {
             copy.type = "button";
