@@ -6,8 +6,9 @@
 .module-control-ui-panel {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
-    height: clamp(25rem, calc(100vh - 24rem), 43rem);
-    min-height: 25rem;
+    height: clamp(34rem, calc(100vh - 4rem), 64rem);
+    height: clamp(34rem, calc(100dvh - 4rem), 64rem);
+    min-height: 0;
     overflow: hidden;
     border: 1px solid var(--color-line);
     border-radius: var(--radius-lg);
@@ -167,11 +168,15 @@
 }
 
 .module-control-ui-list {
+    display: grid;
+    grid-auto-rows: minmax(4.75rem, 1fr);
+    min-height: 100%;
     margin: 0;
 }
 
 .module-control-ui-row {
-    display: block;
+    display: flex;
+    flex-direction: column;
     border-bottom: 1px solid var(--color-line);
     background: transparent;
     transition:
@@ -182,6 +187,7 @@
 .module-control-ui-row-header {
     display: grid;
     grid-template-columns: auto auto minmax(0, 1fr) auto;
+    flex: 1 1 auto;
     align-items: center;
     gap: var(--space-3);
     min-height: 4.75rem;
@@ -487,6 +493,16 @@
     flex-wrap: wrap;
     gap: var(--space-2);
     padding-top: var(--space-2);
+}
+
+/* 宽屏下让系统治理面板接近工作区全宽，但不改变框架的内容轨道。 */
+@media (min-width: 1440px) {
+    .module-control-ui-panel {
+        position: relative;
+        left: 50%;
+        width: min(104rem, calc(100vw - var(--sidebar-width) - var(--space-12)));
+        transform: translateX(-50%);
+    }
 }
 
 /* 手机端由桌面整行治理改为可回流网格，但所有开关、说明和焦点顺序继续保留。 */
