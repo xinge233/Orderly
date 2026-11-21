@@ -40,7 +40,7 @@
 | `Module/module_study_map/` | 只读知识脉络参考视图 |
 | `Module/module_study_review/` | 只读复习自测参考视图 |
 
-模块入口通常从 `pom.xml`、`src/main/java/`、`src/main/resources/orderly-modules/`、`src/main/resources/orderly-ui/` 和模块测试开始定位。
+模块入口通常从 `pom.xml`、`src/main/java/`、`src/main/resources/orderly-modules/`、`src/main/resources/orderly-ui/` 和模块测试开始定位。模块自有 Java 测试位于 `src/test/java`，模块自有 JavaScript 测试位于 `src/test/js/**/*.test.mjs`，由 Maven 或 `scripts/gate.ps1` 自动发现。
 
 `Module/AGENTS.md` 是模块目录级规范，定义自包含、Action 契约、默认 AI 可调用、结构化输出引用和禁止模块直接互调。
 

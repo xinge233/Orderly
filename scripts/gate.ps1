@@ -1,7 +1,7 @@
 ﻿#requires -Version 5.1
 [CmdletBinding()]
 # 用途：
-#   执行仓库完整质量门禁：快速文档门禁、上下文边界、Python 测试、模块化 Maven 构建、前端/模块 UI 测试和静态禁止模式扫描。
+#   执行仓库完整质量门禁：快速文档门禁、上下文边界、Python 测试、模块化 Maven 构建、前端/模块 Node 测试和静态禁止模式扫描。
 #
 # 输入：
 #   -DocumentOnly 要求变更集必须是非空且全部为小写 .md 或 .docx 文档。
@@ -606,6 +606,22 @@ try {
         throw "前端测试失败，退出码：$LASTEXITCODE"
     }
 
+    $moduleJsTestPaths = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "Module") -Directory -Filter "module_*" |
+        ForEach-Object {
+            $moduleJsTestRoot = Join-Path $_.FullName "src\test\js"
+            if (Test-Path -LiteralPath $moduleJsTestRoot -PathType Container) {
+                Get-ChildItem -LiteralPath $moduleJsTestRoot -Recurse -File -Filter "*.test.mjs"
+            }
+        } |
+        Sort-Object FullName |
+        ForEach-Object { $_.FullName })
+    if ($moduleJsTestPaths.Count -gt 0) {
+        & node --test @moduleJsTestPaths
+        if ($LASTEXITCODE -ne 0) {
+            throw "模块 Node 测试失败，退出码：$LASTEXITCODE"
+        }
+    }
+
     & node --test (Join-Path $repoRoot "app\host\src\test\js\*.test.mjs")
     if ($LASTEXITCODE -ne 0) {
         throw "模块 UI 契约样例校验失败，退出码：$LASTEXITCODE"
@@ -690,7 +706,7 @@ try {
     }
 
     # 只有此前所有命令均以预期状态完成，才会到达唯一成功出口。
-    Write-Host "门禁通过：上下文约束、模块化 Maven 测试、契约样例、语法、前端测试、目录主题边界、classpath 回退、基础动画、设置 live region 和样式变量检查均成功。"
+    Write-Host "门禁通过：上下文约束、模块化 Maven 测试、契约样例、语法、前端与模块 Node 测试、目录主题边界、classpath 回退、基础动画、设置 live region 和样式变量检查均成功。"
 }
 finally {
     Pop-Location
