@@ -24,3 +24,22 @@ test("module_calendar refreshes from terminal host events and cleans up subscrip
     assert.match(calendar, /dataRefreshInFlight/);
     assert.match(calendar, /unsubscribeEvents\?\.\(\)/);
 });
+
+test("module_calendar aligns clock ticks to wall-clock second boundaries", async () => {
+    const calendarUrl = new URL(
+        "../../main/resources/orderly-ui/module.js",
+        import.meta.url
+    );
+    const calendar = await readFile(calendarUrl, "utf8");
+    const { clockDelayUntilNextSecond } = await import(calendarUrl);
+
+    assert.equal(clockDelayUntilNextSecond(30_999), 5);
+    assert.equal(clockDelayUntilNextSecond(30_000), 1004);
+    assert.equal(clockDelayUntilNextSecond(30_001), 1003);
+    assert.equal(clockDelayUntilNextSecond(Number.NaN), 1004);
+    assert.match(calendar, /startClock\(\);/);
+    assert.match(calendar, /window\.setTimeout\(tickClock, clockDelayUntilNextSecond\(\)\)/);
+    assert.match(calendar, /document\.addEventListener\("visibilitychange", clockVisibilityHandler\)/);
+    assert.match(calendar, /function stopClock\(\)[\s\S]*?window\.clearTimeout\(clockTimer\)/);
+    assert.doesNotMatch(calendar, /setInterval\(renderClock/);
+});

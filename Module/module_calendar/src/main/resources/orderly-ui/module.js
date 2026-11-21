@@ -15,6 +15,22 @@ const FOCUS_TITLE_KEY = "orderly.calendar.focus-title.v1";
 const WEATHER_TTL = 15 * 60 * 1000;
 const MANUAL_SPACE_PAUSE = 60 * 1000;
 const CALENDAR_EVENT_REFRESH_DELAY = 180;
+const CLOCK_BOUNDARY_OFFSET = 4;
+
+/**
+ * 计算距离下一个整秒并留出少量调度余量所需的时间。
+ *
+ * @param {number} now 当前毫秒时间戳
+ * @returns {number} 下一次时钟刷新延迟
+ */
+export function clockDelayUntilNextSecond(now = Date.now()) {
+    const current = Number(now);
+    if (!Number.isFinite(current)) {
+        return 1000 + CLOCK_BOUNDARY_OFFSET;
+    }
+    const nextSecond = (Math.floor(current / 1000) + 1) * 1000;
+    return Math.max(1, nextSecond - current + CLOCK_BOUNDARY_OFFSET);
+}
 
 /**
  * 判断宿主执行事件是否可能改变日程模块数据。
@@ -91,6 +107,8 @@ export default async function mount(root, context) {
     let dataRefreshRequested = false;
     let lastCalendarEventSeq = 0;
     let unsubscribeEvents = null;
+    let clockTimer = null;
+    let clockVisibilityHandler = null;
 
     const workspace = make("section", "calendar-workspace");
     const hero = make("div", "calendar-hero");
@@ -196,14 +214,13 @@ export default async function mount(root, context) {
     });
 
     renderCalendar();
-    renderClock();
+    startClock();
     renderDateStrip();
     renderSpaces();
     renderTodos();
     renderAgenda();
     void loadWeather();
 
-    const clockTimer = window.setInterval(renderClock, 30_000);
     const rotationTimer = rotationEnabled
         ? window.setInterval(() => {
             if (Date.now() >= state.manualSpacePauseUntil) {
@@ -214,7 +231,7 @@ export default async function mount(root, context) {
     // 时钟和空间轮播可能长期运行；容器离开文档后必须同时清定时器、断开观察器，避免闭包泄漏。
     const disconnectObserver = new MutationObserver(() => {
         if (!workspace.isConnected) {
-            window.clearInterval(clockTimer);
+            stopClock();
             if (rotationTimer) {
                 window.clearInterval(rotationTimer);
             }
@@ -378,8 +395,45 @@ export default async function mount(root, context) {
         renderAgenda();
     }
 
-    function renderClock() {
-        const now = new Date();
+    function startClock() {
+        renderClock();
+        scheduleClockTick();
+        clockVisibilityHandler = handleClockVisibilityChange;
+        document.addEventListener("visibilitychange", clockVisibilityHandler);
+    }
+
+    function scheduleClockTick() {
+        clockTimer = window.setTimeout(tickClock, clockDelayUntilNextSecond());
+    }
+
+    function tickClock() {
+        clockTimer = null;
+        if (!workspace.isConnected || document.hidden) {
+            return;
+        }
+        renderClock();
+        scheduleClockTick();
+    }
+
+    function handleClockVisibilityChange() {
+        window.clearTimeout(clockTimer);
+        clockTimer = null;
+        if (document.hidden || !workspace.isConnected) {
+            return;
+        }
+        tickClock();
+    }
+
+    function stopClock() {
+        window.clearTimeout(clockTimer);
+        clockTimer = null;
+        if (clockVisibilityHandler) {
+            document.removeEventListener("visibilitychange", clockVisibilityHandler);
+            clockVisibilityHandler = null;
+        }
+    }
+
+    function renderClock(now = new Date()) {
         clock.textContent = formatTime(now, true);
         todayLine.textContent = `${fullDate(now)} · ${weekday(now)}`;
     }
