@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/build-settings.schema.json",
+  "title": "Orderly module build settings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["maxParallel", "minimum", "maximum"],
+  "properties": {
+    "maxParallel": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4
+    },
+    "minimum": {
+      "const": 1
+    },
+    "maximum": {
+      "const": 4
+    }
+  }
+}

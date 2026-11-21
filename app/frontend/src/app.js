@@ -57,6 +57,7 @@ import {
 import {
     MOTION_OPTIONS,
     normalizeAiPlanFeature,
+    normalizeBuildSettings,
     normalizeThemeCatalog,
     normalizePlanningFeature,
     reconcileAppliedTheme,
@@ -141,6 +142,10 @@ const state = {
     aiPlanEnabled: true,
     aiPlanFeatureLoading: true,
     aiPlanFeatureSaving: false,
+    buildSettings: normalizeBuildSettings({}, 2),
+    buildSettingsLoading: true,
+    buildSettingsSaving: false,
+    buildSettingsError: "",
     aiSettings: normalizeAiSettings({}),
     aiSettingsLoading: true,
     aiSettingsSaving: false,
@@ -383,6 +388,7 @@ async function bootstrap() {
         preferenceResult,
         themeResult,
         featureResult,
+        buildSettingsResult,
         aiSettingsResult,
         moduleBuildResult
     ] = await Promise.allSettled([
@@ -391,6 +397,7 @@ async function bootstrap() {
         api.getModulePreferences(),
         api.getThemes(),
         api.getSystemFeatures(),
+        api.getBuildSettings(),
         api.getAiSettings(),
         api.getModuleBuilds()
     ]);
@@ -420,7 +427,15 @@ async function bootstrap() {
     themeManager.setCatalog(themeCatalog);
     state.planningFeatureLoading = false;
     state.aiPlanFeatureLoading = false;
+    state.buildSettingsLoading = false;
     state.aiSettingsLoading = false;
+    if (buildSettingsResult.status === "fulfilled") {
+        state.buildSettings = normalizeBuildSettings(buildSettingsResult.value, 2);
+        state.buildSettingsError = "";
+    } else {
+        state.buildSettings = normalizeBuildSettings({}, 2);
+        state.buildSettingsError = errorMessage(buildSettingsResult.reason);
+    }
     if (aiSettingsResult.status === "fulfilled") {
         state.aiSettings = normalizeAiSettings(aiSettingsResult.value);
         state.aiSettingsError = "";
@@ -481,6 +496,11 @@ async function bootstrap() {
     }
     if (featureResult.status === "rejected") {
         toast(`计划功能状态读取失败，已按关闭处理：${errorMessage(featureResult.reason)}`, {
+            error: true
+        });
+    }
+    if (buildSettingsResult.status === "rejected") {
+        toast(`模块构建设置读取失败，后台将使用两路并发：${errorMessage(buildSettingsResult.reason)}`, {
             error: true
         });
     }
@@ -4559,6 +4579,42 @@ function renderSystemSettings(panel) {
     );
     panel.append(header);
     const fields = element("div", "settings-fields");
+    const buildField = element("fieldset", "setting-field");
+    buildField.append(
+        element("legend", "", "模块构建并发"),
+        element(
+            "p",
+            "",
+            state.buildSettingsLoading
+                ? "正在读取宿主的后台构建设置。"
+                : "并行构建模块，完成后由单一发布线程依次校验和加载；提高并发会增加内存占用。"
+        )
+    );
+    const buildSegmented = element("div", "segmented segmented--four");
+    const buildDisabled = state.buildSettingsLoading || state.buildSettingsSaving;
+    for (let value = state.buildSettings.minimum; value <= state.buildSettings.maximum; value += 1) {
+        const label = document.createElement("label");
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = "buildMaxParallel";
+        input.value = String(value);
+        input.checked = state.buildSettings.maxParallel === value;
+        input.disabled = buildDisabled;
+        input.dataset.settingKey = "buildMaxParallel";
+        input.setAttribute("aria-label", `模块构建并发 ${value}`);
+        label.append(input, element("span", "", String(value)));
+        input.addEventListener("change", () => {
+            if (input.checked) {
+                void persistBuildConcurrency(value, input);
+            }
+        });
+        buildSegmented.append(label);
+    }
+    buildField.append(buildSegmented);
+    if (state.buildSettingsError) {
+        buildField.append(element("p", "settings-note", state.buildSettingsError));
+    }
+    fields.append(buildField);
     const planningDisabled = state.planningFeatureLoading
         || state.planningFeatureSaving
         || state.planBusy
@@ -4590,6 +4646,49 @@ function renderSystemSettings(panel) {
         fields.append(row);
     });
     panel.append(fields);
+}
+
+/**
+ * 保存后台模块构建并发数；失败时恢复到宿主已确认的值。
+ *
+ * @param {number} value 目标并发数
+ * @param {HTMLInputElement} input 当前单选项
+ */
+async function persistBuildConcurrency(value, input) {
+    if (state.buildSettingsSaving) {
+        return;
+    }
+    const previous = state.buildSettings.maxParallel;
+    state.buildSettingsSaving = true;
+    input.disabled = true;
+    input.removeAttribute("aria-invalid");
+    setSettingsStatus("正在保存模块构建并发设置…");
+    let saved = false;
+    try {
+        const payload = await api.setBuildConcurrency(value);
+        state.buildSettings = normalizeBuildSettings(payload, value);
+        state.buildSettingsError = "";
+        state.buildSettingsLoading = false;
+        input.checked = state.buildSettings.maxParallel === value;
+        setSettingsStatus(`模块构建并发已设置为 ${state.buildSettings.maxParallel}。`);
+        toast(`模块构建并发已设置为 ${state.buildSettings.maxParallel}。`);
+        saved = true;
+    } catch (error) {
+        input.checked = state.buildSettings.maxParallel === previous;
+        input.setAttribute("aria-invalid", "true");
+        const message = `模块构建并发设置失败：${errorMessage(error)}`;
+        state.buildSettingsError = message;
+        setSettingsStatus(message, { error: true });
+        toast(message, { error: true });
+    } finally {
+        state.buildSettingsSaving = false;
+        if (saved) {
+            renderSettings({ focusPanel: true });
+        } else {
+            input.disabled = false;
+            input.focus({ preventScroll: true });
+        }
+    }
 }
 
 /**

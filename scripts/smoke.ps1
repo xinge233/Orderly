@@ -92,6 +92,18 @@ if ($features.planningEnabled -isnot [bool]) {
 if ($features.aiPlanEnabled -isnot [bool]) {
     throw "/api/system/features 缺少布尔 aiPlanEnabled。"
 }
+$buildSettings = Invoke-RestMethod -Uri "$BaseUrl/api/system/build-settings" -Method Get
+$initialBuildConcurrency = [int]$buildSettings.maxParallel
+if ($initialBuildConcurrency -lt 1 -or $initialBuildConcurrency -gt 4) {
+    throw "模块构建并发越界：$initialBuildConcurrency"
+}
+$updatedBuildSettings = Invoke-RestMethod -Uri "$BaseUrl/api/system/build-settings" -Method Put `
+    -Headers @{ "X-Orderly-Action" = "update-build-settings" } `
+    -ContentType "application/json" `
+    -Body (@{ maxParallel = $initialBuildConcurrency } | ConvertTo-Json)
+if ([int]$updatedBuildSettings.maxParallel -ne $initialBuildConcurrency) {
+    throw "模块构建设置更新未返回宿主确认值。"
+}
 # 记录初始开关，后面临时关闭旧计划功能测试 409，并在正常完成路径恢复原值。
 $initialPlanningEnabled = [bool]$features.planningEnabled
 Invoke-RestMethod -Uri "$BaseUrl/api/system/features/planning" -Method Put `

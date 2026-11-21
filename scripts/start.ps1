@@ -5,12 +5,12 @@
 #
 # 输入：
 #   -Port 指定 Java HTTP 端口，默认 8080；-SkipBuild 复用已有 JAR。
-#   -BackgroundModules 先只构建控制模块与宿主，随后由后台队列逐个构建并追加业务模块。
+#   -BackgroundModules 先只构建控制模块与宿主，随后由后台队列并行构建并单线程追加业务模块。
 #   -Offline 将严格 Maven 离线模式及可选 -MavenRepository 透传给 build.ps1，
 #   并要求复用现有 ai/.venv；该开关不宣称 Node 或整个应用离线。
 #   -MavenOffline 只让 Maven 使用包内 maven-repository 严格离线构建，
 #   Python 环境仍由 ensure-env.ps1 正常准备。
-#   -MaxParallel 原样透传给 build.ps1，默认 1；运行中不重建或替换模块目录。
+#   -MaxParallel 原样透传给前台完整构建，默认 1；后台并发由宿主持久化设置决定。
 #   JAVA_HOME 必须指向 JDK 21，模块和主题目录由仓库根目录推导。
 #
 # 副作用：

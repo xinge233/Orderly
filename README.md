@@ -26,9 +26,9 @@
 .\scripts\start.ps1 -BackgroundModules
 ```
 
-默认启动会先完整构建全部模块和宿主。`-BackgroundModules` 则只先构建 `module_control` 与宿主，Java 健康检查通过并打开界面后，由 `scripts/build-module-background.ps1` 按队列逐个构建业务模块。每完成一个 JAR，后台构建器调用宿主刷新接口；只有通过契约、SPI 与 UI 校验的模块才会原子追加为可执行模块。启动入口 `启动归序.cmd` 默认使用该模式。
+默认启动会先完整构建全部模块和宿主。`-BackgroundModules` 则只先构建 `module_control` 与宿主，Java 健康检查通过并打开界面后，由 `scripts/build-module-background.ps1` 按队列构建业务模块。后台默认最多同时运行 2 个模块 Maven worker，可在设置弹窗的“系统设置”中调整为 1-4；worker 只生成候选 JAR，校验、原子发布和宿主刷新始终由单一父进程依次完成。启动入口 `启动归序.cmd` 默认使用该模式。
 
-直接运行 `build.ps1` 默认执行模块与宿主测试；`-SkipTests` 仅用于明确的快速启动或验收路径。`-BootstrapOnly` 只构建控制模块与宿主，`-ModulesOnly -ModuleName <module_*>` 只构建一个业务模块且不重建宿主，`-SkipKernelInstall` 复用已安装 kernel。模块构建默认串行；只有显式传入大于 1 的 `-MaxParallel` 才并行，且并行范围仅限相互独立的模块 Maven 构建。后台启动队列固定一次构建一个模块，避免多个 `clean verify` 争用 CPU 和共享 Maven 仓库。
+直接运行 `build.ps1` 默认执行模块与宿主测试；`-SkipTests` 仅用于明确的快速启动或验收路径。`-BootstrapOnly` 只构建控制模块与宿主，`-ModulesOnly -ModuleName <module_*>` 只构建一个业务模块且不重建宿主，`-SkipKernelInstall` 复用已安装 kernel。前台完整构建默认串行；只有显式传入大于 1 的 `-MaxParallel` 才并行，且并行范围仅限相互独立的模块 Maven 构建。后台渐进启动读取 `.orderly-data/build-settings.json`，默认并发为 2；多个 worker 使用隔离 Maven 仓库，发布仍保持单线程。
 
 `build.ps1` 会在整个构建期间持有基于规范化 `repoRoot` 哈希命名的仓库级互斥锁，防止两个外部构建同时写共享 Maven 仓库、模块暂存或宿主 target。`modularity.ps1` 从首次移动模块源码前开始持有同一把锁，直到源码恢复、最终重建和清理结束；它嵌套调用 `build.ps1` 时使用同一线程的可重入所有权。默认等待上限为 120 秒，超时或获取失败会报告 `repoRoot`、锁名和原因。
 
@@ -43,7 +43,7 @@
 .\scripts\start.ps1 -BackgroundModules
 ```
 
-开发构建默认使用仓库内 `.m2-repository`。`MaxParallel=1` 或有效模块并发只有 1 时，模块 Maven 直接使用共享 `maven.repo.local`，不创建 worker 隔离仓库，也不传 `maven.repo.local.tail`。只有有效并发大于 1 时，每个模块 worker 才在 `target/build-parallel-*` 下使用独立可写仓库，共享预热仓库只作为 Maven 3.9+ 的只读 tail。kernel 安装、模块 JAR 校验、候选暂存发布、宿主编译和宿主 JAR 检查始终由主进程串行完成。任一 worker 失败时会收尾已启动 worker，并报告模块名、Maven 原始退出码和日志路径。
+开发构建默认使用仓库内 `.m2-repository`。前台有效并发为 1 时直接使用共享 Maven 仓库；前台并发大于 1 时，以及所有后台 worker，都在 `target/build-parallel-*` 下使用独立可写仓库，共享预热仓库只作为 Maven 3.9+ 的只读 tail。kernel 安装、模块 JAR 校验、候选暂存发布、宿主编译和宿主 JAR 检查始终由主进程串行完成。任一 worker 失败时会收尾已启动 worker，并报告模块名、Maven 原始退出码和日志路径。
 
 `target/build-parallel-*` 会保留每次构建的 worker 原始 `stdout`、`stderr` 和运行元数据；显式并行时还会保留隔离 Maven 仓库，用于复现依赖解析与失败。受控清理只允许在该目录所属仓库没有任何构建或模块化验收运行时，按专用前缀删除旧的 `target/build-parallel-*` 运行目录；不得通配删除 `target/`、`target/orderly-modules/` 或宿主 target。
 
@@ -62,7 +62,7 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 
 侧边栏底部的“退出归序”会在二次确认后停止 Java 宿主、AI 服务和后台模块构建。Action 或计划执行期间禁止退出；退出后重新运行 `启动归序.cmd` 即可恢复，未完成的模块构建会重新进入后台队列。
 
-待构建模块会以真实构建状态显示在侧边栏和总览。点击待构建模块会写入优先请求；正在运行的 Maven 不会被抢占，队列在当前模块结束后选择它。存在未就绪模块时，AI 输入会先提示等待；用户确认后，AI 在全部模块完成或失败前不会提交模型回合，也不会执行部分 Action。
+待构建模块会以真实构建状态显示在侧边栏和总览。点击待构建模块会写入优先请求；正在运行的 Maven 不会被抢占，调度器会在下一个可用 worker 上选择它。存在未就绪模块时，AI 输入会先提示等待；用户确认后，AI 在全部模块完成或失败前不会提交模型回合，也不会执行部分 Action。
 
 程序首次运行会在仓库根目录创建 `.orderly-data/`：
 
@@ -72,6 +72,7 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 - `.orderly-data/executions/`：宿主统一持久化的执行、步骤、参数、输出、快照和审计结果。
 - `.orderly-data/module-governance.json`：业务模块启用状态、两套排序、模块设置以及 Action/Query 的动态 AI 可调用状态；使用原子文件替换写入。
 - `.orderly-data/system-features.json`：宿主功能开关；首次运行默认关闭计划功能。
+- `.orderly-data/build-settings.json`：后台模块构建并发；首次运行默认 2，允许 1-4。
 
 不会扫描或修改其他个人目录。首版可以通过 `ORDERLY_DATA_DIR` 环境变量改用另一个应用专用目录，但仍不支持选择任意系统文件夹。
 
@@ -179,6 +180,8 @@ POST  /api/system/module-folder/open
 ```
 
 `module-folder/open` 只接受 `X-Orderly-Action: open-module-folder`，只在 Windows 上打开配置的 `orderly.module-source-dir`，不接受客户端路径。模块查询、计划规则、计划生成、确认和执行都检查 `enabled`；执行中拒绝停用，回滚始终允许。开关、设置、排序、刷新和打开目录会写入审计事件。
+
+`GET /api/system/build-settings` 返回后台模块构建并发和允许范围。`PUT /api/system/build-settings` 只接受带 `X-Orderly-Action: update-build-settings` 的请求，`maxParallel` 必须是 1-4 的整数；改变只影响后续 worker 调度，不终止已经在构建的模块。
 
 `POST /api/system/shutdown` 只接受 `X-Orderly-Action: shutdown`。存在执行中的 Action 或计划时返回 `HOST_EXECUTION_IN_PROGRESS`；接受后返回 `202` 和 `STOPPING`，随后由启动脚本清理相关子进程。
 

@@ -280,11 +280,12 @@ export default async function mount(root, context) {
 从 GitHub Release 解压的正式离线包会在根目录携带 `maven-repository`。无参数运行
 `启动归序.cmd` 时，该入口会自动使用 `-MavenOffline -BackgroundModules`，让 Maven
 依赖和插件只从包内仓库读取，并先构建
-`module_control` 与宿主并打开界面，再逐个构建业务模块。GitHub 源码 ZIP 不包含
+`module_control` 与宿主并打开界面，再并行构建业务模块并由单线程发布。GitHub 源码 ZIP 不包含
 这个发布目录，因此它仍使用开发构建的在线 Maven 解析路径。
 
 后台入口在框架启动前只把 `module_control.jar` 发布到 `target/orderly-modules/`；
-业务模块 JAR 生成并通过校验后逐个原子发布，再由宿主刷新追加。不能在应用运行期间
+业务模块由默认两路、可调 1-4 的 Maven worker 并行构建，候选 JAR 由单一发布线程逐个
+校验并原子发布，再由宿主刷新追加。不能在应用运行期间
 替换、更新或卸载已有模块。模块控制界面只允许显式刷新追加新模块，且新模块
 必须已经构建到 `target/orderly-modules/`；未构建源码返回 `MODULE_NOT_BUILT`。已有模块
 更新或删除返回 `RESTART_REQUIRED`，需要停止服务、重新构建并重启。
@@ -294,9 +295,10 @@ export default async function mount(root, context) {
 `build.ps1` 调用可重入。默认等待上限为 120 秒，超时或获取失败会报告
 `repoRoot`、锁名和原因。
 
-模块构建默认串行使用共享 `.m2-repository`；只有当显式 `-MaxParallel` 产生的
-有效并发大于 1 时，每个模块 worker 才在 `target/build-parallel-*` 下拥有独立可写的
-Maven 本地仓库，共享预热仓库只作为 Maven 3.9+ 的只读 `maven.repo.local.tail`。
+前台模块构建默认串行使用共享 `.m2-repository`；当显式 `-MaxParallel` 产生的有效并发
+大于 1，或后台构建设置启用并发 worker 时，每个模块 worker 在 `target/build-parallel-*`
+下拥有独立可写的 Maven 本地仓库，共享预热仓库只作为 Maven 3.9+ 的只读
+`maven.repo.local.tail`。后台默认并发为 2，可在系统设置中调整为 1-4。
 worker 原始 `stdout` 与 `stderr` 分别保存在同一运行目录的模块日志子目录。
 kernel 安装、JAR 内容检查、候选暂存发布、宿主编译和宿主 JAR 检查仍由主进程串行执行：
 

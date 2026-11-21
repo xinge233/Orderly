@@ -2897,6 +2897,10 @@ body.is-navigation-dragging * {
     background: var(--color-surface-muted);
 }
 
+.segmented--four {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .segmented label {
     cursor: pointer;
 }

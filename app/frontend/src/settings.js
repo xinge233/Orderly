@@ -68,6 +68,28 @@ export function normalizeAiPlanFeature(payload, fallback = true) {
 }
 
 /**
+ * 规范化宿主拥有的模块构建并发设置。
+ *
+ * @param {unknown} payload /api/system/build-settings 响应
+ * @param {number} fallback 缺省并发数
+ * @returns {{maxParallel: number, minimum: number, maximum: number}} 安全设置
+ */
+export function normalizeBuildSettings(payload, fallback = 2) {
+    const source = payload && typeof payload === "object" && !Array.isArray(payload)
+        ? payload
+        : {};
+    const minimum = 1;
+    const maximum = 4;
+    const fallbackValue = Math.min(maximum, Math.max(minimum, Number(fallback) || 2));
+    const maxParallel = Number.isInteger(source.maxParallel)
+        && source.maxParallel >= minimum
+        && source.maxParallel <= maximum
+        ? source.maxParallel
+        : fallbackValue;
+    return { maxParallel, minimum, maximum };
+}
+
+/**
  * 清洗本地保存的总览卡片顺序。
  *
  * @param {object} source 设置对象

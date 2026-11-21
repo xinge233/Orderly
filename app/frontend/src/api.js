@@ -401,6 +401,22 @@ export class OrderlyApi {
         return this.request("/api/system/features", options);
     }
 
+    getBuildSettings(options) {
+        return this.request("/api/system/build-settings", options);
+    }
+
+    setBuildConcurrency(maxParallel, options = {}) {
+        return this.request("/api/system/build-settings", {
+            ...options,
+            method: "PUT",
+            headers: {
+                ...options.headers,
+                "X-Orderly-Action": "update-build-settings"
+            },
+            body: { maxParallel }
+        });
+    }
+
     getAiSettings(options) {
         return this.request("/api/ai/settings", options);
     }

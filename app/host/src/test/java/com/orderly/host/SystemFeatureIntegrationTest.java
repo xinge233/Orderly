@@ -125,4 +125,39 @@ class SystemFeatureIntegrationTest {
                 .andExpect(jsonPath("$.status").value("STOPPING"))
                 .andExpect(jsonPath("$.message").value("正在停止本地宿主与相关进程"));
     }
+
+    @Test
+    void buildSettingsDefaultToTwoAndRequireExplicitUpdateHeader() throws Exception {
+        mockMvc.perform(get("/api/system/build-settings"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.maxParallel").value(2))
+                .andExpect(jsonPath("$.minimum").value(1))
+                .andExpect(jsonPath("$.maximum").value(4));
+
+        mockMvc.perform(put("/api/system/build-settings")
+                        .contentType("application/json")
+                        .content("""
+                                {"maxParallel":4}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_BUILD_SETTINGS_REQUEST"));
+
+        mockMvc.perform(put("/api/system/build-settings")
+                        .header("X-Orderly-Action", "update-build-settings")
+                        .contentType("application/json")
+                        .content("""
+                                {"maxParallel":4}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.maxParallel").value(4));
+
+        mockMvc.perform(put("/api/system/build-settings")
+                        .header("X-Orderly-Action", "update-build-settings")
+                        .contentType("application/json")
+                        .content("""
+                                {"maxParallel":5}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_BUILD_CONCURRENCY"));
+    }
 }

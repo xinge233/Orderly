@@ -26,6 +26,7 @@ import com.orderly.host.moduledata.ModuleDataService;
 import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanView;
 import com.orderly.host.runtime.WorkspaceRuntime;
+import com.orderly.host.system.BuildSettingsService;
 import com.orderly.host.system.HostShutdownService;
 import com.orderly.host.system.SystemFeatureService;
 import com.orderly.host.theme.ThemeAsset;
@@ -78,6 +79,7 @@ public class OrderlyController {
     private final ThemeCatalog themes;
     private final ModuleControlService moduleControl;
     private final HostShutdownService hostShutdown;
+    private final BuildSettingsService buildSettings;
     private final ModuleLifecycleService moduleLifecycle;
     private final ModuleRefreshService moduleRefresh;
     private final ModuleFolderService moduleFolder;
@@ -98,6 +100,7 @@ public class OrderlyController {
             ThemeCatalog themes,
             ModuleControlService moduleControl,
             HostShutdownService hostShutdown,
+            BuildSettingsService buildSettings,
             ModuleLifecycleService moduleLifecycle,
             ModuleRefreshService moduleRefresh,
             ModuleFolderService moduleFolder,
@@ -117,6 +120,7 @@ public class OrderlyController {
         this.themes = themes;
         this.moduleControl = moduleControl;
         this.hostShutdown = hostShutdown;
+        this.buildSettings = buildSettings;
         this.moduleLifecycle = moduleLifecycle;
         this.moduleRefresh = moduleRefresh;
         this.moduleFolder = moduleFolder;
@@ -146,6 +150,36 @@ public class OrderlyController {
     @GetMapping("/system/features")
     public Map<String, Object> systemFeatures() {
         return features.features();
+    }
+
+    /** 返回后台模块构建并发设置。 */
+    @GetMapping("/system/build-settings")
+    public Map<String, Object> buildSettings() {
+        return buildSettings.snapshot();
+    }
+
+    /** 更新后台模块构建并发设置；请求必须带有明确的本地动作标记。 */
+    @PutMapping("/system/build-settings")
+    public Map<String, Object> updateBuildSettings(
+            @RequestHeader(name = "X-Orderly-Action", defaultValue = "") String action,
+            @RequestBody BuildConcurrencyRequest request
+    ) {
+        if (!"update-build-settings".equals(action)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_BUILD_SETTINGS_REQUEST",
+                    "构建设置请求缺少有效的 X-Orderly-Action 请求头"
+            );
+        }
+        if (request == null || request.maxParallel() == null) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_BUILD_CONCURRENCY",
+                    "maxParallel 必须是 " + BuildSettingsService.MIN_MAX_PARALLEL
+                            + "-" + BuildSettingsService.MAX_MAX_PARALLEL + " 的整数"
+            );
+        }
+        return buildSettings.setMaxParallel(request.maxParallel());
     }
 
     /**
@@ -621,6 +655,10 @@ public class OrderlyController {
 
     /** 系统功能开关请求。 */
     public record PlanningFeatureRequest(Boolean enabled) {
+    }
+
+    /** 后台模块构建并发设置请求。 */
+    public record BuildConcurrencyRequest(Integer maxParallel) {
     }
 
     /** 后台模块构建优先请求。 */

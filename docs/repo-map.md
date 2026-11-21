@@ -139,7 +139,7 @@
 | 纯 Markdown/DOCX 文档门禁 | `.\scripts\doc-gate.ps1` |
 | 完整门禁 | `.\scripts\gate.ps1` |
 | 模块化验收 | `.\scripts\modularity.ps1` |
-| 构建与分层启动 | `.\scripts\build.ps1 -MaxParallel 3` 或 `.\scripts\test-build-parallel.ps1`；分层启动用 `.\scripts\start.ps1 -BackgroundModules` 先启动控制模块与宿主，再逐个构建业务模块 |
+| 构建与分层启动 | `.\scripts\build.ps1 -MaxParallel 3` 或 `.\scripts\test-build-parallel.ps1`；分层启动用 `.\scripts\start.ps1 -BackgroundModules` 先启动控制模块与宿主，再按默认两路、可调 1-4 的队列并行构建并由单线程发布业务模块 |
 | 生成离线源码包 | 默认要求干净 Git 和索引化源码；仅本地脏快照使用 `.\scripts\package-offline.ps1 -AllowDirtySnapshot` |
 | 验证离线源码包 | `.\scripts\verify-offline.ps1 .\target\orderly-offline\Orderly-0.1.0-SNAPSHOT-offline-source.zip`；可加 `-MaxParallel <int>` |
 | 启动 | 开发路径用 `.\scripts\start.ps1 -BackgroundModules`；解压 GitHub Release 后运行 `.\启动归序.cmd`，自动使用包内 `maven-repository` 和后台模块队列 |

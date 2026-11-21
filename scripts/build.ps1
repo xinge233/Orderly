@@ -10,6 +10,8 @@
 #   -BootstrapOnly 只构建 module_control 和宿主，供框架先启动；业务模块由后台队列逐个构建。
 #   -ModulesOnly 只构建指定业务模块，不重建宿主；-ModuleName 限定单个 module_* 源码目录。
 #   -SkipKernelInstall 供后台队列复用 BootstrapOnly 已安装的 kernel，避免每模块重复安装。
+#   -BackgroundWorker 由后台调度器持有仓库锁时使用；跳过本进程锁定并禁用运行时目录直接发布。
+#   -ModuleOutputDirectory 与 BackgroundWorker 搭配，接收已校验的单个模块 JAR 供父进程串行发布。
 #   JDK 21 和 Maven 3.9+ 必须可从 JAVA_HOME/PATH 使用。
 #
 # 副作用：
@@ -31,7 +33,9 @@ param(
     [switch]$BootstrapOnly,
     [switch]$ModulesOnly,
     [string]$ModuleName,
-    [switch]$SkipKernelInstall
+    [switch]$SkipKernelInstall,
+    [switch]$BackgroundWorker,
+    [string]$ModuleOutputDirectory
 )
 
 if ($BootstrapOnly -and $ModulesOnly) {
@@ -42,6 +46,18 @@ if ($BootstrapOnly -and -not [string]::IsNullOrWhiteSpace($ModuleName)) {
 }
 if (-not $ModulesOnly -and -not [string]::IsNullOrWhiteSpace($ModuleName)) {
     throw "-ModuleName 只能与 -ModulesOnly 一起使用。"
+}
+if ($BackgroundWorker -and -not $ModulesOnly) {
+    throw "-BackgroundWorker 只能与 -ModulesOnly 一起使用。"
+}
+if ($BackgroundWorker -and [string]::IsNullOrWhiteSpace($ModuleName)) {
+    throw "-BackgroundWorker 必须指定单个 -ModuleName。"
+}
+if ($BackgroundWorker -and [string]::IsNullOrWhiteSpace($ModuleOutputDirectory)) {
+    throw "-BackgroundWorker 必须指定 -ModuleOutputDirectory。"
+}
+if (-not $BackgroundWorker -and -not [string]::IsNullOrWhiteSpace($ModuleOutputDirectory)) {
+    throw "-ModuleOutputDirectory 只能与 -BackgroundWorker 一起使用。"
 }
 
 $ErrorActionPreference = "Stop"
@@ -447,14 +463,15 @@ function Start-ModuleWorker {
 
 function Invoke-ModuleWorkers {
     param(
-        [Parameter(Mandatory = $true)][System.IO.DirectoryInfo[]]$ModuleDirectories
+        [Parameter(Mandatory = $true)][System.IO.DirectoryInfo[]]$ModuleDirectories,
+        [bool]$ForceIsolatedRepository = $false
     )
     if ($ModuleDirectories.Count -eq 0) {
         return @()
     }
 
     $effectiveParallel = [Math]::Min($MaxParallel, $ModuleDirectories.Count)
-    $useIsolatedRepository = $effectiveParallel -gt 1
+    $useIsolatedRepository = $effectiveParallel -gt 1 -or $ForceIsolatedRepository
     if ($useIsolatedRepository) {
         [System.IO.Directory]::CreateDirectory($workerRepositoryRoot) | Out-Null
     }
@@ -676,6 +693,44 @@ function Publish-RuntimeModuleJars {
     }
 }
 
+function Publish-BackgroundModuleOutput {
+    param(
+        [Parameter(Mandatory = $true)][System.IO.DirectoryInfo[]]$ModuleDirectories
+    )
+    if ($ModuleDirectories.Count -ne 1) {
+        throw "BackgroundWorker 必须且只能交接一个模块 JAR，实际 $($ModuleDirectories.Count) 个。"
+    }
+    $moduleDirectory = $ModuleDirectories[0]
+    $outputRoot = Assert-PathWithin `
+        ([System.IO.Path]::GetFullPath($ModuleOutputDirectory)) `
+        $targetRoot `
+        "后台模块输出目录"
+    [System.IO.Directory]::CreateDirectory($outputRoot) | Out-Null
+    $source = Assert-PathWithin `
+        (Join-Path $candidateStagingRoot "$($moduleDirectory.Name).jar") `
+        $candidateStagingRoot `
+        "后台模块候选 JAR"
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+        throw "后台模块候选 JAR 不存在：$source"
+    }
+    $destination = Assert-PathWithin `
+        (Join-Path $outputRoot "$($moduleDirectory.Name).jar") `
+        $outputRoot `
+        "后台模块交接 JAR"
+    [System.IO.File]::Copy($source, $destination, $true)
+    $hash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+    $hashFile = Assert-PathWithin `
+        (Join-Path $outputRoot "$($moduleDirectory.Name).jar.sha256") `
+        $outputRoot `
+        "后台模块交接校验文件"
+    [System.IO.File]::WriteAllText(
+        $hashFile,
+        "$hash  $($moduleDirectory.Name).jar$([Environment]::NewLine)",
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    Write-Host "后台模块构建完成，等待单线程发布：$destination"
+}
+
 function Get-RelativePathFromRoot {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -867,7 +922,9 @@ function Remove-TestArtifacts {
 $buildLock = $null
 Push-Location $repoRoot
 try {
-    $buildLock = Enter-BuildLock
+    if (-not $BackgroundWorker) {
+        $buildLock = Enter-BuildLock
+    }
     Assert-PathWithin $runRoot $targetRoot "构建运行目录" | Out-Null
     [System.IO.Directory]::CreateDirectory($runRoot) | Out-Null
     [System.IO.Directory]::CreateDirectory($workerLogRoot) | Out-Null
@@ -946,7 +1003,9 @@ try {
         Write-Host "复用 BootstrapOnly 已安装的 kernel。"
     }
 
-    $workers = @(Invoke-ModuleWorkers -ModuleDirectories $moduleDirectoriesToBuild)
+    $workers = @(Invoke-ModuleWorkers `
+        -ModuleDirectories $moduleDirectoriesToBuild `
+        -ForceIsolatedRepository:$BackgroundWorker)
     if ($workers.Count -ne $moduleDirectoriesToBuild.Count) {
         throw "模块 worker 完成数与发现数不一致。发现=$($moduleDirectoriesToBuild.Count) 完成=$($workers.Count)"
     }
@@ -956,8 +1015,14 @@ try {
         -RequireControlModule:(-not $ModulesOnly)
 
     if ($ModulesOnly) {
-        Publish-RuntimeModuleJars -ModuleDirectories $moduleDirectoriesToBuild
-        Write-Host "业务模块构建完成，未重建宿主：$($moduleNamesToBuild -join ', ')"
+        if ($BackgroundWorker) {
+            Publish-BackgroundModuleOutput -ModuleDirectories $moduleDirectoriesToBuild
+            Write-Host "后台业务模块构建完成，未发布运行时目录：$($moduleNamesToBuild -join ', ')"
+        }
+        else {
+            Publish-RuntimeModuleJars -ModuleDirectories $moduleDirectoriesToBuild
+            Write-Host "业务模块构建完成，未重建宿主：$($moduleNamesToBuild -join ', ')"
+        }
     }
     else {
 

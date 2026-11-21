@@ -63,7 +63,7 @@ docs/                       产品与协作文档
 - V7 采用 `Module/` 作为一级目录；不得在未更新本文件前创建 `modules/`。
 - 模块目录使用 `module_fs`、`module_todo`、`module_calendar` 等清晰标识。
 - `module_control` 是唯一受保护的系统模块，不属于业务模块目录；零业务模块仍要求该系统模块存在。
-- 构建脚本自动发现 `Module/module_*`，逐个构建模块 JAR；宿主启动时直接扫描运行模块目录并加载 JAR，不维护单独索引，也不要求在根 `pom.xml` 或 host `pom.xml` 登记具体模块。
+- 构建脚本自动发现 `Module/module_*`，前台完整构建默认串行，后台渐进构建默认两路并行且单线程发布模块 JAR；宿主启动时直接扫描运行模块目录并加载 JAR，不维护单独索引，也不要求在根 `pom.xml` 或 host `pom.xml` 登记具体模块。
 - 具体编译产物由 Maven 管理；不把 `target/` 或本地运行数据提交到仓库。
 
 ## 4. 框架与模块边界
@@ -106,6 +106,7 @@ docs/                       产品与协作文档
 - 启动时必须恰好存在一个声明 `system.role=MODULE_CONTROL` 且受保护的 `module_control`。系统角色缺失或重复、契约与执行器集合不一致、重复模块或重复动作必须阻止启动；零业务模块仍合法。
 - 业务模块与系统模块分开暴露：`GET /api/modules` 只返回业务模块并附带运行态 `enabled`，`GET /api/system-modules` 返回系统模块且恒为启用。系统模块不能通过业务启停、排序或设置接口修改。
 - 模块查询使用 `GET /api/modules/{moduleId}/query/{queryId}`；模块 UI 只从 JAR 的 `orderly-ui/` 白名单资源读取并提供给 `GET /api/modules/{moduleId}/ui/{asset}`。框架不得为具体模块增加查询、端点或视图分支。
+- 后台渐进启动默认同时运行 2 个模块 Maven worker，可在系统设置中调整为 1-4。worker 使用隔离可写 Maven 仓库并只产出候选 JAR；状态文件写入、JAR 校验、运行时原子发布和宿主刷新必须由单一父进程串行完成。降低并发不终止已运行 worker，提高并发仅影响后续调度。
 - 运行中只允许通过 `POST /api/system/modules/refresh` 显式追加新模块。刷新扫描 `Module/module_*` 源码目录，并要求 `target/orderly-modules/` 已存在对应 JAR；不自动编译源码。新增模块默认启用并写入治理状态，未构建源码返回 `MODULE_NOT_BUILT`。
 - 已加载模块的源码或 JAR 更新、源码删除或 JAR 删除只返回 `RESTART_REQUIRED`，不得替换、更新、卸载或删除当前运行快照。刷新单个新增模块失败必须保留旧快照，不允许用新 JAR 替换已有模块。
 - 宿主退出通过仅限本机的 `POST /api/system/shutdown` 请求，并要求 `X-Orderly-Action: shutdown`。Action 或计划执行期间拒绝退出；接受后先返回 `STOPPING`，再异步关闭 Java 宿主，由启动脚本清理 AI 服务与后台模块构建器。
