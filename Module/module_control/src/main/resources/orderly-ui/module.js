@@ -798,19 +798,17 @@ export default async function mount(root, context) {
             make("strong", "", module.title),
             make("span", "", module.description || "尚无模块说明")
         );
-        if (canExpandInterfaces) {
-            copy.addEventListener("click", () => {
-                const nextExpanded = !state.expandedIds.has(module.moduleId);
-                if (nextExpanded) {
-                    state.expandedIds.add(module.moduleId);
-                } else {
-                    state.expandedIds.delete(module.moduleId);
-                }
-                row.classList.toggle("is-expanded", nextExpanded);
-                copy.setAttribute("aria-expanded", String(nextExpanded));
-                interfacePanel.hidden = !nextExpanded;
-            });
-        }
+        const toggleInterfaces = () => {
+            const nextExpanded = !state.expandedIds.has(module.moduleId);
+            if (nextExpanded) {
+                state.expandedIds.add(module.moduleId);
+            } else {
+                state.expandedIds.delete(module.moduleId);
+            }
+            row.classList.toggle("is-expanded", nextExpanded);
+            copy.setAttribute("aria-expanded", String(nextExpanded));
+            interfacePanel.hidden = !nextExpanded;
+        };
 
         const rowActions = make("div", "module-control-ui-row-actions");
         const settingsButton = make("button", "module-control-ui-square");
@@ -838,6 +836,18 @@ export default async function mount(root, context) {
         rowActions.append(settingsButton, switchLabel);
 
         header.append(handle, moduleIcon, copy, rowActions);
+        if (canExpandInterfaces) {
+            header.classList.add("is-expandable");
+            // 由标题栏统一接收点击，同时让拖动、设置和启停控件保持独立。
+            header.addEventListener("click", (event) => {
+                if (event.target.closest?.(
+                    ".module-control-ui-drag, .module-control-ui-row-actions button, .module-control-ui-switch"
+                )) {
+                    return;
+                }
+                toggleInterfaces();
+            });
+        }
         row.append(header);
         if (interfacePanel) {
             row.append(interfacePanel);

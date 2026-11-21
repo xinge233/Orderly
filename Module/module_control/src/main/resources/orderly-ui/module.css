@@ -200,6 +200,10 @@
     padding: var(--space-3) var(--space-6);
 }
 
+.module-control-ui-row-header.is-expandable {
+    cursor: pointer;
+}
+
 .module-control-ui-row:last-child {
     border-bottom: 0;
 }

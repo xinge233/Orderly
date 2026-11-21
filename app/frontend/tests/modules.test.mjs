@@ -332,13 +332,20 @@ test("module_control renders interface AI switches with locking states", async (
     assert.match(control, /interfacePanel\.hidden = !nextExpanded;/);
     assert.match(control, /classList\.add\("is-static"\)/);
     assert.match(control, /context\.subscribeEvents/);
+    assert.match(control, /header\.classList\.add\("is-expandable"\);/);
     const expandListener = control.match(
-        /copy\.addEventListener\("click", \(\) => \{([\s\S]*?)\n\s*\}\);/
+        /header\.addEventListener\("click", \(event\) => \{([\s\S]*?)\n\s*\}\);/
     )?.[1] ?? "";
-    assert.match(expandListener, /interfacePanel\.hidden = !nextExpanded;/);
+    assert.match(expandListener, /event\.target\.closest\?\.\(/);
+    assert.match(expandListener, /\.module-control-ui-drag,/);
+    assert.match(expandListener, /\.module-control-ui-row-actions button,/);
+    assert.match(expandListener, /\.module-control-ui-switch/);
+    assert.match(expandListener, /toggleInterfaces\(\);/);
     assert.doesNotMatch(expandListener, /\brender\(\)/);
+    assert.doesNotMatch(control, /copy\.addEventListener\("click"/);
     assert.match(style, /\.module-control-ui-interfaces\[hidden\]\s*\{\s*display:\s*none;/);
     assert.match(style, /\.module-control-ui-copy\.is-static\s*\{\s*cursor:\s*default;/);
+    assert.match(style, /\.module-control-ui-row-header\.is-expandable\s*\{\s*cursor:\s*pointer;/);
     const rowRule = style.match(/\.module-control-ui-row\s*\{([\s\S]*?)\}/)?.[1] ?? "";
     assert.match(rowRule, /flex:\s*0 0 auto;/);
     assert.match(rowRule, /min-height:\s*5rem;/);
