@@ -1,6 +1,7 @@
 package com.orderly.host.modulecontrol;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.support.TestBusinessModule;
@@ -92,6 +93,35 @@ class ModuleSystemValidationTest {
                     .containsExactly("module_control");
             assertThat(catalog.businessModules()).extracting(module -> module.moduleId())
                     .containsExactly("module_business");
+        }
+    }
+
+    @Test
+    void controlModuleRejectsUnapprovedSystemActions() throws Exception {
+        Path directory = testDirectory("invalid-control-interface");
+        ObjectNode contract = (ObjectNode) objectMapper.readTree(
+                TestModuleArchives.controlContract()
+        );
+        ArrayNode actions = (ArrayNode) contract.path("actions");
+        ObjectNode extra = actions.addObject();
+        extra.put("id", "module_control.module.delete");
+        extra.put("title", "未授权动作");
+        extra.put("description", "不应允许");
+        extra.put("risk", "DELETE");
+        extra.put("confirmationRequired", true);
+        extra.putArray("parameters");
+        TestModuleArchives.writeJar(
+                directory,
+                "module_control.jar",
+                TestControlModule.class,
+                objectMapper.writeValueAsString(contract),
+                TestModuleArchives.controlUi()
+        );
+
+        try (ContractCatalog catalog = new ContractCatalog(objectMapper, directory.toString())) {
+            assertThatThrownBy(catalog::validateSystemModules)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("已批准的系统治理 Action");
         }
     }
 

@@ -82,6 +82,17 @@ class ModuleContractSampleTest {
             assertThat(module.system()).isNotNull();
             assertThat(module.system().role()).isEqualTo("MODULE_CONTROL");
             assertThat(module.system().protectedModule()).isTrue();
+            assertThat(module.actions()).extracting(ActionContract::id)
+                    .containsExactlyInAnyOrder(
+                            "module_control.module.set_enabled",
+                            "module_control.interface.set_callable"
+                    );
+            assertThat(module.queries()).extracting(QueryContract::id)
+                    .containsExactlyInAnyOrder(
+                            "module_control.module.list",
+                            "module_control.interface.list",
+                            "module_control.setting.get"
+                    );
         }
     }
 

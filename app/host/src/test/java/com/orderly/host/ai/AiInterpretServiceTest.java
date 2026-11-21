@@ -4,6 +4,7 @@ import com.orderly.host.api.ApiException;
 import com.orderly.host.contract.ActionContract;
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.contract.ModuleContract;
+import com.orderly.host.contract.ModuleSystemMetadata;
 import com.orderly.host.contract.QueryContract;
 import com.orderly.host.execution.AiActionService;
 import com.orderly.host.execution.ExecutionRecord;
@@ -65,6 +66,7 @@ class AiInterpretServiceTest {
                 queries
         );
         lenient().when(catalog.businessModules()).thenReturn(List.of());
+        lenient().when(catalog.systemModules()).thenReturn(List.of());
         lenient().when(systemFeatures.aiPlansEnabled()).thenReturn(true);
         lenient().when(aiService.beginTurn()).thenReturn(
                 new AiServiceClient.TurnBudget(Instant.now().plusSeconds(60))
@@ -360,6 +362,58 @@ class AiInterpretServiceTest {
                     .containsExactly("action.allowed");
             assertThat(module.queries()).extracting(AiContracts.ToolQuery::queryId)
                     .containsExactly("query.allowed");
+        });
+    }
+
+    @Test
+    void sendsWhitelistedSystemControlInterfacesToPython() {
+        ModuleContract control = new ModuleContract(
+                "module_control",
+                "模组设置",
+                "系统治理",
+                10_000,
+                new ModuleSystemMetadata("MODULE_CONTROL", true),
+                List.of(
+                        action("module_control.module.set_enabled"),
+                        action("module_control.interface.set_callable")
+                ),
+                List.of(
+                        query("module_control.module.list"),
+                        query("module_control.interface.list"),
+                        query("module_control.setting.get")
+                ),
+                List.of()
+        );
+        when(catalog.systemModules()).thenReturn(List.of(control));
+        when(moduleControl.isActionAiCallableEnabled(any(), any())).thenReturn(true);
+        when(moduleControl.isQueryAiCallableEnabled(any(), any())).thenReturn(true);
+        when(aiService.createTurn(any(), any())).thenReturn(decision(
+                "QUESTION",
+                new AiContracts.Question("继续？", List.of())
+        ));
+
+        service.interpret(new AiContracts.TurnRequest(
+                "管理模块",
+                null,
+                "system-control-tools"
+        ));
+
+        ArgumentCaptor<AiContracts.ServiceTurnRequest> captor =
+                ArgumentCaptor.forClass(AiContracts.ServiceTurnRequest.class);
+        verify(aiService).createTurn(captor.capture(), any());
+        assertThat(captor.getValue().modules()).singleElement().satisfies(module -> {
+            assertThat(module.moduleId()).isEqualTo("module_control");
+            assertThat(module.actions()).extracting(AiContracts.ToolAction::actionId)
+                    .containsExactly(
+                            "module_control.module.set_enabled",
+                            "module_control.interface.set_callable"
+                    );
+            assertThat(module.queries()).extracting(AiContracts.ToolQuery::queryId)
+                    .containsExactly(
+                            "module_control.module.list",
+                            "module_control.interface.list",
+                            "module_control.setting.get"
+                    );
         });
     }
 

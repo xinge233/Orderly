@@ -8,6 +8,7 @@ import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.contract.OutputSchemaValidator;
 import com.orderly.host.event.ExecutionJournal;
+import com.orderly.host.modulecontrol.ModuleControlActionService;
 import com.orderly.host.modulecontrol.ModuleControlService;
 import com.orderly.host.modulecontrol.InterfaceUsageRegistry;
 import com.orderly.host.runtime.WorkspaceRuntime;
@@ -23,10 +24,11 @@ import java.util.Map;
 /**
  * 计划和 AI 直执共同使用的 Action 担保核心。
  *
- * <p>该类在执行前解析模块归属、业务模块启用状态、AI 可调用开关和参数契约，
- * 正向执行前取得 JSON 快照，并在每一步写入审计事件。正向动作发生异常时不自动
- * 调用回滚；调用方需根据异常携带的 {@code executed} 标记与快照组织逆序回滚。
- * 回滚入口不检查业务模块当前是否启用，以便停用后仍能恢复既有变更。</p>
+ * <p>该类在执行前解析模块归属、业务模块启用状态、系统治理白名单、AI 可调用开关和
+ * 参数契约，正向执行前取得 JSON 快照，并在每一步写入审计事件。系统治理动作委托给
+ * 宿主专用治理服务，普通业务动作委托给模块执行器。正向动作发生异常时不自动调用回滚；
+ * 调用方需根据异常携带的 {@code executed} 标记与快照组织逆序回滚。回滚入口不检查
+ * 业务模块当前是否启用，以便停用后仍能恢复既有变更。</p>
  */
 @Service
 public class ActionExecutionCore {
@@ -39,6 +41,7 @@ public class ActionExecutionCore {
     private final WorkspaceRuntime runtime;
     private final ExecutionJournal journal;
     private final ModuleControlService moduleControl;
+    private final ModuleControlActionService moduleControlActions;
     private final InterfaceUsageRegistry usage;
     private final ObjectMapper objectMapper;
 
@@ -47,6 +50,7 @@ public class ActionExecutionCore {
             WorkspaceRuntime runtime,
             ExecutionJournal journal,
             ModuleControlService moduleControl,
+            ModuleControlActionService moduleControlActions,
             InterfaceUsageRegistry usage,
             ObjectMapper objectMapper
     ) {
@@ -54,6 +58,7 @@ public class ActionExecutionCore {
         this.runtime = runtime;
         this.journal = journal;
         this.moduleControl = moduleControl;
+        this.moduleControlActions = moduleControlActions;
         this.usage = usage;
         this.objectMapper = objectMapper;
     }
@@ -150,7 +155,12 @@ public class ActionExecutionCore {
         );
         Map<String, Object> snapshot;
         try {
-            snapshot = normalizeObject(target.module().prepareSnapshot(invocation, runtime), "快照");
+            snapshot = normalizeObject(
+                    isControlAction(moduleId, actionId)
+                            ? moduleControlActions.prepareSnapshot(invocation)
+                            : target.module().prepareSnapshot(invocation, runtime),
+                    "快照"
+            );
             if (snapshot == null) {
                 throw new IllegalStateException("模块未提供快照");
             }
@@ -170,7 +180,9 @@ public class ActionExecutionCore {
 
         ModuleResult result;
         try {
-            result = target.module().execute(invocation, runtime);
+            result = isControlAction(moduleId, actionId)
+                    ? moduleControlActions.execute(invocation)
+                    : target.module().execute(invocation, runtime);
             if (result == null) {
                 throw new IllegalStateException("模块返回空结果");
             }
@@ -279,12 +291,18 @@ public class ActionExecutionCore {
                 arguments
         );
         try {
-            ModuleResult result = target.module().rollback(
-                    invocation,
-                    snapshot == null ? Map.of() : snapshot,
-                    output == null ? Map.of() : output,
-                    runtime
-            );
+            ModuleResult result = isControlAction(moduleId, actionId)
+                    ? moduleControlActions.rollback(
+                            invocation,
+                            snapshot == null ? Map.of() : snapshot,
+                            output == null ? Map.of() : output
+                    )
+                    : target.module().rollback(
+                            invocation,
+                            snapshot == null ? Map.of() : snapshot,
+                            output == null ? Map.of() : output,
+                            runtime
+                    );
             if (result == null) {
                 throw new IllegalStateException("模块返回空回滚结果");
             }
@@ -312,10 +330,13 @@ public class ActionExecutionCore {
         }
     }
 
-    /** 解析契约与执行器，并额外要求目标属于已启用的非系统业务模块。 */
+    /** 解析契约与执行器；系统模块仅允许白名单治理动作。 */
     private ResolvedAction requireEnabledTarget(String moduleId, String actionId) {
         ResolvedAction target = requireOwnedTarget(moduleId, actionId);
         if (target.moduleContract().system() != null) {
+            if (isControlAction(moduleId, actionId)) {
+                return target;
+            }
             throw new ApiException(
                     HttpStatus.CONFLICT,
                     "MODULE_PROTECTED",
@@ -330,6 +351,11 @@ public class ActionExecutionCore {
             );
         }
         return target;
+    }
+
+    /** 判断目标是否为宿主白名单内的系统治理动作。 */
+    public boolean isControlAction(String moduleId, String actionId) {
+        return moduleControlActions.supports(moduleId, actionId);
     }
 
     /**

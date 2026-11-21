@@ -21,6 +21,7 @@ public class ModuleControlCoordinator {
     private final ReentrantLock lifecycleLock = new ReentrantLock(true);
     private final ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock(true);
     private int activeExecutions;
+    private boolean controlExecutionActive;
     private boolean shutdownRequested;
 
     /** 在共享状态读锁内执行只读操作，结束后必定释放锁。 */
@@ -57,9 +58,33 @@ public class ModuleControlCoordinator {
         lifecycleLock.lock();
         try {
             requireNotShuttingDown();
+            rejectConcurrentControlExecution();
             stateLock.readLock().lock();
             activeExecutions++;
             return new ExecutionPermit(this);
+        } finally {
+            lifecycleLock.unlock();
+        }
+    }
+
+    /**
+     * 开始一次系统治理动作执行。
+     *
+     * <p>系统治理动作必须独占状态写锁，因为它会在同一次执行中调用模块启停和接口开关。
+     * 普通执行与系统治理执行不能重叠；同一线程可在治理许可内重入状态写锁完成内部
+     * 治理写入，不会触发读写锁升级。</p>
+     */
+    public ControlExecutionPermit beginControlExecution() {
+        lifecycleLock.lock();
+        try {
+            requireNotShuttingDown();
+            if (activeExecutions > 0 || controlExecutionActive) {
+                throw executionInProgress();
+            }
+            stateLock.writeLock().lock();
+            controlExecutionActive = true;
+            activeExecutions++;
+            return new ControlExecutionPermit(this);
         } finally {
             lifecycleLock.unlock();
         }
@@ -139,6 +164,22 @@ public class ModuleControlCoordinator {
         }
     }
 
+    /** 普通执行开始前拒绝与系统治理动作重叠。 */
+    private void rejectConcurrentControlExecution() {
+        if (controlExecutionActive) {
+            throw executionInProgress();
+        }
+    }
+
+    /** 构造统一的执行互斥错误。 */
+    private ApiException executionInProgress() {
+        return new ApiException(
+                HttpStatus.CONFLICT,
+                "MODULE_EXECUTION_IN_PROGRESS",
+                "其他 Action 或系统治理动作正在执行；完成或失败后再试"
+        );
+    }
+
     /** 校验执行计数后减一，并释放 beginExecution 持有的状态读锁。 */
     private void endExecution() {
         lifecycleLock.lock();
@@ -153,12 +194,27 @@ public class ModuleControlCoordinator {
         }
     }
 
+    /** 结束系统治理执行，释放写锁并恢复普通执行入口。 */
+    private void endControlExecution() {
+        lifecycleLock.lock();
+        try {
+            if (activeExecutions <= 0 || !controlExecutionActive) {
+                throw new IllegalStateException("系统治理执行协调器状态不一致");
+            }
+            activeExecutions--;
+            controlExecutionActive = false;
+            stateLock.writeLock().unlock();
+        } finally {
+            lifecycleLock.unlock();
+        }
+    }
+
     /**
      * 一次执行生命周期的协调许可。
      *
      * <p>关闭许可会释放执行读锁；正常使用只关闭一次，底层计数不一致时抛出异常。</p>
      */
-    public static final class ExecutionPermit implements AutoCloseable {
+    public static final class ExecutionPermit implements ExecutionLease {
         private final ModuleControlCoordinator coordinator;
         private boolean closed;
 
@@ -174,5 +230,30 @@ public class ModuleControlCoordinator {
                 coordinator.endExecution();
             }
         }
+    }
+
+    /** 一次系统治理动作的独占执行许可。 */
+    public static final class ControlExecutionPermit implements ExecutionLease {
+        private final ModuleControlCoordinator coordinator;
+        private boolean closed;
+
+        private ControlExecutionPermit(ModuleControlCoordinator coordinator) {
+            this.coordinator = coordinator;
+        }
+
+        /** 结束系统治理执行并释放独占写锁。 */
+        @Override
+        public void close() {
+            if (!closed) {
+                closed = true;
+                coordinator.endControlExecution();
+            }
+        }
+    }
+
+    /** 普通执行与系统治理执行共享的无检查异常许可接口。 */
+    public interface ExecutionLease extends AutoCloseable {
+        @Override
+        void close();
     }
 }

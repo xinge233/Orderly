@@ -58,8 +58,57 @@ public final class TestModuleArchives {
                   "description": "测试系统模块",
                   "order": 0,
                   "system": {"role": "MODULE_CONTROL", "protected": true},
-                  "actions": [],
-                  "queries": [],
+                  "actions": [
+                    {
+                      "id": "module_control.module.set_enabled",
+                      "title": "设置模块启停",
+                      "description": "测试系统模块启停",
+                      "risk": "WRITE",
+                      "confirmationRequired": true,
+                      "parameters": [
+                        {"name": "moduleId", "type": "string", "required": true, "description": "模块"},
+                        {"name": "enabled", "type": "boolean", "required": true, "description": "启用状态"}
+                      ]
+                    },
+                    {
+                      "id": "module_control.interface.set_callable",
+                      "title": "设置接口可调用状态",
+                      "description": "测试系统接口开关",
+                      "risk": "WRITE",
+                      "confirmationRequired": true,
+                      "parameters": [
+                        {"name": "moduleId", "type": "string", "required": true, "description": "模块"},
+                        {"name": "kind", "type": "string", "required": true, "description": "接口类型"},
+                        {"name": "interfaceId", "type": "string", "required": true, "description": "接口"},
+                        {"name": "enabled", "type": "boolean", "required": true, "description": "可调用状态"}
+                      ]
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "id": "module_control.module.list",
+                      "title": "查询业务模块",
+                      "description": "测试模块摘要查询",
+                      "parameters": []
+                    },
+                    {
+                      "id": "module_control.interface.list",
+                      "title": "查询模块接口",
+                      "description": "测试接口摘要查询",
+                      "parameters": [
+                        {"name": "moduleId", "type": "string", "required": false, "description": "模块"},
+                        {"name": "kind", "type": "string", "required": false, "description": "接口类型"}
+                      ]
+                    },
+                    {
+                      "id": "module_control.setting.get",
+                      "title": "读取模块设置",
+                      "description": "测试模块设置查询",
+                      "parameters": [
+                        {"name": "moduleId", "type": "string", "required": true, "description": "模块"}
+                      ]
+                    }
+                  ],
                   "plannerRules": []
                 }
                 """;

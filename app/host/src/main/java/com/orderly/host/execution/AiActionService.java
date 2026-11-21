@@ -69,6 +69,7 @@ public class AiActionService {
         }
         List<PreviewStep> steps = new ArrayList<>();
         RiskLevel highestRisk = RiskLevel.READ_ONLY;
+        boolean controlAction = false;
         for (ActionCall action : actions) {
             if (action == null
                     || action.moduleId() == null
@@ -86,6 +87,10 @@ public class AiActionService {
                     action.actionId()
             );
             core.validateArguments(target.action(), action.arguments());
+            controlAction = controlAction || core.isControlAction(
+                    action.moduleId(),
+                    action.actionId()
+            );
             if (target.risk().ordinal() > highestRisk.ordinal()) {
                 highestRisk = target.risk();
             }
@@ -97,6 +102,13 @@ public class AiActionService {
                     target.risk(),
                     action.arguments()
             ));
+        }
+        if (controlAction && actions.size() != 1) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "SYSTEM_ACTION_MUST_RUN_ALONE",
+                    "系统治理 Action 必须单独执行，不能与其他 Action 混批"
+            );
         }
         return new Preview(List.copyOf(actions), List.copyOf(steps), highestRisk);
     }
@@ -194,6 +206,15 @@ public class AiActionService {
                 highestRisk = target.risk();
             }
         }
+        boolean controlBatch = targets.stream().anyMatch(target ->
+                core.isControlAction(target.moduleContract().moduleId(), target.action().id()));
+        if (controlBatch && actions.size() != 1) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "SYSTEM_ACTION_MUST_RUN_ALONE",
+                    "系统治理 Action 必须单独执行，不能与其他 Action 混批"
+            );
+        }
         if (highestRisk != RiskLevel.READ_ONLY && !confirmed) {
             throw new ApiException(
                     HttpStatus.CONFLICT,
@@ -203,7 +224,10 @@ public class AiActionService {
             );
         }
 
-        try (var permit = coordinator.beginExecution()) {
+        ModuleControlCoordinator.ExecutionLease permit = controlBatch
+                ? coordinator.beginControlExecution()
+                : coordinator.beginExecution();
+        try (permit) {
             String executionId = UUID.randomUUID().toString();
             Instant startedAt = Instant.now();
             List<ExecutionRecordStep> steps = new ArrayList<>();

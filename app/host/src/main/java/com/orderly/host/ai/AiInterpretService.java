@@ -9,6 +9,7 @@ import com.orderly.host.contract.QueryContract;
 import com.orderly.host.execution.AiActionService;
 import com.orderly.host.execution.ExecutionRecord;
 import com.orderly.host.modulecontrol.ModuleControlService;
+import com.orderly.host.modulecontrol.ModuleControlInterfaces;
 import com.orderly.host.system.SystemFeatureService;
 import com.orderly.kernel.RiskLevel;
 import org.springframework.http.HttpStatus;
@@ -455,13 +456,18 @@ public class AiInterpretService {
     /**
      * 从契约目录生成 Python 可见的工具卡。
      *
-     * <p>业务模块必须启用；Action/Query 只受模块治理动态开关约束。工具卡元数据来自
+     * <p>业务模块必须启用；受保护 {@code module_control} 只暴露宿主白名单治理接口。
+     * Action/Query 只受模块治理动态开关约束。工具卡元数据来自
      * {@link ContractCatalog}，这里不维护第二套定义。</p>
      */
     private List<AiContracts.ToolModule> enabledToolModules() {
         List<AiContracts.ToolModule> cards = new ArrayList<>();
-        for (ModuleContract module : catalog.businessModules()) {
-            if (!moduleControl.isEnabled(module.moduleId())) {
+        List<ModuleContract> discoverable = new ArrayList<>(catalog.businessModules());
+        discoverable.addAll(catalog.systemModules().stream()
+                .filter(module -> ModuleControlInterfaces.MODULE_ID.equals(module.moduleId()))
+                .toList());
+        for (ModuleContract module : discoverable) {
+            if (module.system() == null && !moduleControl.isEnabled(module.moduleId())) {
                 continue;
             }
             List<AiContracts.ToolAction> actions = module.actions().stream()

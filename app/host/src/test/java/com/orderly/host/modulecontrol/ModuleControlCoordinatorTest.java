@@ -35,4 +35,26 @@ class ModuleControlCoordinatorTest {
         assertThatCode(() -> coordinator.beginExecution().close())
                 .doesNotThrowAnyException();
     }
+
+    @Test
+    void controlExecutionHoldsExclusiveWriteLeaseAndSupportsReentrantMutation() {
+        ModuleControlCoordinator coordinator = new ModuleControlCoordinator();
+        ModuleControlCoordinator.ControlExecutionPermit permit =
+                coordinator.beginControlExecution();
+        try {
+            assertThat(coordinator.mutate(() -> "updated")).isEqualTo("updated");
+            assertThatThrownBy(coordinator::beginExecution)
+                    .isInstanceOf(ApiException.class)
+                    .extracting(exception -> ((ApiException) exception).code())
+                    .isEqualTo("MODULE_EXECUTION_IN_PROGRESS");
+            assertThatThrownBy(coordinator::beginControlExecution)
+                    .isInstanceOf(ApiException.class)
+                    .extracting(exception -> ((ApiException) exception).code())
+                    .isEqualTo("MODULE_EXECUTION_IN_PROGRESS");
+        } finally {
+            permit.close();
+        }
+        assertThatCode(() -> coordinator.beginExecution().close())
+                .doesNotThrowAnyException();
+    }
 }

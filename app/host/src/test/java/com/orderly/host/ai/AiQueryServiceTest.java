@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderly.host.api.ApiException;
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.contract.ModuleContract;
+import com.orderly.host.contract.ModuleSystemMetadata;
 import com.orderly.host.contract.ParameterContract;
 import com.orderly.host.contract.QueryContract;
+import com.orderly.host.modulecontrol.ModuleControlQueryService;
 import com.orderly.host.modulecontrol.ModuleControlService;
 import com.orderly.host.runtime.WorkspaceRuntime;
 import com.orderly.kernel.OrderlyModule;
@@ -31,6 +33,8 @@ class AiQueryServiceTest {
 
     private final ContractCatalog catalog = mock(ContractCatalog.class);
     private final ModuleControlService moduleControl = mock(ModuleControlService.class);
+    private final ModuleControlQueryService moduleControlQueries =
+            mock(ModuleControlQueryService.class);
     private final WorkspaceRuntime runtime = mock(WorkspaceRuntime.class);
     private final OrderlyModule executor = mock(OrderlyModule.class);
     private AiQueryService service;
@@ -38,7 +42,13 @@ class AiQueryServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AiQueryService(catalog, moduleControl, runtime, new ObjectMapper());
+        service = new AiQueryService(
+                catalog,
+                moduleControl,
+                moduleControlQueries,
+                runtime,
+                new ObjectMapper()
+        );
         QueryContract query = new QueryContract(
                 "test.list",
                 "测试查询",
@@ -170,6 +180,54 @@ class AiQueryServiceTest {
         List<AiContracts.QueryResult> invalidArguments =
                 service.executeAiQueries(List.of(query()));
         assertThat(invalidArguments.get(0).status()).isEqualTo(AiContracts.QueryStatus.FAILED);
+        verifyNoInteractions(executor);
+    }
+
+    @Test
+    void routesWhitelistedControlQueriesThroughHostGovernanceService() {
+        QueryContract query = new QueryContract(
+                "module_control.module.list",
+                "查询业务模块",
+                "读取模块摘要",
+                List.of()
+        );
+        ModuleContract control = new ModuleContract(
+                "module_control",
+                "模组设置",
+                "系统治理",
+                10_000,
+                new ModuleSystemMetadata("MODULE_CONTROL", true),
+                List.of(),
+                List.of(query),
+                List.of()
+        );
+        when(catalog.isSystemModule("module_control")).thenReturn(true);
+        when(catalog.findModule("module_control")).thenReturn(java.util.Optional.of(control));
+        when(moduleControlQueries.supports(
+                "module_control",
+                "module_control.module.list"
+        )).thenReturn(true);
+        when(moduleControl.isQueryAiCallableEnabled(
+                "module_control",
+                "module_control.module.list"
+        )).thenReturn(true);
+        when(moduleControlQueries.query(
+                "module_control.module.list",
+                Map.of()
+        )).thenReturn(Map.of("items", List.of(), "count", 0));
+
+        List<AiContracts.QueryResult> results = service.executeAiQueries(List.of(
+                new AiContracts.QueryCall(
+                        "module_control",
+                        "module_control.module.list",
+                        Map.of()
+                )
+        ));
+
+        assertThat(results).singleElement().satisfies(result -> {
+            assertThat(result.status()).isEqualTo(AiContracts.QueryStatus.OK);
+            assertThat(result.payload()).isEqualTo(Map.of("items", List.of(), "count", 0));
+        });
         verifyNoInteractions(executor);
     }
 

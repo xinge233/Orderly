@@ -689,6 +689,7 @@ export default async function mount(root, context) {
         const inUse = iface.kind === "action"
             && actionIsInUse(state.interfaceState, module.moduleId, iface.id);
         const checked = dynamicEnabled;
+        const systemControlled = module.protected || module.role === MODULE_CONTROL_ROLE;
 
         const title = make("strong", "module-control-ui-interface__title", iface.title);
         const description = make(
@@ -702,20 +703,31 @@ export default async function mount(root, context) {
             control.append(make("span", "module-control-ui-interface__state", "使用中"));
         }
 
-        const switchLabel = make("label", "module-control-ui-switch module-control-ui-switch--interface");
-        const checkbox = make("input");
-        checkbox.type = "checkbox";
-        checkbox.checked = checked;
-        checkbox.disabled = state.busy || inUse;
-        const moduleSuffix = module.enabled ? "" : "；模块当前停用";
-        checkbox.setAttribute(
-            "aria-label",
-            `${iface.title}${checked ? "允许" : "禁止"} AI 调用${moduleSuffix}`
-        );
-        const track = make("span", "module-control-ui-switch__track");
-        switchLabel.append(checkbox, track);
-        checkbox.addEventListener("change", () => void toggleInterface(module, iface, checkbox));
-        control.append(switchLabel);
+        if (systemControlled) {
+            control.append(make(
+                "span",
+                "module-control-ui-interface__state module-control-ui-interface__state--fixed",
+                "宿主治理接口"
+            ));
+        } else {
+            const switchLabel = make(
+                "label",
+                "module-control-ui-switch module-control-ui-switch--interface"
+            );
+            const checkbox = make("input");
+            checkbox.type = "checkbox";
+            checkbox.checked = checked;
+            checkbox.disabled = state.busy || inUse;
+            const moduleSuffix = module.enabled ? "" : "；模块当前停用";
+            checkbox.setAttribute(
+                "aria-label",
+                `${iface.title}${checked ? "允许" : "禁止"} AI 调用${moduleSuffix}`
+            );
+            const track = make("span", "module-control-ui-switch__track");
+            switchLabel.append(checkbox, track);
+            checkbox.addEventListener("change", () => void toggleInterface(module, iface, checkbox));
+            control.append(switchLabel);
+        }
 
         if (!module.enabled) {
             row.classList.add("is-module-disabled");
@@ -732,9 +744,11 @@ export default async function mount(root, context) {
         const heading = make("header", "module-control-ui-interface-group__header");
         heading.append(
             make("h3", "", title),
-            make("span", "", kind === "query"
-                ? "仅影响 AI 查询；模块自身查询不受限制"
-                : "仅影响 AI 计划与 AI 直执")
+            make("span", "", module.protected || module.role === MODULE_CONTROL_ROLE
+                ? "系统治理接口由宿主执行，不能在模组设置中关闭"
+                : kind === "query"
+                    ? "仅影响 AI 查询；模块自身查询不受限制"
+                    : "仅影响 AI 计划与 AI 直执")
         );
         group.append(heading);
         if (!items.length) {
@@ -780,7 +794,7 @@ export default async function mount(root, context) {
         const moduleIcon = make("span", "module-control-ui-module-icon");
         moduleIcon.innerHTML = context.icon(module.icon, 20);
         const expanded = state.expandedIds.has(module.moduleId);
-        const canExpandInterfaces = !(module.protected || module.role === MODULE_CONTROL_ROLE);
+        const canExpandInterfaces = true;
         const interfacePanel = canExpandInterfaces ? buildInterfacePanel(module) : null;
         if (interfacePanel) {
             interfacePanel.classList.toggle("is-open", expanded);

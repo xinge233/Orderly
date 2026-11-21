@@ -64,7 +64,19 @@ public class ExecutionService {
     public ExecutionRunResult confirm(String planId, boolean confirmed, String confirmation) {
         features.requirePlanningEnabled();
         ExecutionPlan plan = plans.require(planId);
-        try (var permit = coordinator.beginExecution()) {
+        boolean controlPlan = plan.steps().stream().anyMatch(step ->
+                core.isControlAction(step.moduleId(), step.actionId()));
+        if (controlPlan && plan.steps().size() != 1) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "SYSTEM_ACTION_MUST_RUN_ALONE",
+                    "系统治理 Action 必须单独成计划，不能与其他步骤混合"
+            );
+        }
+        ModuleControlCoordinator.ExecutionLease permit = controlPlan
+                ? coordinator.beginControlExecution()
+                : coordinator.beginExecution();
+        try (permit) {
             if (plan.status() != PlanStatus.PREVIEW) {
                 throw new ApiException(
                         HttpStatus.CONFLICT,
@@ -238,7 +250,12 @@ public class ExecutionService {
     public ExecutionRunResult rollback(String planId) {
         features.requirePlanningEnabled();
         ExecutionPlan plan = plans.require(planId);
-        try (var permit = coordinator.beginExecution()) {
+        boolean controlPlan = plan.steps().stream().anyMatch(step ->
+                core.isControlAction(step.moduleId(), step.actionId()));
+        ModuleControlCoordinator.ExecutionLease permit = controlPlan
+                ? coordinator.beginControlExecution()
+                : coordinator.beginExecution();
+        try (permit) {
             if (plan.status() != PlanStatus.COMPLETED
                     && plan.status() != PlanStatus.PARTIALLY_ROLLED_BACK) {
                 throw new ApiException(
@@ -298,7 +315,12 @@ public class ExecutionService {
      */
     public ExecutionRecord rollbackExecution(String executionId) {
         ExecutionRecord record = records.require(executionId);
-        try (var permit = coordinator.beginExecution()) {
+        boolean controlExecution = record.steps().stream().anyMatch(step ->
+                core.isControlAction(step.moduleId(), step.actionId()));
+        ModuleControlCoordinator.ExecutionLease permit = controlExecution
+                ? coordinator.beginControlExecution()
+                : coordinator.beginExecution();
+        try (permit) {
             if (!List.of("COMPLETED", "PARTIALLY_ROLLED_BACK", "FAILED_PARTIALLY_ROLLED_BACK")
                     .contains(record.status())) {
                 throw new ApiException(

@@ -329,6 +329,9 @@ test("module_control renders interface AI switches with locking states", async (
     assert.match(control, /actionIsInUse\(state\.interfaceState,/);
     assert.match(control, /const previous = interfaceStateFor\(/);
     assert.match(control, /canExpandInterfaces/);
+    assert.match(control, /const canExpandInterfaces = true;/);
+    assert.match(control, /宿主治理接口/);
+    assert.match(control, /module-control-ui-interface__state--fixed/);
     assert.match(control, /const nextExpanded = !state\.expandedIds\.has\(module\.moduleId\);/);
     assert.match(control, /row\.classList\.toggle\("is-expanded", nextExpanded\);/);
     assert.match(control, /interfacePanel\.classList\.toggle\("is-open", nextExpanded\);/);

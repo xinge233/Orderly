@@ -7,7 +7,101 @@
     "role": "MODULE_CONTROL",
     "protected": true
   },
-  "actions": [],
-  "queries": [],
+  "actions": [
+    {
+      "id": "module_control.module.set_enabled",
+      "title": "设置模块启停",
+      "description": "在确认后启用或停用指定业务模块。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        {
+          "name": "moduleId",
+          "type": "string",
+          "required": true,
+          "description": "目标业务模块 ID"
+        },
+        {
+          "name": "enabled",
+          "type": "boolean",
+          "required": true,
+          "description": "目标启用状态"
+        }
+      ]
+    },
+    {
+      "id": "module_control.interface.set_callable",
+      "title": "设置接口 AI 可调用状态",
+      "description": "在确认后设置指定业务接口的 AI 可调用状态。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        {
+          "name": "moduleId",
+          "type": "string",
+          "required": true,
+          "description": "目标业务模块 ID"
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "required": true,
+          "description": "action 或 query"
+        },
+        {
+          "name": "interfaceId",
+          "type": "string",
+          "required": true,
+          "description": "目标接口 ID"
+        },
+        {
+          "name": "enabled",
+          "type": "boolean",
+          "required": true,
+          "description": "目标 AI 可调用状态"
+        }
+      ]
+    }
+  ],
+  "queries": [
+    {
+      "id": "module_control.module.list",
+      "title": "查询业务模块",
+      "description": "返回业务模块摘要和运行状态。",
+      "parameters": []
+    },
+    {
+      "id": "module_control.interface.list",
+      "title": "查询模块接口",
+      "description": "返回业务接口元数据和运行状态。",
+      "parameters": [
+        {
+          "name": "moduleId",
+          "type": "string",
+          "required": false,
+          "description": "可选业务模块 ID"
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "required": false,
+          "description": "可选 action 或 query"
+        }
+      ]
+    },
+    {
+      "id": "module_control.setting.get",
+      "title": "读取模块设置",
+      "description": "读取指定业务模块的字段定义和当前值。",
+      "parameters": [
+        {
+          "name": "moduleId",
+          "type": "string",
+          "required": true,
+          "description": "目标业务模块 ID"
+        }
+      ]
+    }
+  ],
   "plannerRules": []
 }

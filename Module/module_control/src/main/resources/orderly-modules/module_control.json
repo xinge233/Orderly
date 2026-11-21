@@ -3,8 +3,136 @@
   "title": "模组设置",
   "description": "统一管理本机业务模块的启停、排序与模块设置。",
   "order": 10000,
-  "actions": [],
-  "queries": [],
+  "actions": [
+    {
+      "id": "module_control.module.set_enabled",
+      "title": "设置模块启停",
+      "description": "在用户确认后启用或停用指定业务模块。拒绝系统模块，并保存前一状态、审计记录和失败回滚依据。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        {
+          "name": "moduleId",
+          "type": "string",
+          "required": true,
+          "description": "目标业务模块 ID"
+        },
+        {
+          "name": "enabled",
+          "type": "boolean",
+          "required": true,
+          "description": "true 启用模块，false 停用模块"
+        }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "moduleId": { "type": "string" },
+          "previousEnabled": { "type": "boolean" },
+          "enabled": { "type": "boolean" },
+          "changed": { "type": "boolean" },
+          "revision": { "type": "string" }
+        },
+        "required": ["moduleId", "previousEnabled", "enabled", "changed", "revision"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "module_control.interface.set_callable",
+      "title": "设置接口 AI 可调用状态",
+      "description": "在用户确认后设置指定业务模块特定 Action 或 Query 的 AI 可调用状态。关闭使用中的 Action 会被拒绝，且不阻断模块自身或本地界面调用。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        {
+          "name": "moduleId",
+          "type": "string",
+          "required": true,
+          "description": "目标业务模块 ID"
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "required": true,
+          "description": "接口类型，只能是 action 或 query"
+        },
+        {
+          "name": "interfaceId",
+          "type": "string",
+          "required": true,
+          "description": "目标 Action 或 Query ID"
+        },
+        {
+          "name": "enabled",
+          "type": "boolean",
+          "required": true,
+          "description": "true 允许 AI 调用，false 禁止 AI 调用"
+        }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "moduleId": { "type": "string" },
+          "kind": { "type": "string" },
+          "interfaceId": { "type": "string" },
+          "previousEnabled": { "type": "boolean" },
+          "enabled": { "type": "boolean" },
+          "changed": { "type": "boolean" },
+          "revision": { "type": "string" }
+        },
+        "required": [
+          "moduleId",
+          "kind",
+          "interfaceId",
+          "previousEnabled",
+          "enabled",
+          "changed",
+          "revision"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "queries": [
+    {
+      "id": "module_control.module.list",
+      "title": "查询业务模块",
+      "description": "返回业务模块标识、标题、启用状态、管理排序和接口数量摘要，不返回系统模块或敏感设置正文。",
+      "parameters": []
+    },
+    {
+      "id": "module_control.interface.list",
+      "title": "查询模块接口",
+      "description": "返回业务模块 Action/Query 的元数据、风险、AI 可调用状态和使用中状态，可按模块与接口类型过滤。",
+      "parameters": [
+        {
+          "name": "moduleId",
+          "type": "string",
+          "required": false,
+          "description": "可选业务模块 ID"
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "required": false,
+          "description": "可选接口类型，只能是 action 或 query"
+        }
+      ]
+    },
+    {
+      "id": "module_control.setting.get",
+      "title": "读取模块设置",
+      "description": "读取指定业务模块的设置字段定义和当前有效值。原始结果默认只留在本地前端，不自动发送给模型。",
+      "parameters": [
+        {
+          "name": "moduleId",
+          "type": "string",
+          "required": true,
+          "description": "目标业务模块 ID"
+        }
+      ]
+    }
+  ],
   "plannerRules": [],
   "system": {
     "role": "MODULE_CONTROL",

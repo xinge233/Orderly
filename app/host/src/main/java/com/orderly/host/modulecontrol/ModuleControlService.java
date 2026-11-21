@@ -183,6 +183,167 @@ public class ModuleControlService {
         return interfaceState();
     }
 
+    /** 读取系统治理动作执行前的模块启停快照。 */
+    public ActivationSnapshot activationSnapshot(String moduleId) {
+        return coordinator.read(() -> {
+            requireBusinessModule(moduleId);
+            return new ActivationSnapshot(
+                    moduleId,
+                    preferences.isEnabled(moduleId),
+                    preferences.revision()
+            );
+        });
+    }
+
+    /** 读取系统治理动作执行前的接口 AI 可调用快照。 */
+    public InterfaceCallableSnapshot interfaceCallableSnapshot(
+            String moduleId,
+            String kind,
+            String interfaceId
+    ) {
+        return coordinator.read(() -> {
+            ModuleContract module = requireBusinessModule(moduleId);
+            String normalizedKind = normalizedInterfaceKind(kind);
+            String normalizedInterfaceId = requireInterface(
+                    module,
+                    normalizedKind,
+                    interfaceId
+            );
+            boolean enabled = "action".equals(normalizedKind)
+                    ? preferences.isActionAiCallableEnabled(moduleId, normalizedInterfaceId)
+                    : preferences.isQueryAiCallableEnabled(moduleId, normalizedInterfaceId);
+            return new InterfaceCallableSnapshot(
+                    moduleId,
+                    normalizedKind,
+                    normalizedInterfaceId,
+                    enabled,
+                    preferences.revision()
+            );
+        });
+    }
+
+    /**
+     * 在已经取得系统治理独占许可时修改业务模块启停状态。
+     *
+     * <p>调用方必须先持有一致性执行协调器发出的治理许可。内部写锁重入避免读写锁升级，
+     * 同时保留现有审计与持久化逻辑。</p>
+     */
+    public ActivationChange setActivationForControl(String moduleId, boolean enabled) {
+        return coordinator.mutate(() -> {
+            ModuleContract module = requireBusinessModule(moduleId);
+            boolean previous = preferences.isEnabled(moduleId);
+            boolean changed = previous != enabled;
+            if (changed) {
+                preferences.setEnabled(moduleId, enabled);
+                journal.append(
+                        "MODULE_CONTROL",
+                        "MODULE_CONTROL",
+                        null,
+                        null,
+                        moduleId,
+                        "activation",
+                        enabled ? "ENABLED" : "DISABLED",
+                        enabled ? "模块已启用" : "模块已停用"
+                );
+            }
+            return new ActivationChange(
+                    module.moduleId(),
+                    previous,
+                    enabled,
+                    changed,
+                    preferences.revision()
+            );
+        });
+    }
+
+    /**
+     * 在已经取得系统治理独占许可时修改业务接口的动态 AI 可调用状态。
+     */
+    public InterfaceCallableChange setInterfaceCallableForControl(
+            String moduleId,
+            String kind,
+            String interfaceId,
+            boolean enabled
+    ) {
+        return coordinator.mutate(() -> {
+            ModuleContract module = requireBusinessModule(moduleId);
+            String normalizedKind = normalizedInterfaceKind(kind);
+            String normalizedInterfaceId = requireInterface(
+                    module,
+                    normalizedKind,
+                    interfaceId
+            );
+            boolean[] previous = new boolean[1];
+            boolean[] changed = new boolean[1];
+            usage.withActionLock(() -> {
+                if ("action".equals(normalizedKind)) {
+                    previous[0] = preferences.isActionAiCallableEnabled(
+                            moduleId,
+                            normalizedInterfaceId
+                    );
+                    if (!enabled && usage.isActionInUse(moduleId, normalizedInterfaceId, Instant.now())) {
+                        throw new ApiException(
+                                HttpStatus.CONFLICT,
+                                "INTERFACE_IN_USE",
+                                "接口正在被未执行 AI 计划或当前执行使用"
+                        );
+                    }
+                    changed[0] = previous[0] != enabled;
+                    if (changed[0]) {
+                        preferences.setActionAiCallableEnabled(
+                                moduleId,
+                                normalizedInterfaceId,
+                                enabled
+                        );
+                        journal.append(
+                                "MODULE_CONTROL",
+                                "MODULE_CONTROL",
+                                null,
+                                null,
+                                moduleId,
+                                normalizedInterfaceId,
+                                enabled ? "AI_ENABLED" : "AI_DISABLED",
+                                "Action AI 可调用状态已更新"
+                        );
+                    }
+                } else {
+                    previous[0] = preferences.isQueryAiCallableEnabled(
+                            moduleId,
+                            normalizedInterfaceId
+                    );
+                    changed[0] = previous[0] != enabled;
+                    if (changed[0]) {
+                        preferences.setQueryAiCallableEnabled(
+                                moduleId,
+                                normalizedInterfaceId,
+                                enabled
+                        );
+                        journal.append(
+                                "MODULE_CONTROL",
+                                "MODULE_CONTROL",
+                                null,
+                                null,
+                                moduleId,
+                                normalizedInterfaceId,
+                                enabled ? "AI_ENABLED" : "AI_DISABLED",
+                                "Query AI 可调用状态已更新"
+                        );
+                    }
+                }
+                return null;
+            });
+            return new InterfaceCallableChange(
+                    moduleId,
+                    normalizedKind,
+                    normalizedInterfaceId,
+                    previous[0],
+                    enabled,
+                    changed[0],
+                    preferences.revision()
+            );
+        });
+    }
+
     /** 校验并保存完整侧边栏顺序，校验、持久化与审计处于同一治理写边界。 */
     public ModulePreferences updateSidebarOrder(List<String> moduleIds) {
         return coordinator.mutate(() -> {
@@ -315,5 +476,78 @@ public class ModuleControlService {
             );
         }
         return module;
+    }
+
+    /** 规范化接口类型并拒绝未知值。 */
+    private String normalizedInterfaceKind(String kind) {
+        String normalized = kind == null ? "" : kind.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!"action".equals(normalized) && !"query".equals(normalized)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_INTERFACE_KIND",
+                    "接口类型必须是 action 或 query"
+            );
+        }
+        return normalized;
+    }
+
+    /** 校验接口属于目标业务模块并返回规范化 ID。 */
+    private String requireInterface(
+            ModuleContract module,
+            String kind,
+            String interfaceId
+    ) {
+        String normalizedId = interfaceId == null ? "" : interfaceId.trim();
+        boolean declared = "action".equals(kind)
+                ? module.actions().stream().anyMatch(action -> action.id().equals(normalizedId))
+                : module.queries().stream().anyMatch(query -> query.id().equals(normalizedId));
+        if (!declared) {
+            throw new ApiException(
+                    HttpStatus.NOT_FOUND,
+                    "action".equals(kind) ? "MODULE_ACTION_NOT_FOUND" : "MODULE_QUERY_NOT_FOUND",
+                    "模块未声明接口：" + module.moduleId() + "/" + normalizedId
+            );
+        }
+        return normalizedId;
+    }
+
+    /** 模块启停动作的只读快照。 */
+    public record ActivationSnapshot(
+            String moduleId,
+            boolean enabled,
+            String revision
+    ) {
+    }
+
+    /** 模块启停动作的可审计变更结果。 */
+    public record ActivationChange(
+            String moduleId,
+            boolean previousEnabled,
+            boolean enabled,
+            boolean changed,
+            String revision
+    ) {
+    }
+
+    /** 接口 AI 可调用状态动作的只读快照。 */
+    public record InterfaceCallableSnapshot(
+            String moduleId,
+            String kind,
+            String interfaceId,
+            boolean enabled,
+            String revision
+    ) {
+    }
+
+    /** 接口 AI 可调用状态动作的可审计变更结果。 */
+    public record InterfaceCallableChange(
+            String moduleId,
+            String kind,
+            String interfaceId,
+            boolean previousEnabled,
+            boolean enabled,
+            boolean changed,
+            String revision
+    ) {
     }
 }

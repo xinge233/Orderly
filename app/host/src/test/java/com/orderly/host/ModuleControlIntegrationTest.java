@@ -487,6 +487,113 @@ class ModuleControlIntegrationTest {
     }
 
     @Test
+    void systemControlQueriesExposeBusinessGovernanceState() throws Exception {
+        mockMvc.perform(get(
+                        "/api/modules/module_control/query/module_control.module.list"
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").isNumber())
+                .andExpect(jsonPath("$.items[0].moduleId").value("module_business"));
+
+        mockMvc.perform(get(
+                        "/api/modules/module_control/query/module_control.interface.list"
+                )
+                        .param("moduleId", "module_business")
+                        .param("kind", "action"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].interfaceId").value("business.write"))
+                .andExpect(jsonPath("$.items[0].aiCallable").value(true));
+
+        mockMvc.perform(get(
+                        "/api/modules/module_control/query/module_control.setting.get"
+                )
+                        .param("moduleId", "module_business"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.moduleId").value("module_business"))
+                .andExpect(jsonPath("$.fields").isArray())
+                .andExpect(jsonPath("$.values.showDetails").value(true));
+    }
+
+    @Test
+    void systemControlActionsModifyAndRollbackModuleGovernanceState() {
+        boolean originallyEnabled = preferences.isEnabled("module_business");
+        boolean originallyCallable = preferences.isActionAiCallableEnabled(
+                "module_business",
+                "business.write"
+        );
+        try {
+            ExecutionRecord activation = aiActions.execute(true, List.of(
+                    new AiActionService.ActionCall(
+                            "module_control",
+                            "module_control.module.set_enabled",
+                            Map.of("moduleId", "module_business", "enabled", false)
+                    )
+            ));
+            assertThat(activation.status()).isEqualTo("COMPLETED");
+            assertThat(preferences.isEnabled("module_business")).isFalse();
+
+            ExecutionRecord activationRollback = execution.rollbackExecution(
+                    activation.executionId()
+            );
+            assertThat(activationRollback.status()).isEqualTo("ROLLED_BACK");
+            assertThat(preferences.isEnabled("module_business")).isEqualTo(originallyEnabled);
+
+            ExecutionRecord callable = aiActions.execute(true, List.of(
+                    new AiActionService.ActionCall(
+                            "module_control",
+                            "module_control.interface.set_callable",
+                            Map.of(
+                                    "moduleId", "module_business",
+                                    "kind", "action",
+                                    "interfaceId", "business.write",
+                                    "enabled", false
+                            )
+                    )
+            ));
+            assertThat(callable.status()).isEqualTo("COMPLETED");
+            assertThat(preferences.isActionAiCallableEnabled(
+                    "module_business",
+                    "business.write"
+            )).isFalse();
+
+            ExecutionRecord callableRollback = execution.rollbackExecution(
+                    callable.executionId()
+            );
+            assertThat(callableRollback.status()).isEqualTo("ROLLED_BACK");
+            assertThat(preferences.isActionAiCallableEnabled(
+                    "module_business",
+                    "business.write"
+            )).isEqualTo(originallyCallable);
+        } finally {
+            moduleControl.setActivation("module_business", originallyEnabled);
+            moduleControl.setInterfaceAiCallable(
+                    "module_business",
+                    "action",
+                    "business.write",
+                    originallyCallable
+            );
+        }
+    }
+
+    @Test
+    void systemControlActionsCannotBeMixedWithBusinessActions() {
+        assertThatThrownBy(() -> aiActions.preview(List.of(
+                new AiActionService.ActionCall(
+                        "module_control",
+                        "module_control.module.set_enabled",
+                        Map.of("moduleId", "module_business", "enabled", false)
+                ),
+                new AiActionService.ActionCall(
+                        "module_business",
+                        "business.write",
+                        Map.of("label", "混批")
+                )
+        )))
+                .isInstanceOfSatisfying(ApiException.class, exception ->
+                        assertThat(exception.code()).isEqualTo("SYSTEM_ACTION_MUST_RUN_ALONE"));
+    }
+
+    @Test
     void interfaceUsageStayLockedForTheWholePlanExecutionAndReleaseAfterward() throws Exception {
         TestBusinessModule.blockNextExecution();
         AiContracts.Plan plan = aiPlans.create(

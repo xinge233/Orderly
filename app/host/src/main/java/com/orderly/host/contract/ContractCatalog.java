@@ -2,6 +2,7 @@ package com.orderly.host.contract;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.orderly.host.modulecontrol.ModuleControlInterfaces;
 import com.orderly.kernel.ModuleRuntime;
 import com.orderly.kernel.OrderlyModule;
 import com.orderly.kernel.RiskLevel;
@@ -196,6 +197,39 @@ public class ContractCatalog implements AutoCloseable {
                     "系统模块必须是受保护的 module_control/MODULE_CONTROL"
             );
         }
+        validateControlInterfaces(control);
+    }
+
+    /**
+     * 限制系统控制模块只能声明固定治理接口，并禁止本地计划规则或非写入系统动作。
+     */
+    private void validateControlInterfaces(ModuleContract control) {
+        Set<String> actionIds = control.actions().stream()
+                .map(ActionContract::id)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> queryIds = control.queries().stream()
+                .map(QueryContract::id)
+                .collect(java.util.stream.Collectors.toSet());
+        if (!ModuleControlInterfaces.ACTION_IDS.equals(actionIds)) {
+            throw new IllegalStateException(
+                    "module_control 只能声明已批准的系统治理 Action：" + actionIds
+            );
+        }
+        if (!ModuleControlInterfaces.QUERY_IDS.equals(queryIds)) {
+            throw new IllegalStateException(
+                    "module_control 只能声明已批准的系统治理 Query：" + queryIds
+            );
+        }
+        if (!control.plannerRules().isEmpty()) {
+            throw new IllegalStateException("module_control 不允许声明本地计划规则");
+        }
+        control.actions().forEach(action -> {
+            if (action.risk() != RiskLevel.WRITE || !action.confirmationRequired()) {
+                throw new IllegalStateException(
+                        "系统治理 Action 必须是需要确认的 WRITE 动作：" + action.id()
+                );
+            }
+        });
     }
 
     public Path moduleDirectory() {

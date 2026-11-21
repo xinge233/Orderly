@@ -4,8 +4,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderly.host.api.ApiException;
 import com.orderly.host.contract.ContractCatalog;
+import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.contract.ParameterContract;
 import com.orderly.host.contract.QueryContract;
+import com.orderly.host.modulecontrol.ModuleControlInterfaces;
+import com.orderly.host.modulecontrol.ModuleControlQueryService;
 import com.orderly.host.modulecontrol.ModuleControlService;
 import com.orderly.host.runtime.WorkspaceRuntime;
 import org.springframework.http.HttpStatus;
@@ -36,17 +39,20 @@ public class AiQueryService {
 
     private final ContractCatalog catalog;
     private final ModuleControlService moduleControl;
+    private final ModuleControlQueryService moduleControlQueries;
     private final WorkspaceRuntime runtime;
     private final ObjectMapper objectMapper;
 
     public AiQueryService(
             ContractCatalog catalog,
             ModuleControlService moduleControl,
+            ModuleControlQueryService moduleControlQueries,
             WorkspaceRuntime runtime,
             ObjectMapper objectMapper
     ) {
         this.catalog = catalog;
         this.moduleControl = moduleControl;
+        this.moduleControlQueries = moduleControlQueries;
         this.runtime = runtime;
         this.objectMapper = objectMapper;
     }
@@ -141,8 +147,8 @@ public class AiQueryService {
      * 通过宿主运行模块查询。
      *
      * <p>查询 ID、参数类型和未知参数均来自模块契约；AI 调用还必须满足治理层动态
-     * AI 开关。执行器只能通过
-     * {@link WorkspaceRuntime} 读取模块自有只读状态。</p>
+     * AI 开关。业务模块执行器只能通过 {@link WorkspaceRuntime} 读取模块自有只读状态；
+     * 系统控制模块查询由宿主治理查询服务实现。</p>
      */
     private Map<String, Object> executeOne(
             String moduleId,
@@ -150,15 +156,11 @@ public class AiQueryService {
             Map<String, ?> supplied,
             boolean requireAiCallable
     ) {
+        if (catalog.isSystemModule(moduleId)) {
+            return executeControlQuery(moduleId, queryId, supplied, requireAiCallable);
+        }
         return moduleControl.withEnabledBusinessModule(moduleId, module -> {
-            QueryContract query = module.queries().stream()
-                    .filter(candidate -> candidate.id().equals(queryId))
-                    .findFirst()
-                    .orElseThrow(() -> new ApiException(
-                            HttpStatus.NOT_FOUND,
-                            "MODULE_QUERY_NOT_FOUND",
-                            "模块未声明查询：" + moduleId + "/" + queryId
-                    ));
+            QueryContract query = requireQuery(module, queryId);
             if (requireAiCallable
                     && !moduleControl.isQueryAiCallableEnabled(moduleId, queryId)) {
                 throw new ApiException(
@@ -175,6 +177,53 @@ public class AiQueryService {
             }
             return payload;
         });
+    }
+
+    /** 系统控制模块只允许执行宿主白名单查询，并绕过业务模块启停检查。 */
+    private Map<String, Object> executeControlQuery(
+            String moduleId,
+            String queryId,
+            Map<String, ?> supplied,
+            boolean requireAiCallable
+    ) {
+        ModuleContract module = catalog.findModule(moduleId).orElseThrow(
+                () -> new ApiException(
+                        HttpStatus.NOT_FOUND,
+                        "MODULE_NOT_FOUND",
+                        "模块不存在：" + moduleId
+                )
+        );
+        if (!ModuleControlInterfaces.MODULE_ID.equals(moduleId)
+                || !moduleControlQueries.supports(moduleId, queryId)) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "MODULE_PROTECTED",
+                    "系统模块不通过普通查询入口调用：" + moduleId
+            );
+        }
+        QueryContract query = requireQuery(module, queryId);
+        if (requireAiCallable
+                && !moduleControl.isQueryAiCallableEnabled(moduleId, queryId)) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "QUERY_AI_DISABLED",
+                    "查询未授权给 AI 调用：" + moduleId + "/" + queryId
+            );
+        }
+        Map<String, String> validated = validateParameters(query, supplied);
+        return moduleControlQueries.query(queryId, validated);
+    }
+
+    /** 从模块契约中解析指定查询。 */
+    private QueryContract requireQuery(ModuleContract module, String queryId) {
+        return module.queries().stream()
+                .filter(candidate -> candidate.id().equals(queryId))
+                .findFirst()
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND,
+                        "MODULE_QUERY_NOT_FOUND",
+                        "模块未声明查询：" + module.moduleId() + "/" + queryId
+                ));
     }
 
     /**
