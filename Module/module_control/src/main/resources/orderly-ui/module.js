@@ -748,10 +748,14 @@ export default async function mount(root, context) {
     function buildInterfacePanel(module) {
         const panel = make("section", "module-control-ui-interfaces");
         panel.id = `module-control-interfaces-${module.moduleId}`;
-        panel.append(
+        const clip = make("div", "module-control-ui-interfaces__clip");
+        const content = make("div", "module-control-ui-interfaces__content");
+        content.append(
             buildInterfaceGroup(module, "动作接口", module.actions, "action"),
             buildInterfaceGroup(module, "查询接口", module.queries, "query")
         );
+        clip.append(content);
+        panel.append(clip);
         return panel;
     }
 
@@ -779,7 +783,9 @@ export default async function mount(root, context) {
         const canExpandInterfaces = !(module.protected || module.role === MODULE_CONTROL_ROLE);
         const interfacePanel = canExpandInterfaces ? buildInterfacePanel(module) : null;
         if (interfacePanel) {
-            interfacePanel.hidden = !expanded;
+            interfacePanel.classList.toggle("is-open", expanded);
+            interfacePanel.toggleAttribute("inert", !expanded);
+            interfacePanel.setAttribute("aria-hidden", String(!expanded));
         }
         if (canExpandInterfaces && expanded) {
             row.classList.add("is-expanded");
@@ -807,7 +813,9 @@ export default async function mount(root, context) {
             }
             row.classList.toggle("is-expanded", nextExpanded);
             copy.setAttribute("aria-expanded", String(nextExpanded));
-            interfacePanel.hidden = !nextExpanded;
+            interfacePanel.classList.toggle("is-open", nextExpanded);
+            interfacePanel.toggleAttribute("inert", !nextExpanded);
+            interfacePanel.setAttribute("aria-hidden", String(!nextExpanded));
         };
 
         const rowActions = make("div", "module-control-ui-row-actions");
