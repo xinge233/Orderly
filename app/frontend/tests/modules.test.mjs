@@ -351,7 +351,9 @@ test("module_control renders interface AI switches with locking states", async (
     const openInterfaceRule = style.match(/\.module-control-ui-interfaces\.is-open\s*\{([\s\S]*?)\}/)?.[1] ?? "";
     assert.match(interfaceRule, /grid-template-rows:\s*0fr;/);
     assert.match(interfaceRule, /transition:[\s\S]*?grid-template-rows var\(--duration-normal\) var\(--ease-out\)/);
+    assert.doesNotMatch(interfaceRule, /visibility:/);
     assert.match(openInterfaceRule, /grid-template-rows:\s*1fr;/);
+    assert.doesNotMatch(openInterfaceRule, /transition:/);
     assert.match(style, /\.module-control-ui-interfaces__clip\s*\{\s*min-height:\s*0;\s*overflow:\s*hidden;/);
     assert.match(style, /\.module-control-ui-interfaces__content\s*\{[\s\S]*?padding:\s*var\(--space-2\) var\(--space-6\) var\(--space-5\)/);
     assert.match(style, /\[data-motion="none"\] \.module-control-ui-interfaces,/);

@@ -358,24 +358,17 @@
 .module-control-ui-interfaces {
     display: grid;
     grid-template-rows: 0fr;
-    visibility: hidden;
     opacity: 0;
     pointer-events: none;
     transition:
         grid-template-rows var(--duration-normal) var(--ease-out),
-        opacity var(--duration-fast) var(--ease-out),
-        visibility 0s linear var(--duration-normal);
+        opacity var(--duration-fast) var(--ease-out);
 }
 
 .module-control-ui-interfaces.is-open {
     grid-template-rows: 1fr;
-    visibility: visible;
     opacity: 1;
     pointer-events: auto;
-    transition:
-        grid-template-rows var(--duration-normal) var(--ease-out),
-        opacity var(--duration-fast) var(--ease-out),
-        visibility 0s linear 0s;
 }
 
 .module-control-ui-interfaces__clip {
