@@ -231,7 +231,7 @@ test("settings uses dedicated live regions and keeps the panel mounted on change
     assert.doesNotMatch(app, /id:\s*"modules",\s*label:\s*"模块管理"/);
     assert.match(
         app,
-        /async getState\(\)\s*\{\s*await systemAdminApi\.getInterfaceState\(\);\s*return systemAdminSnapshot\(\);/s
+        /async getState\(\)\s*\{\s*await Promise\.all\(\[\s*refreshModuleCatalogState\(\),\s*systemAdminApi\.getInterfaceState\(\)\s*\]\);\s*return systemAdminSnapshot\(\);/s
     );
     assert.match(
         app,

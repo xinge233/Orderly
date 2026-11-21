@@ -150,8 +150,29 @@ test("AI actions surface host failures and notify the framework after execution"
     assert.match(app, /onExecutionFinished: refreshAfterAiExecution/);
     assert.match(refresh, /executionCompletedModules\(execution\)/);
     assert.match(refresh, /moduleForView\(state\.activeView\)/);
-    assert.match(refresh, /navigate\(state\.activeView\)/);
+    assert.match(refresh, /await navigate\(state\.activeView\)/);
     assert.doesNotMatch(refresh, /module_calendar/);
+});
+
+test("AI module governance updates refresh the catalog before rendering switches", async () => {
+    const app = await read("../src/app.js");
+    const refreshStart = app.indexOf("async function refreshAfterAiExecution");
+    const refreshEnd = app.indexOf("\n}", refreshStart);
+    const refresh = app.slice(refreshStart, refreshEnd + 2);
+    const catalogStart = app.indexOf("async function refreshModuleCatalogState");
+    const catalogEnd = app.indexOf("\n}", catalogStart);
+    const catalog = app.slice(catalogStart, catalogEnd + 2);
+    const adminStart = app.indexOf("function createSystemAdminApi");
+    const admin = app.slice(adminStart);
+
+    assert.match(refresh, /await refreshModuleCatalogState\(\)/);
+    assert.match(refresh, /refreshVisibleFrameworkViews\(\)/);
+    assert.match(refresh, /activeViewBecameUnavailable\(\)/);
+    assert.match(catalog, /api\.getModules\(\)/);
+    assert.match(catalog, /api\.getSystemModules\(\)/);
+    assert.match(catalog, /applyCatalogState\(catalogs, state\.modulePreferences\)/);
+    assert.match(admin, /refreshModuleCatalogState\(\)/);
+    assert.match(admin, /systemAdminApi\.getInterfaceState\(\)/);
 });
 
 test("AI dock exposes the required themed surfaces and states", async () => {

@@ -551,6 +551,29 @@ function catalogIssues(payload) {
         .map((issue) => ({ ...issue }));
 }
 
+/**
+ * 重新读取业务与系统模块目录，并合并到当前偏好状态。
+ *
+ * 模块治理 Action 可能由 AI 直接执行，不经过模组设置自己的保存回调；因此任何读取
+ * 管理快照或 AI 执行结束的路径都必须重新读取宿主的 enabled 事实，不能只复用
+ * 启动时缓存的模块数组。
+ *
+ * @returns {Promise<object>} 规范化后的模块目录
+ */
+async function refreshModuleCatalogState() {
+    const [businessPayload, systemPayload] = await Promise.all([
+        api.getModules(),
+        api.getSystemModules()
+    ]);
+    const catalogs = normalizeModuleCatalogs(businessPayload, systemPayload);
+    state.moduleCatalogIssues = [
+        ...catalogIssues(businessPayload),
+        ...catalogIssues(systemPayload)
+    ];
+    applyCatalogState(catalogs, state.modulePreferences);
+    return catalogs;
+}
+
 function issuesForModule(moduleId) {
     return state.moduleCatalogIssues.filter((issue) =>
         String(issue.id ?? issue.moduleId ?? "") === moduleId);
@@ -878,15 +901,24 @@ async function waitForModulesBeforeAiTurn() {
  *
  * @param {object | null} execution 执行记录
  */
-function refreshAfterAiExecution(execution) {
+async function refreshAfterAiExecution(execution) {
     const changedModules = executionCompletedModules(execution);
     if (changedModules.length === 0) {
         return;
     }
-    void loadOverviewCounts();
+    try {
+        await refreshModuleCatalogState();
+        refreshVisibleFrameworkViews();
+        if (activeViewBecameUnavailable()) {
+            await navigate("overview");
+            return;
+        }
+    } catch {
+        // 目录刷新是执行完成后的辅助同步；失败时仍尝试重载当前受影响模块。
+    }
     const activeModule = moduleForView(state.activeView);
     if (activeModule && changedModules.includes(activeModule.moduleId)) {
-        void navigate(state.activeView);
+        await navigate(state.activeView);
     }
 }
 
@@ -1000,7 +1032,10 @@ function sameStringArray(left, right) {
 function createSystemAdminApi() {
     return Object.freeze({
         async getState() {
-            await systemAdminApi.getInterfaceState();
+            await Promise.all([
+                refreshModuleCatalogState(),
+                systemAdminApi.getInterfaceState()
+            ]);
             return systemAdminSnapshot();
         },
 
