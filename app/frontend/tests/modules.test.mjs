@@ -297,6 +297,29 @@ test("module_control bridge exposes the required systemAdmin surface", async () 
     assert.match(control, /protectedModule/);
 });
 
+test("module_calendar refreshes from terminal host events and cleans up subscriptions", async () => {
+    const calendarUrl = new URL(
+        "../../../Module/module_calendar/src/main/resources/orderly-ui/module.js",
+        import.meta.url
+    );
+    const calendar = await readFile(calendarUrl, "utf8");
+    const { calendarDataEvent } = await import(calendarUrl);
+    const moduleId = "module_calendar";
+
+    assert.equal(calendarDataEvent({ type: "STEP", moduleId, status: "COMPLETED" }, moduleId), true);
+    assert.equal(calendarDataEvent({ type: "STEP", moduleId, status: "FAILED" }, moduleId), true);
+    assert.equal(calendarDataEvent({ type: "ROLLBACK_STEP", moduleId, status: "ROLLED_BACK" }, moduleId), true);
+    assert.equal(calendarDataEvent({ type: "ROLLBACK_STEP", moduleId, status: "FAILED" }, moduleId), true);
+    assert.equal(calendarDataEvent({ type: "STEP", moduleId, status: "RUNNING" }, moduleId), false);
+    assert.equal(calendarDataEvent({ type: "STEP", moduleId: "module_todo", status: "COMPLETED" }, moduleId), false);
+    assert.equal(calendarDataEvent({ type: "EXECUTION", moduleId: null, status: "COMPLETED" }, moduleId), false);
+    assert.match(calendar, /context\.subscribeEvents\(handleFrameworkEvent\)/);
+    assert.match(calendar, /CALENDAR_EVENT_REFRESH_DELAY/);
+    assert.match(calendar, /window\.clearTimeout\(dataRefreshTimer\)/);
+    assert.match(calendar, /dataRefreshInFlight/);
+    assert.match(calendar, /unsubscribeEvents\?\.\(\)/);
+});
+
 test("module_control renders interface AI switches with locking states", async () => {
     const control = await readFile(
         new URL(

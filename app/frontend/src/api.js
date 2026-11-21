@@ -67,6 +67,7 @@ export class OrderlyApi {
         let response;
         try {
             response = await this.#fetch(`${this.#baseUrl}${path}`, {
+                cache: "no-store",
                 method,
                 signal,
                 headers: {

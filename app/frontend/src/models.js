@@ -428,8 +428,11 @@ export function normalizeEvent(raw, fallbackIndex = 0) {
     return {
         id: source.id == null ? null : String(source.id),
         sequence,
+        type: String(source.type ?? source.eventType ?? "").toUpperCase(),
         planId: String(source.planId ?? source.runId ?? source.taskId ?? ""),
         stepId: String(source.stepId ?? source.step ?? ""),
+        moduleId: String(source.moduleId ?? source.module ?? ""),
+        actionId: String(source.actionId ?? source.action ?? ""),
         origin: inferEventOrigin(source),
         title: String(
             source.title

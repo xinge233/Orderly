@@ -5,7 +5,8 @@
  * 依赖：orderly-ui/module.json 提供显示与轮播设置；
  * 查询依赖 calendar.list、calendar.todo.list、calendar.space.list；
  * 宿主 mount context 提供 settings、element、icon、query、executeAction、moduleDataUrl、toast 等能力。
- * 隔离：查询或动作失败只降级当前日历视图；视图移除时停止定时器并断开生命周期观察器。
+ * 隔离：查询或动作失败只降级当前日历视图；订阅宿主终态事件合并刷新，视图移除时停止
+ * 定时器、取消订阅并断开生命周期观察器。
  * 天气缓存和顶部文本仅是当前视图的本地辅助 UI 状态，不写入模块业务集合。
  */
 
@@ -13,6 +14,29 @@ const WEATHER_CACHE_KEY = "orderly.calendar.weather.v1";
 const FOCUS_TITLE_KEY = "orderly.calendar.focus-title.v1";
 const WEATHER_TTL = 15 * 60 * 1000;
 const MANUAL_SPACE_PAUSE = 60 * 1000;
+const CALENDAR_EVENT_REFRESH_DELAY = 180;
+
+/**
+ * 判断宿主执行事件是否可能改变日程模块数据。
+ *
+ * @param {object} event 宿主执行事件
+ * @param {string} moduleId 当前模块 ID
+ * @returns {boolean} 需要重新读取权威数据时返回 true
+ */
+export function calendarDataEvent(event, moduleId) {
+    if (!event || event.moduleId !== moduleId) {
+        return false;
+    }
+    const type = String(event.type ?? "").toUpperCase();
+    const status = String(event.status ?? "").toUpperCase();
+    if (type === "STEP") {
+        return status === "COMPLETED" || status === "FAILED";
+    }
+    if (type === "ROLLBACK_STEP") {
+        return status === "ROLLED_BACK" || status === "FAILED";
+    }
+    return false;
+}
 
 const WEATHER_LABELS = new Map([
     [0, "晴朗"],
@@ -62,6 +86,11 @@ export default async function mount(root, context) {
         weather: readWeatherCache(),
         manualSpacePauseUntil: 0
     };
+    let dataRefreshTimer = null;
+    let dataRefreshInFlight = null;
+    let dataRefreshRequested = false;
+    let lastCalendarEventSeq = 0;
+    let unsubscribeEvents = null;
 
     const workspace = make("section", "calendar-workspace");
     const hero = make("div", "calendar-hero");
@@ -189,12 +218,84 @@ export default async function mount(root, context) {
             if (rotationTimer) {
                 window.clearInterval(rotationTimer);
             }
+            cleanupDataRefresh();
             disconnectObserver.disconnect();
         }
     });
     disconnectObserver.observe(document.body, { childList: true, subtree: true });
 
-    await reloadData();
+    if (typeof context.subscribeEvents === "function") {
+        try {
+            unsubscribeEvents = context.subscribeEvents(handleFrameworkEvent);
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    await refreshData();
+
+    function handleFrameworkEvent(event) {
+        if (!workspace.isConnected) {
+            cleanupDataRefresh();
+            return;
+        }
+        if (!calendarDataEvent(event, context.module.moduleId)) {
+            return;
+        }
+        const sequence = Number(event.seq);
+        if (Number.isFinite(sequence)) {
+            if (sequence <= lastCalendarEventSeq) {
+                return;
+            }
+            lastCalendarEventSeq = sequence;
+        }
+        scheduleDataRefresh();
+    }
+
+    function scheduleDataRefresh() {
+        if (!workspace.isConnected) {
+            return;
+        }
+        if (dataRefreshTimer !== null) {
+            window.clearTimeout(dataRefreshTimer);
+        }
+        dataRefreshTimer = window.setTimeout(() => {
+            dataRefreshTimer = null;
+            if (!workspace.isConnected) {
+                cleanupDataRefresh();
+                return;
+            }
+            void refreshData();
+        }, CALENDAR_EVENT_REFRESH_DELAY);
+    }
+
+    async function refreshData() {
+        if (dataRefreshInFlight) {
+            dataRefreshRequested = true;
+            await dataRefreshInFlight;
+            return;
+        }
+        dataRefreshInFlight = reloadData();
+        try {
+            await dataRefreshInFlight;
+        } finally {
+            dataRefreshInFlight = null;
+            if (dataRefreshRequested && workspace.isConnected) {
+                dataRefreshRequested = false;
+                scheduleDataRefresh();
+            }
+        }
+    }
+
+    function cleanupDataRefresh() {
+        if (dataRefreshTimer !== null) {
+            window.clearTimeout(dataRefreshTimer);
+            dataRefreshTimer = null;
+        }
+        dataRefreshRequested = false;
+        unsubscribeEvents?.();
+        unsubscribeEvents = null;
+    }
 
     async function reloadData() {
         // 三类集合共同组成一个视图快照；全部成功后再替换，避免局部成功造成跨代数据混排。
@@ -204,6 +305,9 @@ export default async function mount(root, context) {
                 context.query("calendar.todo.list"),
                 context.query("calendar.space.list")
             ]);
+            if (!workspace.isConnected) {
+                return;
+            }
             state.events = Array.isArray(events?.items) ? events.items : [];
             state.todos = Array.isArray(todos?.items) ? todos.items : [];
             state.spaces = Array.isArray(spaces?.items) ? spaces.items : [];
@@ -382,7 +486,7 @@ export default async function mount(root, context) {
                             ? "calendar.todo.complete"
                             : "calendar.todo.reopen";
                         await runAction(actionId, { id: todo.id });
-                        await reloadData();
+                        await refreshData();
                     } catch (error) {
                         showError(error);
                         checkbox.checked = !checkbox.checked;
@@ -487,7 +591,7 @@ export default async function mount(root, context) {
         }
         try {
             await runAction("calendar.space.delete", { spaceId: space.id });
-            await reloadData();
+            await refreshData();
         } catch (error) {
             showError(error);
         }
@@ -575,7 +679,7 @@ export default async function mount(root, context) {
                     );
                 }
                 dialog.close();
-                await reloadData();
+                await refreshData();
             } catch (error) {
                 showError(error);
             } finally {
@@ -630,7 +734,7 @@ export default async function mount(root, context) {
                     await runAction("calendar.todo.create", argumentsValue);
                 }
                 dialog.close();
-                await reloadData();
+                await refreshData();
             } catch (error) {
                 showError(error);
             } finally {
@@ -677,7 +781,7 @@ export default async function mount(root, context) {
             try {
                 await runAction("calendar.event.cancel", { eventId: id });
                 dialog.close();
-                await reloadData();
+                await refreshData();
             } catch (error) {
                 showError(error);
             }
@@ -701,7 +805,7 @@ export default async function mount(root, context) {
                     });
                 }
                 dialog.close();
-                await reloadData();
+                await refreshData();
             } catch (error) {
                 showError(error);
             } finally {

@@ -6,6 +6,7 @@ import {
     joinPath,
     mergeEvents,
     normalizeAiQueryResponse,
+    normalizeEvent,
     normalizePlan,
     parentPath,
     requiresDeletePhrase,
@@ -188,6 +189,23 @@ test("events are deduplicated and ordered by sequence", () => {
         [[1, "COMPLETED"], [2, "COMPLETED"], [3, "ROLLED_BACK"]]
     );
     assert.equal(result[1].message, "完成");
+});
+
+test("events preserve execution identity for module event routing", () => {
+    const event = normalizeEvent({
+        seq: 42,
+        type: "step",
+        moduleId: "module_calendar",
+        actionId: "calendar.event.create",
+        status: "completed",
+        message: "已创建日程"
+    });
+
+    assert.equal(event.sequence, 42);
+    assert.equal(event.type, "STEP");
+    assert.equal(event.moduleId, "module_calendar");
+    assert.equal(event.actionId, "calendar.event.create");
+    assert.equal(event.status, "COMPLETED");
 });
 
 test("path and size helpers remain deterministic", () => {

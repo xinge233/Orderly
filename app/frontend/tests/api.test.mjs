@@ -19,6 +19,7 @@ test("API client sends JSON and returns parsed payload", async () => {
 
     assert.equal(captured.url, "/api/plans");
     assert.equal(captured.options.method, "POST");
+    assert.equal(captured.options.cache, "no-store");
     assert.equal(captured.options.headers["Content-Type"], "application/json");
     assert.deepEqual(JSON.parse(captured.options.body), { goal: "创建目录 归档" });
     assert.equal(result.planId, "p-1");
