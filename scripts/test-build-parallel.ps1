@@ -184,7 +184,7 @@ function Initialize-Fixture {
     [System.IO.Directory]::CreateDirectory($traceRoot) | Out-Null
     [System.IO.Directory]::CreateDirectory($driverLogRoot) | Out-Null
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot "build.ps1") -Destination $fixtureBuildScript
-    foreach ($moduleName in @("module_control", "module_alpha", "module_beta", "module_gamma")) {
+    foreach ($moduleName in @("module_system_control", "module_alpha", "module_beta", "module_gamma")) {
         New-FixtureModule $moduleName
     }
 
@@ -299,10 +299,11 @@ function New-FixtureModuleJar {
         Add-ZipText $archive "orderly-ui/module.js" "export default function mount() {}"
         Add-ZipText $archive "orderly-ui/module.css" ".fixture { color: var(--color-text); }"
         $contract = [ordered]@{ moduleId = $ModuleName }
-        if ($ModuleName -eq "module_control") {
+        if ($ModuleName -eq "module_system_control") {
             $contract.system = [ordered]@{
                 role = "MODULE_CONTROL"
                 protected = $true
+                capabilities = @("MODULE_GOVERNANCE")
             }
         }
         Add-ZipText $archive "orderly-modules/$ModuleName.json" (
@@ -820,12 +821,14 @@ try {
     }
     $bootstrapModules = @(Get-TraceEvents $bootstrapResult.TraceDirectory |
         Where-Object { $_.kind -eq "module" })
-    if ($bootstrapModules.Count -ne 1 -or $bootstrapModules[0].module -ne "module_control") {
-        throw "BootstrapOnly 应只构建 module_control，实际：$($bootstrapModules.module -join ', ')"
+    if ($bootstrapModules.Count -ne 1 -or
+            $bootstrapModules[0].module -ne "module_system_control") {
+        throw "BootstrapOnly 应只构建 module_system_control，实际：$($bootstrapModules.module -join ', ')"
     }
     $bootstrapStaged = @(Get-StagedModuleNames)
-    if ($bootstrapStaged.Count -ne 1 -or $bootstrapStaged[0] -ne "module_control") {
-        throw "BootstrapOnly 发布目录应只含 module_control.jar，实际：$($bootstrapStaged -join ', ')"
+    if ($bootstrapStaged.Count -ne 1 -or
+            $bootstrapStaged[0] -ne "module_system_control") {
+        throw "BootstrapOnly 发布目录应只含 module_system_control.jar，实际：$($bootstrapStaged -join ', ')"
     }
     $bootstrapHost = Get-HostFingerprint
     if ([string]::IsNullOrWhiteSpace($bootstrapHost)) {
@@ -859,7 +862,7 @@ try {
     }
     $moduleOnlyStaged = @(Get-StagedModuleNames)
     if ($moduleOnlyStaged.Count -ne 2 -or
-            $moduleOnlyStaged -notcontains "module_control" -or
+            $moduleOnlyStaged -notcontains "module_system_control" -or
             $moduleOnlyStaged -notcontains "module_alpha") {
         throw "ModulesOnly 发布结果不正确：$($moduleOnlyStaged -join ', ')"
     }

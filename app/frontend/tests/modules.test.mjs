@@ -133,14 +133,18 @@ test("business and system catalogs split without trusting business system metada
         {
             modules: [
                 { moduleId: "module_todo", order: 20, enabled: false },
-                { moduleId: "module_control", system: { privileged: true } }
+                { moduleId: "module_system_control", system: { privileged: true } }
             ]
         },
         {
             systemModules: [{
-                moduleId: "module_control",
+                moduleId: "module_system_control",
                 order: 10000,
-                system: { role: "MODULE_CONTROL", protected: true }
+                system: {
+                    role: "MODULE_CONTROL",
+                    protected: true,
+                    capabilities: ["MODULE_GOVERNANCE"]
+                }
             }]
         }
     );
@@ -149,7 +153,7 @@ test("business and system catalogs split without trusting business system metada
         catalogs.modules.map((module) => [module.moduleId, module.source]),
         [
             ["module_todo", "business"],
-            ["module_control", "system"]
+            ["module_system_control", "system"]
         ]
     );
     assert.equal(isBusinessModule(catalogs.businessModules[0]), true);
@@ -164,19 +168,23 @@ test("disabled business modules are filtered while system modules remain availab
             { moduleId: "module_enabled", enabled: true }
         ],
         [{
-            moduleId: "module_control",
+            moduleId: "module_system_control",
             enabled: false,
             order: 10000,
-            system: { role: "MODULE_CONTROL", protected: true }
+            system: {
+                role: "MODULE_CONTROL",
+                protected: true,
+                capabilities: ["MODULE_GOVERNANCE"]
+            }
         }]
     );
     const visibleIds = catalogs.modules.filter(isModuleVisible)
         .map((module) => module.moduleId);
 
-    assert.deepEqual(visibleIds, ["module_enabled", "module_control"]);
+    assert.deepEqual(visibleIds, ["module_enabled", "module_system_control"]);
     assert.deepEqual(
         reconcileModulePreferences(catalogs.modules, {}).sidebarOrder,
-        ["module_disabled", "module_enabled", "module_control"]
+        ["module_disabled", "module_enabled", "module_system_control"]
     );
 });
 
@@ -194,7 +202,7 @@ test("background module builds expose only safe pending display states", () => {
                 message: "正在构建"
             },
             {
-                sourceName: "module_control",
+                sourceName: "module_system_control",
                 status: "READY"
             },
             {
@@ -212,7 +220,7 @@ test("background module builds expose only safe pending display states", () => {
     assert.equal(snapshot.complete, false);
     assert.deepEqual(snapshot.modules.map((entry) => entry.sourceName), ["module_todo"]);
     assert.deepEqual(
-        pendingModuleBuilds(snapshot, [{ moduleId: "module_control" }])
+        pendingModuleBuilds(snapshot, [{ moduleId: "module_system_control" }])
             .map((entry) => [entry.moduleId, entry.status]),
         [["module_todo", "BUILDING"]]
     );
@@ -223,23 +231,36 @@ test("background module builds expose only safe pending display states", () => {
     assert.equal(moduleBuildStatusLabel("FAILED"), "构建失败");
 });
 
-test("systemAdmin is injected only into the system module_control context", () => {
+test("systemAdmin is injected only into the system module_system_control context", () => {
     const business = {
-        moduleId: "module_control",
+        moduleId: "module_system_control",
         source: "business",
         enabled: true,
         system: { privileged: true }
     };
     const system = {
-        moduleId: "module_control",
+        moduleId: "module_system_control",
         source: "system",
         enabled: true,
-        system: { role: "MODULE_CONTROL", protected: true }
+        system: {
+            role: "MODULE_CONTROL",
+            protected: true,
+            capabilities: ["MODULE_GOVERNANCE"]
+        }
+    };
+    const protectedWithoutCapability = {
+        ...system,
+        system: {
+            role: "MODULE_CONTROL",
+            protected: true,
+            capabilities: []
+        }
     };
     const admin = { listManagementModules() {} };
 
     assert.equal(hasSystemAdminPrivilege(business), false);
     assert.equal(hasSystemAdminPrivilege(system), true);
+    assert.equal(hasSystemAdminPrivilege(protectedWithoutCapability), false);
     assert.equal("systemAdmin" in createModuleMountContext({
         module: business,
         context: {},
@@ -263,9 +284,13 @@ test("host preferences preserve valid order and reject stale module settings", (
             { moduleId: "module_new", order: 90 }
         ],
         [{
-            moduleId: "module_control",
+            moduleId: "module_system_control",
             order: 10000,
-            system: { role: "MODULE_CONTROL", protected: true }
+            system: {
+                role: "MODULE_CONTROL",
+                protected: true,
+                capabilities: ["MODULE_GOVERNANCE"]
+            }
         }]
     ).modules;
     const preferences = reconcileModulePreferences(modules, {
@@ -274,19 +299,19 @@ test("host preferences preserve valid order and reject stale module settings", (
         moduleSettings: {
             module_old: { compact: true },
             module_removed: { compact: false },
-            module_control: { unsafe: true }
+            module_system_control: { unsafe: true }
         }
     });
 
     assert.deepEqual(preferences.sidebarOrder, [
         "module_old",
         "module_new",
-        "module_control"
+        "module_system_control"
     ]);
     assert.deepEqual(preferences.managementOrder, [
         "module_new",
         "module_old",
-        "module_control"
+        "module_system_control"
     ]);
     assert.deepEqual(preferences.moduleSettings, {
         module_old: { compact: true }
@@ -297,7 +322,7 @@ test("host preferences preserve valid order and reject stale module settings", (
 test("module UI resolution preserves framework and duplicate view conflicts", () => {
     const modules = [
         { moduleId: "module_business", source: "business" },
-        { moduleId: "module_control", source: "system" }
+        { moduleId: "module_system_control", source: "system" }
     ];
     const systemUi = {
         view: { id: "shared", caption: "系统", icon: "modules" }
@@ -307,12 +332,12 @@ test("module UI resolution preserves framework and duplicate view conflicts", ()
             moduleId: "module_business",
             ui: { view: { id: "shared", caption: "业务", icon: "modules" } }
         },
-        { moduleId: "module_control", ui: systemUi }
+        { moduleId: "module_system_control", ui: systemUi }
     ]);
 
-    assert.equal(resolved.moduleUi.module_control, systemUi);
+    assert.equal(resolved.moduleUi.module_system_control, systemUi);
     assert.equal("module_business" in resolved.moduleUi, false);
-    assert.match(resolved.moduleErrors.module_business, /module_control/);
+    assert.match(resolved.moduleErrors.module_business, /module_system_control/);
 
     const frameworkConflict = resolveModuleUiCatalog([modules[0]], [{
         moduleId: "module_business",

@@ -87,9 +87,9 @@ class ModuleLazyLoadIntegrationTest {
         assertThat(preferences.snapshot().sidebarOrder())
                 .doesNotContain("module_refresh");
         assertThat(preferences.isEnabled("module_refresh")).isTrue();
-        preferences.updateSidebarOrder(List.of("module_business", "module_control"));
+        preferences.updateSidebarOrder(List.of("module_business", "module_system_control"));
         assertThat(preferences.snapshot().sidebarOrder())
-                .containsExactly("module_business", "module_control");
+                .containsExactly("module_business", "module_system_control");
         assertThatThrownBy(lifecycle::requireReadyForAi)
                 .isInstanceOf(com.orderly.host.api.ApiException.class)
                 .hasMessageContaining("AI 回合已暂缓");
@@ -119,7 +119,7 @@ class ModuleLazyLoadIntegrationTest {
                 .containsExactly("module_business", "module_refresh");
         assertThat(preferences.isEnabled("module_refresh")).isTrue();
         assertThat(preferences.snapshot().sidebarOrder())
-                .containsExactly("module_business", "module_refresh", "module_control");
+                .containsExactly("module_business", "module_refresh", "module_system_control");
 
         ModuleLifecycleService.Snapshot complete = lifecycle.snapshot();
         assertThat(complete.modules())
@@ -141,7 +141,7 @@ class ModuleLazyLoadIntegrationTest {
             Files.createDirectories(root.resolve("target"));
             TestModuleArchives.writeJar(
                     modules,
-                    "module_control.jar",
+                    "module_system_control.jar",
                     TestControlModule.class,
                     TestModuleArchives.controlContract(),
                     TestModuleArchives.controlUi()
@@ -154,7 +154,7 @@ class ModuleLazyLoadIntegrationTest {
                     TestModuleArchives.businessUi()
             );
             for (String moduleId : List.of(
-                    "module_control",
+                    "module_system_control",
                     "module_business",
                     "module_refresh"
             )) {

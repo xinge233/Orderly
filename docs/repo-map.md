@@ -20,7 +20,7 @@
 | `app/kernel/` | 模块 SPI、风险等级、调用与结果等跨端基础类型 |
 | `app/host/` | 模块加载、计划、授权、执行、快照、回滚、事件与 HTTP/SSE 外壳 |
 | `app/frontend/` | 本地静态界面、前端状态、设置和交互测试 |
-| `Module/` | 自包含业务模块与唯一的系统模块 `module_control` |
+| `Module/` | 自包含业务模块与宿主内置 `module_system_*` 受保护模块 |
 | `contracts/` | 计划、模块、模块 UI、主题和学习数据的契约与样例 |
 | `ai/` | Python 3.14 + FastAPI AI 服务、提示词、模型接入、会话、Query 选择和评测；凭据不进入仓库 |
 | `themes/` | 目录主题包，只包含清单、语义变量、动效和登记资源 |
@@ -32,7 +32,7 @@
 
 | 目录 | 入口职责 |
 |---|---|
-| `Module/module_control/` | 受保护系统模块；模块启停、顺序和设置治理 |
+| `Module/module_system_control/` | 唯一控制模块；模块启停、顺序和设置治理 |
 | `Module/module_fs/` | 沙箱文件查询、写动作、回收站与资料视图 |
 | `Module/module_todo/` | 待办查询与创建 |
 | `Module/module_calendar/` | 日程查询与时间修改 |

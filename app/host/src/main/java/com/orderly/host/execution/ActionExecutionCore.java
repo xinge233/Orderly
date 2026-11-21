@@ -7,6 +7,7 @@ import com.orderly.host.contract.ActionContract;
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.contract.OutputSchemaValidator;
+import com.orderly.host.contract.SystemModulePolicy;
 import com.orderly.host.event.ExecutionJournal;
 import com.orderly.host.modulecontrol.ModuleControlActionService;
 import com.orderly.host.modulecontrol.ModuleControlService;
@@ -257,12 +258,14 @@ public class ActionExecutionCore {
             Map<String, Object> output,
             String origin
     ) {
-        try (var ignored = usage.beginAction(moduleId, actionId)) {
+        String canonicalModuleId = SystemModulePolicy.canonicalModuleId(moduleId);
+        String canonicalActionId = SystemModulePolicy.canonicalActionId(actionId);
+        try (var ignored = usage.beginAction(canonicalModuleId, canonicalActionId)) {
             return rollbackInternal(
                     executionId,
                     stepId,
-                    moduleId,
-                    actionId,
+                    canonicalModuleId,
+                    canonicalActionId,
                     arguments,
                     snapshot,
                     output,
@@ -355,7 +358,10 @@ public class ActionExecutionCore {
 
     /** 判断目标是否为宿主白名单内的系统治理动作。 */
     public boolean isControlAction(String moduleId, String actionId) {
-        return moduleControlActions.supports(moduleId, actionId);
+        return moduleControlActions.supports(
+                SystemModulePolicy.canonicalModuleId(moduleId),
+                SystemModulePolicy.canonicalActionId(actionId)
+        );
     }
 
     /**

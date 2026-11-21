@@ -7,7 +7,7 @@
 #   -SkipTests 控制 Maven 构建是否跳测；-Offline 使用严格 Maven 离线模式；
 #   -MavenRepository 指定共享预热 Maven 仓库，默认开发使用 .m2-repository，离线使用包内 maven-repository。
 #   -MaxParallel 指定同时执行的模块 Maven clean verify 数量，默认 1 表示保持串行。
-#   -BootstrapOnly 只构建 module_control 和宿主，供框架先启动；业务模块由后台队列逐个构建。
+#   -BootstrapOnly 只构建 module_system_* 系统模块和宿主，供框架先启动；业务模块由后台队列逐个构建。
 #   -ModulesOnly 只构建指定业务模块，不重建宿主；-ModuleName 限定单个 module_* 源码目录。
 #   -SkipKernelInstall 供后台队列复用 BootstrapOnly 已安装的 kernel，避免每模块重复安装。
 #   -BackgroundWorker 由后台调度器持有仓库锁时使用；跳过本进程锁定并禁用运行时目录直接发布。
@@ -83,6 +83,8 @@ $candidateStagingRoot = Join-Path $runRoot "candidate-modules"
 $workerLogRoot = Join-Path $runRoot "logs"
 $workerRepositoryRoot = Join-Path $runRoot "maven-repositories"
 $rollbackRoot = Join-Path $runRoot "rollback"
+$systemSourcePrefix = "module_system_"
+$controlSource = "module_system_control"
 $buildLockTimeoutMilliseconds = 120000
 $script:mavenExecutable = $null
 
@@ -609,18 +611,42 @@ function Publish-CandidateModules {
                     throw "模块目录名与契约 moduleId 不一致：$($moduleDirectory.Name) -> $($contract.moduleId)"
                 }
                 if ($null -ne $contract.system) {
-                    if ($contract.system.role -ne "MODULE_CONTROL" -or $contract.system.protected -ne $true) {
-                        throw "模块 $($moduleDirectory.Name) 的 system 元数据必须为受保护的 MODULE_CONTROL。"
+                    if (-not ([string]$contract.moduleId).StartsWith(
+                            $systemSourcePrefix,
+                            [System.StringComparison]::Ordinal
+                        )) {
+                        throw "受保护系统模块必须使用 module_system_ 前缀：$($moduleDirectory.Name)"
+                    }
+                    if (@("MODULE_CONTROL", "SYSTEM_SERVICE") -notcontains [string]$contract.system.role -or
+                            $contract.system.protected -ne $true) {
+                        throw "模块 $($moduleDirectory.Name) 的 system 元数据必须声明受保护系统角色。"
+                    }
+                    $capabilities = @($contract.system.capabilities)
+                    if ($capabilities.Count -eq 0 -or
+                            @($capabilities | Where-Object {
+                                [string]$_ -notin @("MODULE_GOVERNANCE")
+                            }).Count -gt 0) {
+                        throw "模块 $($moduleDirectory.Name) 声明了不支持的系统能力。"
+                    }
+                    if ($contract.system.role -eq "MODULE_CONTROL" -and
+                            $capabilities -notcontains "MODULE_GOVERNANCE") {
+                        throw "MODULE_CONTROL 必须声明 MODULE_GOVERNANCE 能力。"
                     }
                     $systemModuleDirectories += $moduleDirectory.Name
                 }
+                elseif (([string]$contract.moduleId).StartsWith(
+                        $systemSourcePrefix,
+                        [System.StringComparison]::Ordinal
+                    )) {
+                    throw "module_system_ 前缀只允许宿主内置受保护模块使用：$($moduleDirectory.Name)"
+                }
             }
-            if ($moduleDirectory.Name -eq "module_control") {
+            if ($moduleDirectory.Name -eq $controlSource) {
                 $controlContracts = @($contractEntries | Where-Object {
-                    $_.FullName -match 'module_control\.json$'
+                    $_.FullName -match 'module_system_control\.json$'
                 })
                 if ($controlContracts.Count -ne 1) {
-                    throw "module_control 必须且只能声明一个 module_control.json 契约。"
+                    throw "module_system_control 必须且只能声明一个 module_system_control.json 契约。"
                 }
             }
         }
@@ -633,9 +659,8 @@ function Publish-CandidateModules {
 
     $systemModuleDirectories = @($systemModuleDirectories | Sort-Object -Unique)
     if ($RequireControlModule -and
-            ($systemModuleDirectories.Count -ne 1 -or
-                $systemModuleDirectories[0] -ne "module_control")) {
-        throw "宿主构建要求且仅允许 module_control 声明 MODULE_CONTROL，实际：$($systemModuleDirectories -join ', ')"
+            $systemModuleDirectories -notcontains $controlSource) {
+        throw "宿主构建要求受保护控制模块 $controlSource，实际系统模块：$($systemModuleDirectories -join ', ')"
     }
     if (-not $RequireControlModule -and $systemModuleDirectories.Count -ne 0) {
         throw "业务模块构建不得包含系统模块契约，实际：$($systemModuleDirectories -join ', ')"
@@ -901,7 +926,7 @@ function Remove-TestArtifacts {
                 $_.Name -like "zero-module-data-*" -or
                 $_.Name -like "zero-modules-*" -or
                 $_.Name -like "module-init-data-*" -or
-                $_.Name -like "module-control-fixture-*" -or
+                $_.Name -like "module-system-control-fixture-*" -or
                 $_.Name -like "module-refresh-fixture-*" -or
                 $_.Name -like "module-state-corruption-*" -or
                 $_.Name -like "module-folder-*" -or
@@ -938,20 +963,26 @@ try {
     $moduleDirectories = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "Module") -Directory -Filter "module_*" |
         Sort-Object Name)
     $moduleNames = @($moduleDirectories | ForEach-Object { $_.Name })
-    $controlModules = @($moduleDirectories | Where-Object { $_.Name -eq "module_control" })
+    $systemModules = @($moduleDirectories | Where-Object {
+        $_.Name.StartsWith($systemSourcePrefix, [System.StringComparison]::Ordinal)
+    })
+    $controlModules = @($moduleDirectories | Where-Object { $_.Name -eq $controlSource })
     if (-not $ModulesOnly -and $controlModules.Count -ne 1) {
         # 系统模块是宿主治理能力的唯一入口，缺失或重复都不能得到一个可启动的模块目录。
-        throw "宿主构建要求且仅允许一个 Module/module_control 源码目录，实际 $($controlModules.Count) 个。"
+        throw "宿主构建要求且仅允许一个 Module/$controlSource 源码目录，实际 $($controlModules.Count) 个。"
     }
     Write-Host "扫描到 $($moduleNames.Count) 个模块源码：$($moduleNames -join ', ')"
 
     $moduleDirectoriesToBuild = if ($BootstrapOnly) {
-        @($controlModules)
+        @($systemModules)
     }
     elseif ($ModulesOnly -and -not [string]::IsNullOrWhiteSpace($ModuleName)) {
         if ($ModuleName -notmatch '^module_[a-z0-9_]+$' -or
-                $ModuleName -eq "module_control") {
-            throw "-ModuleName 必须是已发现的普通业务模块名，且不能为 module_control：$ModuleName"
+                $ModuleName.StartsWith(
+                    $systemSourcePrefix,
+                    [System.StringComparison]::Ordinal
+                )) {
+            throw "-ModuleName 必须是已发现的普通业务模块名，且不能使用 module_system_ 前缀：$ModuleName"
         }
         $selected = @($moduleDirectories | Where-Object { $_.Name -eq $ModuleName })
         if ($selected.Count -ne 1) {
@@ -960,7 +991,12 @@ try {
         $selected
     }
     elseif ($ModulesOnly) {
-        @($moduleDirectories | Where-Object { $_.Name -ne "module_control" })
+        @($moduleDirectories | Where-Object {
+            -not $_.Name.StartsWith(
+                $systemSourcePrefix,
+                [System.StringComparison]::Ordinal
+            )
+        })
     }
     else {
         @($moduleDirectories)

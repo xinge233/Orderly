@@ -1,0 +1,9 @@
+{
+  "moduleId": "module_system_spoof",
+  "title": "非法保留前缀",
+  "description": "用户模块不得占用系统保留前缀。",
+  "order": 10,
+  "actions": [],
+  "queries": [],
+  "plannerRules": []
+}

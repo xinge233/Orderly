@@ -99,7 +99,7 @@ test("API client uses the module governance endpoints and action header", async 
     await api.getSystemModules();
     await api.getModulePreferences();
     await api.setModuleEnabled("module/todo", false);
-    await api.saveSidebarModuleOrder(["module_todo", "module_control"]);
+    await api.saveSidebarModuleOrder(["module_todo", "module_system_control"]);
     await api.saveManagementModuleOrder(["module_todo"]);
     await api.saveModuleSettings("module/todo", { compact: true });
     await api.resetModuleSettings("module/todo");
@@ -128,7 +128,7 @@ test("API client uses the module governance endpoints and action header", async 
         ]),
         [
             ["PATCH", { enabled: false }],
-            ["PUT", { moduleIds: ["module_todo", "module_control"] }],
+            ["PUT", { moduleIds: ["module_todo", "module_system_control"] }],
             ["PUT", { moduleIds: ["module_todo"] }],
             ["PUT", { compact: true }],
             ["POST", null]

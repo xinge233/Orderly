@@ -58,14 +58,14 @@ class ZeroModuleIntegrationTest {
         assertThat(catalog.businessModules()).isEmpty();
         assertThat(catalog.systemModules())
                 .extracting(module -> module.moduleId())
-                .containsExactly("module_control");
+                .containsExactly("module_system_control");
         mockMvc.perform(get("/api/modules"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
         mockMvc.perform(get("/api/system-modules"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].moduleId").value("module_control"))
+                .andExpect(jsonPath("$[0].moduleId").value("module_system_control"))
                 .andExpect(jsonPath("$[0].enabled").value(true));
         assertThat(runtime.listDirectory(runtime.workspaceRoot())).isEmpty();
         mockMvc.perform(get("/api/modules/module_fs/query/fs.list"))
@@ -91,13 +91,13 @@ class ZeroModuleIntegrationTest {
         if (configured == null || configured.isBlank()) {
             throw new IllegalStateException("测试缺少 orderly.modules-dir");
         }
-        Path controlJar = Path.of(configured).resolve("module_control.jar").toAbsolutePath().normalize();
+        Path controlJar = Path.of(configured).resolve("module_system_control.jar").toAbsolutePath().normalize();
         Path directory = Path.of("target", "zero-modules-" + UUID.randomUUID())
                 .toAbsolutePath()
                 .normalize();
         try {
             Files.createDirectories(directory);
-            Files.copy(controlJar, directory.resolve("module_control.jar"));
+            Files.copy(controlJar, directory.resolve("module_system_control.jar"));
             return directory;
         } catch (Exception exception) {
             throw new IllegalStateException("创建 zero-module 测试模块目录失败", exception);

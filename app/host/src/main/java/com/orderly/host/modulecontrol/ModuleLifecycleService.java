@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderly.host.api.ApiException;
 import com.orderly.host.contract.ContractCatalog;
+import com.orderly.host.contract.SystemModulePolicy;
 import com.orderly.host.event.ExecutionJournal;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -34,7 +35,6 @@ import java.util.stream.Stream;
 @Service
 public class ModuleLifecycleService {
 
-    private static final String CONTROL_SOURCE = "module_control";
     private static final Pattern SOURCE_NAME = Pattern.compile("module_[a-z0-9_]+");
     private static final Set<String> BUILD_STATUSES =
             Set.of("QUEUED", "BUILDING", "READY", "FAILED");
@@ -184,7 +184,7 @@ public class ModuleLifecycleService {
 
     private Path requireSource(String sourceName) {
         if (sourceName == null || !SOURCE_NAME.matcher(sourceName).matches()
-                || CONTROL_SOURCE.equals(sourceName)) {
+                || SystemModulePolicy.hasReservedPrefix(sourceName)) {
             throw invalidSource(sourceName);
         }
         Path candidate = moduleSourceDirectory.resolve(sourceName).normalize();
@@ -214,7 +214,8 @@ public class ModuleLifecycleService {
                     .filter(path -> Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS))
                     .filter(path -> !Files.isSymbolicLink(path))
                     .filter(path -> SOURCE_NAME.matcher(path.getFileName().toString()).matches())
-                    .filter(path -> !CONTROL_SOURCE.equals(path.getFileName().toString()))
+                    .filter(path ->
+                            !SystemModulePolicy.hasReservedPrefix(path.getFileName().toString()))
                     .sorted(Comparator.comparing(path -> path.getFileName().toString()))
                     .toList();
         } catch (IOException exception) {
@@ -243,7 +244,7 @@ public class ModuleLifecycleService {
                 String sourceName = node.path("sourceName").asText("");
                 String status = node.path("status").asText("");
                 if (!SOURCE_NAME.matcher(sourceName).matches()
-                        || CONTROL_SOURCE.equals(sourceName)
+                        || SystemModulePolicy.hasReservedPrefix(sourceName)
                         || !BUILD_STATUSES.contains(status)) {
                     continue;
                 }
@@ -281,7 +282,7 @@ public class ModuleLifecycleService {
                     Files.readString(priorityFile, StandardCharsets.UTF_8)
             ).path("sourceName").asText("");
             return SOURCE_NAME.matcher(sourceName).matches()
-                    && !CONTROL_SOURCE.equals(sourceName)
+                    && !SystemModulePolicy.hasReservedPrefix(sourceName)
                     ? sourceName
                     : null;
         } catch (IOException | RuntimeException exception) {

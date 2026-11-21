@@ -8,7 +8,7 @@ import com.orderly.kernel.OrderlyModule;
 import java.util.Map;
 
 /**
- * 模组设置系统模块（{@code module_control}）。
+ * 模组设置系统模块（{@code module_system_control}）。
  *
  * <p>该模块自包含受保护的系统管理视图元数据，并声明宿主治理查询与动作。实际查询、
  * 启停和接口开关由宿主专用治理服务执行；模块执行器不读取或改写其他模块状态，也不允许
@@ -16,7 +16,7 @@ import java.util.Map;
  */
 public final class ModuleControl implements OrderlyModule {
 
-    public static final String MODULE_ID = "module_control";
+    public static final String MODULE_ID = "module_system_control";
 
     /** 返回与受保护系统模块契约一致的稳定标识。 */
     @Override

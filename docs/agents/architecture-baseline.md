@@ -46,7 +46,7 @@ app/
   frontend/                静态本地界面
   host/                    Java 控制服务、授权、调度、快照、事件与 API
 Module/
-  module_control/           系统模块：模块启停、排序与设置入口
+  module_system_control/    控制模块：模块启停、排序与设置入口
   module_fs/                文件能力、契约与逆操作
   module_todo/              待办能力、契约与逆操作
   module_calendar/          日程能力、契约与逆操作
@@ -62,8 +62,9 @@ docs/                       产品与协作文档
 
 - V7 采用 `Module/` 作为一级目录；不得在未更新本文件前创建 `modules/`。
 - 模块目录使用 `module_fs`、`module_todo`、`module_calendar` 等清晰标识。
-- `module_control` 是唯一受保护的系统模块，不属于业务模块目录；零业务模块仍要求该系统模块存在。
-- 构建脚本自动发现 `Module/module_*`，前台完整构建默认串行，后台渐进构建默认两路并行且单线程发布模块 JAR；宿主启动时直接扫描运行模块目录并加载 JAR，不维护单独索引，也不要求在根 `pom.xml` 或 host `pom.xml` 登记具体模块。
+- `module_system_control` 是唯一受保护的控制模块，不属于业务模块目录；零业务模块仍要求该系统模块存在。
+- `module_system_` 是宿主内置受保护模块的保留前缀；普通用户模块不得使用。该前缀只提供可读标记，系统身份仍由 `system.protected`、角色、能力和宿主内置准入清单共同决定。
+- 构建脚本自动发现 `Module/module_*`，其中系统模块使用 `Module/module_system_*`。前台完整构建默认串行，后台渐进构建默认两路并行且单线程发布模块 JAR；宿主启动时直接扫描运行模块目录并加载 JAR，不维护单独索引，也不要求在根 `pom.xml` 或 host `pom.xml` 登记具体模块。
 - 具体编译产物由 Maven 管理；不把 `target/` 或本地运行数据提交到仓库。
 
 ## 4. 框架与模块边界
@@ -103,8 +104,8 @@ docs/                       产品与协作文档
 
 - host 不在编译期依赖具体模块，也不把模块打进 host fat JAR。构建脚本只把当前实际模块逐个复制到 `target/orderly-modules/` 运行时目录。
 - 宿主启动时按文件名稳定排序扫描该目录，用 `URLClassLoader` 加载外部 JAR；其父加载器共享 kernel SPI。宿主从 `orderly-modules/*.json` 读取契约，并用 `ServiceLoader.load(OrderlyModule.class, loader)` 绑定执行器。
-- 启动时必须恰好存在一个声明 `system.role=MODULE_CONTROL` 且受保护的 `module_control`。系统角色缺失或重复、契约与执行器集合不一致、重复模块或重复动作必须阻止启动；零业务模块仍合法。
-- 业务模块与系统模块分开暴露：`GET /api/modules` 只返回业务模块并附带运行态 `enabled`，`GET /api/system-modules` 返回系统模块且恒为启用。系统模块不能通过业务启停、排序或设置接口修改；`module_control` 仅可暴露白名单治理查询和动作，实际执行仍由宿主专用治理服务担保。
+- 启动时必须恰好存在一个声明 `system.role=MODULE_CONTROL`、`system.protected=true` 与 `MODULE_GOVERNANCE` 能力的 `module_system_control`。`SYSTEM_SERVICE` 可以登记宿主内置系统服务，但不得声明治理能力；所有系统模块必须使用保留前缀并命中宿主内置准入清单。控制角色缺失或重复、能力不匹配、契约与执行器集合不一致、重复模块或重复动作必须阻止启动；零业务模块仍合法。
+- 业务模块与系统模块分开暴露：`GET /api/modules` 只返回业务模块并附带运行态 `enabled`，`GET /api/system-modules` 返回系统模块且恒为启用。系统模块不能通过业务启停、排序或设置接口修改；`module_system_control` 仅可暴露白名单治理查询和动作，实际执行仍由宿主专用治理服务担保。
 - 模块查询使用 `GET /api/modules/{moduleId}/query/{queryId}`；模块 UI 只从 JAR 的 `orderly-ui/` 白名单资源读取并提供给 `GET /api/modules/{moduleId}/ui/{asset}`。框架不得为具体模块增加查询、端点或视图分支。
 - 后台渐进启动默认同时运行 2 个模块 Maven worker，可在系统设置中调整为 1-4。worker 使用隔离可写 Maven 仓库并只产出候选 JAR；状态文件写入、JAR 校验、运行时原子发布和宿主刷新必须由单一父进程串行完成。降低并发不终止已运行 worker，提高并发仅影响后续调度。
 - 运行中只允许通过 `POST /api/system/modules/refresh` 显式追加新模块。刷新扫描 `Module/module_*` 源码目录，并要求 `target/orderly-modules/` 已存在对应 JAR；不自动编译源码。新增模块默认启用并写入治理状态，未构建源码返回 `MODULE_NOT_BUILT`。
@@ -116,10 +117,10 @@ docs/                       产品与协作文档
 ### 模块治理状态
 
 - 宿主在 `.orderly-data/module-governance.json` 单一 JSON 中持久化业务模块 `enabled`、全部运行模块的两套顺序（`sidebarOrder`、`managementOrder`）、`moduleSettings` 以及 Action/Query 的动态 `aiCallableEnabled`；写入使用同目录临时文件加原子替换。
-- 新业务模块默认启用，并按契约 `order` 插入 `module_control` 之前。`sidebarOrder` 和 `managementOrder` 都包含业务模块与系统模块 ID；失效模块 ID 从运行偏好中清理，系统模块可排序但不可停用或写入业务设置。
+- 新业务模块默认启用，并按契约 `order` 插入 `module_system_control` 之前。`sidebarOrder` 和 `managementOrder` 都包含业务模块与系统模块 ID；旧治理文件中的 `module_control` 顺序 ID 读取时迁移为 `module_system_control`。失效模块 ID 从运行偏好中清理，系统模块可排序但不可停用或写入业务设置。
 - 状态文件损坏必须产生包含文件路径和原因的明确启动错误，不得静默回退为空状态。
 - 模块设置定义来自模块 JAR 的 `orderly-ui/module.json`。宿主校验字段 key 唯一、默认值、select options 与默认值归属、integer/text 范围，并拒绝未声明字段和错误类型。
-- 业务 Action/Query 的 `aiCallableEnabled` 只属于宿主运行治理，默认开启并可由 `module_control` 切换；模块契约不得声明静态 AI 权限。`module_control` 自身不参与业务接口开关治理，但其固定治理 Action/Query 可进入受控工具卡，动作必须单独执行并复用宿主确认、快照、审计和回滚。动态开关只限制 AI，不阻断模块自身 Query；Query 开关控制已接入的 AI Query。未执行独立 AI 计划引用或执行中的 Action 由宿主标记“使用中”并拒绝关闭；计划确认时原子转换为整次执行占用，结束或失败后释放。旧版计划不参与。
+- 业务 Action/Query 的 `aiCallableEnabled` 只属于宿主运行治理，默认开启并可由 `module_system_control` 切换；模块契约不得声明静态 AI 权限。`module_system_control` 自身不参与业务接口开关治理，但其固定治理 Action/Query 可进入受控工具卡，动作必须单独执行并复用宿主确认、快照、审计和回滚。动态开关只限制 AI，不阻断模块自身 Query；Query 开关控制已接入的 AI Query。未执行独立 AI 计划引用或执行中的 Action 由宿主标记“使用中”并拒绝关闭；计划确认时原子转换为整次执行占用，结束或失败后释放。旧版计划不参与。
 - 模块查询、计划规则、计划生成、计划确认、AI Action 直执和执行前检查都必须尊重业务模块 `enabled`。执行期间禁止停用；回滚不检查 `enabled`，始终允许按快照恢复。
 - 开关、设置、两类排序、刷新和打开模块源码目录都必须写入审计事件。打开目录只接受 Windows，只打开配置的 `orderly.module-source-dir`，不接受客户端路径。
 
@@ -182,7 +183,7 @@ docs/                       产品与协作文档
 - 写入和删除在用户明确确认前不产生真实变化；删除进入项目回收站。
 - 计划默认隐藏，设置启用后才开放前端入口和计划 API；历史记录始终可用。
 - 总体 AI Action 数组顺序执行，首次失败停止并逆序回滚此前完成的 Action。
-- 业务模块默认允许 AI 调用，用户通过 `module_control` 动态关闭；受保护系统的治理动作必须单独执行，模块间不得直接互调。
+- 业务模块默认允许 AI 调用，用户通过 `module_system_control` 动态关闭；受保护系统的治理动作必须单独执行，模块间不得直接互调。
 - Action 输出引用只能指向此前完成的 Action，并由宿主解析和类型校验。
 - 文件、待办、日程至少各有一个可执行动作，写操作能够逆序回滚。
 - 框架不硬编码具体模块业务，工具元数据来自统一契约来源。

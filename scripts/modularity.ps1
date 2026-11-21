@@ -545,12 +545,13 @@ function Assert-ModuleIds([string[]]$Expected) {
 function Assert-SystemModule {
     $systemModules = @(Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/system-modules" -TimeoutSec 5 |
         ForEach-Object { $_ })
-    $control = @($systemModules | Where-Object { $_.moduleId -eq "module_control" })
+    $control = @($systemModules | Where-Object { $_.moduleId -eq "module_system_control" })
     if ($control.Count -ne 1 -or $control[0].enabled -ne $true -or
-            $control[0].system.role -ne "MODULE_CONTROL") {
-        throw "系统模块目录未唯一返回启用状态的 module_control。"
+            $control[0].system.role -ne "MODULE_CONTROL" -or
+            @($control[0].system.capabilities) -notcontains "MODULE_GOVERNANCE") {
+        throw "系统模块目录未唯一返回启用且具备治理能力的 module_system_control。"
     }
-    Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/module_control/ui/module.json" 200
+    Assert-HttpStatus "http://127.0.0.1:$Port/api/modules/module_system_control/ui/module.json" 200
 }
 
 function Assert-HttpStatus([string]$Uri, [int]$ExpectedStatus) {
@@ -600,11 +601,15 @@ try {
     New-Item -ItemType Directory -Path $backupRoot | Out-Null
     New-Item -ItemType Directory -Path $dataRoot | Out-Null
     $allBaselineModules = @(Get-ChildItem -LiteralPath $moduleRoot -Directory -Filter "module_*" | Sort-Object Name)
-    $controlModules = @($allBaselineModules | Where-Object { $_.Name -eq "module_control" })
+    $controlModules = @($allBaselineModules | Where-Object {
+        $_.Name -eq "module_system_control"
+    })
     if ($controlModules.Count -ne 1) {
-        throw "模块化验收要求唯一 Module/module_control 系统模块。"
+        throw "模块化验收要求唯一 Module/module_system_control 系统模块。"
     }
-    $baselineModules = @($allBaselineModules | Where-Object { $_.Name -ne "module_control" })
+    $baselineModules = @($allBaselineModules | Where-Object {
+        -not $_.Name.StartsWith("module_system_", [System.StringComparison]::Ordinal)
+    })
     if ($baselineModules.Count -eq 0) { throw "模块化验收至少需要一个模块源目录。" }
     $baselineIds = @($baselineModules | ForEach-Object { $_.Name })
 
@@ -647,10 +652,12 @@ try {
     if ($question.kind -ne "QUESTION") { throw "缺少模块时计划未安全转为 QUESTION。" }
     Stop-Orderly
 
-    # 阶段 3 保留 module_control 而移出全部业务模块，验证零业务模块仍可启动且不暴露陈旧接口。
+    # 阶段 3 保留系统模块而移出全部业务模块，验证零业务模块仍可启动且不暴露陈旧接口。
     Write-Host "[3/6] 移出全部模块"
     $left = @(Get-ChildItem -LiteralPath $moduleRoot -Directory -Filter "module_*" |
-        Where-Object { $_.Name -ne "module_control" } |
+        Where-Object {
+            -not $_.Name.StartsWith("module_system_", [System.StringComparison]::Ordinal)
+        } |
         Sort-Object Name)
     foreach ($module in $left) { Move-ModuleToBackup $module }
     Invoke-Build

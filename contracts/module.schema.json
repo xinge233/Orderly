@@ -35,15 +35,63 @@
       "items": { "$ref": "#/$defs/plannerRule" }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "moduleId": { "pattern": "^module_system_" }
+        },
+        "required": ["moduleId"]
+      },
+      "then": { "required": ["system"] }
+    },
+    {
+      "if": { "required": ["system"] },
+      "then": {
+        "properties": {
+          "moduleId": { "pattern": "^module_system_" }
+        }
+      }
+    }
+  ],
   "$defs": {
     "systemMetadata": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["role", "protected"],
+      "required": ["role", "protected", "capabilities"],
       "properties": {
-        "role": { "const": "MODULE_CONTROL" },
-        "protected": { "const": true }
-      }
+        "role": { "enum": ["MODULE_CONTROL", "SYSTEM_SERVICE"] },
+        "protected": { "const": true },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["MODULE_GOVERNANCE"] }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "role": { "const": "MODULE_CONTROL" } },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "capabilities": { "contains": { "const": "MODULE_GOVERNANCE" } }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "role": { "const": "SYSTEM_SERVICE" } },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "capabilities": { "not": { "contains": { "const": "MODULE_GOVERNANCE" } } }
+            }
+          }
+        }
+      ]
     },
     "parameter": {
       "type": "object",

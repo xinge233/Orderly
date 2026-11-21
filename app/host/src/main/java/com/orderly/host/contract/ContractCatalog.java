@@ -180,22 +180,47 @@ public class ContractCatalog implements AutoCloseable {
         }
     }
 
-    /** 启动阶段必须恰好存在一个受保护的控制模块。 */
+    /**
+     * 启动阶段必须恰好存在一个控制模块，并允许登记过的受保护系统服务。
+     *
+     * <p>{@code module_system_} 前缀和系统元数据必须同时出现；所有系统模块还必须
+     * 命中宿主内置准入清单。用户自行放入的 JAR 不能仅靠修改契约取得系统模块身份。</p>
+     */
     public synchronized void validateSystemModules() {
         List<ModuleContract> system = systemModules();
-        if (system.size() != 1) {
+        List<ModuleContract> controls = system.stream()
+                .filter(module -> module.system() != null
+                        && ModuleSystemMetadata.CONTROL_ROLE.equals(module.system().role()))
+                .toList();
+        if (controls.size() != 1) {
             throw new IllegalStateException(
-                    "宿主必须且只能加载一个 MODULE_CONTROL 系统模块，当前数量：" + system.size()
+                    "宿主必须且只能加载一个 MODULE_CONTROL 系统模块，当前数量："
+                            + controls.size()
             );
         }
-        ModuleContract control = system.getFirst();
-        if (!"module_control".equals(control.moduleId())
-                || control.system() == null
-                || !ModuleSystemMetadata.CONTROL_ROLE.equals(control.system().role())
-                || !control.system().protectedModule()) {
+        ModuleContract control = controls.getFirst();
+        if (!ModuleControlInterfaces.MODULE_ID.equals(control.moduleId())) {
             throw new IllegalStateException(
-                    "系统模块必须是受保护的 module_control/MODULE_CONTROL"
+                    "控制模块 ID 必须是 " + ModuleControlInterfaces.MODULE_ID
+                            + "，实际：" + control.moduleId()
             );
+        }
+        for (ModuleContract module : system) {
+            if (!SystemModulePolicy.hasReservedPrefix(module.moduleId())) {
+                throw new IllegalStateException(
+                        "受保护系统模块必须使用 module_system_ 前缀：" + module.moduleId()
+                );
+            }
+            if (!SystemModulePolicy.isBuiltIn(module.moduleId())) {
+                throw new IllegalStateException(
+                        "module_system_ 前缀只允许宿主内置模块使用：" + module.moduleId()
+                );
+            }
+            if (!SystemModulePolicy.matchesBuiltIn(module.moduleId(), module.system())) {
+                throw new IllegalStateException(
+                        "系统模块角色或能力与宿主内置登记不一致：" + module.moduleId()
+                );
+            }
         }
         validateControlInterfaces(control);
     }
@@ -212,16 +237,16 @@ public class ContractCatalog implements AutoCloseable {
                 .collect(java.util.stream.Collectors.toSet());
         if (!ModuleControlInterfaces.ACTION_IDS.equals(actionIds)) {
             throw new IllegalStateException(
-                    "module_control 只能声明已批准的系统治理 Action：" + actionIds
+                    "控制模块只能声明已批准的系统治理 Action：" + actionIds
             );
         }
         if (!ModuleControlInterfaces.QUERY_IDS.equals(queryIds)) {
             throw new IllegalStateException(
-                    "module_control 只能声明已批准的系统治理 Query：" + queryIds
+                    "控制模块只能声明已批准的系统治理 Query：" + queryIds
             );
         }
         if (!control.plannerRules().isEmpty()) {
-            throw new IllegalStateException("module_control 不允许声明本地计划规则");
+            throw new IllegalStateException("控制模块不允许声明本地计划规则");
         }
         control.actions().forEach(action -> {
             if (action.risk() != RiskLevel.WRITE || !action.confirmationRequired()) {
@@ -687,9 +712,21 @@ public class ContractCatalog implements AutoCloseable {
         for (JsonNode node : rawPlannerRules) {
             plannerRules.add(parsePlannerRule(node));
         }
+        String moduleId = root.path("moduleId").asText();
         ModuleSystemMetadata system = parseSystemMetadata(root.path("system"));
+        if (system == null && SystemModulePolicy.hasReservedPrefix(moduleId)) {
+            throw new IllegalStateException(
+                    "module_system_ 前缀只允许声明 system 元数据的宿主内置模块使用："
+                            + moduleId
+            );
+        }
+        if (system != null && !SystemModulePolicy.hasReservedPrefix(moduleId)) {
+            throw new IllegalStateException(
+                    "受保护系统模块必须使用 module_system_ 前缀：" + moduleId
+            );
+        }
         return new ModuleContract(
-                root.path("moduleId").asText(),
+                moduleId,
                 root.path("title").asText(),
                 root.path("description").asText(),
                 root.path("order").asInt(),
@@ -700,9 +737,7 @@ public class ContractCatalog implements AutoCloseable {
         );
     }
 
-    /**
-     * 解析可选系统模块元数据；当前只支持受保护的 {@code MODULE_CONTROL}。
-     */
+    /** 解析可选系统模块元数据、角色和能力声明。 */
     private ModuleSystemMetadata parseSystemMetadata(JsonNode rawSystem) {
         if (rawSystem.isMissingNode() || rawSystem.isNull()) {
             return null;
@@ -711,17 +746,32 @@ public class ContractCatalog implements AutoCloseable {
             throw new IllegalStateException("模块 system 必须是对象");
         }
         String role = rawSystem.path("role").asText("");
-        if (!ModuleSystemMetadata.CONTROL_ROLE.equals(role)) {
-            throw new IllegalStateException("不支持的系统模块角色：" + role);
-        }
         JsonNode protectedNode = rawSystem.get("protected");
         if (protectedNode == null || !protectedNode.isBoolean() || !protectedNode.asBoolean()) {
             throw new IllegalStateException("模块 system.protected 必须为 true");
         }
-        return new ModuleSystemMetadata(
-                role,
-                true
-        );
+        JsonNode rawCapabilities = rawSystem.get("capabilities");
+        if (rawCapabilities == null || !rawCapabilities.isArray()) {
+            throw new IllegalStateException("模块 system.capabilities 必须是数组");
+        }
+        List<String> capabilities = new ArrayList<>();
+        for (JsonNode capability : rawCapabilities) {
+            if (!capability.isTextual() || capability.asText().isBlank()) {
+                throw new IllegalStateException(
+                        "模块 system.capabilities 只能包含非空文本"
+                );
+            }
+            capabilities.add(capability.asText());
+        }
+        try {
+            return new ModuleSystemMetadata(
+                    role,
+                    true,
+                    capabilities
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalStateException(exception.getMessage(), exception);
+        }
     }
 
     /**

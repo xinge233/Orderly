@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.contract.ModuleSettingsDefinition;
+import com.orderly.host.contract.SystemModulePolicy;
 import com.orderly.host.runtime.WorkspaceRuntime;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,7 +42,6 @@ public class ModulePreferencesService {
 
     private static final int SCHEMA_VERSION = 1;
     private static final String FILE_NAME = "module-governance.json";
-    private static final String CONTROL_SOURCE = "module_control";
     private static final Pattern MODULE_SOURCE = Pattern.compile("module_[a-z0-9_]+");
 
     private final ContractCatalog catalog;
@@ -395,7 +395,7 @@ public class ModulePreferencesService {
                     .filter(path -> !Files.isSymbolicLink(path))
                     .map(path -> path.getFileName().toString())
                     .filter(name -> MODULE_SOURCE.matcher(name).matches())
-                    .filter(name -> !CONTROL_SOURCE.equals(name))
+                    .filter(name -> !SystemModulePolicy.hasReservedPrefix(name))
                     .sorted(Comparator.naturalOrder())
                     .toList();
         } catch (IOException exception) {
@@ -479,7 +479,7 @@ public class ModulePreferencesService {
         List<String> pending = previous.stream()
                 .filter(moduleId -> !loadedIds.contains(moduleId))
                 .filter(moduleId -> MODULE_SOURCE.matcher(moduleId).matches())
-                .filter(moduleId -> !CONTROL_SOURCE.equals(moduleId))
+                .filter(moduleId -> !SystemModulePolicy.hasReservedPrefix(moduleId))
                 .toList();
         if (pending.isEmpty()) {
             return List.copyOf(merged);
@@ -575,8 +575,12 @@ public class ModulePreferencesService {
             }
             parsedEnabled.put(entry.getKey(), entry.getValue().asBoolean());
         }
-        sidebarOrder = parseStringArray(root.path("sidebarOrder"), "sidebarOrder");
-        managementOrder = parseStringArray(root.path("managementOrder"), "managementOrder");
+        sidebarOrder = canonicalizeLegacyIds(
+                parseStringArray(root.path("sidebarOrder"), "sidebarOrder")
+        );
+        managementOrder = canonicalizeLegacyIds(
+                parseStringArray(root.path("managementOrder"), "managementOrder")
+        );
         actionAiCallableEnabled = parseFlags(
                 root.path("actionAiCallableEnabled"),
                 "actionAiCallableEnabled"
@@ -614,6 +618,18 @@ public class ModulePreferencesService {
             }
             revision = rawRevision.asText();
         }
+    }
+
+    /** 将旧控制模块 ID 映射到正式系统模块 ID，并保持首次出现顺序。 */
+    private List<String> canonicalizeLegacyIds(List<String> values) {
+        Set<String> seen = new LinkedHashSet<>();
+        for (String value : values) {
+            String canonical = SystemModulePolicy.canonicalModuleId(value);
+            if (canonical != null && !canonical.isBlank()) {
+                seen.add(canonical);
+            }
+        }
+        return new ArrayList<>(seen);
     }
 
     /** 解析非空字符串数组，保留原顺序。 */

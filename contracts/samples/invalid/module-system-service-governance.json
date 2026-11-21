@@ -1,0 +1,14 @@
+{
+  "moduleId": "module_system_invalid_service",
+  "title": "非法系统服务能力",
+  "description": "普通系统服务不能声明控制模块治理能力。",
+  "order": 10,
+  "system": {
+    "role": "SYSTEM_SERVICE",
+    "protected": true,
+    "capabilities": ["MODULE_GOVERNANCE"]
+  },
+  "actions": [],
+  "queries": [],
+  "plannerRules": []
+}

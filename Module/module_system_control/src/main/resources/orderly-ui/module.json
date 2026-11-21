@@ -1,7 +1,7 @@
 {
   "version": 1,
   "view": {
-    "id": "module-control",
+    "id": "module-system-control",
     "caption": "启停与模块设置",
     "icon": "modules"
   },

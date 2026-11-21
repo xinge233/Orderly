@@ -88,7 +88,7 @@ class ModuleRefreshIntegrationTest {
                 .extracting(ModuleRefreshIssue::code)
                 .contains("MODULE_LOAD_FAILED");
         assertThat(catalog.systemModules()).extracting(module -> module.moduleId())
-                .containsExactly("module_control");
+                .containsExactly("module_system_control");
         assertThat(catalog.businessModules()).hasSize(2);
 
         Path refreshPom = refreshSource.resolve("pom.xml");
@@ -148,7 +148,7 @@ class ModuleRefreshIntegrationTest {
             Files.createDirectories(root.resolve("data"));
             TestModuleArchives.writeJar(
                     modules,
-                    "module_control.jar",
+                    "module_system_control.jar",
                     TestControlModule.class,
                     TestModuleArchives.controlContract(),
                     TestModuleArchives.controlUi()
@@ -160,7 +160,7 @@ class ModuleRefreshIntegrationTest {
                     TestModuleArchives.businessContract(),
                     TestModuleArchives.businessUi()
             );
-            for (String moduleId : List.of("module_control", "module_business")) {
+            for (String moduleId : List.of("module_system_control", "module_business")) {
                 TestModuleArchives.createSourceDirectory(sources, moduleId);
             }
             return root;

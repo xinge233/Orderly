@@ -96,7 +96,7 @@ class OrderlyIntegrationTest {
                 .doesNotHaveDuplicates();
         assertThat(catalog.systemModules())
                 .extracting(module -> module.moduleId())
-                .containsExactly("module_control");
+                .containsExactly("module_system_control");
 
         mockMvc.perform(get("/api/health"))
                 .andExpect(status().isOk())
@@ -108,7 +108,7 @@ class OrderlyIntegrationTest {
         mockMvc.perform(get("/api/system-modules"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].moduleId").value("module_control"))
+                .andExpect(jsonPath("$[0].moduleId").value("module_system_control"))
                 .andExpect(jsonPath("$[0].system.role").value("MODULE_CONTROL"))
                 .andExpect(jsonPath("$[0].enabled").value(true));
         mockMvc.perform(get("/api/themes"))

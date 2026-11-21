@@ -2,9 +2,13 @@
 
 `plan.schema.json` 定义计划与澄清问题的公开结构，`module.schema.json` 定义模块契约，`module-ui.schema.json` 定义模块自带 UI 清单，`module-build-status.schema.json` 定义后台模块构建状态，`module-build-priority-request.schema.json` 定义受限优先构建请求，`build-settings.schema.json` 定义构建设置并发及允许范围，`host-shutdown-response.schema.json` 定义本地宿主安全退出的稳定响应，`theme.schema.json` 定义目录主题包的 `theme.json`，`study-data.schema.json` 定义学习相关模块的只读数据边界，`samples/` 提供前端和测试共享的示例。
 
-`samples/valid/module.json`、`module-control.json` 与模块 UI 样例是宿主和前端实际校验逻辑接受的合法样例；`samples/invalid/` 中的模块契约和 UI 清单会被对应逻辑明确拒绝。模块 JAR 契约不得声明静态 `aiCallable`，其属性在 `module.schema.json` 中因 `additionalProperties: false` 被拒绝；动态用户开关不属于模块 JAR 契约。`gate.ps1` 同时执行 Java 模块契约样例测试与 Node 模块 UI 样例测试，防止 schema、样例和运行时规则漂移。
+`samples/valid/module.json`、`module-system-control.json`、`module-system-service.json` 与模块 UI 样例是宿主和前端实际校验逻辑接受的合法样例；`samples/invalid/` 中的模块契约和 UI 清单会被对应逻辑明确拒绝。模块 JAR 契约不得声明静态 `aiCallable`，其属性在 `module.schema.json` 中因 `additionalProperties: false` 被拒绝；动态用户开关不属于模块 JAR 契约。`gate.ps1` 同时执行 Java 模块契约样例测试与 Node 模块 UI 样例测试，防止 schema、样例和运行时规则漂移。
 
-模块契约的可选 `system` 元数据只允许 `role: "MODULE_CONTROL"` 与 `protected: true`。全运行集必须恰好有一个 `module_control` 系统模块；零业务模块合法，但缺少控制模块或重复系统角色必须阻止构建或启动。
+模块契约的可选 `system` 元数据支持 `MODULE_CONTROL` 与 `SYSTEM_SERVICE`，并要求
+`protected: true` 与 `capabilities`。控制模块必须声明 `MODULE_GOVERNANCE`，系统服务
+不得声明该能力。全运行集必须恰好有一个 `module_system_control` 控制模块；所有系统
+模块必须使用 `module_system_` 前缀并命中宿主内置准入清单，普通业务模块不得占用该
+前缀。零业务模块合法，但缺少控制模块或重复控制角色必须阻止构建或启动。
 
 模块 UI 的可选 `settings` 支持对象形式 `{ "fields": [...] }` 或字段数组，字段类型为 `boolean`、`integer`、`select`、`text`。宿主会拒绝重复 key、类型错误、select 默认值不在 options、重复 option value，以及 integer/text 范围非法。模块设置的当前值由 `/api/system/module-preferences` 返回，并保存在宿主单一治理 JSON 中。
 
@@ -12,7 +16,7 @@
 
 模块契约由各模块 JAR 内的 `orderly-modules/*.json` 提供，宿主在启动时通过统一模式聚合。动作风险、参数与确认词、只读查询和本地计划规则只允许在这些契约中声明，Java 执行器不保存第二套元数据。`GET /api/modules` 只返回业务模块；`GET /api/system-modules` 返回系统模块。查询通过通用接口 `GET /api/modules/{moduleId}/query/{queryId}` 调用，框架不包含具体业务端点。
 
-模块 UI 清单位于同一 JAR 的 `orderly-ui/module.json`，并把脚本与样式限制为同目录内的安全资源名。宿主仅通过 `GET /api/modules/{moduleId}/ui/{asset}` 提供 `module.json`、`module.js` 和 `module.css`，不接受目录穿越或任意 classpath 资源。删除业务模块源码并重新构建后，模块 JAR、契约、查询、侧栏、总览卡片和前端视图必须一起消失；零业务模块是合法状态，但系统模块 `module_control` 必须保留。
+模块 UI 清单位于同一 JAR 的 `orderly-ui/module.json`，并把脚本与样式限制为同目录内的安全资源名。宿主仅通过 `GET /api/modules/{moduleId}/ui/{asset}` 提供 `module.json`、`module.js` 和 `module.css`，不接受目录穿越或任意 classpath 资源。删除业务模块源码并重新构建后，模块 JAR、契约、查询、侧栏、总览卡片和前端视图必须一起消失；零业务模块是合法状态，但系统模块 `module_system_control` 必须保留。
 
 运行中刷新只允许显式追加新模块。新源码目录必须已有同名 JAR，宿主不会自动编译；未构建返回 `MODULE_NOT_BUILT`。已有模块更新或删除返回 `RESTART_REQUIRED`，不会替换当前运行快照。API 约定见根 README。
 

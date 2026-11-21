@@ -1,0 +1,14 @@
+{
+  "moduleId": "module_protected_demo",
+  "title": "非法系统模块名",
+  "description": "受保护模块必须使用 module_system_ 前缀。",
+  "order": 10,
+  "system": {
+    "role": "SYSTEM_SERVICE",
+    "protected": true,
+    "capabilities": []
+  },
+  "actions": [],
+  "queries": [],
+  "plannerRules": []
+}

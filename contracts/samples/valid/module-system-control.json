@@ -1,15 +1,16 @@
 {
-  "moduleId": "module_control",
+  "moduleId": "module_system_control",
   "title": "模块控制",
   "description": "系统级模块控制入口。",
   "order": 0,
   "system": {
     "role": "MODULE_CONTROL",
-    "protected": true
+    "protected": true,
+    "capabilities": ["MODULE_GOVERNANCE"]
   },
   "actions": [
     {
-      "id": "module_control.module.set_enabled",
+      "id": "module_system_control.module.set_enabled",
       "title": "设置模块启停",
       "description": "在确认后启用或停用指定业务模块。",
       "risk": "WRITE",
@@ -30,7 +31,7 @@
       ]
     },
     {
-      "id": "module_control.interface.set_callable",
+      "id": "module_system_control.interface.set_callable",
       "title": "设置接口 AI 可调用状态",
       "description": "在确认后设置指定业务接口的 AI 可调用状态。",
       "risk": "WRITE",
@@ -65,13 +66,13 @@
   ],
   "queries": [
     {
-      "id": "module_control.module.list",
+      "id": "module_system_control.module.list",
       "title": "查询业务模块",
       "description": "返回业务模块摘要和运行状态。",
       "parameters": []
     },
     {
-      "id": "module_control.interface.list",
+      "id": "module_system_control.interface.list",
       "title": "查询模块接口",
       "description": "返回业务接口元数据和运行状态。",
       "parameters": [
@@ -90,7 +91,7 @@
       ]
     },
     {
-      "id": "module_control.setting.get",
+      "id": "module_system_control.setting.get",
       "title": "读取模块设置",
       "description": "读取指定业务模块的字段定义和当前值。",
       "parameters": [

@@ -53,14 +53,18 @@ public final class TestModuleArchives {
     public static String controlContract() {
         return """
                 {
-                  "moduleId": "module_control",
+                  "moduleId": "module_system_control",
                   "title": "控制",
                   "description": "测试系统模块",
                   "order": 0,
-                  "system": {"role": "MODULE_CONTROL", "protected": true},
+                  "system": {
+                    "role": "MODULE_CONTROL",
+                    "protected": true,
+                    "capabilities": ["MODULE_GOVERNANCE"]
+                  },
                   "actions": [
                     {
-                      "id": "module_control.module.set_enabled",
+                      "id": "module_system_control.module.set_enabled",
                       "title": "设置模块启停",
                       "description": "测试系统模块启停",
                       "risk": "WRITE",
@@ -71,7 +75,7 @@ public final class TestModuleArchives {
                       ]
                     },
                     {
-                      "id": "module_control.interface.set_callable",
+                      "id": "module_system_control.interface.set_callable",
                       "title": "设置接口可调用状态",
                       "description": "测试系统接口开关",
                       "risk": "WRITE",
@@ -86,13 +90,13 @@ public final class TestModuleArchives {
                   ],
                   "queries": [
                     {
-                      "id": "module_control.module.list",
+                      "id": "module_system_control.module.list",
                       "title": "查询业务模块",
                       "description": "测试模块摘要查询",
                       "parameters": []
                     },
                     {
-                      "id": "module_control.interface.list",
+                      "id": "module_system_control.interface.list",
                       "title": "查询模块接口",
                       "description": "测试接口摘要查询",
                       "parameters": [
@@ -101,7 +105,7 @@ public final class TestModuleArchives {
                       ]
                     },
                     {
-                      "id": "module_control.setting.get",
+                      "id": "module_system_control.setting.get",
                       "title": "读取模块设置",
                       "description": "测试模块设置查询",
                       "parameters": [
@@ -265,11 +269,34 @@ public final class TestModuleArchives {
     public static String secondSystemContract() {
         return """
                 {
-                  "moduleId": "module_other_control",
+                  "moduleId": "module_system_other_control",
                   "title": "第二个控制模块",
                   "description": "刷新系统候选拒绝测试",
                   "order": 30,
-                  "system": {"role": "MODULE_CONTROL", "protected": true},
+                  "system": {
+                    "role": "MODULE_CONTROL",
+                    "protected": true,
+                    "capabilities": ["MODULE_GOVERNANCE"]
+                  },
+                  "actions": [],
+                  "queries": [],
+                  "plannerRules": []
+                }
+                """;
+    }
+
+    public static String serviceContract() {
+        return """
+                {
+                  "moduleId": "module_system_other_service",
+                  "title": "未登记系统服务",
+                  "description": "宿主内置准入测试",
+                  "order": 40,
+                  "system": {
+                    "role": "SYSTEM_SERVICE",
+                    "protected": true,
+                    "capabilities": []
+                  },
                   "actions": [],
                   "queries": [],
                   "plannerRules": []

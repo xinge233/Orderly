@@ -186,40 +186,44 @@ class AiQueryServiceTest {
     @Test
     void routesWhitelistedControlQueriesThroughHostGovernanceService() {
         QueryContract query = new QueryContract(
-                "module_control.module.list",
+                "module_system_control.module.list",
                 "查询业务模块",
                 "读取模块摘要",
                 List.of()
         );
         ModuleContract control = new ModuleContract(
-                "module_control",
+                "module_system_control",
                 "模组设置",
                 "系统治理",
                 10_000,
-                new ModuleSystemMetadata("MODULE_CONTROL", true),
+                new ModuleSystemMetadata(
+                        "MODULE_CONTROL",
+                        true,
+                        List.of("MODULE_GOVERNANCE")
+                ),
                 List.of(),
                 List.of(query),
                 List.of()
         );
-        when(catalog.isSystemModule("module_control")).thenReturn(true);
-        when(catalog.findModule("module_control")).thenReturn(java.util.Optional.of(control));
+        when(catalog.isSystemModule("module_system_control")).thenReturn(true);
+        when(catalog.findModule("module_system_control")).thenReturn(java.util.Optional.of(control));
         when(moduleControlQueries.supports(
-                "module_control",
-                "module_control.module.list"
+                "module_system_control",
+                "module_system_control.module.list"
         )).thenReturn(true);
         when(moduleControl.isQueryAiCallableEnabled(
-                "module_control",
-                "module_control.module.list"
+                "module_system_control",
+                "module_system_control.module.list"
         )).thenReturn(true);
         when(moduleControlQueries.query(
-                "module_control.module.list",
+                "module_system_control.module.list",
                 Map.of()
         )).thenReturn(Map.of("items", List.of(), "count", 0));
 
         List<AiContracts.QueryResult> results = service.executeAiQueries(List.of(
                 new AiContracts.QueryCall(
-                        "module_control",
-                        "module_control.module.list",
+                        "module_system_control",
+                        "module_system_control.module.list",
                         Map.of()
                 )
         ));

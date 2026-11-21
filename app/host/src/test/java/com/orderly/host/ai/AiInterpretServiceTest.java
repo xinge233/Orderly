@@ -368,19 +368,23 @@ class AiInterpretServiceTest {
     @Test
     void sendsWhitelistedSystemControlInterfacesToPython() {
         ModuleContract control = new ModuleContract(
-                "module_control",
+                "module_system_control",
                 "模组设置",
                 "系统治理",
                 10_000,
-                new ModuleSystemMetadata("MODULE_CONTROL", true),
-                List.of(
-                        action("module_control.module.set_enabled"),
-                        action("module_control.interface.set_callable")
+                new ModuleSystemMetadata(
+                        "MODULE_CONTROL",
+                        true,
+                        List.of("MODULE_GOVERNANCE")
                 ),
                 List.of(
-                        query("module_control.module.list"),
-                        query("module_control.interface.list"),
-                        query("module_control.setting.get")
+                        action("module_system_control.module.set_enabled"),
+                        action("module_system_control.interface.set_callable")
+                ),
+                List.of(
+                        query("module_system_control.module.list"),
+                        query("module_system_control.interface.list"),
+                        query("module_system_control.setting.get")
                 ),
                 List.of()
         );
@@ -402,17 +406,17 @@ class AiInterpretServiceTest {
                 ArgumentCaptor.forClass(AiContracts.ServiceTurnRequest.class);
         verify(aiService).createTurn(captor.capture(), any());
         assertThat(captor.getValue().modules()).singleElement().satisfies(module -> {
-            assertThat(module.moduleId()).isEqualTo("module_control");
+            assertThat(module.moduleId()).isEqualTo("module_system_control");
             assertThat(module.actions()).extracting(AiContracts.ToolAction::actionId)
                     .containsExactly(
-                            "module_control.module.set_enabled",
-                            "module_control.interface.set_callable"
+                            "module_system_control.module.set_enabled",
+                            "module_system_control.interface.set_callable"
                     );
             assertThat(module.queries()).extracting(AiContracts.ToolQuery::queryId)
                     .containsExactly(
-                            "module_control.module.list",
-                            "module_control.interface.list",
-                            "module_control.setting.get"
+                            "module_system_control.module.list",
+                            "module_system_control.interface.list",
+                            "module_system_control.setting.get"
                     );
         });
     }

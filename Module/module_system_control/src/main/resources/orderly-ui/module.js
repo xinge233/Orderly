@@ -3,7 +3,7 @@
  *
  * 职责：管理业务模块启停、管理顺序、模块设置和 Action/Query 的动态 AI 调用状态。
  * 依赖：orderly-ui/module.json 只声明容器视图，不提供 Query 或 Action；
- * 宿主仅为受保护的 module_control 注入 context.systemAdmin，所有管理调用都经该接口完成。
+ * 宿主仅为受保护的 module_system_control 注入 context.systemAdmin，所有管理调用都经该接口完成。
  * 隔离：单个管理 API、刷新或保存失败时保留当前可用快照并在本视图内报错；
  * 视图移除时取消延迟刷新和框架事件订阅，不触碰其他模块 DOM 或内部实现。
  */
@@ -226,7 +226,7 @@ function runtimeMessage(error, fallback) {
  * 挂载模组设置视图。
  *
  * @param {HTMLElement} root 框架分配的模块视图根节点。
- * @param {object} context 宿主 mount context；仅 module_control 会获得可选 systemAdmin 管理 API。
+ * @param {object} context 宿主 mount context；仅 module_system_control 会获得可选 systemAdmin 管理 API。
  * @returns {Promise<void>} 初始快照读取和首屏渲染完成后结束。
  */
 export default async function mount(root, context) {

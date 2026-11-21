@@ -105,7 +105,7 @@ test("framework, module and theme CSS never consult the system motion preference
         ])
     ).flat();
     const moduleControl = await read(
-        "../../../Module/module_control/src/main/resources/orderly-ui/module.css"
+        "../../../Module/module_system_control/src/main/resources/orderly-ui/module.css"
     );
 
     assert.ok(cssFiles.length > 0);

@@ -10,7 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * {@code module_control} 的宿主治理动作实现。
+ * {@code module_system_control} 的宿主治理动作实现。
  *
  * <p>该类只实现白名单中的两个 WRITE Action，并把操作委托给 {@link ModuleControlService}。
  * 快照保存操作前状态，回滚只在当前状态仍等于本次执行结果时恢复，避免覆盖后续用户变更。</p>

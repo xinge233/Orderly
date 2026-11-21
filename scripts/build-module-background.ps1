@@ -37,7 +37,7 @@ $statusFile = [System.IO.Path]::GetFullPath((Join-Path $targetRoot "module-build
 $priorityFile = [System.IO.Path]::GetFullPath((Join-Path $targetRoot "module-build-priority.json"))
 $buildScript = Join-Path $PSScriptRoot "build.ps1"
 $sourcePattern = '^module_[a-z0-9_]+$'
-$controlSource = "module_control"
+$systemSourcePrefix = "module_system_"
 $maxStatusBytes = 512KB
 $buildLockTimeoutMilliseconds = 120000
 $minimumParallel = 1
@@ -126,7 +126,11 @@ function Read-PrioritySource {
     try {
         $value = Get-Content -Raw -Encoding UTF8 -LiteralPath $priorityFile | ConvertFrom-Json
         $sourceName = [string]$value.sourceName
-        if ($sourceName -match $sourcePattern -and $sourceName -ne $controlSource) {
+        if ($sourceName -match $sourcePattern -and
+                -not $sourceName.StartsWith(
+                    $systemSourcePrefix,
+                    [System.StringComparison]::Ordinal
+                )) {
             return $sourceName
         }
     }
@@ -189,7 +193,7 @@ function Get-SourceDirectories {
     return @(Get-ChildItem -LiteralPath $moduleRoot -Directory -Filter "module_*" |
         Where-Object {
             $_.Name -match $sourcePattern -and
-            $_.Name -ne $controlSource -and
+            -not $_.Name.StartsWith($systemSourcePrefix, [System.StringComparison]::Ordinal) -and
             ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0
         } |
         Sort-Object Name)

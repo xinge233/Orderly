@@ -64,29 +64,36 @@ Module/
 `module_study_review` 与 `module_fs` 分别用自身声明的查询暴露 `assistant`、
 `knowledge-map`、`review` 与 `materials` 四类只读负载。
 
-一个 `module_*` 目录应只对应一个业务模块，并只产出一个可运行 JAR。
+一个 `module_*` 目录应只对应一个模块，并只产出一个可运行 JAR。普通用户模块使用
+`module_<id>`；`module_system_*` 是宿主内置受保护模块的保留前缀，用户模块不得占用。
 
-`module_control` 是唯一例外：它是受保护的系统模块，必须存在于每个可运行安装中，但
-不能作为业务模块出现在 `/api/modules`。系统模块契约使用：
+`module_system_control` 是唯一的控制模块：它是受保护的系统模块，必须存在于每个可运行
+安装中，但不能作为业务模块出现在 `/api/modules`。系统模块契约使用：
 
 ```json
 {
-  "moduleId": "module_control",
+  "moduleId": "module_system_control",
   "system": {
     "role": "MODULE_CONTROL",
-    "protected": true
+    "protected": true,
+    "capabilities": ["MODULE_GOVERNANCE"]
   }
 }
 ```
 
-系统角色在全运行集必须唯一。构建脚本要求且仅允许一个 `Module/module_control`，宿主
-启动时也会复核；缺少控制模块或出现第二个 `MODULE_CONTROL` 都必须失败。
+`MODULE_CONTROL` 在全运行集必须唯一，并且必须声明 `MODULE_GOVERNANCE`。
+`SYSTEM_SERVICE` 可用于宿主登记的系统服务，但不得声明治理能力。系统模块还必须命中
+宿主内置准入清单；仅使用保留前缀或自报 `protected` 不能取得系统身份。构建脚本要求且
+仅允许一个 `Module/module_system_control`，宿主启动时也会复核；缺少控制模块或出现
+第二个 `MODULE_CONTROL` 都必须失败。
 
 ## 3. 命名约束
 
 - 模块源码目录必须位于 `Module/` 下，名称以 `module_` 开头。
 - 推荐目录名、JAR 名和契约中的 `moduleId` 采用一致的命名，例如
   `module_example`。
+- `module_system_` 只允许宿主内置受保护模块使用；普通用户模块的目录名、JAR 名和
+  `moduleId` 都不得使用该前缀。该前缀是资源管理器中的可读标记，不替代宿主准入校验。
 - `moduleId` 必须匹配 `^[a-z][a-z0-9_-]{0,63}$`。
 - `OrderlyModule.moduleId()` 的返回值必须与契约中的 `moduleId` 完全一致。
 - 视图 ID 必须匹配 `^[a-z][a-z0-9-]{0,63}$`，推荐使用简短名称，如 `example`。
@@ -279,11 +286,12 @@ export default async function mount(root, context) {
 
 从 GitHub Release 解压的正式离线包会在根目录携带 `maven-repository`。无参数运行
 `启动归序.cmd` 时，该入口会自动使用 `-MavenOffline -BackgroundModules`，让 Maven
-依赖和插件只从包内仓库读取，并先构建
-`module_control` 与宿主并打开界面，再并行构建业务模块并由单线程发布。GitHub 源码 ZIP 不包含
+依赖和插件只从包内仓库读取，并先构建全部 `module_system_*` 与宿主并打开界面，再并行
+构建业务模块并由单线程发布。GitHub 源码 ZIP 不包含
 这个发布目录，因此它仍使用开发构建的在线 Maven 解析路径。
 
-后台入口在框架启动前只把 `module_control.jar` 发布到 `target/orderly-modules/`；
+后台入口在框架启动前把系统模块 JAR（当前为 `module_system_control.jar`）发布到
+`target/orderly-modules/`；
 业务模块由默认两路、可调 1-4 的 Maven worker 并行构建，候选 JAR 由单一发布线程逐个
 校验并原子发布，再由宿主刷新追加。不能在应用运行期间
 替换、更新或卸载已有模块。模块控制界面只允许显式刷新追加新模块，且新模块
@@ -355,7 +363,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\start.ps1 -SkipBuild
 - `/api/modules/{moduleId}/ui/module.json` 及 JS/CSS 可访问。
 - 契约中声明的只读查询能够通过通用查询接口执行。
 - 业务 Action/Query 的 AI 可调用状态由宿主统一保存并默认开启；Query 开关不得影响
-  模块自身查询。系统模块 `module_control` 不参与接口治理。
+  模块自身查询。系统模块不参与业务接口治理，其中 `module_system_control` 只提供受控治理接口。
 - 写操作先进入计划确认，删除操作只进入项目回收站。
 - 移除模块源码并重新启动后，旧侧边栏、卡片、API 和 UI 不再出现。
 - 删除全部模块目录后，程序仍可启动，侧边栏和总览显示空状态。
@@ -400,7 +408,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1 -BaseUrl http:
 移除模块时，从 `Module/` 中移走对应的 `module_*` 源码目录，然后重新构建并启动。
 不需要修改框架代码。构建会清空 `target/orderly-modules/`，不会继续加载旧 JAR。
 
-删除全部业务模块也是合法状态：`module_control` 必须保留，宿主应正常启动，
+删除全部业务模块也是合法状态：`module_system_control` 必须保留，宿主应正常启动，
 `/api/modules` 返回空目录，侧边栏和总览显示空状态，其他框架功能不得报错。
 
 ## 11. 安全与责任边界

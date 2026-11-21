@@ -138,16 +138,17 @@ foreach ($module in $modules) {
     }
 }
 
-# 系统模块与业务模块分开断言，防止 module_control 同时泄漏到可停用/可排序的业务目录。
+# 系统模块与业务模块分开断言，防止控制模块同时泄漏到可停用/可排序的业务目录。
 $systemModulesResponse = Invoke-RestMethod -Uri "$BaseUrl/api/system-modules" -Method Get
 $systemModules = @($systemModulesResponse | ForEach-Object { $_ })
-$controlModules = @($systemModules | Where-Object { $_.moduleId -eq "module_control" })
+$controlModules = @($systemModules | Where-Object { $_.moduleId -eq "module_system_control" })
 if ($controlModules.Count -ne 1 -or $controlModules[0].enabled -ne $true -or
-        $controlModules[0].system.role -ne "MODULE_CONTROL") {
-    throw "/api/system-modules 未唯一返回启用状态的 module_control。"
+        $controlModules[0].system.role -ne "MODULE_CONTROL" -or
+        @($controlModules[0].system.capabilities) -notcontains "MODULE_GOVERNANCE") {
+    throw "/api/system-modules 未唯一返回启用且具备治理能力的 module_system_control。"
 }
-if ($moduleIds -contains "module_control") {
-    throw "/api/modules 不得返回系统模块 module_control。"
+if ($moduleIds -contains "module_system_control") {
+    throw "/api/modules 不得返回系统模块 module_system_control。"
 }
 
 $preferences = Invoke-RestMethod -Uri "$BaseUrl/api/system/module-preferences" -Method Get
@@ -155,8 +156,8 @@ if ($null -eq $preferences.sidebarOrder -or $null -eq $preferences.managementOrd
         $null -eq $preferences.moduleSettings) {
     throw "模块偏好响应缺少 sidebarOrder、managementOrder 或 moduleSettings。"
 }
-if (@($preferences.sidebarOrder) -notcontains "module_control") {
-    throw "sidebarOrder 未包含系统模块 module_control。"
+if (@($preferences.sidebarOrder) -notcontains "module_system_control") {
+    throw "sidebarOrder 未包含系统模块 module_system_control。"
 }
 
 # 主题检查覆盖摘要、详情、声明资源可达性、缓存语义和路径隐藏，验证目录主题而非 classpath 静态列表。

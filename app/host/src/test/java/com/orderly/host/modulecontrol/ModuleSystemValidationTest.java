@@ -4,10 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.orderly.host.contract.ContractCatalog;
+import com.orderly.host.support.TestAlternateControlModule;
 import com.orderly.host.support.TestBusinessModule;
 import com.orderly.host.support.TestControlModule;
 import com.orderly.host.support.TestModuleArchives;
 import com.orderly.host.support.TestRefreshModule;
+import com.orderly.host.support.TestSystemServiceModule;
 import com.orderly.kernel.ModuleRuntime;
 import org.junit.jupiter.api.Test;
 
@@ -45,20 +47,16 @@ class ModuleSystemValidationTest {
         Path directory = testDirectory("duplicate-control");
         TestModuleArchives.writeJar(
                 directory,
-                "module_control.jar",
+                "module_system_control.jar",
                 TestControlModule.class,
                 TestModuleArchives.controlContract(),
                 TestModuleArchives.controlUi()
         );
-        ObjectNode business = (ObjectNode) objectMapper.readTree(TestModuleArchives.businessContract());
-        ObjectNode system = business.putObject("system");
-        system.put("role", "MODULE_CONTROL");
-        system.put("protected", true);
         TestModuleArchives.writeJar(
                 directory,
-                "module_business.jar",
-                TestBusinessModule.class,
-                objectMapper.writeValueAsString(business),
+                "module_system_other_control.jar",
+                TestAlternateControlModule.class,
+                TestModuleArchives.secondSystemContract(),
                 TestModuleArchives.businessUi()
         );
 
@@ -74,7 +72,7 @@ class ModuleSystemValidationTest {
         Path directory = testDirectory("valid-system");
         TestModuleArchives.writeJar(
                 directory,
-                "module_control.jar",
+                "module_system_control.jar",
                 TestControlModule.class,
                 TestModuleArchives.controlContract(),
                 TestModuleArchives.controlUi()
@@ -90,7 +88,7 @@ class ModuleSystemValidationTest {
         try (ContractCatalog catalog = new ContractCatalog(objectMapper, directory.toString())) {
             catalog.validateSystemModules();
             assertThat(catalog.systemModules()).extracting(module -> module.moduleId())
-                    .containsExactly("module_control");
+                    .containsExactly("module_system_control");
             assertThat(catalog.businessModules()).extracting(module -> module.moduleId())
                     .containsExactly("module_business");
         }
@@ -104,7 +102,7 @@ class ModuleSystemValidationTest {
         );
         ArrayNode actions = (ArrayNode) contract.path("actions");
         ObjectNode extra = actions.addObject();
-        extra.put("id", "module_control.module.delete");
+        extra.put("id", "module_system_control.module.delete");
         extra.put("title", "未授权动作");
         extra.put("description", "不应允许");
         extra.put("risk", "DELETE");
@@ -112,7 +110,7 @@ class ModuleSystemValidationTest {
         extra.putArray("parameters");
         TestModuleArchives.writeJar(
                 directory,
-                "module_control.jar",
+                "module_system_control.jar",
                 TestControlModule.class,
                 objectMapper.writeValueAsString(contract),
                 TestModuleArchives.controlUi()
@@ -126,11 +124,36 @@ class ModuleSystemValidationTest {
     }
 
     @Test
+    void unregisteredSystemServiceFailsStartupValidation() throws Exception {
+        Path directory = testDirectory("unregistered-system-service");
+        TestModuleArchives.writeJar(
+                directory,
+                "module_system_control.jar",
+                TestControlModule.class,
+                TestModuleArchives.controlContract(),
+                TestModuleArchives.controlUi()
+        );
+        TestModuleArchives.writeJar(
+                directory,
+                "module_system_other_service.jar",
+                TestSystemServiceModule.class,
+                TestModuleArchives.serviceContract(),
+                TestModuleArchives.businessUi()
+        );
+
+        try (ContractCatalog catalog = new ContractCatalog(objectMapper, directory.toString())) {
+            assertThatThrownBy(catalog::validateSystemModules)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("宿主内置模块");
+        }
+    }
+
+    @Test
     void preparedModuleDoesNotChangeSnapshotUntilCommitAndCanRollback() throws Exception {
         Path directory = testDirectory("prepared-transaction");
         TestModuleArchives.writeJar(
                 directory,
-                "module_control.jar",
+                "module_system_control.jar",
                 TestControlModule.class,
                 TestModuleArchives.controlContract(),
                 TestModuleArchives.controlUi()

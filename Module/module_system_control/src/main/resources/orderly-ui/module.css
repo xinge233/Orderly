@@ -1,5 +1,5 @@
 /*
- * 自包含 ownership：module_control 作为系统模块，仅定义 .module-control-ui-* 治理界面。
+ * 自包含 ownership：module_system_control 作为系统模块，仅定义 .module-control-ui-* 治理界面。
  * 主题语义变量负责色彩、字体、间距和时长；gentle/minimal/none 三档沿用框架令牌与 safety 层。
  * 桌面以固定高度的可滚动治理面板呈现，手机端压缩行布局并让接口操作换行，状态保持可达。
  */

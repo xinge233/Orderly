@@ -9,6 +9,8 @@ import com.orderly.host.ai.AiServiceClient;
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.execution.AiActionService;
 import com.orderly.host.execution.ExecutionRecord;
+import com.orderly.host.execution.ExecutionRecordStep;
+import com.orderly.host.execution.ExecutionRecordStore;
 import com.orderly.host.execution.ExecutionRunResult;
 import com.orderly.host.execution.ExecutionService;
 import com.orderly.host.event.ExecutionJournal;
@@ -19,10 +21,12 @@ import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanView;
 import com.orderly.host.runtime.WorkspaceRuntime;
 import com.orderly.host.system.SystemFeatureService;
+import com.orderly.kernel.RiskLevel;
 import com.orderly.host.support.TestBusinessModule;
 import com.orderly.host.support.TestControlModule;
 import com.orderly.host.support.TestModuleArchives;
 import com.orderly.host.support.TestSecondBusinessModule;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -91,6 +95,9 @@ class ModuleControlIntegrationTest {
     private ExecutionService execution;
 
     @Autowired
+    private ExecutionRecordStore executionRecords;
+
+    @Autowired
     private AiActionService aiActions;
 
     @Autowired
@@ -143,6 +150,11 @@ class ModuleControlIntegrationTest {
         );
     }
 
+    @AfterEach
+    void releaseBlockedBusinessModule() {
+        TestBusinessModule.releaseExecution();
+    }
+
     @Test
     void splitsCatalogsAndPersistsActivationOrdersAndSettings() throws Exception {
         mockMvc.perform(get("/api/modules"))
@@ -152,7 +164,7 @@ class ModuleControlIntegrationTest {
         mockMvc.perform(get("/api/system-modules"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].moduleId").value("module_control"))
+                .andExpect(jsonPath("$[0].moduleId").value("module_system_control"))
                 .andExpect(jsonPath("$[0].enabled").value(true));
 
         mockMvc.perform(put("/api/system/module-preferences/sidebar-order")
@@ -162,7 +174,7 @@ class ModuleControlIntegrationTest {
         mockMvc.perform(put("/api/system/module-preferences/sidebar-order")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"moduleIds":["module_business_two","module_business","module_control"]}
+                                {"moduleIds":["module_business_two","module_business","module_system_control"]}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sidebarOrder[0]").value("module_business_two"));
@@ -175,7 +187,7 @@ class ModuleControlIntegrationTest {
         mockMvc.perform(put("/api/system/module-preferences/management-order")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"moduleIds":["module_business","module_business_two","module_control"]}
+                                {"moduleIds":["module_business","module_business_two","module_system_control"]}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.managementOrder[0]").value("module_business"));
@@ -209,9 +221,9 @@ class ModuleControlIntegrationTest {
         reloaded.initialize();
         assertThat(reloaded.isEnabled("module_business")).isFalse();
         assertThat(reloaded.snapshot().sidebarOrder())
-                .containsExactly("module_business_two", "module_business", "module_control");
+                .containsExactly("module_business_two", "module_business", "module_system_control");
         assertThat(reloaded.snapshot().managementOrder())
-                .containsExactly("module_business", "module_business_two", "module_control");
+                .containsExactly("module_business", "module_business_two", "module_system_control");
 
         JsonNode state = objectMapper.readTree(
                 runtime.dataRoot().resolve("module-governance.json").toFile()
@@ -239,7 +251,7 @@ class ModuleControlIntegrationTest {
         mockMvc.perform(post("/api/system/module-folder/open"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_ACTION_HEADER"));
-        mockMvc.perform(patch("/api/modules/module_control/activation")
+        mockMvc.perform(patch("/api/modules/module_system_control/activation")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"enabled\":false}"))
                 .andExpect(status().isConflict())
@@ -373,7 +385,10 @@ class ModuleControlIntegrationTest {
                     .isInstanceOf(ApiException.class)
                     .hasMessageContaining("执行期间");
             TestBusinessModule.releaseExecution();
-            assertThat(running.get().outcome()).isEqualTo("COMPLETED");
+            ExecutionRunResult result = running.get(5, TimeUnit.SECONDS);
+            assertThat(result.outcome())
+                    .withFailMessage("宿主返回 %s：%s", result.outcome(), result.message())
+                    .isEqualTo("COMPLETED");
         } finally {
             TestBusinessModule.releaseExecution();
             executor.shutdownNow();
@@ -395,8 +410,8 @@ class ModuleControlIntegrationTest {
                         .value(true));
         mockMvc.perform(get("/api/system/module-interfaces"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.actionAiCallableEnabled.module_control").doesNotExist())
-                .andExpect(jsonPath("$.queryAiCallableEnabled.module_control").doesNotExist());
+                .andExpect(jsonPath("$.actionAiCallableEnabled.module_system_control").doesNotExist())
+                .andExpect(jsonPath("$.queryAiCallableEnabled.module_system_control").doesNotExist());
 
         AiContracts.Plan pending = aiPlans.create(
                 "占用接口",
@@ -429,7 +444,7 @@ class ModuleControlIntegrationTest {
                 .andExpect(jsonPath("$.count").value(1));
 
         mockMvc.perform(patch(
-                        "/api/modules/module_control/interfaces/query/control.list/ai-callable"
+                        "/api/modules/module_system_control/interfaces/query/control.list/ai-callable"
                 )
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"aiCallable\":true}"))
@@ -489,14 +504,14 @@ class ModuleControlIntegrationTest {
     @Test
     void systemControlQueriesExposeBusinessGovernanceState() throws Exception {
         mockMvc.perform(get(
-                        "/api/modules/module_control/query/module_control.module.list"
+                        "/api/modules/module_system_control/query/module_system_control.module.list"
                 ))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").isNumber())
                 .andExpect(jsonPath("$.items[0].moduleId").value("module_business"));
 
         mockMvc.perform(get(
-                        "/api/modules/module_control/query/module_control.interface.list"
+                        "/api/modules/module_system_control/query/module_system_control.interface.list"
                 )
                         .param("moduleId", "module_business")
                         .param("kind", "action"))
@@ -505,7 +520,7 @@ class ModuleControlIntegrationTest {
                 .andExpect(jsonPath("$.items[0].aiCallable").value(true));
 
         mockMvc.perform(get(
-                        "/api/modules/module_control/query/module_control.setting.get"
+                        "/api/modules/module_system_control/query/module_system_control.setting.get"
                 )
                         .param("moduleId", "module_business"))
                 .andExpect(status().isOk())
@@ -524,12 +539,18 @@ class ModuleControlIntegrationTest {
         try {
             ExecutionRecord activation = aiActions.execute(true, List.of(
                     new AiActionService.ActionCall(
-                            "module_control",
-                            "module_control.module.set_enabled",
+                            "module_system_control",
+                            "module_system_control.module.set_enabled",
                             Map.of("moduleId", "module_business", "enabled", false)
                     )
             ));
-            assertThat(activation.status()).isEqualTo("COMPLETED");
+            assertThat(activation.status())
+                    .withFailMessage(
+                            "系统治理 Action 返回 %s：%s",
+                            activation.status(),
+                            activation.steps()
+                    )
+                    .isEqualTo("COMPLETED");
             assertThat(preferences.isEnabled("module_business")).isFalse();
 
             ExecutionRecord activationRollback = execution.rollbackExecution(
@@ -540,8 +561,8 @@ class ModuleControlIntegrationTest {
 
             ExecutionRecord callable = aiActions.execute(true, List.of(
                     new AiActionService.ActionCall(
-                            "module_control",
-                            "module_control.interface.set_callable",
+                            "module_system_control",
+                            "module_system_control.interface.set_callable",
                             Map.of(
                                     "moduleId", "module_business",
                                     "kind", "action",
@@ -550,7 +571,13 @@ class ModuleControlIntegrationTest {
                             )
                     )
             ));
-            assertThat(callable.status()).isEqualTo("COMPLETED");
+            assertThat(callable.status())
+                    .withFailMessage(
+                            "系统治理 Action 返回 %s：%s",
+                            callable.status(),
+                            callable.steps()
+                    )
+                    .isEqualTo("COMPLETED");
             assertThat(preferences.isActionAiCallableEnabled(
                     "module_business",
                     "business.write"
@@ -576,11 +603,77 @@ class ModuleControlIntegrationTest {
     }
 
     @Test
+    void legacyControlExecutionRecordCanStillRollbackByAlias() {
+        boolean originallyEnabled = preferences.isEnabled("module_business");
+        try {
+            moduleControl.setActivation("module_business", false);
+            Instant now = Instant.now();
+            ExecutionRecordStep step = new ExecutionRecordStep(
+                    "a1",
+                    "module_control",
+                    "module_control.module.set_enabled",
+                    "设置模块启停",
+                    RiskLevel.WRITE,
+                    Map.of("moduleId", "module_business", "enabled", false),
+                    "COMPLETED",
+                    Map.of(
+                            "moduleId", "module_business",
+                            "enabled", originallyEnabled,
+                            "revision", "legacy-snapshot"
+                    ),
+                    Map.of(
+                            "moduleId", "module_business",
+                            "previousEnabled", originallyEnabled,
+                            "enabled", false,
+                            "changed", true,
+                            "revision", "legacy-output"
+                    ),
+                    "旧版模块启停记录"
+            );
+            String executionId = UUID.randomUUID().toString();
+            ExecutionRecord legacy = new ExecutionRecord(
+                    executionId,
+                    "AI_DIRECT",
+                    "COMPLETED",
+                    List.of(step),
+                    ExecutionRecord.aggregate(
+                            List.of(step),
+                            ExecutionRecord.StepPart.ARGUMENTS
+                    ),
+                    ExecutionRecord.aggregate(
+                            List.of(step),
+                            ExecutionRecord.StepPart.OUTPUT
+                    ),
+                    ExecutionRecord.aggregate(
+                            List.of(step),
+                            ExecutionRecord.StepPart.SNAPSHOT
+                    ),
+                    List.of(),
+                    now,
+                    now,
+                    now,
+                    now
+            );
+            executionRecords.save(legacy);
+
+            ExecutionRecord rolledBack = execution.rollbackExecution(executionId);
+
+            assertThat(rolledBack.status()).isEqualTo("ROLLED_BACK");
+            assertThat(preferences.isEnabled("module_business")).isEqualTo(originallyEnabled);
+            assertThat(rolledBack.steps().getFirst().moduleId()).isEqualTo("module_control");
+            assertThat(rolledBack.steps().getFirst().actionId())
+                    .isEqualTo("module_control.module.set_enabled");
+        } finally {
+            moduleControl.setActivation("module_business", originallyEnabled);
+        }
+    }
+
+    @Test
     void systemControlActionsCannotBeMixedWithBusinessActions() {
         assertThatThrownBy(() -> aiActions.preview(List.of(
                 new AiActionService.ActionCall(
-                        "module_control",
-                        "module_control.module.set_enabled",
+                        "module_system_control",
+                        "module_system_control.module.set_enabled",
                         Map.of("moduleId", "module_business", "enabled", false)
                 ),
                 new AiActionService.ActionCall(
@@ -683,7 +776,7 @@ class ModuleControlIntegrationTest {
     }
 
     private static Path fixtureRoot() {
-        Path root = Path.of("target", "module-control-fixture-" + UUID.randomUUID())
+        Path root = Path.of("target", "module-system-control-fixture-" + UUID.randomUUID())
                 .toAbsolutePath()
                 .normalize();
         Path modules = root.resolve("modules");
@@ -692,7 +785,7 @@ class ModuleControlIntegrationTest {
             Files.createDirectories(root.resolve("data"));
             TestModuleArchives.writeJar(
                     modules,
-                    "module_control.jar",
+                    "module_system_control.jar",
                     TestControlModule.class,
                     TestModuleArchives.controlContract(),
                     TestModuleArchives.controlUi()
@@ -711,7 +804,7 @@ class ModuleControlIntegrationTest {
                     TestModuleArchives.secondBusinessContract(),
                     TestModuleArchives.secondBusinessUi()
             );
-            for (String moduleId : List.of("module_control", "module_business", "module_business_two")) {
+            for (String moduleId : List.of("module_system_control", "module_business", "module_business_two")) {
                 TestModuleArchives.createSourceDirectory(sources, moduleId);
             }
             return root;
@@ -723,7 +816,7 @@ class ModuleControlIntegrationTest {
     private AiContracts.ServiceDecision queryDecision(String queryId) {
         return new AiContracts.ServiceDecision(
                 "QUERY",
-                "module-control-query-conversation",
+                "module-system-control-query-conversation",
                 "读取本地数据",
                 null,
                 List.of(new AiContracts.QueryCall(

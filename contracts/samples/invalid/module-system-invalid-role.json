@@ -1,11 +1,12 @@
 {
-  "moduleId": "module_control",
+  "moduleId": "module_system_invalid",
   "title": "模块控制",
   "description": "系统级模块控制入口。",
   "order": 0,
   "system": {
     "role": "BUSINESS_MODULE",
-    "protected": true
+    "protected": true,
+    "capabilities": ["MODULE_GOVERNANCE"]
   },
   "actions": [],
   "queries": [],

@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * {@code module_control} 的只读系统治理查询实现。
+ * {@code module_system_control} 的只读系统治理查询实现。
  *
  * <p>查询结果只包含业务模块元数据和当前设置，不修改治理状态。原始设置值仍遵守 Query
  * 的本地交付规则，由 AI 网关决定是否回传模型。</p>

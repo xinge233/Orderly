@@ -51,25 +51,28 @@
 ### 2.1 业务模块与系统模块
 
 - 每个 `Module/module_<id>/` 对应一个自包含业务模块，只产出一个可运行模块 JAR。
-- `module_control` 是唯一受保护的系统模块，必须在每个可运行安装中存在。
-- 系统模块契约必须声明：
+- `module_system_control` 是唯一的受保护控制模块，必须在每个可运行安装中存在。
+- `module_system_` 是宿主内置受保护模块的保留前缀；普通用户模块不得使用。
+- 系统模块契约必须声明受保护元数据和能力：
 
 ```json
 {
-  "moduleId": "module_control",
+  "moduleId": "module_system_control",
   "system": {
     "role": "MODULE_CONTROL",
-    "protected": true
+    "protected": true,
+    "capabilities": ["MODULE_GOVERNANCE"]
   }
 }
 ```
 
 - 全运行集必须恰好有一个 `MODULE_CONTROL`。系统模块缺失、重复或角色不符时，
-  构建或启动必须失败。
+  构建或启动必须失败。`MODULE_CONTROL` 必须声明 `MODULE_GOVERNANCE`；
+  `SYSTEM_SERVICE` 不得声明该能力。系统模块还必须命中宿主内置准入清单。
 - 业务模块与系统模块分开暴露：`/api/modules` 只返回业务模块，
-  `/api/system-modules` 返回系统模块。`module_control` 不得作为业务模块出现在
+  `/api/system-modules` 返回系统模块。`module_system_control` 不得作为业务模块出现在
   `/api/modules`。
-- 零业务模块是合法状态。此时 `module_control` 仍须存在，应用可启动，业务模块
+- 零业务模块是合法状态。此时 `module_system_control` 仍须存在，应用可启动，业务模块
   目录为空，侧边栏和总览显示空状态，其他框架功能不得报错。
 - 删除一个业务模块源码目录并重新构建、启动后，该模块的执行器、Action、Query、
   侧边栏、卡片和 UI 必须全部消失，框架不得保留固定分支。
@@ -310,9 +313,10 @@ export default async function mount(root, context) {
 ```
 
 - 模块只能使用宿主公开的 mount context，不得访问其他模块 DOM、内部状态或私有接口。
-- 只有 `module_control` 可以在满足系统模块校验时取得 `context.systemAdmin`；普通业务
+- 只有 `module_system_control` 可以在满足固定 ID、`MODULE_CONTROL` 与
+  `MODULE_GOVERNANCE` 校验时取得 `context.systemAdmin`；普通业务
   模块不得请求、伪造或缓存该特权。
-- `module_control` 通过宿主 API 管理业务 Action/Query 的动态 `aiCallable` 状态，
+- `module_system_control` 通过宿主 API 管理业务 Action/Query 的动态 `aiCallable` 状态，
   不治理自身接口。动态状态只限制 AI，不阻断模块自身 Query。未执行独立 AI 计划或
   执行中的 Action 必须由宿主标记为“使用中”并拒绝关闭。
 - `orderly-ui/module.json` 的 `settings` 只支持 `boolean`、`integer`、`select` 和
@@ -336,7 +340,8 @@ export default async function mount(root, context) {
   `target/orderly-modules/`，防止已移除模块从旧 JAR 继续加载。
 - 宿主启动时按稳定顺序扫描运行模块 JAR，读取契约和 UI 清单，通过 `ServiceLoader`
   绑定执行器，并在通用运行时就绪后对每个模块调用一次幂等 `initialize(...)`。
-- 启动时必须校验唯一 `module_control`、契约与执行器集合一致，以及模块、Action、
+- 启动时必须校验唯一 `module_system_control`、系统模块角色与能力、宿主准入清单、
+  契约与执行器集合一致，以及模块、Action、
   Query、计划规则和视图 ID 唯一。
 - 运行中只允许显式刷新追加已经构建的新业务模块 JAR；未构建源码返回
   `MODULE_NOT_BUILT`。
@@ -364,7 +369,7 @@ export default async function mount(root, context) {
 |---|---|
 | 结构完整 | JAR 内含 SPI、模块契约、`orderly-data/<moduleId>.json`（如有）和三项 `orderly-ui` 资源 |
 | 自动发现 | 不修改框架固定列表即可加载；宿主 fat JAR 不含模块 JAR、契约或 UI |
-| 系统模块 | 恰好一个受保护的 `module_control`；业务 API 不返回系统模块 |
+| 系统模块 | 恰好一个受保护的 `module_system_control`；仅 `module_system_` 宿主内置模块可声明系统身份；业务 API 不返回系统模块 |
 | 零业务模块 | 保留控制模块时可启动，业务模块列表为空，侧边栏和总览显示空状态 |
 | 契约合法 | 模块契约通过 `module.schema.json`，UI 清单通过 `module-ui.schema.json`；合法与非法样例均有实际测试 |
 | 标识唯一 | 模块、Action、Query、计划规则和视图 ID 的重复与越界被拒绝 |

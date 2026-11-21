@@ -15,7 +15,7 @@ const styleUrl = new URL(
     import.meta.url
 );
 
-test("module_control bridge exposes the required systemAdmin surface", async () => {
+test("module_system_control bridge exposes the required systemAdmin surface", async () => {
     const app = await readFile(appUrl, "utf8");
     const control = await readFile(controlUrl, "utf8");
     const methods = [
@@ -50,7 +50,7 @@ test("module_control bridge exposes the required systemAdmin surface", async () 
     assert.match(control, /protectedModule/);
 });
 
-test("module_control renders interface AI switches with locking states", async () => {
+test("module_system_control renders interface AI switches with locking states", async () => {
     const control = await readFile(controlUrl, "utf8");
     const style = await readFile(styleUrl, "utf8");
 

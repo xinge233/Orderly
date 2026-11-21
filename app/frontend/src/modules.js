@@ -23,7 +23,9 @@ export const MODULE_SOURCE = Object.freeze({
     SYSTEM: "system"
 });
 
-export const SYSTEM_ADMIN_MODULE_ID = "module_control";
+export const SYSTEM_ADMIN_MODULE_ID = "module_system_control";
+export const SYSTEM_MODULE_PREFIX = "module_system_";
+export const MODULE_GOVERNANCE_CAPABILITY = "MODULE_GOVERNANCE";
 
 const SETTING_TYPES = new Set(["boolean", "integer", "select", "text"]);
 
@@ -563,7 +565,9 @@ export function hasSystemAdminPrivilege(module) {
     return isSystemModule(module)
         && module.moduleId === SYSTEM_ADMIN_MODULE_ID
         && system?.role === "MODULE_CONTROL"
-        && system?.protected === true;
+        && system?.protected === true
+        && Array.isArray(system?.capabilities)
+        && system.capabilities.includes(MODULE_GOVERNANCE_CAPABILITY);
 }
 
 /**
@@ -634,7 +638,7 @@ export function normalizeModuleBuildSnapshot(input) {
             const sourceName = text(entry?.sourceName);
             const status = text(entry?.status).toUpperCase();
             if (!MODULE_SOURCE_NAME.test(sourceName)
-                || sourceName === "module_control"
+                || sourceName.startsWith(SYSTEM_MODULE_PREFIX)
                 || !MODULE_BUILD_STATUSES.has(status)) {
                 return [];
             }

@@ -6,7 +6,7 @@
 
 - 本地规则计划器：把少量明确的中文指令转换为结构化计划。它不连接外部大模型，界面会如实标注这一限制。
 - 自包含模块：每个 `Module/module_*` 在自身目录携带动作契约、只读查询、本地计划规则、执行器、逆操作和 UI 资源；宿主与前端不保存具体模块映射。
-- 模块控制：唯一的系统模块 `module_control` 管理系统业务模块的启停、侧边栏顺序、管理顺序、声明式设置，以及 Action/Query 的 AI 可调用状态。
+- 模块控制：唯一的控制模块 `module_system_control` 管理系统业务模块的启停、侧边栏顺序、管理顺序、声明式设置，以及 Action/Query 的 AI 可调用状态。
 - 文件模块：列出沙箱目录、创建目录、移动文件、移入回收站、从回收站恢复。
 - 待办模块：读取并创建待办。
 - 日程模块：读取并修改已有日程的时间。
@@ -26,7 +26,7 @@
 .\scripts\start.ps1 -BackgroundModules
 ```
 
-默认启动会先完整构建全部模块和宿主。`-BackgroundModules` 则只先构建 `module_control` 与宿主，Java 健康检查通过并打开界面后，由 `scripts/build-module-background.ps1` 按队列构建业务模块。后台默认最多同时运行 2 个模块 Maven worker，可在设置弹窗的“系统设置”中调整为 1-4；worker 只生成候选 JAR，校验、原子发布和宿主刷新始终由单一父进程依次完成。启动入口 `启动归序.cmd` 默认使用该模式。
+默认启动会先完整构建全部模块和宿主。`-BackgroundModules` 则只先构建受保护系统模块与宿主，Java 健康检查通过并打开界面后，由 `scripts/build-module-background.ps1` 按队列构建业务模块。后台默认最多同时运行 2 个模块 Maven worker，可在设置弹窗的“系统设置”中调整为 1-4；worker 只生成候选 JAR，校验、原子发布和宿主刷新始终由单一父进程依次完成。启动入口 `启动归序.cmd` 默认使用该模式。
 
 直接运行 `build.ps1` 默认执行模块与宿主测试；`-SkipTests` 仅用于明确的快速启动或验收路径。`-BootstrapOnly` 只构建控制模块与宿主，`-ModulesOnly -ModuleName <module_*>` 只构建一个业务模块且不重建宿主，`-SkipKernelInstall` 复用已安装 kernel。前台完整构建默认串行；只有显式传入大于 1 的 `-MaxParallel` 才并行，且并行范围仅限相互独立的模块 Maven 构建。后台渐进启动读取 `.orderly-data/build-settings.json`，默认并发为 2；多个 worker 使用隔离 Maven 仓库，发布仍保持单线程。
 
@@ -109,7 +109,7 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 
 DOCX 结构校验不判断文字内容和页面排版。实际修改 DOCX 内容或排版时，仍须渲染受影响页面并核对版式，不能把包结构通过当作视觉验收通过。
 
-`gate.ps1` 会先无条件调用 `scripts/doc-gate.ps1`。当变更是纯 Markdown/DOCX 文档时，`gate.ps1` 在文档门禁成功后直接退出，不运行 Maven、Node 或 Python 测试；空变更集、其他文件类型、混合变更或分类不确定的变更继续完整门禁。完整分支使用标准 Python `jsonschema` 校验契约样例，并执行模块化 Maven 测试与打包、框架与模块 UI 语法、前端 Node 测试，同时检查物理删除调用、业务样式硬编码色值、固定模块映射和固定业务端点。`-DocumentOnly` 要求变更集必须是非空纯 Markdown/DOCX，否则失败且不启动构建。`modularity.ps1` 通过移动源码和重启宿主，验证全业务模块、移除单模块、零业务模块（保留 `module_control`）、恢复、临时模块自动发现与可逆移出、模块 UI/查询/计划规则、动态主题与已选主题失效回退；结束后恢复原生模块源码，并清理 `target` 验收临时目录。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
+`gate.ps1` 会先无条件调用 `scripts/doc-gate.ps1`。当变更是纯 Markdown/DOCX 文档时，`gate.ps1` 在文档门禁成功后直接退出，不运行 Maven、Node 或 Python 测试；空变更集、其他文件类型、混合变更或分类不确定的变更继续完整门禁。完整分支使用标准 Python `jsonschema` 校验契约样例，并执行模块化 Maven 测试与打包、框架与模块 UI 语法、前端 Node 测试，同时检查物理删除调用、业务样式硬编码色值、固定模块映射和固定业务端点。`-DocumentOnly` 要求变更集必须是非空纯 Markdown/DOCX，否则失败且不启动构建。`modularity.ps1` 通过移动源码和重启宿主，验证全业务模块、移除单模块、零业务模块（保留 `module_system_control`）、恢复、临时模块自动发现与可逆移出、模块 UI/查询/计划规则、动态主题与已选主题失效回退；结束后恢复原生模块源码，并清理 `target` 验收临时目录。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
 
 ### 离线源码包
 
@@ -155,14 +155,14 @@ DOCX 结构校验不判断文字内容和页面排版。实际修改 DOCX 内容
 - `app/frontend/`：静态本地界面。
 - `Module/module_fs/`、`module_todo/`、`module_calendar/`：各自携带契约、查询、计划规则、执行器、逆操作和 `orderly-ui/` 资源；构建脚本会自动发现新的 `Module/module_*`。模块规范见 `Module/AGENTS.md`。
 - `Module/module_study_assistant/`、`module_study_map/`、`module_study_review/`：只读学习界面参考模块，每个模块从自身 JAR 的 `orderly-data/<moduleId>.json` 返回数据，不包含动作或跨模块读取。
-- `Module/module_control/`：唯一受保护的系统模块，只提供模块治理入口，不作为业务模块出现在 `/api/modules`。
+- `Module/module_system_control/`：唯一的受保护控制模块，只提供模块治理入口，不作为业务模块出现在 `/api/modules`。
 - `contracts/`：计划、接口和样例的唯一真相源。
 - `themes/`：目录主题包，只包含清单、语义变量、动效 CSS 与登记资源，不包含界面结构或 JavaScript。
 - `scripts/`：构建、启动、门禁与烟测。
 
 ### 模块运行时边界
 
-宿主不在编译期依赖任何具体业务模块，也不把模块打进自己的 fat JAR。启动时，宿主按文件名稳定排序扫描外部模块目录，用 `URLClassLoader`（父加载器共享 kernel SPI）读取每个 JAR 的 `orderly-modules/*.json`，再通过 `ServiceLoader` 绑定执行器；契约与执行器集合不一致、重复模块、重复动作、重复查询或无效计划规则都会阻止启动。必须恰好加载一个受保护的 `module_control` 系统模块，零业务模块仍合法。
+宿主不在编译期依赖任何具体业务模块，也不把模块打进自己的 fat JAR。启动时，宿主按文件名稳定排序扫描外部模块目录，用 `URLClassLoader`（父加载器共享 kernel SPI）读取每个 JAR 的 `orderly-modules/*.json`，再通过 `ServiceLoader` 绑定执行器；契约与执行器集合不一致、重复模块、重复动作、重复查询或无效计划规则都会阻止启动。`module_system_` 仅供宿主内置受保护模块使用，必须是 `system.protected=true` 且命中宿主准入清单；当前必须恰好加载一个 `MODULE_CONTROL`，即 `module_system_control`。零业务模块仍合法。
 
 `GET /api/modules` 只返回业务模块并附带 `enabled`，`GET /api/system-modules` 返回系统模块且恒为启用。模块治理 API：
 
@@ -185,7 +185,7 @@ POST  /api/system/module-folder/open
 
 `POST /api/system/shutdown` 只接受 `X-Orderly-Action: shutdown`。存在执行中的 Action 或计划时返回 `HOST_EXECUTION_IN_PROGRESS`；接受后返回 `202` 和 `STOPPING`，随后由启动脚本清理相关子进程。
 
-业务 Action 和 Query 不在模块契约中声明静态 AI 权限。宿主在 `.orderly-data/module-governance.json` 中保存用户级 `actionAiCallableEnabled` 与 `queryAiCallableEnabled`，所有业务接口默认开启且可由 `module_control` 动态切换；系统模块 `module_control` 不参与治理。动态开关只限制 AI：Action 影响 AI 计划与 AI 直执，Query 影响已接入的 AI Query，模块自身查询和总览不会受影响。独立 AI 计划引用中的 Action 显示“使用中”，确认时原子转换为整次执行占用，并在结束或失败后释放；过期提案也会释放。旧版计划不参与。
+业务 Action 和 Query 不在模块契约中声明静态 AI 权限。宿主在 `.orderly-data/module-governance.json` 中保存用户级 `actionAiCallableEnabled` 与 `queryAiCallableEnabled`，所有业务接口默认开启且可由 `module_system_control` 动态切换；系统模块自身不参与业务接口治理。动态开关只限制 AI：Action 影响 AI 计划与 AI 直执，Query 影响已接入的 AI Query，模块自身查询和总览不会受影响。独立 AI 计划引用中的 Action 显示“使用中”，确认时原子转换为整次执行占用，并在结束或失败后释放；过期提案也会释放。旧版计划不参与。
 
 宿主功能与直执 API：
 
@@ -207,7 +207,7 @@ POST /api/executions/{executionId}/rollback
 旧版计划由宿主设置控制，默认关闭。关闭时旧计划生成、确认和计划回滚接口返回 `FEATURE_DISABLED`，历史执行仍可读取和回滚。独立 AI 计划不复用该开关或接口。AI 直执请求只由宿主设置 `AI_DIRECT` 或 `AI_PLAN` 来源，客户端不能覆盖风险等级、模型返回结构或确认状态。
 `POST /api/ai/turns` 必须携带 `clientRequestId`；同一设置代次、会话和请求 ID 的重复提交返回首次结果，不会再次调用模型或重复执行写入。
 
-`sidebarOrder` 和 `managementOrder` 都必须完整包含当前业务模块和 `module_control` 的 ID。`module_control` 默认位于最后，但用户可以在侧边栏和模块设置列表中拖动它；两份排序独立持久化且不得重复。
+`sidebarOrder` 和 `managementOrder` 都必须完整包含当前业务模块和 `module_system_control` 的 ID。`module_system_control` 默认位于最后，但用户可以在侧边栏和模块设置列表中拖动它；旧治理文件中的 `module_control` 顺序 ID 会在读取时迁移为新 ID。两份排序独立持久化且不得重复。
 
 运行中刷新只允许显式追加新模块：扫描 `Module/module_*` 源码，并要求 `target/orderly-modules/` 已有对应 JAR。未构建源码返回 `MODULE_NOT_BUILT`；已有模块的源码或 JAR 更新、删除返回 `RESTART_REQUIRED`，当前运行快照保持不变。刷新不会自动编译，也不会替换或卸载已有模块。
 
@@ -215,7 +215,7 @@ POST /api/executions/{executionId}/rollback
 
 学习相关只读数据由 `contracts/study-data.schema.json` 约束，并通过 `scripts/validate-study-data.mjs` 校验。公共字段声明 `ownerModule`、`readOnly: true`、来源和计数，负载按 `assistant`、`materials`、`knowledge-map`、`review` 四类校验引用完整性。数据分别位于模块自身 JAR 的模块唯一资源名下，不建立集中数据目录；模块只能调用自身声明的查询。
 
-模块 JAR 是应用有权执行的本地文件，属于**本地受信任可执行代码**，不是安全沙箱。当前不提供远程插件下载、签名校验或权限隔离；只应放入自己信任的模块。零业务模块时应用仍可启动，`/api/modules` 返回空数组，侧栏与总览保持空状态；`module_control` 缺失时构建和启动都会失败。
+模块 JAR 是应用有权执行的本地文件，属于**本地受信任可执行代码**，不是安全沙箱。当前不提供远程插件下载、签名校验或权限隔离；只应放入自己信任的模块。零业务模块时应用仍可启动，`/api/modules` 返回空数组，侧栏与总览保持空状态；`module_system_control` 缺失时构建和启动都会失败。
 
 主题从配置的 `themes/` 目录按直接子目录加载，不使用 classpath 回退，也不进入宿主 fat JAR。每个包包含 `theme.json`、清单登记的 `tokens.css` 与 `motion.css`，可选 `assets/`；添加或移除目录后重启宿主生效，不需要重新构建，首版不支持热加载或主题 JavaScript。
 

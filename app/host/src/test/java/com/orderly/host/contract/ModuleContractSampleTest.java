@@ -76,23 +76,44 @@ class ModuleContractSampleTest {
                 .toAbsolutePath();
         try (ContractCatalog catalog = new ContractCatalog(objectMapper, missingModules.toString())) {
             ModuleContract module = catalog.parseAndValidateModule(
-                    objectMapper.readTree(samples.resolve("valid/module-control.json").toFile())
+                    objectMapper.readTree(
+                            samples.resolve("valid/module-system-control.json").toFile()
+                    )
             );
-            assertThat(module.moduleId()).isEqualTo("module_control");
+            assertThat(module.moduleId()).isEqualTo("module_system_control");
             assertThat(module.system()).isNotNull();
             assertThat(module.system().role()).isEqualTo("MODULE_CONTROL");
             assertThat(module.system().protectedModule()).isTrue();
+            assertThat(module.system().capabilities())
+                    .containsExactly("MODULE_GOVERNANCE");
             assertThat(module.actions()).extracting(ActionContract::id)
                     .containsExactlyInAnyOrder(
-                            "module_control.module.set_enabled",
-                            "module_control.interface.set_callable"
+                            "module_system_control.module.set_enabled",
+                            "module_system_control.interface.set_callable"
                     );
             assertThat(module.queries()).extracting(QueryContract::id)
                     .containsExactlyInAnyOrder(
-                            "module_control.module.list",
-                            "module_control.interface.list",
-                            "module_control.setting.get"
+                            "module_system_control.module.list",
+                            "module_system_control.interface.list",
+                            "module_system_control.setting.get"
                     );
+        }
+    }
+
+    @Test
+    void systemServiceSampleCarriesProtectedMetadataWithoutGovernanceCapability()
+            throws Exception {
+        Path missingModules = Path.of("target", "sample-contract-" + UUID.randomUUID())
+                .toAbsolutePath();
+        try (ContractCatalog catalog = new ContractCatalog(objectMapper, missingModules.toString())) {
+            ModuleContract module = catalog.parseAndValidateModule(
+                    objectMapper.readTree(
+                            samples.resolve("valid/module-system-service.json").toFile()
+                    )
+            );
+            assertThat(module.moduleId()).isEqualTo("module_system_example");
+            assertThat(module.system().role()).isEqualTo("SYSTEM_SERVICE");
+            assertThat(module.system().capabilities()).isEmpty();
         }
     }
 
@@ -106,6 +127,58 @@ class ModuleContractSampleTest {
             ))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("系统模块角色");
+        }
+    }
+
+    @Test
+    void reservedSystemPrefixWithoutProtectedMetadataFailsRuntimeValidation()
+            throws Exception {
+        Path missingModules = Path.of("target", "sample-contract-" + UUID.randomUUID())
+                .toAbsolutePath();
+        try (ContractCatalog catalog = new ContractCatalog(objectMapper, missingModules.toString())) {
+            assertThatThrownBy(() -> catalog.parseAndValidateModule(
+                    objectMapper.readTree(
+                            samples.resolve(
+                                    "invalid/module-system-reserved-prefix-business.json"
+                            ).toFile()
+                    )
+            ))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("module_system_");
+        }
+    }
+
+    @Test
+    void protectedModuleWithoutReservedPrefixFailsRuntimeValidation() throws Exception {
+        Path missingModules = Path.of("target", "sample-contract-" + UUID.randomUUID())
+                .toAbsolutePath();
+        try (ContractCatalog catalog = new ContractCatalog(objectMapper, missingModules.toString())) {
+            assertThatThrownBy(() -> catalog.parseAndValidateModule(
+                    objectMapper.readTree(
+                            samples.resolve(
+                                    "invalid/module-system-protected-missing-prefix.json"
+                            ).toFile()
+                    )
+            ))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("module_system_");
+        }
+    }
+
+    @Test
+    void systemServiceCannotClaimControlGovernanceCapability() throws Exception {
+        Path missingModules = Path.of("target", "sample-contract-" + UUID.randomUUID())
+                .toAbsolutePath();
+        try (ContractCatalog catalog = new ContractCatalog(objectMapper, missingModules.toString())) {
+            assertThatThrownBy(() -> catalog.parseAndValidateModule(
+                    objectMapper.readTree(
+                            samples.resolve(
+                                    "invalid/module-system-service-governance.json"
+                            ).toFile()
+                    )
+            ))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("SYSTEM_SERVICE");
         }
     }
 

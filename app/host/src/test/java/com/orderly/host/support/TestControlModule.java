@@ -10,7 +10,7 @@ import java.util.Map;
 public final class TestControlModule implements OrderlyModule {
     @Override
     public String moduleId() {
-        return "module_control";
+        return "module_system_control";
     }
 
     @Override

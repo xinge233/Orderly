@@ -1,0 +1,14 @@
+{
+  "moduleId": "module_system_example",
+  "title": "示例系统服务",
+  "description": "仅用于验证受保护系统服务的契约结构。",
+  "order": 10001,
+  "system": {
+    "role": "SYSTEM_SERVICE",
+    "protected": true,
+    "capabilities": []
+  },
+  "actions": [],
+  "queries": [],
+  "plannerRules": []
+}

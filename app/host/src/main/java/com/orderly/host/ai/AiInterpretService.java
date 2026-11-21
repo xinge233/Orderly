@@ -456,7 +456,7 @@ public class AiInterpretService {
     /**
      * 从契约目录生成 Python 可见的工具卡。
      *
-     * <p>业务模块必须启用；受保护 {@code module_control} 只暴露宿主白名单治理接口。
+     * <p>业务模块必须启用；受保护 {@code module_system_control} 只暴露宿主白名单治理接口。
      * Action/Query 只受模块治理动态开关约束。工具卡元数据来自
      * {@link ContractCatalog}，这里不维护第二套定义。</p>
      */
