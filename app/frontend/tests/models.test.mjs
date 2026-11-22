@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
     formatBytes,
+    inferEventOrigin,
     joinPath,
     mergeEvents,
     normalizeAiQueryResponse,
@@ -195,6 +196,7 @@ test("events preserve execution identity for module event routing", () => {
     const event = normalizeEvent({
         seq: 42,
         type: "step",
+        origin: "ai_query",
         moduleId: "module_calendar",
         actionId: "calendar.event.create",
         status: "completed",
@@ -203,9 +205,11 @@ test("events preserve execution identity for module event routing", () => {
 
     assert.equal(event.sequence, 42);
     assert.equal(event.type, "STEP");
+    assert.equal(event.origin, "AI_QUERY");
     assert.equal(event.moduleId, "module_calendar");
     assert.equal(event.actionId, "calendar.event.create");
     assert.equal(event.status, "COMPLETED");
+    assert.equal(inferEventOrigin({ origin: "AI_QUERY" }), "AI_QUERY");
 });
 
 test("path and size helpers remain deterministic", () => {

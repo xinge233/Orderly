@@ -7,6 +7,7 @@ import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.contract.ModuleSystemMetadata;
 import com.orderly.host.contract.ParameterContract;
 import com.orderly.host.contract.QueryContract;
+import com.orderly.host.event.ExecutionJournal;
 import com.orderly.host.modulecontrol.ModuleControlQueryService;
 import com.orderly.host.modulecontrol.ModuleControlService;
 import com.orderly.host.runtime.WorkspaceRuntime;
@@ -24,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -37,6 +39,7 @@ class AiQueryServiceTest {
             mock(ModuleControlQueryService.class);
     private final WorkspaceRuntime runtime = mock(WorkspaceRuntime.class);
     private final OrderlyModule executor = mock(OrderlyModule.class);
+    private final ExecutionJournal journal = mock(ExecutionJournal.class);
     private AiQueryService service;
     private ModuleContract module;
 
@@ -47,7 +50,8 @@ class AiQueryServiceTest {
                 moduleControl,
                 moduleControlQueries,
                 runtime,
-                new ObjectMapper()
+                new ObjectMapper(),
+                journal
         );
         QueryContract query = new QueryContract(
                 "test.list",
@@ -98,6 +102,39 @@ class AiQueryServiceTest {
         )))
                 .isInstanceOfSatisfying(ApiException.class, exception ->
                         assertThat(exception.code()).isEqualTo("AI_INVALID_RESPONSE"));
+    }
+
+    @Test
+    void emitsInvocationBeforeQueryAndTerminalStatusAfterward() {
+        when(executor.query(eq("test.list"), anyMap(), eq(runtime)))
+                .thenReturn(Map.of("items", List.of()));
+
+        List<AiContracts.QueryResult> results = service.executeAiQueries(List.of(query()));
+
+        assertThat(results).singleElement().satisfies(result ->
+                assertThat(result.status()).isEqualTo(AiContracts.QueryStatus.OK));
+        var order = inOrder(journal, executor);
+        order.verify(journal).append(
+                "QUERY",
+                "AI_QUERY",
+                null,
+                "q1",
+                "module_test",
+                null,
+                "RUNNING",
+                "AI 正在读取模块查询：test.list"
+        );
+        order.verify(executor).query(eq("test.list"), anyMap(), eq(runtime));
+        order.verify(journal).append(
+                "QUERY",
+                "AI_QUERY",
+                null,
+                "q1",
+                "module_test",
+                null,
+                "OK",
+                "查询完成"
+        );
     }
 
     @Test
@@ -180,6 +217,7 @@ class AiQueryServiceTest {
         List<AiContracts.QueryResult> invalidArguments =
                 service.executeAiQueries(List.of(query()));
         assertThat(invalidArguments.get(0).status()).isEqualTo(AiContracts.QueryStatus.FAILED);
+        verifyNoInteractions(journal);
         verifyNoInteractions(executor);
     }
 

@@ -3871,8 +3871,9 @@ function fillCommand(command) {
 /**
  * 连接宿主持久化执行事件流。
  *
- * 收到事件后立即合并审计数据并通知模块，但 DOM 更新按动画帧合并，避免高频 SSE
- * 造成多次重排。计划视图只消费当前计划事件；历史页则保留全部已归一化事件。
+ * 收到事件后先尝试驱动当前 AI 回合的模块调用提示，再合并审计数据并通知模块。
+ * DOM 更新按动画帧合并，避免高频 SSE 造成多次重排。计划视图只消费当前计划事件；
+ * 历史页则保留全部已归一化事件。
  *
  * 副作用：建立 EventSource 等价连接并持续写入 state.events；pagehide 时由全局入口关闭。
  */
@@ -3880,6 +3881,7 @@ function connectEventStream() {
     eventStream = api.streamEvents({
         onEvent: (raw) => {
             const event = normalizeEvent(raw, state.events.length);
+            aiDialog?.handleInvocationEvent?.(event);
             state.events = mergeEvents(state.events, [event]);
             emitFrameworkEvent(event);
             if (event.planId && state.plan?.planId && event.planId !== state.plan.planId) {

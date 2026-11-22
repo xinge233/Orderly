@@ -8,6 +8,7 @@ import {
     executionFailureMessage,
     executionSucceeded,
     higherAiRisk,
+    invocationEventModuleId,
     resolveAiSnapPosition,
     resolveAiSurfaceLayout
 } from "../src/ai-dialog.js";
@@ -229,6 +230,66 @@ test("AI target resolution prefers visible content and falls back to the sidebar
     assert.ok(currentCardAt > currentModuleAt);
     assert.ok(sidebarAt > currentCardAt);
     assert.match(resolver, /visibleRect\(sidebarTarget\)/);
+});
+
+test("AI invocation events animate only current module calls", () => {
+    const startedAt = Date.parse("2026-11-22T03:00:00.000Z");
+    const base = {
+        sequence: 7,
+        status: "RUNNING",
+        moduleId: "module_todo",
+        timestamp: "2026-11-22T03:00:00.050Z",
+        timeValue: startedAt + 50
+    };
+
+    assert.equal(
+        invocationEventModuleId({ ...base, type: "STEP", origin: "AI_DIRECT" }, startedAt),
+        "module_todo"
+    );
+    assert.equal(
+        invocationEventModuleId({ ...base, type: "QUERY", origin: "AI_QUERY" }, startedAt),
+        "module_todo"
+    );
+    assert.equal(
+        invocationEventModuleId({ ...base, type: "STEP", origin: "AI_PLAN" }, startedAt),
+        "module_todo"
+    );
+    assert.equal(
+        invocationEventModuleId(
+            {
+                ...base,
+                timestamp: "2026-11-22T02:59:59.999Z",
+                timeValue: startedAt - 1
+            },
+            startedAt
+        ),
+        ""
+    );
+    assert.equal(
+        invocationEventModuleId(
+            { ...base, type: "STEP", origin: "AI_DIRECT", status: "COMPLETED" },
+            startedAt
+        ),
+        ""
+    );
+    assert.equal(
+        invocationEventModuleId(
+            { ...base, type: "STEP", origin: "PLAN" },
+            startedAt
+        ),
+        ""
+    );
+    assert.equal(invocationEventModuleId(base, 0), "");
+});
+
+test("framework events are routed to the active AI invocation tracker", async () => {
+    const component = await read("../src/ai-dialog.js");
+    const app = await read("../src/app.js");
+
+    assert.match(component, /handleInvocationEvent/);
+    assert.match(component, /dialog\.invocationChain\.then/);
+    assert.match(component, /dialog\.invocationSeen\.has\(key\)/);
+    assert.match(app, /aiDialog\?\.handleInvocationEvent\?\.\(event\)/);
 });
 
 test("AI invocation layer is non-interactive and the dot carries a trail", async () => {

@@ -7,6 +7,7 @@ import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.contract.ParameterContract;
 import com.orderly.host.contract.QueryContract;
+import com.orderly.host.event.ExecutionJournal;
 import com.orderly.host.modulecontrol.ModuleControlInterfaces;
 import com.orderly.host.modulecontrol.ModuleControlQueryService;
 import com.orderly.host.modulecontrol.ModuleControlService;
@@ -42,19 +43,22 @@ public class AiQueryService {
     private final ModuleControlQueryService moduleControlQueries;
     private final WorkspaceRuntime runtime;
     private final ObjectMapper objectMapper;
+    private final ExecutionJournal journal;
 
     public AiQueryService(
             ContractCatalog catalog,
             ModuleControlService moduleControl,
             ModuleControlQueryService moduleControlQueries,
             WorkspaceRuntime runtime,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ExecutionJournal journal
     ) {
         this.catalog = catalog;
         this.moduleControl = moduleControl;
         this.moduleControlQueries = moduleControlQueries;
         this.runtime = runtime;
         this.objectMapper = objectMapper;
+        this.journal = journal;
     }
 
     /**
@@ -67,7 +71,7 @@ public class AiQueryService {
             String queryId,
             Map<String, String> arguments
     ) {
-        return executeOne(moduleId, queryId, arguments, false);
+        return executeOne(moduleId, queryId, arguments, false, () -> {});
     }
 
     /**
@@ -76,6 +80,9 @@ public class AiQueryService {
      * <p>每次执行都会重新校验模块与查询授权。单条 JSON 结果超过 16 KiB 或累计超过
      * 64 KiB 时只返回截断状态而不保留 payload；单条执行失败被映射为失败结果，
      * 以便宿主把受控状态返回前端或显式允许后的模型续聊。</p>
+     *
+     * <p>只有模块、AI 开关和参数校验全部通过后才写入 RUNNING 事件，使前端调用提示
+     * 与实际模块读取保持同一时序；终态事件只记录状态和摘要，不包含 Query payload。</p>
      */
     public List<AiContracts.QueryResult> executeAiQueries(
             List<AiContracts.QueryCall> queries
@@ -85,17 +92,33 @@ public class AiQueryService {
         }
         List<AiContracts.QueryResult> results = new ArrayList<>();
         int totalBytes = 0;
-        for (AiContracts.QueryCall query : queries) {
+        for (int index = 0; index < queries.size(); index++) {
+            AiContracts.QueryCall query = queries.get(index);
             if (query == null || blank(query.moduleId()) || blank(query.queryId())) {
                 throw invalidResponse("QUERY 字段不完整");
             }
+            String stepId = "q" + (index + 1);
+            boolean[] invoked = {false};
             AiContracts.QueryResult result;
             try {
                 Map<String, Object> payload = executeOne(
                         query.moduleId(),
                         query.queryId(),
                         query.arguments(),
-                        true
+                        true,
+                        () -> {
+                            journal.append(
+                                    "QUERY",
+                                    "AI_QUERY",
+                                    null,
+                                    stepId,
+                                    query.moduleId(),
+                                    null,
+                                    "RUNNING",
+                                    "AI 正在读取模块查询：" + query.queryId()
+                            );
+                            invoked[0] = true;
+                        }
                 );
                 int payloadBytes = jsonBytes(payload);
                 if (payloadBytes > MAX_SINGLE_RESULT_BYTES) {
@@ -137,6 +160,18 @@ public class AiQueryService {
                 );
                 resultBytes = jsonBytes(result);
             }
+            if (invoked[0]) {
+                journal.append(
+                        "QUERY",
+                        "AI_QUERY",
+                        null,
+                        stepId,
+                        query.moduleId(),
+                        null,
+                        result.status().name(),
+                        result.message()
+                );
+            }
             totalBytes += resultBytes;
             results.add(result);
         }
@@ -154,10 +189,17 @@ public class AiQueryService {
             String moduleId,
             String queryId,
             Map<String, ?> supplied,
-            boolean requireAiCallable
+            boolean requireAiCallable,
+            Runnable beforeExecute
     ) {
         if (catalog.isSystemModule(moduleId)) {
-            return executeControlQuery(moduleId, queryId, supplied, requireAiCallable);
+            return executeControlQuery(
+                    moduleId,
+                    queryId,
+                    supplied,
+                    requireAiCallable,
+                    beforeExecute
+            );
         }
         return moduleControl.withEnabledBusinessModule(moduleId, module -> {
             QueryContract query = requireQuery(module, queryId);
@@ -170,6 +212,7 @@ public class AiQueryService {
                 );
             }
             Map<String, String> validated = validateParameters(query, supplied);
+            beforeExecute.run();
             Map<String, Object> payload = catalog.requireExecutor(moduleId)
                     .query(queryId, validated, runtime);
             if (payload == null) {
@@ -184,7 +227,8 @@ public class AiQueryService {
             String moduleId,
             String queryId,
             Map<String, ?> supplied,
-            boolean requireAiCallable
+            boolean requireAiCallable,
+            Runnable beforeExecute
     ) {
         ModuleContract module = catalog.findModule(moduleId).orElseThrow(
                 () -> new ApiException(
@@ -211,6 +255,7 @@ public class AiQueryService {
             );
         }
         Map<String, String> validated = validateParameters(query, supplied);
+        beforeExecute.run();
         return moduleControlQueries.query(queryId, validated);
     }
 

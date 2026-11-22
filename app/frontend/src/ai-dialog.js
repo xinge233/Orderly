@@ -13,7 +13,11 @@
  * 只负责界面状态、交互动画和结果呈现，失败时不得伪造计划或执行成功。
  */
 import { icon, normalizeAiIcon } from "./icons.js";
-import { normalizeAiQueryResponse, summarizeQueryPayload } from "./models.js";
+import {
+    EVENT_ORIGIN,
+    normalizeAiQueryResponse,
+    summarizeQueryPayload
+} from "./models.js";
 
 const AI_RISK_ORDER = Object.freeze({
     READ_ONLY: 0,
@@ -33,6 +37,12 @@ const AI_DRAG_THRESHOLD_PX = 6;
 const AI_SNAP_DISTANCE_PX = 76;
 const AI_POSITION_STORAGE_KEY = "orderly.ai.dock.position.v1";
 const AI_VIEWPORT_MARGIN_PX = 12;
+const AI_INVOCATION_TYPES = new Set(["STEP", "QUERY"]);
+const AI_INVOCATION_ORIGINS = new Set([
+    EVENT_ORIGIN.AI_DIRECT,
+    EVENT_ORIGIN.AI_QUERY,
+    EVENT_ORIGIN.AI_PLAN
+]);
 
 function normalizeSettings(value) {
     return {
@@ -43,6 +53,37 @@ function normalizeSettings(value) {
         baseUrl: typeof value?.baseUrl === "string" ? value.baseUrl : "",
         model: typeof value?.model === "string" ? value.model : ""
     };
+}
+
+/**
+ * 从当前 AI 回合的宿主事件中解析需要提示的模块。
+ *
+ * 历史 SSE 重放、终态事件和非 AI 来源都不会通过校验；时间戳缺失时也保守忽略，
+ * 避免把重连快照误当成正在进行的新调用。
+ *
+ * @param {object} event 已归一化事件
+ * @param {number} startedAt 当前 AI 回合开始时间
+ * @returns {string} 模块 id；不应提示时为空字符串
+ */
+export function invocationEventModuleId(event, startedAt = 0) {
+    const started = Number(startedAt);
+    if (!Number.isFinite(started) || started <= 0) {
+        return "";
+    }
+    const type = String(event?.type ?? "").trim().toUpperCase();
+    const status = String(event?.status ?? "").trim().toUpperCase();
+    const origin = String(event?.origin ?? "").trim().toUpperCase();
+    const moduleId = String(event?.moduleId ?? "").trim();
+    const timeValue = Number(event?.timeValue);
+    if (!AI_INVOCATION_TYPES.has(type)
+        || status !== "RUNNING"
+        || !AI_INVOCATION_ORIGINS.has(origin)
+        || !moduleId
+        || !Number.isFinite(timeValue)
+        || timeValue < started) {
+        return "";
+    }
+    return moduleId;
 }
 
 /**
@@ -429,6 +470,10 @@ export function mountAiDialog({
         busy: false,
         error: "",
         runGeneration: 0,
+        invocationStartedAt: 0,
+        invocationGeneration: 0,
+        invocationSeen: new Set(),
+        invocationChain: Promise.resolve(),
         popoverTimer: null,
         collapseTimer: null,
         completionTimer: null,
@@ -484,6 +529,53 @@ export function mountAiDialog({
         }
         invocationCleanups.clear();
         callLayer.replaceChildren();
+    }
+
+    function resetInvocationTracking(startedAt = 0) {
+        dialog.invocationGeneration += 1;
+        dialog.invocationStartedAt = Number.isFinite(startedAt) ? startedAt : 0;
+        dialog.invocationSeen.clear();
+        dialog.invocationChain = Promise.resolve();
+        clearInvocationLayer();
+    }
+
+    function beginInvocationTracking() {
+        resetInvocationTracking(Date.now());
+    }
+
+    function enqueueInvocation(moduleId) {
+        const generation = dialog.invocationGeneration;
+        const task = dialog.invocationChain.then(() => {
+            if (generation !== dialog.invocationGeneration) {
+                return false;
+            }
+            return animateInvocation(moduleId);
+        });
+        dialog.invocationChain = task.catch(() => false);
+    }
+
+    function handleInvocationEvent(event) {
+        const moduleId = invocationEventModuleId(event, dialog.invocationStartedAt);
+        if (!moduleId) {
+            return false;
+        }
+        const key = event?.sequence != null
+            ? `seq:${event.sequence}`
+            : [
+                event?.type,
+                event?.origin,
+                event?.planId,
+                event?.stepId,
+                event?.moduleId,
+                event?.status,
+                event?.timeValue
+            ].map((value) => String(value ?? "")).join(":");
+        if (dialog.invocationSeen.has(key)) {
+            return false;
+        }
+        dialog.invocationSeen.add(key);
+        enqueueInvocation(moduleId);
+        return true;
     }
 
     // 执行完成后的模块刷新属于辅助行为；刷新异常不能把宿主已返回的执行结果改成失败。
@@ -1358,7 +1450,7 @@ export function mountAiDialog({
         clearLater(dialog.completionTimer);
         dialog.collapseTimer = null;
         dialog.completionTimer = null;
-        clearInvocationLayer();
+        resetInvocationTracking();
     }
 
     function collapseAndReset({ focusLauncher = true } = {}) {
@@ -1540,7 +1632,7 @@ export function mountAiDialog({
         dialog.question = null;
         dialog.query = null;
         dialog.execution = null;
-        clearInvocationLayer();
+        resetInvocationTracking();
         setState({
             mode: "sending",
             composerOpen: true,
@@ -1559,6 +1651,7 @@ export function mountAiDialog({
                 });
                 return;
             }
+            beginInvocationTracking();
             const response = await interpretGoal({
                 goal,
                 conversationId: dialog.conversationId || null,
@@ -1803,25 +1896,21 @@ export function mountAiDialog({
         return true;
     }
 
-    // 独立 AI 计划只在用户点击确认后调用宿主。调用前逐个呈现目标模块轨迹，但轨迹
-    // 不代表动作已执行；最终状态仅采信宿主返回的执行记录。
+    // 独立 AI 计划只在用户点击确认后调用宿主。模块轨迹由宿主实际 STEP 事件驱动，
+    // 不在确认前预演；最终状态仅采信宿主返回的执行记录。
     async function confirmPlan() {
         if (!dialog.plan?.planId || dialog.busy) {
             return;
         }
         const generation = ++dialog.requestGeneration;
         dialog.busy = true;
+        beginInvocationTracking();
         setState({
             mode: "running",
             composerOpen: true,
             panelOpen: true
         });
         try {
-            const steps = Array.isArray(dialog.plan.steps) ? dialog.plan.steps : [];
-            for (const step of steps) {
-                if (generation !== dialog.requestGeneration) return;
-                await animateInvocation(step.moduleId);
-            }
             const record = await confirmAiPlan(dialog.plan.planId);
             if (generation !== dialog.requestGeneration) return;
             dialog.execution = record;
@@ -2148,6 +2237,7 @@ export function mountAiDialog({
     return {
         setEnabled,
         reset,
+        handleInvocationEvent,
         setAiSettings(settings) {
             dialog.settings = normalizeSettings(settings);
             // 宿主清除临时凭据后，已展开的 Dock 立即回到输入 Key 的状态；折叠态不主动
