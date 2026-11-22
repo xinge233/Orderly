@@ -1,0 +1,58 @@
+name: Publish module distribution
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate source before publishing
+        shell: pwsh
+        run: ./scripts/gate.ps1
+
+      - name: Generate business module catalog
+        shell: pwsh
+        run: ./scripts/export-module-distribution.ps1 -OutputDirectory ./target/module-distribution
+
+      - name: Switch to generated distribution branch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & git fetch origin "module-distribution:refs/remotes/origin/module-distribution"
+          if ($LASTEXITCODE -eq 0) {
+            & git checkout -B module-distribution origin/module-distribution
+            if ($LASTEXITCODE -ne 0) { throw "无法切换 module-distribution 分支" }
+          }
+          else {
+            & git checkout --orphan module-distribution
+            if ($LASTEXITCODE -ne 0) { throw "无法创建 module-distribution 分支" }
+          }
+          & git rm -r --ignore-unmatch .
+          if ($LASTEXITCODE -ne 0) { throw "无法清理分发分支旧内容" }
+          Copy-Item -Path ./target/module-distribution/* -Destination . -Recurse -Force
+
+      - name: Commit and push generated branch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & git config user.name "Orderly Module Publisher"
+          & git config user.email "orderly-module-publisher@users.noreply.github.com"
+          & git add catalog.json packages
+          & git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "模块分发内容没有变化。"
+            exit 0
+          }
+          & git commit -m "发布：更新模块分发目录"
+          if ($LASTEXITCODE -ne 0) { throw "模块分发提交失败" }
+          & git push origin HEAD:module-distribution
+          if ($LASTEXITCODE -ne 0) { throw "模块分发分支推送失败" }

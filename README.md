@@ -26,7 +26,7 @@
 .\scripts\start.ps1 -BackgroundModules
 ```
 
-默认启动会先完整构建全部模块和宿主。`-BackgroundModules` 则只先构建受保护系统模块与宿主，Java 健康检查通过并打开界面后，由 `scripts/build-module-background.ps1` 按队列构建业务模块。后台默认最多同时运行 2 个模块 Maven worker，可在设置弹窗的“系统设置”中调整为 1-4；worker 只生成候选 JAR，校验、原子发布和宿主刷新始终由单一父进程依次完成。启动入口 `启动归序.cmd` 默认使用该模式。
+默认启动会先完整构建全部模块和宿主。`-BackgroundModules` 则只先构建受保护系统模块与宿主，Java 健康检查通过并打开界面后，由 `scripts/build-module-background.ps1` 按队列构建业务模块。首轮构建结束后 `scripts/watch-module-downloads.ps1` 继续监督新下载模块，空闲时不持有仓库构建锁；发现新源码后再执行单模块构建和宿主刷新。后台默认最多同时运行 2 个模块 Maven worker，可在设置弹窗的“系统设置”中调整为 1-4；worker 只生成候选 JAR，校验、原子发布和宿主刷新始终由单一父进程依次完成。启动入口 `启动归序.cmd` 默认使用该模式。
 
 直接运行 `build.ps1` 默认执行模块与宿主测试；`-SkipTests` 仅用于明确的快速启动或验收路径。`-BootstrapOnly` 只构建控制模块与宿主，`-ModulesOnly -ModuleName <module_*>` 只构建一个业务模块且不重建宿主，`-SkipKernelInstall` 复用已安装 kernel。前台完整构建默认串行；只有显式传入大于 1 的 `-MaxParallel` 才并行，且并行范围仅限相互独立的模块 Maven 构建。后台渐进启动读取 `.orderly-data/build-settings.json`，默认并发为 2；多个 worker 使用隔离 Maven 仓库，发布仍保持单线程。
 
@@ -177,9 +177,14 @@ PUT   /api/modules/{moduleId}/settings
 POST  /api/modules/{moduleId}/settings/reset
 POST  /api/system/modules/refresh
 POST  /api/system/module-folder/open
+GET   /api/system/module-catalog
+POST  /api/system/module-catalog/install
+GET   /api/system/module-catalog/install/{jobId}
 ```
 
 `module-folder/open` 只接受 `X-Orderly-Action: open-module-folder`，只在 Windows 上打开配置的 `orderly.module-source-dir`，不接受客户端路径。模块查询、计划规则、计划生成、确认和执行都检查 `enabled`；执行中拒绝停用，回滚始终允许。开关、设置、排序、刷新和打开目录会写入审计事件。
+
+模块下载读取固定官方 `raw.githubusercontent.com` 分发分支的 `catalog.json`。安装请求只提交 `moduleId` 并携带 `X-Orderly-Action: install-module`；宿主拒绝全部 `module_system_*`、已存在模块、不安全路径、摘要不符、超限 ZIP、多根目录和非法契约。校验通过后源码原子写入 `Module/`，后台监督器完成本地 Maven 构建并调用刷新接口追加。新模块无需重启；已有模块更新、替换和卸载仍要求重启。
 
 `GET /api/system/build-settings` 返回后台模块构建并发和允许范围。`PUT /api/system/build-settings` 只接受带 `X-Orderly-Action: update-build-settings` 的请求，`maxParallel` 必须是 1-4 的整数；改变只影响后续 worker 调度，不终止已经在构建的模块。
 
@@ -209,13 +214,13 @@ POST /api/executions/{executionId}/rollback
 
 `sidebarOrder` 和 `managementOrder` 都必须完整包含当前业务模块和 `module_system_control` 的 ID。`module_system_control` 默认位于最后，但用户可以在侧边栏和模块设置列表中拖动它；旧治理文件中的 `module_control` 顺序 ID 会在读取时迁移为新 ID。两份排序独立持久化且不得重复。
 
-运行中刷新只允许显式追加新模块：扫描 `Module/module_*` 源码，并要求 `target/orderly-modules/` 已有对应 JAR。未构建源码返回 `MODULE_NOT_BUILT`；已有模块的源码或 JAR 更新、删除返回 `RESTART_REQUIRED`，当前运行快照保持不变。刷新不会自动编译，也不会替换或卸载已有模块。
+运行中刷新只允许显式追加新模块：扫描 `Module/module_*` 源码，并要求 `target/orderly-modules/` 已有对应 JAR。未构建源码返回 `MODULE_NOT_BUILT`；已有模块的源码或 JAR 更新、删除返回 `RESTART_REQUIRED`，当前运行快照保持不变。刷新接口本身不编译；模块下载链路由独立监督器调用 `build.ps1 -ModulesOnly` 完成构建后再请求刷新，不会替换或卸载已有模块。
 
 模块查询统一通过 `GET /api/modules/{moduleId}/query/{queryId}`，模块 UI 只从 JAR 内 `orderly-ui/module.json`、`module.js` 和 `module.css` 提供，资源接口为 `GET /api/modules/{moduleId}/ui/{asset}` 且只接受白名单文件名。前端按模块 UI 清单生成侧栏、总览卡片和视图；单个模块的 UI 或查询失败只影响该模块。
 
 学习相关只读数据由 `contracts/study-data.schema.json` 约束，并通过 `scripts/validate-study-data.mjs` 校验。公共字段声明 `ownerModule`、`readOnly: true`、来源和计数，负载按 `assistant`、`materials`、`knowledge-map`、`review` 四类校验引用完整性。数据分别位于模块自身 JAR 的模块唯一资源名下，不建立集中数据目录；模块只能调用自身声明的查询。
 
-模块 JAR 是应用有权执行的本地文件，属于**本地受信任可执行代码**，不是安全沙箱。当前不提供远程插件下载、签名校验或权限隔离；只应放入自己信任的模块。零业务模块时应用仍可启动，`/api/modules` 返回空数组，侧栏与总览保持空状态；`module_system_control` 缺失时构建和启动都会失败。
+模块 JAR 是应用有权执行的本地文件，属于**本地受信任可执行代码**，不是安全沙箱。远程模块只允许从配置中的官方 GitHub 分发分支读取源码 ZIP，并校验 SHA-256、路径和模块契约；当前仍不提供发布者签名、证书链或代码隔离，只应安装自己信任的模块。零业务模块时应用仍可启动，`/api/modules` 返回空数组，侧栏与总览保持空状态；`module_system_control` 缺失时构建和启动都会失败。
 
 主题从配置的 `themes/` 目录按直接子目录加载，不使用 classpath 回退，也不进入宿主 fat JAR。每个包包含 `theme.json`、清单登记的 `tokens.css` 与 `motion.css`，可选 `assets/`；添加或移除目录后重启宿主生效，不需要重新构建，首版不支持热加载或主题 JavaScript。
 
@@ -225,4 +230,4 @@ POST /api/executions/{executionId}/rollback
 
 这是可运行的受控工作流切片，不是 V7 的最终发行版。真实模型需要用户临时输入 API Key；没有可用 Key 时 DeepSeek 实际连通性属于未验证项。尚未支持任意个人目录选择、重复文件哈希清理、提醒调度、云备份、安装包和自动更新。学习相关模块是界面参考扩展，不代表 V7 已承诺通用 AI 学习业务；其中上传、AI 整理、任务记录、自动出题和自动阅卷仍未接入。计划定义与 AI 会话保存在进程内存中；执行记录、步骤快照、输出和事件会持久化，已完成执行可跨重启查询和回滚。目录边界、离线行为和功能完成度必须在界面中如实展示，不能把规则匹配或演示数据描述为完整 AI 能力。
 
-模块注册完全由 `Module/module_*` 源码扫描和 `target/orderly-modules/` 中的 JAR 发现完成，不维护单独的模块索引文件，也不会把模块变成 Maven reactor 成员。当前扩展性风险位于模块 JAR 的本地信任模型：仓库不校验来源或签名，且不提供远程分发、自动热加载、替换或卸载；运行中只允许显式追加已构建的新模块。
+模块注册完全由 `Module/module_*` 源码扫描和 `target/orderly-modules/` 中的 JAR 发现完成，不维护单独的模块索引文件，也不会把模块变成 Maven reactor 成员。当前模块分发风险仍位于可执行代码信任模型：仓库没有发布者签名或权限隔离，不支持覆盖更新、替换或卸载；运行中只允许通过受控下载与本地构建追加全新业务模块。

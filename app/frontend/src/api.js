@@ -221,6 +221,29 @@ export class OrderlyApi {
         });
     }
 
+    getModuleCatalog(options) {
+        return this.request("/api/system/module-catalog", options);
+    }
+
+    installModule(moduleId, options = {}) {
+        return this.request("/api/system/module-catalog/install", {
+            ...options,
+            method: "POST",
+            headers: {
+                ...options.headers,
+                "X-Orderly-Action": "install-module"
+            },
+            body: { moduleId }
+        });
+    }
+
+    getModuleInstallStatus(jobId, options) {
+        return this.request(
+            `/api/system/module-catalog/install/${encodeURIComponent(jobId)}`,
+            options
+        );
+    }
+
     getThemes(options) {
         return this.request("/api/themes", options);
     }

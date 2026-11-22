@@ -13,6 +13,11 @@ orderly:
   module-source-dir: Module
   modules-dir: target/orderly-modules
   themes-dir: themes
+  module-distribution:
+    catalog-url: https://raw.githubusercontent.com/xinge233/Orderly/module-distribution/catalog.json
+    max-catalog-bytes: 262144
+    max-package-bytes: 20971520
+    install-timeout-seconds: 600
 logging:
   level:
     root: INFO

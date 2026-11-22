@@ -291,12 +291,12 @@ export default async function mount(root, context) {
 这个发布目录，因此它仍使用开发构建的在线 Maven 解析路径。
 
 后台入口在框架启动前把系统模块 JAR（当前为 `module_system_control.jar`）发布到
-`target/orderly-modules/`；
-业务模块由默认两路、可调 1-4 的 Maven worker 并行构建，候选 JAR 由单一发布线程逐个
-校验并原子发布，再由宿主刷新追加。不能在应用运行期间
-替换、更新或卸载已有模块。模块控制界面只允许显式刷新追加新模块，且新模块
-必须已经构建到 `target/orderly-modules/`；未构建源码返回 `MODULE_NOT_BUILT`。已有模块
-更新或删除返回 `RESTART_REQUIRED`，需要停止服务、重新构建并重启。
+`target/orderly-modules/`；业务模块由默认两路、可调 1-4 的 Maven worker 并行构建，
+候选 JAR 由单一发布线程逐个校验并原子发布，再由宿主刷新追加。首轮构建完成后，
+`scripts/watch-module-downloads.ps1` 继续发现 `Module/module_*` 新目录并逐个构建。
+模组设置的“模块下载”页面从固定 GitHub 分发分支读取经过宿主校验的源码包；新模块
+构建成功后可免重启追加。不能在应用运行期间替换、更新或卸载已有模块，这些操作仍返回
+`RESTART_REQUIRED`。
 
 `build.ps1` 在整个构建期间持有按仓库根路径哈希命名的跨进程互斥锁；
 `modularity.ps1` 从移动源码前到恢复、重建和清理结束持有同一把锁，并与嵌套
@@ -414,8 +414,8 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1 -BaseUrl http:
 ## 11. 安全与责任边界
 
 - 模块 JAR 是本地受信任代码，不是安全沙箱。
-- 当前不支持远程分发、来源验证、签名校验、自动热加载、替换或卸载；运行中只允许
-  显式追加已构建的新模块。
+- 当前只支持从固定官方 GitHub 分发分支下载源码 ZIP，并由宿主校验 SHA-256、路径、
+  大小和普通业务模块契约；不提供发布者签名、证书链、权限隔离、覆盖更新或卸载。
 - 模块负责自己的业务能力、契约、逆操作、界面和动效声明。
 - 框架负责注册、授权、确认、调度、快照、回滚、事件记录和统一外观。
 - 新增能力应先更新契约、样例和校验，再实现执行器和界面。

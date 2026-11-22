@@ -1084,6 +1084,22 @@ function createSystemAdminApi() {
             return api.openModuleFolder();
         },
 
+        getModuleCatalog() {
+            return api.getModuleCatalog();
+        },
+
+        installModule(moduleId) {
+            return api.installModule(moduleId);
+        },
+
+        getModuleInstallStatus(jobId) {
+            return api.getModuleInstallStatus(jobId);
+        },
+
+        retryModuleBuild(sourceName) {
+            return api.prioritizeModuleBuild(sourceName);
+        },
+
         async saveManagementOrder(moduleIds) {
             const ids = Array.isArray(moduleIds) ? moduleIds : [];
             const next = reconcileModulePreferences(state.modules, {

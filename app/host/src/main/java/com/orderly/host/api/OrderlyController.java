@@ -16,6 +16,7 @@ import com.orderly.host.execution.ExecutionRecordSummary;
 import com.orderly.host.execution.ExecutionService;
 import com.orderly.host.execution.AiActionService;
 import com.orderly.host.modulecontrol.ModuleControlService;
+import com.orderly.host.modulecontrol.ModuleDistributionService;
 import com.orderly.host.modulecontrol.ModuleFolderService;
 import com.orderly.host.modulecontrol.ModuleInterfaceState;
 import com.orderly.host.modulecontrol.ModuleLifecycleService;
@@ -82,6 +83,7 @@ public class OrderlyController {
     private final BuildSettingsService buildSettings;
     private final ModuleLifecycleService moduleLifecycle;
     private final ModuleRefreshService moduleRefresh;
+    private final ModuleDistributionService moduleDistribution;
     private final ModuleFolderService moduleFolder;
     private final ModuleDataService moduleData;
     private final SystemFeatureService features;
@@ -103,6 +105,7 @@ public class OrderlyController {
             BuildSettingsService buildSettings,
             ModuleLifecycleService moduleLifecycle,
             ModuleRefreshService moduleRefresh,
+            ModuleDistributionService moduleDistribution,
             ModuleFolderService moduleFolder,
             ModuleDataService moduleData,
             SystemFeatureService features,
@@ -123,6 +126,7 @@ public class OrderlyController {
         this.buildSettings = buildSettings;
         this.moduleLifecycle = moduleLifecycle;
         this.moduleRefresh = moduleRefresh;
+        this.moduleDistribution = moduleDistribution;
         this.moduleFolder = moduleFolder;
         this.moduleData = moduleData;
         this.features = features;
@@ -610,6 +614,41 @@ public class OrderlyController {
         return moduleRefresh.refresh();
     }
 
+    /** 返回固定 GitHub 分发分支中经过宿主校验的业务模块目录。 */
+    @GetMapping("/system/module-catalog")
+    public ModuleDistributionService.CatalogView moduleCatalog() {
+        return moduleDistribution.catalog();
+    }
+
+    /** 创建模块下载与后台构建任务；请求必须声明本机安装动作。 */
+    @PostMapping("/system/module-catalog/install")
+    public ResponseEntity<ModuleDistributionService.InstallAccepted> installModule(
+            @RequestHeader(value = "X-Orderly-Action", required = false) String action,
+            @RequestBody ModuleInstallRequest request
+    ) {
+        if (!"install-module".equals(action)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_ACTION_HEADER",
+                    "安装模块必须声明 X-Orderly-Action: install-module"
+            );
+        }
+        if (request == null || request.moduleId() == null || request.moduleId().isBlank()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_REQUEST",
+                    "moduleId 不能为空"
+            );
+        }
+        return ResponseEntity.accepted().body(moduleDistribution.install(request.moduleId()));
+    }
+
+    /** 读取模块下载、校验、构建和追加加载的当前状态。 */
+    @GetMapping("/system/module-catalog/install/{jobId}")
+    public ModuleDistributionService.InstallStatus moduleInstallStatus(@PathVariable String jobId) {
+        return moduleDistribution.status(jobId);
+    }
+
     /**
      * 打开配置的模块源码目录。
      *
@@ -663,6 +702,10 @@ public class OrderlyController {
 
     /** 后台模块构建优先请求。 */
     public record ModuleBuildPriorityRequest(String sourceName) {
+    }
+
+    /** 固定分发目录中的模块安装请求；包地址不接受客户端输入。 */
+    public record ModuleInstallRequest(String moduleId) {
     }
 
     /** 模块控制动作请求，包含用户确认标志和动作参数。 */

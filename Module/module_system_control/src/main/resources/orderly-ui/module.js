@@ -152,6 +152,62 @@ function actionIsInUse(interfaceState, moduleId, interfaceId) {
     return interfaceState.inUseActions.includes(`${moduleId}/${interfaceId}`);
 }
 
+function normalizeCatalogItem(item) {
+    const source = item && typeof item === "object" ? item : {};
+    return {
+        moduleId: text(source.moduleId),
+        title: text(source.title, text(source.moduleId, "未命名模块")),
+        description: text(source.description),
+        version: text(source.version),
+        size: finiteNumber(source.size, 0),
+        status: text(source.status, "AVAILABLE").toUpperCase(),
+        message: text(source.message),
+        canInstall: source.canInstall === true,
+        canRetryBuild: source.canRetryBuild === true,
+        jobId: text(source.jobId),
+        jobActive: source.jobActive === true
+    };
+}
+
+function normalizeModuleCatalog(payload) {
+    const source = payload?.state && typeof payload.state === "object"
+        ? payload.state
+        : payload && typeof payload === "object" ? payload : {};
+    return {
+        schemaVersion: finiteNumber(source.schemaVersion, 0),
+        apiVersion: finiteNumber(source.apiVersion, 0),
+        generatedAt: text(source.generatedAt),
+        sourceCommit: text(source.sourceCommit),
+        items: listOf(source.items ?? source.modules)
+            .map(normalizeCatalogItem)
+            .filter((item) => item.moduleId)
+    };
+}
+
+function catalogStatusLabel(status, message = "") {
+    return {
+        AVAILABLE: "可下载",
+        SOURCE_PRESENT: "源码已存在",
+        QUEUED: "等待构建",
+        DOWNLOADING: "正在下载",
+        VERIFYING: "正在校验",
+        STAGING: "正在安装",
+        BUILDING: "正在构建",
+        LOADING: "正在加载",
+        INSTALLED: "已启用",
+        RESTART_REQUIRED: "重启后生效",
+        FAILED: "安装失败"
+    }[String(status ?? "").toUpperCase()] ?? text(message, "状态未知");
+}
+
+function formatBytes(bytes) {
+    const value = finiteNumber(bytes, 0);
+    if (value <= 0) return "";
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function settingValues(module, sharedValues = {}) {
     const direct = [
         module?.settingValues,
@@ -242,6 +298,14 @@ export default async function mount(root, context) {
         "openFolder",
         "showModulesFolder"
     );
+    const getModuleCatalog = adminMethod(admin, "getModuleCatalog", "listModuleCatalog");
+    const installModule = adminMethod(admin, "installModule", "downloadModule");
+    const getModuleInstallStatus = adminMethod(
+        admin,
+        "getModuleInstallStatus",
+        "moduleInstallStatus"
+    );
+    const retryModuleBuild = adminMethod(admin, "retryModuleBuild", "prioritizeModuleBuild");
     const saveOrder = adminMethod(admin, "saveManagementOrder", "saveOrder", "setManagementOrder");
     const setEnabled = adminMethod(admin, "setModuleEnabled", "setEnabled");
     const saveSettings = adminMethod(
@@ -275,10 +339,16 @@ export default async function mount(root, context) {
         selectedId: "",
         draft: {},
         expandedIds: new Set(),
-        interfaceState: normalizeInterfaceState({})
+        interfaceState: normalizeInterfaceState({}),
+        catalog: normalizeModuleCatalog({}),
+        catalogLoading: false,
+        catalogError: "",
+        installJobs: new Map()
     };
     // 事件可能在短时间内成批到达，单一 timer 用于合并刷新并保证视图销毁时可取消。
     let interfaceRefreshTimer = null;
+    let catalogPollTimer = null;
+    let catalogPollBusy = false;
 
     function setStatus(message, kind = "") {
         state.status = message;
@@ -318,6 +388,103 @@ export default async function mount(root, context) {
 
     function selectedModule() {
         return state.modules.find((module) => module.moduleId === state.selectedId) ?? null;
+    }
+
+    function effectiveCatalogStatus(item) {
+        const job = state.installJobs.get(item.moduleId);
+        return job?.status ? job.status : item.status;
+    }
+
+    function catalogJobActive(job) {
+        return Boolean(job) && job.terminal !== true;
+    }
+
+    function stopCatalogPoll() {
+        if (catalogPollTimer) {
+            clearInterval(catalogPollTimer);
+            catalogPollTimer = null;
+        }
+    }
+
+    function scheduleCatalogPoll() {
+        if (catalogPollTimer || !getModuleInstallStatus
+                || ![...state.installJobs.values()].some(catalogJobActive)) {
+            return;
+        }
+        catalogPollTimer = setInterval(() => {
+            void pollInstallJobs();
+        }, 900);
+    }
+
+    async function pollInstallJobs() {
+        if (catalogPollBusy || !root.isConnected) {
+            if (!root.isConnected) stopCatalogPoll();
+            return;
+        }
+        const active = [...state.installJobs.entries()]
+            .filter(([, job]) => catalogJobActive(job));
+        if (!active.length) {
+            stopCatalogPoll();
+            return;
+        }
+        catalogPollBusy = true;
+        let installed = false;
+        let terminalChanged = false;
+        let statusChanged = false;
+        try {
+            await Promise.all(active.map(async ([moduleId, job]) => {
+                const payload = await getModuleInstallStatus(job.jobId);
+                if (!payload || typeof payload !== "object") return;
+                const next = {
+                    ...job,
+                    status: text(payload.status, job.status).toUpperCase(),
+                    message: text(payload.message, job.message),
+                    terminal: payload.terminal === true
+                };
+                if (next.status !== job.status
+                        || next.message !== job.message
+                        || next.terminal !== job.terminal) {
+                    statusChanged = true;
+                }
+                state.installJobs.set(moduleId, next);
+                if (next.terminal && !job.terminal) {
+                    terminalChanged = true;
+                }
+                if (next.status === "INSTALLED") {
+                    installed = true;
+                }
+            }));
+            if (!root.isConnected) {
+                stopCatalogPoll();
+                return;
+            }
+            if (installed && refreshModules) {
+                const payload = await refreshModules();
+                if (hasModuleCollection(payload)) {
+                    applySnapshot(payload);
+                }
+                await loadModuleCatalog(false);
+                setStatus("模块已构建并启用。", "safe");
+            }
+            else if (terminalChanged) {
+                await loadModuleCatalog(false);
+            }
+            if (statusChanged) {
+                render();
+            }
+        } catch (error) {
+            if (!root.isConnected) {
+                stopCatalogPoll();
+                return;
+            }
+            setStatus(runtimeMessage(error, "模块安装状态读取失败"), "error");
+            render();
+        } finally {
+            catalogPollBusy = false;
+            if (![...state.installJobs.values()].some(catalogJobActive)) {
+                stopCatalogPoll();
+            }
+        }
     }
 
     function iconNode(name, size = 18) {
@@ -465,6 +632,122 @@ export default async function mount(root, context) {
             setStatus(runtimeMessage(error, "模组状态刷新失败"), "error");
         } finally {
             state.busy = false;
+            render();
+        }
+    }
+
+    async function loadModuleCatalog(showLoading = true) {
+        if (!getModuleCatalog) {
+            state.catalogError = "宿主尚未接入模块下载 API";
+            state.catalogLoading = false;
+            render();
+            return false;
+        }
+        if (showLoading) {
+            state.catalogLoading = true;
+        }
+        state.catalogError = "";
+        render();
+        try {
+            state.catalog = normalizeModuleCatalog(await getModuleCatalog());
+            state.catalog.items.forEach((item) => {
+                if (!item.jobId) return;
+                state.installJobs.set(item.moduleId, {
+                    jobId: item.jobId,
+                    status: item.status,
+                    message: item.message,
+                    terminal: !item.jobActive
+                });
+            });
+            scheduleCatalogPoll();
+            return true;
+        } catch (error) {
+            state.catalogError = runtimeMessage(error, "模块下载目录读取失败");
+            setStatus(state.catalogError, "error");
+            return false;
+        } finally {
+            state.catalogLoading = false;
+            render();
+        }
+    }
+
+    function openCatalog() {
+        state.subpage = "catalog";
+        state.selectedId = "";
+        setStatus("", "");
+        render();
+        void loadModuleCatalog(true).then(() => {
+            if (root.isConnected) {
+                root.querySelector(".module-control-ui-back")?.focus();
+            }
+        });
+    }
+
+    async function installCatalogModule(item) {
+        if (!installModule) {
+            setStatus("宿主尚未接入模块安装 API", "error");
+            render();
+            return;
+        }
+        if (state.installJobs.has(item.moduleId)
+                && catalogJobActive(state.installJobs.get(item.moduleId))) {
+            return;
+        }
+        state.installJobs.set(item.moduleId, {
+            status: "DOWNLOADING",
+            message: "正在创建安装任务",
+            terminal: false
+        });
+        render();
+        try {
+            const accepted = await installModule(item.moduleId);
+            if (!accepted || typeof accepted !== "object" || !text(accepted.jobId)) {
+                throw new Error("宿主未返回模块安装任务");
+            }
+            state.installJobs.set(item.moduleId, {
+                jobId: text(accepted.jobId),
+                status: text(accepted.status, "DOWNLOADING").toUpperCase(),
+                message: "安装任务已创建",
+                terminal: false
+            });
+            setStatus(`${item.title}已加入下载队列。`, "safe");
+            scheduleCatalogPoll();
+        } catch (error) {
+            state.installJobs.set(item.moduleId, {
+                status: "FAILED",
+                message: runtimeMessage(error, "模块安装请求失败"),
+                terminal: true
+            });
+            setStatus(runtimeMessage(error, "模块安装请求失败"), "error");
+        }
+        render();
+    }
+
+    async function retryCatalogBuild(item) {
+        if (!retryModuleBuild) {
+            setStatus("宿主尚未接入模块重建 API", "error");
+            render();
+            return;
+        }
+        try {
+            state.installJobs.set(item.moduleId, {
+                status: "QUEUED",
+                message: "已请求重新构建",
+                terminal: false
+            });
+            setStatus(`${item.title}已加入重建队列。`, "safe");
+            render();
+            await retryModuleBuild(item.moduleId);
+            setTimeout(() => {
+                if (root.isConnected) void loadModuleCatalog(false);
+            }, 1500);
+        } catch (error) {
+            state.installJobs.set(item.moduleId, {
+                status: "FAILED",
+                message: runtimeMessage(error, "模块重建请求失败"),
+                terminal: true
+            });
+            setStatus(runtimeMessage(error, "模块重建请求失败"), "error");
             render();
         }
     }
@@ -902,7 +1185,11 @@ export default async function mount(root, context) {
             }
             render();
         });
-        toolbar.append(refresh, folder);
+        const catalog = button("模块下载", "download");
+        catalog.disabled = state.busy;
+        catalog.dataset.catalogEntry = "true";
+        catalog.addEventListener("click", openCatalog);
+        toolbar.append(refresh, folder, catalog);
 
         const status = buildStatus();
         const scroller = make("div", "module-control-ui-list-scroll");
@@ -925,6 +1212,102 @@ export default async function mount(root, context) {
         }
         scroller.append(list);
         body.append(toolbar, status, scroller);
+        return body;
+    }
+
+    function buildCatalogRow(item) {
+        const row = make("article", "module-control-ui-catalog-row");
+        const moduleIcon = make("span", "module-control-ui-module-icon");
+        moduleIcon.innerHTML = context.icon("modules", 20);
+        const copy = make("div", "module-control-ui-catalog-copy");
+        const title = make("strong", "", item.title);
+        const description = make("span", "", item.description || "模块未提供说明");
+        const meta = make("span", "module-control-ui-catalog-meta");
+        const status = effectiveCatalogStatus(item);
+        const job = state.installJobs.get(item.moduleId);
+        meta.textContent = [
+            item.version ? `版本 ${item.version}` : "",
+            formatBytes(item.size),
+            catalogStatusLabel(status, job?.message ?? item.message)
+        ].filter(Boolean).join(" · ");
+        copy.append(title, description, meta);
+
+        const action = make("div", "module-control-ui-catalog-action");
+        const stateLabel = make(
+            "span",
+            `module-control-ui-catalog-state is-${status.toLowerCase()}`
+        );
+        stateLabel.textContent = catalogStatusLabel(status, job?.message ?? item.message);
+        const retry = item.canInstall
+            && status !== "AVAILABLE"
+            && status !== "DOWNLOADING";
+        const download = button(
+            item.canRetryBuild ? "重试构建" : retry ? "重试" : "下载",
+            "download",
+            "module-control-ui-button is-primary"
+        );
+        download.disabled = item.canRetryBuild
+            ? !retryModuleBuild || catalogJobActive(job)
+            : !installModule || !item.canInstall || catalogJobActive(job);
+        if (status === "INSTALLED") {
+            download.replaceChildren(iconNode("check", 17), make("span", "", "已启用"));
+        }
+        download.addEventListener(
+            "click",
+            () => void (item.canRetryBuild
+                ? retryCatalogBuild(item)
+                : installCatalogModule(item))
+        );
+        action.append(stateLabel, download);
+        row.append(moduleIcon, copy, action);
+        return row;
+    }
+
+    function buildCatalogPanel() {
+        const body = make("div", "module-control-ui-catalog");
+        const toolbar = make("div", "module-control-ui-settings-toolbar");
+        const back = button("返回", "arrow", "module-control-ui-button module-control-ui-back");
+        back.addEventListener("click", () => {
+            state.subpage = "list";
+            setStatus("", "");
+            render();
+            root.querySelector("[data-catalog-entry='true']")?.focus();
+        });
+        const reloadCatalog = button("刷新目录", "refresh");
+        reloadCatalog.disabled = state.catalogLoading;
+        reloadCatalog.addEventListener("click", () => void loadModuleCatalog(true));
+        toolbar.append(back, reloadCatalog);
+
+        const heading = make("header", "module-control-ui-catalog-header");
+        const copy = make("div");
+        const source = [
+            state.catalog.sourceCommit ? `来源提交 ${state.catalog.sourceCommit.slice(0, 12)}` : "",
+            state.catalog.generatedAt ? `生成于 ${state.catalog.generatedAt}` : ""
+        ].filter(Boolean).join(" · ");
+        copy.append(
+            make("h2", "", "模块下载"),
+            make(
+                "p",
+                "",
+                source || "读取固定 GitHub 分发分支；下载后由本地宿主校验、构建并追加。"
+            )
+        );
+        heading.append(copy);
+
+        const status = buildStatus();
+        const scroller = make("div", "module-control-ui-catalog-scroll");
+        const list = make("div", "module-control-ui-catalog-list");
+        if (state.catalogLoading) {
+            list.append(make("p", "module-control-ui-empty", "正在读取模块下载目录…"));
+        } else if (state.catalogError) {
+            list.append(make("p", "module-control-ui-empty", state.catalogError));
+        } else if (!state.catalog.items.length) {
+            list.append(make("p", "module-control-ui-empty", "分发目录暂无可下载模块。"));
+        } else {
+            state.catalog.items.forEach((item) => list.append(buildCatalogRow(item)));
+        }
+        scroller.append(list);
+        body.append(toolbar, heading, status, scroller);
         return body;
     }
 
@@ -1124,6 +1507,8 @@ export default async function mount(root, context) {
         const module = state.subpage === "settings" ? selectedModule() : null;
         if (module) {
             panel.append(buildSettingsPanel(module));
+        } else if (state.subpage === "catalog") {
+            panel.append(buildCatalogPanel());
         } else {
             state.subpage = "list";
             panel.append(buildListPanel());
@@ -1142,6 +1527,7 @@ export default async function mount(root, context) {
                     clearTimeout(interfaceRefreshTimer);
                     interfaceRefreshTimer = null;
                 }
+                stopCatalogPoll();
                 unsubscribe?.();
                 return;
             }

@@ -170,6 +170,34 @@ test("API client reads and prioritizes background module builds", async () => {
     });
 });
 
+test("API client reads the distribution catalog and installs only by module id", async () => {
+    const requests = [];
+    const api = new OrderlyApi({
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url, options });
+            return new Response("{}", { status: 200 });
+        }
+    });
+
+    await api.getModuleCatalog();
+    await api.installModule("module_todo/unsafe");
+    await api.getModuleInstallStatus("job/unsafe?1");
+
+    assert.deepEqual(requests.map(({ url }) => url), [
+        "/api/system/module-catalog",
+        "/api/system/module-catalog/install",
+        "/api/system/module-catalog/install/job%2Funsafe%3F1"
+    ]);
+    assert.equal(requests[1].options.method, "POST");
+    assert.equal(
+        requests[1].options.headers["X-Orderly-Action"],
+        "install-module"
+    );
+    assert.deepEqual(JSON.parse(requests[1].options.body), {
+        moduleId: "module_todo/unsafe"
+    });
+});
+
 test("API client requests host shutdown with a non-simple action header", async () => {
     let captured;
     const api = new OrderlyApi({

@@ -171,6 +171,8 @@ function Invoke-BackgroundStart {
     $javaErr = Join-Path $logRoot "java-$stamp.err.log"
     $builderOut = Join-Path $logRoot "module-builder-$stamp.out.log"
     $builderErr = Join-Path $logRoot "module-builder-$stamp.err.log"
+    $watcherOut = Join-Path $logRoot "module-watcher-$stamp.out.log"
+    $watcherErr = Join-Path $logRoot "module-watcher-$stamp.err.log"
     $aiOut = Join-Path $logRoot "ai-$stamp.out.log"
     $aiErr = Join-Path $logRoot "ai-$stamp.err.log"
     $baseUrl = "http://127.0.0.1:$HttpPort"
@@ -179,6 +181,7 @@ function Invoke-BackgroundStart {
     $previousAiPort = $env:ORDERLY_AI_PORT
     $javaProcess = $null
     $builderProcess = $null
+    $moduleWatcherProcess = $null
     $aiProcess = $null
     Push-Location $repoRoot
     try {
@@ -245,6 +248,38 @@ function Invoke-BackgroundStart {
             -RedirectStandardError $builderErr `
             -PassThru
 
+        $watcherArguments = @(
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            (Join-Path $PSScriptRoot "watch-module-downloads.ps1"),
+            "-BaseUrl",
+            $baseUrl,
+            "-InitialBuilderPid",
+            [string]$builderProcess.Id,
+            "-SkipKernelInstall"
+        )
+        if ($SkipMavenTests) {
+            $watcherArguments += "-SkipTests"
+        }
+        if ($OfflineMode -or $UseMavenOffline) {
+            $watcherArguments += "-Offline"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($Repository)) {
+            $watcherArguments += @("-MavenRepository", $Repository)
+        }
+        $moduleWatcherProcess = Start-Process `
+            -FilePath $powerShellExecutable `
+            -ArgumentList (Join-ProcessArguments $watcherArguments) `
+            -WorkingDirectory $repoRoot `
+            -WindowStyle Hidden `
+            -RedirectStandardOutput $watcherOut `
+            -RedirectStandardError $watcherErr `
+            -PassThru
+        Write-Host "模块下载监督器日志：$watcherOut"
+
         $aiPreparationError = $null
         try {
             if ($OfflineMode) {
@@ -295,6 +330,12 @@ function Invoke-BackgroundStart {
                 Write-Warning "后台模块构建器退出码：$($builderProcess.ExitCode)；日志：$builderErr"
             }
         }
+        if ($moduleWatcherProcess.HasExited) {
+            $moduleWatcherProcess.Refresh()
+            if ($moduleWatcherProcess.ExitCode -ne 0) {
+                Write-Warning "模块下载监督器退出码：$($moduleWatcherProcess.ExitCode)；日志：$watcherErr"
+            }
+        }
         if ($aiPreparationError) {
             Write-Warning "AI 服务启动失败：$($aiPreparationError.Exception.Message)；日志：$aiErr"
         }
@@ -303,6 +344,10 @@ function Invoke-BackgroundStart {
         }
     }
     finally {
+        if ($moduleWatcherProcess -and -not $moduleWatcherProcess.HasExited) {
+            & taskkill.exe /PID $moduleWatcherProcess.Id /T /F 2>&1 | Out-Null
+            $moduleWatcherProcess.WaitForExit(5000) | Out-Null
+        }
         if ($builderProcess -and -not $builderProcess.HasExited) {
             # build.ps1 会启动 Maven 子进程；按进程树终止，避免留下后台构建。
             & taskkill.exe /PID $builderProcess.Id /T /F 2>&1 | Out-Null

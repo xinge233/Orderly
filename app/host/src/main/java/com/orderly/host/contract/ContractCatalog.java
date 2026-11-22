@@ -666,7 +666,7 @@ public class ContractCatalog implements AutoCloseable {
      *
      * <p>测试用固定样例复用与启动阶段完全相同的校验逻辑。</p>
      */
-    ModuleContract parseAndValidateModule(JsonNode root) {
+    public ModuleContract parseAndValidateModule(JsonNode root) {
         ModuleContract module = parseModule(root);
         validateModule(module);
         for (QueryContract query : module.queries()) {

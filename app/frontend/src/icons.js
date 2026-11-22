@@ -28,6 +28,7 @@ const ICONS = {
     shield: '<path d="M12 3 4.5 6v5.3c0 4.7 3 7.9 7.5 9.7 4.5-1.8 7.5-5 7.5-9.7V6Z"></path><path d="m9 12 2 2 4-4"></path>',
     route: '<circle cx="6" cy="18" r="2"></circle><circle cx="18" cy="6" r="2"></circle><path d="M8 18h3a3 3 0 0 0 3-3V9a3 3 0 0 1 3-3"></path>',
     refresh: '<path d="M20 7v5h-5M4 17v-5h5"></path><path d="M6.1 9a7 7 0 0 1 11.5-2L20 9M4 15l2.4 2A7 7 0 0 0 18 15"></path>',
+    download: '<path d="M12 3v11"></path><path d="m7 10 5 5 5-5"></path><path d="M5 20h14"></path>',
     power: '<path d="M12 3v9"></path><path d="M7.1 5.7a8 8 0 1 0 9.8 0"></path>',
     trash: '<path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6"></path>',
     play: '<path d="m8 5 11 7-11 7Z"></path>',

@@ -60,7 +60,7 @@
 | 持久化执行记录 | `app/host/src/main/java/com/orderly/host/execution/ExecutionRecordStore.java` |
 | 系统功能开关 | `app/host/src/main/java/com/orderly/host/system/SystemFeatureService.java` |
 | 模块运行时 | `app/host/src/main/java/com/orderly/host/runtime/ModuleBootstrap.java` |
-| 模块治理 | `app/host/src/main/java/com/orderly/host/modulecontrol/` |
+| 模块治理与分发 | `app/host/src/main/java/com/orderly/host/modulecontrol/`；下载校验入口为 `ModuleDistributionService.java`、`ModulePackageInstaller.java` |
 | 主题目录 | `app/host/src/main/java/com/orderly/host/theme/` |
 | 前端页面 | `app/frontend/index.html` |
 | 前端状态与交互 | `app/frontend/src/app.js`、`ai-dialog.js`、`ai-settings.js`、`modules.js`、`settings.js` |
@@ -78,8 +78,7 @@
 | `contracts/ai-service-turn-request.schema.json` | Java 到 Python AI 服务的版本化 IPC 请求 |
 | `contracts/ai-query-continuation-request.schema.json` | Query 结果回传 Python 的受控续聊请求 |
 | `contracts/ai-service-decision.schema.json` | Python 到 Java 的受控决策响应 |
-| `contracts/module.schema.json` | 模块 JAR 契约与模块测试 |
-| `contracts/module-ui.schema.json` | 模块 UI 清单与前端契约测试 |
+| `contracts/module.schema.json`、`module-ui.schema.json`、`module-catalog.schema.json` | 模块 JAR、模块 UI 与 GitHub 分发目录契约 |
 | `contracts/theme.schema.json` | 宿主主题加载与主题样例 |
 | `contracts/study-data.schema.json` | 学习数据校验脚本与模块数据 |
 | `contracts/samples/valid/` | 合法样例与契约测试 |
@@ -95,7 +94,7 @@
 | 模块动作变更 | 模块契约、模块 Java、模块 UI 清单、模块测试、宿主相关接口 |
 | 主题变更 | `themes/README.md`、目标 `theme.json`、`tokens.css`、`motion.css` |
 | 契约变更 | Schema、合法样例、非法样例、所有直接消费者 |
-| 构建或启动问题 | `README.md`、`启动归序.cmd`、`scripts/build.ps1`、`build-module-background.ps1`、`start.ps1`、`target/background/` 与 `target/build-parallel-*` 中的目标日志行段 |
+| 构建或启动问题 | `README.md`、`启动归序.cmd`、`scripts/build.ps1`、`build-module-background.ps1`、`watch-module-downloads.ps1`、`start.ps1`、`target/background/` 与 `target/build-parallel-*` 中的目标日志行段 |
 | 历史决策追溯 | `docs/agents/` 中相关交接文档的指定章节，按需读取 |
 
 历史交接文档只用于追溯事实、验证证据和已知风险，不单独构成实施授权。
@@ -143,6 +142,7 @@
 | 生成离线源码包 | 默认要求干净 Git 和索引化源码；仅本地脏快照使用 `.\scripts\package-offline.ps1 -AllowDirtySnapshot` |
 | 验证离线源码包 | `.\scripts\verify-offline.ps1 .\target\orderly-offline\Orderly-0.1.0-SNAPSHOT-offline-source.zip`；可加 `-MaxParallel <int>` |
 | 启动 | 开发路径用 `.\scripts\start.ps1 -BackgroundModules`；解压 GitHub Release 后运行 `.\启动归序.cmd`，自动使用包内 `maven-repository` 和后台模块队列 |
+| 发布模块目录 | `.\scripts\export-module-distribution.ps1` 生成源码 ZIP 与 `catalog.json`；手动运行 GitHub Action 更新 `module-distribution` 分支 |
 | HTTP 烟测 | `.\scripts\smoke.ps1` |
 
 构建与门禁产生真实退出码。未实际运行的命令应标记为未验证，不能引用历史结果代替当前结果。

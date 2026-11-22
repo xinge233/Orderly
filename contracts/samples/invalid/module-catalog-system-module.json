@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "generatedAt": "2026-11-22T12:00:00Z",
+  "modules": [
+    {
+      "moduleId": "module_system_control",
+      "title": "模组设置",
+      "description": "受保护系统模块不得通过分发目录安装。",
+      "version": "0.1.0",
+      "packagePath": "packages/module_system_control.zip",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "size": 1024
+    }
+  ]
+}

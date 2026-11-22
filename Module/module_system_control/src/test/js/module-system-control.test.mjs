@@ -25,6 +25,10 @@ test("module_system_control bridge exposes the required systemAdmin surface", as
         "setModuleEnabled",
         "refreshModules",
         "openModuleFolder",
+        "getModuleCatalog",
+        "installModule",
+        "getModuleInstallStatus",
+        "retryModuleBuild",
         "saveManagementOrder",
         "saveModuleSettings",
         "resetModuleSettings",
@@ -39,6 +43,10 @@ test("module_system_control bridge exposes the required systemAdmin surface", as
         "setEnabled",
         "refreshModules",
         "openModuleFolder",
+        "getModuleCatalog",
+        "installModule",
+        "getModuleInstallStatus",
+        "retryModuleBuild",
         "saveManagementOrder",
         "saveModuleSettings",
         "resetModuleSettings",
@@ -48,6 +56,29 @@ test("module_system_control bridge exposes the required systemAdmin surface", as
     assert.match(app, /subscribeEvents:\s*subscribeFrameworkEvents/);
     assert.doesNotMatch(control, /!module\.protected/);
     assert.match(control, /protectedModule/);
+});
+
+test("module download opens from the toolbar and renders catalog and install states", async () => {
+    const control = await readFile(controlUrl, "utf8");
+    const style = await readFile(styleUrl, "utf8");
+
+    assert.match(control, /const catalog = button\("模块下载", "download"\);/);
+    assert.match(control, /toolbar\.append\(refresh, folder, catalog\);/);
+    assert.match(control, /catalog\.addEventListener\("click", openCatalog\);/);
+    assert.match(control, /state\.subpage = "catalog"/);
+    assert.match(control, /buildCatalogPanel\(\)/);
+    assert.match(control, /getModuleCatalog/);
+    assert.match(control, /installModule/);
+    assert.match(control, /getModuleInstallStatus/);
+    assert.match(control, /retryModuleBuild/);
+    assert.match(control, /catalogStatusLabel/);
+    assert.match(control, /scheduleCatalogPoll/);
+    assert.match(control, /payload\.terminal === true/);
+    assert.match(control, /job\.terminal !== true/);
+    assert.match(control, /模块已构建并启用/);
+    assert.match(style, /\.module-control-ui-catalog\s*\{/);
+    assert.match(style, /\.module-control-ui-catalog-row\s*\{/);
+    assert.match(style, /\.module-control-ui-catalog-action\s*\{/);
 });
 
 test("module_system_control renders interface AI switches with locking states", async () => {

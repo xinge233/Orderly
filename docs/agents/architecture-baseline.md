@@ -107,12 +107,12 @@ docs/                       产品与协作文档
 - 启动时必须恰好存在一个声明 `system.role=MODULE_CONTROL`、`system.protected=true` 与 `MODULE_GOVERNANCE` 能力的 `module_system_control`。`SYSTEM_SERVICE` 可以登记宿主内置系统服务，但不得声明治理能力；所有系统模块必须使用保留前缀并命中宿主内置准入清单。控制角色缺失或重复、能力不匹配、契约与执行器集合不一致、重复模块或重复动作必须阻止启动；零业务模块仍合法。
 - 业务模块与系统模块分开暴露：`GET /api/modules` 只返回业务模块并附带运行态 `enabled`，`GET /api/system-modules` 返回系统模块且恒为启用。系统模块不能通过业务启停、排序或设置接口修改；`module_system_control` 仅可暴露白名单治理查询和动作，实际执行仍由宿主专用治理服务担保。
 - 模块查询使用 `GET /api/modules/{moduleId}/query/{queryId}`；模块 UI 只从 JAR 的 `orderly-ui/` 白名单资源读取并提供给 `GET /api/modules/{moduleId}/ui/{asset}`。框架不得为具体模块增加查询、端点或视图分支。
-- 后台渐进启动默认同时运行 2 个模块 Maven worker，可在系统设置中调整为 1-4。worker 使用隔离可写 Maven 仓库并只产出候选 JAR；状态文件写入、JAR 校验、运行时原子发布和宿主刷新必须由单一父进程串行完成。降低并发不终止已运行 worker，提高并发仅影响后续调度。
-- 运行中只允许通过 `POST /api/system/modules/refresh` 显式追加新模块。刷新扫描 `Module/module_*` 源码目录，并要求 `target/orderly-modules/` 已存在对应 JAR；不自动编译源码。新增模块默认启用并写入治理状态，未构建源码返回 `MODULE_NOT_BUILT`。
+- 后台渐进启动默认同时运行 2 个模块 Maven worker，可在系统设置中调整为 1-4。worker 使用隔离可写 Maven 仓库并只产出候选 JAR；状态文件写入、JAR 校验、运行时原子发布和宿主刷新必须由单一父进程串行完成。降低并发不终止已运行 worker，提高并发仅影响后续调度。首轮构建结束后由 `scripts/watch-module-downloads.ps1` 继续监督新下载模块；监督器空闲时不持有仓库构建锁，发现新源码后才调用 `build.ps1 -ModulesOnly` 并请求宿主刷新。
+- 运行中可通过固定 GitHub 分发目录安装新的业务模块源码。宿主只接受 `module_*` 且拒绝全部 `module_system_*`，先校验 HTTPS 来源、目录结构、包大小、SHA-256、ZIP 路径、必需文件和普通模块契约，再原子写入 `Module/`。后台监督器完成本地 Maven 构建后，通过 `POST /api/system/modules/refresh` 显式追加新模块；新增模块默认启用并写入治理状态。
 - 已加载模块的源码或 JAR 更新、源码删除或 JAR 删除只返回 `RESTART_REQUIRED`，不得替换、更新、卸载或删除当前运行快照。刷新单个新增模块失败必须保留旧快照，不允许用新 JAR 替换已有模块。
 - 宿主退出通过仅限本机的 `POST /api/system/shutdown` 请求，并要求 `X-Orderly-Action: shutdown`。Action 或计划执行期间拒绝退出；接受后先返回 `STOPPING`，再异步关闭 Java 宿主，由启动脚本清理 AI 服务与后台模块构建器。
 - ClassLoader 随宿主关闭而关闭，不在运行中替换 JAR。
-- 外部模块 JAR 是本地受信任的可执行代码，不是安全沙箱。当前不提供远程插件下载、来源验证、签名校验或权限隔离，只允许用户放入自己信任的模块。
+- 外部模块 JAR 是本地受信任的可执行代码，不是安全沙箱。远程模块只允许从配置中的官方 `raw.githubusercontent.com` 分发分支读取，源码包必须与目录 SHA-256 一致；第一版不提供发布者签名、证书链、代码隔离或第三方仓库信任。下载与安装必须由本机用户在模组设置中显式触发，不开放给 AI。
 
 ### 模块治理状态
 
@@ -200,4 +200,4 @@ docs/                       产品与协作文档
 - 模型直执写入属于用户已批准的产品规则扩展；删除直执默认关闭，开启后仍受回收站、快照、审计和回滚约束。
 - 首版工作区固定为应用自管沙箱，尚不支持任意个人目录选择。
 - 计划定义仍保存在进程内存中；执行记录、步骤快照、输出和审计事件会持久化。已完成执行可通过 `/api/executions` 跨重启查询和回滚，旧计划对象本身不能在重启后继续确认。
-- 当前首版直接发现本地的 `Module/module_*` 源码与运行模块 JAR，不维护模块索引。当前首版允许本地外部模块 JAR 执行，但仓库没有远程分发、来源验证、签名校验或插件权限隔离；这些信任机制仍属于后续安全与分发设计。
+- 当前首版直接发现本地的 `Module/module_*` 源码与运行模块 JAR，不维护模块索引。模块分发包由固定 GitHub 分支提供目录与源码 ZIP；仓库已有 SHA-256、路径边界和受保护前缀校验，但尚未提供发布者签名、证书链或代码隔离，这些信任机制仍属于后续安全设计。

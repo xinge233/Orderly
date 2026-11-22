@@ -735,9 +735,9 @@ try {
         if (-not $hasPending -and $running.Count -eq 0 -and $publishQueue.Count -eq 0) {
             $failedEntries = @($entries | Where-Object { $_.status -eq "FAILED" })
             if ($failedEntries.Count -gt 0) {
-                # 保留构建器等待用户再次点击失败模块；优先请求会触发重试。
-                Start-Sleep -Milliseconds 500
-                continue
+                # 首轮构建结束即释放仓库锁；长期监督器负责后续新模块与显式重试。
+                Write-Warning "后台模块首轮构建仍有失败项：" +
+                    (($failedEntries | ForEach-Object { $_.sourceName }) -join ", ")
             }
             break
         }

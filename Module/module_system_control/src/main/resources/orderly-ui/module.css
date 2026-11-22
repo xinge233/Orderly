@@ -44,10 +44,15 @@
 }
 
 .module-control-ui-list-view,
-.module-control-ui-settings {
+.module-control-ui-settings,
+.module-control-ui-catalog {
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr);
     min-height: 0;
+}
+
+.module-control-ui-catalog {
+    grid-template-rows: auto auto auto minmax(0, 1fr);
 }
 
 .module-control-ui-toolbar,
@@ -160,7 +165,8 @@
 }
 
 .module-control-ui-list-scroll,
-.module-control-ui-settings-scroll {
+.module-control-ui-settings-scroll,
+.module-control-ui-catalog-scroll {
     min-height: 0;
     overflow: auto;
     overscroll-behavior: contain;
@@ -468,6 +474,116 @@
     border-bottom: 1px solid var(--color-line);
 }
 
+.module-control-ui-catalog-header {
+    padding: var(--space-4) var(--space-6);
+    border-bottom: 1px solid var(--color-line);
+}
+
+.module-control-ui-catalog-header h2,
+.module-control-ui-catalog-header p {
+    margin: 0;
+}
+
+.module-control-ui-catalog-header h2 {
+    font-size: 1.15rem;
+}
+
+.module-control-ui-catalog-header p {
+    margin-top: var(--space-1);
+    color: var(--color-text-soft);
+    font-size: 0.84rem;
+}
+
+.module-control-ui-catalog-list {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+}
+
+.module-control-ui-catalog-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 6rem;
+    border-bottom: 1px solid var(--color-line);
+    padding: var(--space-3) var(--space-6);
+}
+
+.module-control-ui-catalog-row:last-child {
+    border-bottom: 0;
+}
+
+.module-control-ui-catalog-copy {
+    display: grid;
+    min-width: 0;
+    gap: var(--space-1);
+}
+
+.module-control-ui-catalog-copy strong,
+.module-control-ui-catalog-copy span {
+    overflow-wrap: anywhere;
+}
+
+.module-control-ui-catalog-copy > span {
+    color: var(--color-text-soft);
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.module-control-ui-catalog-meta {
+    font-size: 0.78rem;
+}
+
+.module-control-ui-catalog-action {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.module-control-ui-catalog-state {
+    max-width: 18rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-pill);
+    background: var(--color-surface-muted);
+    color: var(--color-text-soft);
+    padding: 0.25rem 0.65rem;
+    font-size: 0.76rem;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.module-control-ui-catalog-state.is-installed {
+    border-color: var(--color-safe);
+    background: var(--color-safe-soft);
+    color: var(--color-safe);
+}
+
+.module-control-ui-catalog-state.is-building,
+.module-control-ui-catalog-state.is-queued,
+.module-control-ui-catalog-state.is-downloading,
+.module-control-ui-catalog-state.is-verifying,
+.module-control-ui-catalog-state.is-staging,
+.module-control-ui-catalog-state.is-loading,
+.module-control-ui-catalog-state.is-restart_required {
+    border-color: var(--color-warning);
+    background: var(--color-warning-soft);
+    color: var(--color-warning);
+}
+
+.module-control-ui-catalog-state.is-failed,
+.module-control-ui-catalog-state.is-build_failed,
+.module-control-ui-catalog-state.is-build_timeout,
+.module-control-ui-catalog-state.is-package_hash_mismatch,
+.module-control-ui-catalog-state.is-invalid_module_package,
+.module-control-ui-catalog-state.is-module_conflict {
+    border-color: var(--color-danger);
+    background: var(--color-danger-soft);
+    color: var(--color-danger);
+}
+
 .module-control-ui-settings-header h2 {
     font-size: 1.15rem;
 }
@@ -548,9 +664,11 @@
     .module-control-ui-header,
     .module-control-ui-toolbar,
     .module-control-ui-settings-toolbar,
+    .module-control-ui-catalog-header,
     .module-control-ui-status,
     .module-control-ui-row-header,
     .module-control-ui-settings-header,
+    .module-control-ui-catalog-row,
     .module-control-ui-form {
         padding-right: var(--space-4);
         padding-left: var(--space-4);
@@ -567,6 +685,15 @@
 
     .module-control-ui-toolbar .module-control-ui-button {
         flex: 1 1 auto;
+    }
+
+    .module-control-ui-catalog-row {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .module-control-ui-catalog-action {
+        grid-column: 1 / -1;
+        justify-content: space-between;
     }
 
     .module-control-ui-interfaces__content {
