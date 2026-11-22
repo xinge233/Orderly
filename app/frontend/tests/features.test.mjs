@@ -214,8 +214,10 @@ test("settings provide reusable accessible help tooltips", async () => {
         app,
         /"allowSendQueryResultsToModel",\s*"发送本地查询结果给模型",[\s\S]*?每回合最多发送 4 条/
     );
-    assert.match(css, /\.setting-help:hover \.setting-help__tooltip/);
-    assert.match(css, /\.setting-help:focus-within \.setting-help__tooltip/);
+    assert.match(css, /\.setting-help__trigger:hover \+ \.setting-help__tooltip/);
+    assert.match(css, /\.setting-help__trigger:focus-visible \+ \.setting-help__tooltip/);
+    assert.doesNotMatch(css, /\.setting-help:hover \.setting-help__tooltip/);
+    assert.doesNotMatch(css, /\.setting-help:focus-within \.setting-help__tooltip/);
     assert.match(
         css,
         /@media \(max-width: 620px\)[\s\S]*?\.setting-help \{[\s\S]*?position: static;/

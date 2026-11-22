@@ -2936,7 +2936,7 @@ body.is-navigation-dragging * {
 }
 
 .setting-help__trigger:hover,
-.setting-help:focus-within .setting-help__trigger {
+.setting-help__trigger:focus-visible {
     border-color: var(--color-line);
     background: var(--color-accent-soft);
     color: var(--color-accent);
@@ -2969,8 +2969,8 @@ body.is-navigation-dragging * {
     pointer-events: none;
 }
 
-.setting-help:hover .setting-help__tooltip,
-.setting-help:focus-within .setting-help__tooltip {
+.setting-help__trigger:hover + .setting-help__tooltip,
+.setting-help__trigger:focus-visible + .setting-help__tooltip {
     opacity: 1;
 }
 
