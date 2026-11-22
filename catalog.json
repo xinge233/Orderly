@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "generatedAt": "2026-11-22T04:50:43.1205329Z",
+  "sourceCommit": "1e05e721bbe9",
+  "modules": [
+    {
+      "moduleId": "module_calendar",
+      "title": "日程安排",
+      "description": "日程、独立待办与模块自管空间的本地工作区。",
+      "version": "0.1.0-SNAPSHOT+1e05e721bbe9",
+      "packagePath": "packages/module_calendar-0.1.0-SNAPSHOT-1e05e721bbe9.zip",
+      "sha256": "97d1f051e81beb256ad095e43c39dcf11131c88d79d5f204dafe02bf48f6ade1",
+      "size": 30586
+    },
+    {
+      "moduleId": "module_fs",
+      "title": "资料管理",
+      "description": "浏览课程资料，并在应用自管沙箱内通过受控计划创建、移动和回收文件。",
+      "version": "0.1.0-SNAPSHOT+1e05e721bbe9",
+      "packagePath": "packages/module_fs-0.1.0-SNAPSHOT-1e05e721bbe9.zip",
+      "sha256": "942d7f6bb770f0ba9f519a68c552b74d4316d9d116d6d06ed43a6a2f0e093703",
+      "size": 23351
+    },
+    {
+      "moduleId": "module_study_assistant",
+      "title": "AI 学习助手",
+      "description": "只读查看本周学习任务、示例对话、工具轨迹与引用资料。",
+      "version": "0.1.0-SNAPSHOT+1e05e721bbe9",
+      "packagePath": "packages/module_study_assistant-0.1.0-SNAPSHOT-1e05e721bbe9.zip",
+      "sha256": "73a201152bd484e0c80b3e0867141cdce8faa37faf08a0837e3dd82dc707ad33",
+      "size": 12589
+    },
+    {
+      "moduleId": "module_study_map",
+      "title": "知识脉络",
+      "description": "只读浏览高等数学知识节点、先修关系与课程筛选。",
+      "version": "0.1.0-SNAPSHOT+1e05e721bbe9",
+      "packagePath": "packages/module_study_map-0.1.0-SNAPSHOT-1e05e721bbe9.zip",
+      "sha256": "837d6125ca4d41cee13150450785a9de15a6b8168eb4d3cb58514acb390d1995",
+      "size": 20588
+    },
+    {
+      "moduleId": "module_study_review",
+      "title": "复习自测",
+      "description": "只读查看复习题目与参考提纲，作答和掌握标记仅作本地界面演示。",
+      "version": "0.1.0-SNAPSHOT+1e05e721bbe9",
+      "packagePath": "packages/module_study_review-0.1.0-SNAPSHOT-1e05e721bbe9.zip",
+      "sha256": "d3996d3f47a187287b5882d16a35c22f7b54d67272199c008c181dc40330c0cf",
+      "size": 13356
+    },
+    {
+      "moduleId": "module_todo",
+      "title": "待办事项",
+      "description": "创建可审计、可撤销的本地待办。",
+      "version": "0.1.0-SNAPSHOT+1e05e721bbe9",
+      "packagePath": "packages/module_todo-0.1.0-SNAPSHOT-1e05e721bbe9.zip",
+      "sha256": "f91b80dfb1781ba3bdea254e8477dcf10144c9e389d1f826670105fa0a5d222e",
+      "size": 8422
+    }
+  ]
+}
