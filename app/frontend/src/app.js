@@ -76,6 +76,7 @@ const DESKTOP_SIDEBAR_QUERY = "(min-width: 821px)";
 const SIDEBAR_POINTER_QUERY = "(min-width: 821px) and (hover: hover) and (pointer: fine)";
 const SIDEBAR_EXPAND_DELAY_MS = 40;
 const SIDEBAR_COLLAPSE_DELAY_MS = 120;
+let settingHelpSequence = 0;
 
 const NAV_SECTIONS = Object.freeze([
     {
@@ -4392,7 +4393,8 @@ function renderAiSettings(panel) {
             || state.aiPlanFeatureSaving
             || state.aiSettingsSaving
             || state.aiSettingsTesting,
-        "允许 AI 生成计划"
+        "允许 AI 生成计划",
+        "开启后，AI 可先生成需要确认的计划。关闭时，AI 只返回可直执动作或澄清问题；写入与删除仍由宿主统一校验，不能绕过确认、快照、审计和回滚。"
     );
 
     const queryResultsRow = settingRow(
@@ -4402,7 +4404,8 @@ function renderAiSettings(panel) {
         settings.allowSendQueryResultsToModel === true,
         () => {},
         state.aiSettingsLoading || state.aiSettingsSaving || state.aiSettingsTesting,
-        "发送本地查询结果给模型"
+        "发送本地查询结果给模型",
+        "开启后，每回合最多发送 4 条、单条最多 16 KiB、总计最多 64 KiB 的只读查询结果给模型，用于生成受控展示视图。原始结果默认只留在本地，模型不能修改数据或发起动作。"
     );
 
     const policyField = element("fieldset", "setting-field");
@@ -4797,6 +4800,55 @@ async function persistPlanningFeature(enabled, input) {
 }
 
 /**
+ * 创建设置说明图标及其气泡。
+ *
+ * @param {string} helpText 说明正文
+ * @param {string} title 设置标题
+ * @returns {HTMLSpanElement} 可复用说明控件
+ */
+function settingHelp(helpText, title) {
+    settingHelpSequence += 1;
+    const wrapper = element("span", "setting-help");
+    const trigger = element("button", "setting-help__trigger");
+    const tooltip = element("span", "setting-help__tooltip");
+
+    trigger.type = "button";
+    trigger.setAttribute("aria-label", `查看“${title}”设置说明`);
+    trigger.innerHTML = icon("info", 15);
+
+    tooltip.id = `setting-help-${settingHelpSequence}`;
+    tooltip.setAttribute("role", "tooltip");
+    tooltip.textContent = helpText;
+    trigger.setAttribute("aria-describedby", tooltip.id);
+    trigger.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+            event.preventDefault();
+            trigger.blur();
+        }
+    });
+
+    wrapper.append(trigger, tooltip);
+    return wrapper;
+}
+
+/**
+ * 创建设置标题；传入说明文本时自动附加可复用信息图标。
+ *
+ * @param {"label" | "legend" | "span"} tag 标题标签
+ * @param {string} title 标题
+ * @param {string} [helpText] 说明正文
+ * @returns {HTMLElement} 标题节点
+ */
+function settingLabel(tag, title, helpText = "") {
+    const label = element(tag, "setting-title");
+    label.append(element("span", "setting-title__text", title));
+    if (helpText) {
+        label.append(settingHelp(helpText, title));
+    }
+    return label;
+}
+
+/**
  * 创建开关行。
  *
  * @param {string} key 设置键
@@ -4806,6 +4858,7 @@ async function persistPlanningFeature(enabled, input) {
  * @param {(checked: boolean, input: HTMLInputElement) => void | null} onChange 变更回调
  * @param {boolean} disabled 是否禁用
  * @param {string} accessibleLabel 无障碍标签
+ * @param {string} [helpText] 信息图标中的补充说明
  * @returns {HTMLElement} 行
  */
 function settingRow(
@@ -4815,12 +4868,13 @@ function settingRow(
     checked,
     onChange = null,
     disabled = false,
-    accessibleLabel = title
+    accessibleLabel = title,
+    helpText = ""
 ) {
     const row = element("div", "setting-field setting-field--row");
     const copy = element("div");
     copy.append(
-        element("label", "", title),
+        settingLabel("span", title, helpText),
         element("p", "", description)
     );
     const control = switchControl(key, checked, onChange, accessibleLabel);

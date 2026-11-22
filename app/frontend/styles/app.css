@@ -2896,6 +2896,7 @@ body.is-navigation-dragging * {
 }
 
 .setting-field {
+    position: relative;
     padding: var(--space-4);
     border: 1px solid var(--color-line);
     border-radius: var(--radius-sm);
@@ -2906,6 +2907,71 @@ body.is-navigation-dragging * {
 .setting-field > label {
     font-size: var(--font-size-body);
     font-weight: 750;
+}
+
+.setting-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.setting-help {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+}
+
+.setting-help__trigger {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color-text-faint);
+}
+
+.setting-help__trigger:hover,
+.setting-help:focus-within .setting-help__trigger {
+    border-color: var(--color-line);
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+}
+
+.setting-help__trigger:focus-visible {
+    outline-width: 2px;
+    outline-offset: 2px;
+}
+
+.setting-help__tooltip {
+    position: absolute;
+    z-index: 8;
+    top: calc(100% + var(--space-2));
+    left: 0;
+    width: max-content;
+    max-width: min(320px, calc(100vw - var(--space-12)));
+    padding: var(--space-3);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-strong);
+    box-shadow: var(--shadow-card);
+    color: var(--color-text);
+    font-size: var(--font-size-small);
+    font-weight: 400;
+    line-height: 1.55;
+    text-align: left;
+    white-space: normal;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.setting-help:hover .setting-help__tooltip,
+.setting-help:focus-within .setting-help__tooltip {
+    opacity: 1;
 }
 
 .setting-field > p {
@@ -3408,6 +3474,17 @@ body.is-navigation-dragging * {
 
 /* 小屏把剩余多列内容降为单列，并为底部 AI 入口保留可操作空间。 */
 @media (max-width: 620px) {
+    .setting-help {
+        position: static;
+    }
+
+    .setting-help__tooltip {
+        top: calc(var(--space-4) + 1.4rem + var(--space-2));
+        left: var(--space-4);
+        width: max-content;
+        max-width: calc(100% - var(--space-8));
+    }
+
     .main-content {
         min-height: calc(100vh - var(--mobile-toolbar-height));
         padding: var(--space-4);

@@ -194,3 +194,31 @@ test("frontend gates plan surfaces with host state and keeps history independent
     assert.match(html, /id="history-view-rail"[\s\S]*?data-history-view="timeline"[\s\S]*?data-history-view="summary"/);
     assert.match(html, /data-history-view="timeline" aria-pressed="true"/);
 });
+
+test("settings provide reusable accessible help tooltips", async () => {
+    const app = await read("../src/app.js");
+    const css = await read("../styles/app.css");
+    const helper = between(app, "function settingHelp", "function settingRow");
+
+    assert.match(helper, /function settingLabel/);
+    assert.match(helper, /icon\("info", 15\)/);
+    assert.match(helper, /tooltip\.setAttribute\("role", "tooltip"\)/);
+    assert.match(helper, /trigger\.setAttribute\("aria-describedby", tooltip\.id\)/);
+    assert.match(helper, /event\.key === "Escape"/);
+
+    assert.match(
+        app,
+        /"aiPlanEnabled",\s*"允许 AI 生成计划",[\s\S]*?开启后，AI 可先生成需要确认的计划/
+    );
+    assert.match(
+        app,
+        /"allowSendQueryResultsToModel",\s*"发送本地查询结果给模型",[\s\S]*?每回合最多发送 4 条/
+    );
+    assert.match(css, /\.setting-help:hover \.setting-help__tooltip/);
+    assert.match(css, /\.setting-help:focus-within \.setting-help__tooltip/);
+    assert.match(
+        css,
+        /@media \(max-width: 620px\)[\s\S]*?\.setting-help \{[\s\S]*?position: static;/
+    );
+    assert.match(css, /max-width: calc\(100% - var\(--space-8\)\);/);
+});
