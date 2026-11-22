@@ -1,7 +1,8 @@
 @echo off
 rem 用途：设置仓库工作目录和可用的 JDK 21 环境后，转发到 scripts\start.ps1。
 rem 输入：继承当前环境；接受已设置或可自动发现的 JAVA_HOME，并转发命令行参数。
-rem       无参数启动默认先打开框架，再按优先顺序后台构建业务模块；发布包存在时使用 Maven 离线模式。
+rem       无参数源码启动默认先打开框架，再按优先顺序后台构建业务模块；
+rem       预构建运行包直接校验 runtime-manifest.json 后启动，不调用 Maven。
 rem 副作用：启动前台 PowerShell 启动链，可能触发构建、虚拟环境和本地服务进程。
 rem 安全边界：本启动器不提升权限、不访问应用工作区之外的业务目录；JDK 主版本仍由 PowerShell 脚本复核。
 rem 错误传播：保存转发命令的 ERRORLEVEL，非零时暂停以便查看，再以相同退出码结束。
@@ -31,6 +32,7 @@ if not defined JAVA_HOME (
 )
 
 if not "%~1"=="" goto forward_args
+if exist "%~dp0runtime-manifest.json" goto start_runtime
 if not exist "%~dp0maven-repository" goto start_online
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start.ps1" -MavenOffline -BackgroundModules
@@ -42,6 +44,10 @@ goto capture_exit
 
 :start_online
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start.ps1" -BackgroundModules
+goto capture_exit
+
+:start_runtime
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start.ps1" -RuntimeManifest "%~dp0runtime-manifest.json"
 
 :capture_exit
 set "EXIT_CODE=%ERRORLEVEL%"

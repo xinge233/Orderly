@@ -26,7 +26,7 @@
 .\scripts\start.ps1 -BackgroundModules
 ```
 
-默认启动会先完整构建全部模块和宿主。`-BackgroundModules` 则只先构建受保护系统模块与宿主，Java 健康检查通过并打开界面后，由 `scripts/build-module-background.ps1` 按队列构建业务模块。首轮构建结束后 `scripts/watch-module-downloads.ps1` 继续监督新下载模块，空闲时不持有仓库构建锁；发现新源码后再执行单模块构建和宿主刷新。后台默认最多同时运行 2 个模块 Maven worker，可在设置弹窗的“系统设置”中调整为 1-4；worker 只生成候选 JAR，校验、原子发布和宿主刷新始终由单一父进程依次完成。启动入口 `启动归序.cmd` 默认使用该模式。
+源码启动默认先读取 `target/build-manifest.json` 并校验运行输入与 JAR 哈希。全部有效时直接启动，不调用 Maven；只有对应输入变化、产物缺失或哈希不符时才构建受影响部分。`-ForceBuild` 忽略清单并完整重建，`-SkipBuild` 只用于明确知道产物有效的验证路径。`-BackgroundModules` 在后台上继续监督缺失或新增模块，Java 健康检查通过并打开界面后由 `scripts/build-module-background.ps1` 按队列处理待构建项。首轮构建结束后 `scripts/watch-module-downloads.ps1` 继续监督新下载模块，空闲时不持有仓库构建锁；发现新源码后再执行单模块构建和宿主刷新。后台默认最多同时运行 2 个模块 Maven worker，可在设置弹窗的“系统设置”中调整为 1-4；worker 只生成候选 JAR，校验、原子发布和宿主刷新始终由单一父进程依次完成。启动入口 `启动归序.cmd` 在源码目录使用该模式，在预构建运行包中直接按清单启动且不调用 Maven。
 
 直接运行 `build.ps1` 默认执行模块与宿主测试；`-SkipTests` 仅用于明确的快速启动或验收路径。`-BootstrapOnly` 只构建控制模块与宿主，`-ModulesOnly -ModuleName <module_*>` 只构建一个业务模块且不重建宿主，`-SkipKernelInstall` 复用已安装 kernel。前台完整构建默认串行；只有显式传入大于 1 的 `-MaxParallel` 才并行，且并行范围仅限相互独立的模块 Maven 构建。后台渐进启动读取 `.orderly-data/build-settings.json`，默认并发为 2；多个 worker 使用隔离 Maven 仓库，发布仍保持单线程。
 
@@ -40,6 +40,7 @@
 .\scripts\build.ps1 -BootstrapOnly -SkipTests
 .\scripts\build.ps1 -ModulesOnly -ModuleName module_fs -SkipKernelInstall
 .\scripts\start.ps1 -SkipBuild
+.\scripts\start.ps1 -ForceBuild
 .\scripts\start.ps1 -BackgroundModules
 ```
 
@@ -101,6 +102,11 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 .\scripts\gate.ps1
 .\scripts\modularity.ps1
 .\scripts\test-build-parallel.ps1
+.\scripts\test-build-plan.ps1
+.\scripts\test-startup-cache.ps1
+.\scripts\package-runtime.ps1
+.\scripts\verify-runtime.ps1 .\target\orderly-runtime\Orderly-0.1.0-SNAPSHOT-runtime.zip
+.\scripts\verify-release-pair.ps1 <runtime.zip> <offline-source.zip>
 ```
 
 `scripts/doc-gate.ps1` 是只读快速门禁，不访问网络，不启动 Java、Maven 或 Node，也不写运行数据。它解析 `scripts/*.ps1` 的 PowerShell AST，检查关键规则、契约样例、上下文配置、仓库地图脚本引用，以及 Git 跟踪和未跟踪未忽略 Markdown 的合并冲突标记和本地相对链接。DOCX 会检查 OOXML ZIP 结构、必需部件、路径安全、宏部件和 XML 完整性。已跟踪但工作区删除的文档会跳过正文读取，但其他文档指向它的本地链接仍会失败，关键文件仍必须存在。`scripts/test-build-parallel.ps1` 不依赖 Pester，在 `target` 下用临时 Maven 包装器验证默认串行、显式并发、隔离仓库、失败退出码、原始日志、失败后产物不变和严格离线 `-o`。
@@ -111,9 +117,11 @@ DOCX 结构校验不判断文字内容和页面排版。实际修改 DOCX 内容
 
 `gate.ps1` 会先无条件调用 `scripts/doc-gate.ps1`。当变更是纯 Markdown/DOCX 文档时，`gate.ps1` 在文档门禁成功后直接退出，不运行 Maven、Node 或 Python 测试；空变更集、其他文件类型、混合变更或分类不确定的变更继续完整门禁。完整分支使用标准 Python `jsonschema` 校验契约样例，并执行模块化 Maven 测试与打包、框架与模块 UI 语法、前端 Node 测试，同时检查物理删除调用、业务样式硬编码色值、固定模块映射和固定业务端点。`-DocumentOnly` 要求变更集必须是非空纯 Markdown/DOCX，否则失败且不启动构建。`modularity.ps1` 通过移动源码和重启宿主，验证全业务模块、移除单模块、零业务模块（保留 `module_system_control`）、恢复、临时模块自动发现与可逆移出、模块 UI/查询/计划规则、动态主题与已选主题失效回退；结束后恢复原生模块源码，并清理 `target` 验收临时目录。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
 
-### 离线源码包
+### 预构建运行包与离线源码包
 
-请从 [GitHub Releases](https://github.com/xinge233/Orderly/releases) 下载正式离线包。GitHub 的 `Code -> Download ZIP` 只包含受版本控制的源码，不包含发布资产中的 `maven-repository`、第三方制品清单和离线校验元数据；使用源码 ZIP 启动时仍会按开发构建路径解析 Maven 依赖。应下载名称形如 `Orderly-0.1.0-SNAPSHOT-offline-source.zip` 的 Release 资产及同名 `.sha256`。
+正式发布同时提供两种资产。普通用户下载名称形如 `Orderly-0.1.0-SNAPSHOT-runtime.zip` 的预构建运行包及同名 `.sha256`；解压后双击 `启动归序.cmd`，启动时只校验 `runtime-manifest.json`、宿主 JAR 和模块 JAR，不调用 Maven。开发者、审查者和离线重建场景继续下载 `Orderly-0.1.0-SNAPSHOT-offline-source.zip`。GitHub 的 `Code -> Download ZIP` 不包含 Release 资产或校验元数据，不属于正式运行包。
+
+运行包第一版仍要求 JDK 21 和 Python 3.14；它消除 Java 编译和 Maven 启动构建，但不宣称完全零运行时依赖。通过源码安装新的业务模块仍需要 Maven，除非后续提供预编译模块分发。运行包和源码包必须来自同一个干净 Git 提交。
 
 正式包默认要求 Git 工作树干净。维护者可通过以下命令在 `target/orderly-offline` 中从空 Maven 仓库执行一次在线预热构建和 Java/Maven 测试，再生成包含源码、`maven-repository`、`maven-manifest.json`、`files.sha256`、第三方制品清单和许可风险提示的 ZIP。源码路径只来自 Git 索引，新增文件必须先显式加入索引。打包脚本不代替发布步骤，正式 ZIP 必须由维护者上传到对应 Git Tag 的 GitHub Release：
 

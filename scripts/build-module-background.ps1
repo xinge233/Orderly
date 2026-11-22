@@ -30,9 +30,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+. (Join-Path $PSScriptRoot "build-plan.ps1")
 $moduleRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "Module"))
 $targetRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "target"))
 $stagingRoot = [System.IO.Path]::GetFullPath((Join-Path $targetRoot "orderly-modules"))
+$buildManifestPath = [System.IO.Path]::GetFullPath((Join-Path $targetRoot "build-manifest.json"))
 $statusFile = [System.IO.Path]::GetFullPath((Join-Path $targetRoot "module-build-status.json"))
 $priorityFile = [System.IO.Path]::GetFullPath((Join-Path $targetRoot "module-build-priority.json"))
 $buildScript = Join-Path $PSScriptRoot "build.ps1"
@@ -200,7 +202,7 @@ function Get-SourceDirectories {
 }
 
 function Wait-HostHealth {
-    $uri = "$BaseUrl/api/health"
+    $uri = "$BaseUrl/api/health/live"
     $deadline = [DateTime]::UtcNow.AddSeconds($HealthTimeoutSeconds)
     while ([DateTime]::UtcNow -lt $deadline) {
         try {
@@ -464,6 +466,13 @@ function Publish-CompletedModule {
         Select-Object -First 1
     if (-not $ready) {
         throw "模块 JAR 已发布，但宿主未将模块追加为 READY：$($entry.sourceName)"
+    }
+    if ($null -ne (Read-OrderlyBuildManifest $buildManifestPath)) {
+        Write-OrderlyBuildManifest `
+            -RepoRoot $repoRoot `
+            -ManifestPath $buildManifestPath `
+            -Mode "modules-only" `
+            -BuiltModuleNames @($entry.sourceName)
     }
     Set-BuildState `
         -Entry $entry `

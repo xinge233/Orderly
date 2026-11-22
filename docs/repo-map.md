@@ -60,6 +60,7 @@
 | 持久化执行记录 | `app/host/src/main/java/com/orderly/host/execution/ExecutionRecordStore.java` |
 | 系统功能开关 | `app/host/src/main/java/com/orderly/host/system/SystemFeatureService.java` |
 | 模块运行时 | `app/host/src/main/java/com/orderly/host/runtime/ModuleBootstrap.java` |
+| 存活与诊断健康检查 | `app/host/src/main/java/com/orderly/host/api/OrderlyController.java` |
 | 模块治理与分发 | `app/host/src/main/java/com/orderly/host/modulecontrol/`；下载校验入口为 `ModuleDistributionService.java`、`ModulePackageInstaller.java` |
 | 主题目录 | `app/host/src/main/java/com/orderly/host/theme/` |
 | 前端页面 | `app/frontend/index.html` |
@@ -72,6 +73,7 @@
 |---|---|
 | `contracts/plan.schema.json` | 宿主计划校验、计划样例 |
 | `contracts/action-execution.schema.json` | 总体 AI 直执 Action 数组请求 |
+| `contracts/build-manifest.schema.json` | 源码构建清单、输入指纹和 JAR 产物 |
 | `contracts/ai-settings.schema.json` | AI 模式、临时 API Key 与删除直执设置 |
 | `contracts/ai-turn-request.schema.json` | 自然语言 AI 回合请求 |
 | `contracts/ai-turn-response.schema.json` | ACTIONS、PLAN、QUERY、QUESTION、VIEW 响应 |
@@ -80,6 +82,7 @@
 | `contracts/ai-service-decision.schema.json` | Python 到 Java 的受控决策响应 |
 | `contracts/module.schema.json`、`module-ui.schema.json`、`module-catalog.schema.json` | 模块 JAR、模块 UI 与 GitHub 分发目录契约 |
 | `contracts/theme.schema.json` | 宿主主题加载与主题样例 |
+| `contracts/runtime-release.schema.json` | 预构建运行包清单和启动路径 |
 | `contracts/study-data.schema.json` | 学习数据校验脚本与模块数据 |
 | `contracts/samples/valid/` | 合法样例与契约测试 |
 | `contracts/samples/invalid/` | 非法样例与失败路径测试 |
@@ -95,12 +98,11 @@
 | 主题变更 | `themes/README.md`、目标 `theme.json`、`tokens.css`、`motion.css` |
 | 契约变更 | Schema、合法样例、非法样例、所有直接消费者 |
 | 测试新增、删除或验收 | `AGENTS.md`、`docs/agents/testing/README.md`、目标测试源码、当前月测试记录、相关构建或门禁脚本 |
-| 构建或启动问题 | `README.md`、`启动归序.cmd`、`scripts/build.ps1`、`build-module-background.ps1`、`watch-module-downloads.ps1`、`start.ps1`、`target/background/` 与 `target/build-parallel-*` 中的目标日志行段 |
+| 构建或启动问题 | `README.md`、`启动归序.cmd`、`scripts/build-plan.ps1`、`build.ps1`、`build-module-background.ps1`、`watch-module-downloads.ps1`、`start.ps1`、`target/background/` 与 `target/build-parallel-*` 中的目标日志行段 |
+| 发布包问题 | `scripts/package-runtime.ps1`、`verify-runtime.ps1`、`package-offline.ps1`、`verify-offline.ps1`、对应契约和 `target/orderly-runtime/` 目标日志行段 |
 | 历史决策追溯 | `docs/agents/` 中相关交接文档的指定章节，按需读取 |
-
 历史交接文档只用于追溯事实、验证证据和已知风险，不单独构成实施授权。
 ## 上下文工具
-
 | 目的 | 命令 |
 |---|---|
 | 查看仓库地图 | `.\scripts\context.ps1 -Mode map` |
@@ -114,7 +116,6 @@
 工具只读取 Git 跟踪文件，不接受仓库外路径、目录、未跟踪或忽略文件、重解析点、二进制和超限请求。
 
 ## 忽略目录与二进制资产
-
 | 路径或类型 | 处理方式 |
 |---|---|
 | `target/`、`**/target/` | Maven 与测试生成物，不读取、不搜索、不提交 |
@@ -129,7 +130,6 @@
 上下文工具遇到二进制文件时只返回拒绝原因，不输出文件正文。
 
 ## 验证命令
-
 | 目的 | 命令 |
 |---|---|
 | 上下文脚本语法 | PowerShell 解析 `scripts/context.ps1` |
@@ -139,9 +139,9 @@
 | 完整门禁 | `.\scripts\gate.ps1` |
 | 模块化验收 | `.\scripts\modularity.ps1` |
 | 构建与分层启动 | `.\scripts\build.ps1 -MaxParallel 3` 或 `.\scripts\test-build-parallel.ps1`；分层启动用 `.\scripts\start.ps1 -BackgroundModules` 先启动控制模块与宿主，再按默认两路、可调 1-4 的队列并行构建并由单线程发布业务模块 |
-| 生成离线源码包 | 默认要求干净 Git 和索引化源码；仅本地脏快照使用 `.\scripts\package-offline.ps1 -AllowDirtySnapshot` |
-| 验证离线源码包 | `.\scripts\verify-offline.ps1 .\target\orderly-offline\Orderly-0.1.0-SNAPSHOT-offline-source.zip`；可加 `-MaxParallel <int>` |
-| 启动 | 开发路径用 `.\scripts\start.ps1 -BackgroundModules`；解压 GitHub Release 后运行 `.\启动归序.cmd`，自动使用包内 `maven-repository` 和后台模块队列 |
+| 构建检测与运行包 | `.\scripts\test-build-plan.ps1`；`.\scripts\package-runtime.ps1`；`.\scripts\verify-runtime.ps1 <zip>`；启动时由 `scripts/build-plan.ps1` 校验输入指纹和 JAR 哈希 |
+| 离线源码包 | 生成用 `.\scripts\package-offline.ps1`，脏快照加 `-AllowDirtySnapshot`；验证用 `.\scripts\verify-offline.ps1 <zip>` |
+| 启动 | 开发路径用 `.\scripts\start.ps1 -BackgroundModules`；预构建运行包执行 `.\启动归序.cmd` 后直接校验运行清单并启动；离线源码包使用包内 `maven-repository` 和后台模块队列 |
 | 发布模块目录 | `.\scripts\export-module-distribution.ps1` 生成源码 ZIP 与 `catalog.json`；手动运行 GitHub Action 更新 `module-distribution` 分支 |
 | HTTP 烟测 | `.\scripts\smoke.ps1` |
 

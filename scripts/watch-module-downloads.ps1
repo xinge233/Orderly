@@ -212,7 +212,7 @@ function Wait-HostReady {
     $deadline = [DateTime]::UtcNow.AddSeconds(120)
     while ([DateTime]::UtcNow -lt $deadline) {
         try {
-            $health = Invoke-RestMethod -Uri "$BaseUrl/api/health" -Method Get -TimeoutSec 2
+            $health = Invoke-RestMethod -Uri "$BaseUrl/api/health/live" -Method Get -TimeoutSec 2
             if ([string]$health.status -eq "UP") {
                 return
             }
@@ -222,7 +222,7 @@ function Wait-HostReady {
         }
         Start-Sleep -Milliseconds 300
     }
-    throw "等待本地宿主健康检查超时：$BaseUrl/api/health"
+    throw "等待本地宿主存活检查超时：$BaseUrl/api/health/live"
 }
 
 function Wait-ModuleReady {

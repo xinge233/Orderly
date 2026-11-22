@@ -470,20 +470,24 @@ try {
         "contracts\ai-service-decision.schema.json",
         "contracts\ai-query-continuation-request.schema.json",
         "contracts\build-settings.schema.json",
+        "contracts\build-manifest.schema.json",
         "contracts\host-shutdown-response.schema.json",
         "contracts\module-build-status.schema.json",
         "contracts\module-build-priority-request.schema.json",
         "contracts\module.schema.json",
+        "contracts\runtime-release.schema.json",
         "contracts\samples\valid\ai-service-turn-request.json",
         "contracts\samples\valid\ai-service-decision-query.json",
         "contracts\samples\valid\ai-service-decision-view.json",
         "contracts\samples\valid\ai-query-continuation-request.json",
         "contracts\samples\valid\ai-turn-response-view.json",
         "contracts\samples\valid\build-settings.json",
+        "contracts\samples\valid\build-manifest.json",
         "contracts\samples\valid\host-shutdown-response.json",
         "contracts\samples\valid\module-build-status.json",
         "contracts\samples\valid\module-build-priority-request.json",
         "contracts\samples\valid\module.json",
+        "contracts\samples\valid\runtime-release.json",
         "contracts\samples\valid\module-system-control.json",
         "contracts\samples\valid\module-system-service.json",
         "contracts\samples\invalid\ai-query-continuation-request-failed-payload.json",
@@ -491,10 +495,12 @@ try {
         "contracts\samples\invalid\ai-service-decision-view-mixed-actions.json",
         "contracts\samples\invalid\ai-turn-response-view-missing-view.json",
         "contracts\samples\invalid\build-settings-invalid-concurrency.json",
+        "contracts\samples\invalid\build-manifest-unsafe-path.json",
         "contracts\samples\invalid\host-shutdown-response-invalid-status.json",
         "contracts\samples\invalid\module-build-status-unsafe-source.json",
         "contracts\samples\invalid\module-build-priority-request-unsafe-source.json",
         "contracts\samples\invalid\module-query-display-invalid.json",
+        "contracts\samples\invalid\runtime-release-unsafe-path.json",
         "contracts\samples\invalid\module-system-invalid-role.json",
         "contracts\samples\invalid\module-system-protected-missing-prefix.json",
         "contracts\samples\invalid\module-system-reserved-prefix-business.json",
@@ -525,6 +531,10 @@ try {
         @{ Schema = "contracts\ai-query-continuation-request.schema.json"; Sample = "contracts\samples\invalid\ai-query-continuation-request-failed-payload.json"; Expected = $false },
         @{ Schema = "contracts\build-settings.schema.json"; Sample = "contracts\samples\valid\build-settings.json"; Expected = $true },
         @{ Schema = "contracts\build-settings.schema.json"; Sample = "contracts\samples\invalid\build-settings-invalid-concurrency.json"; Expected = $false },
+        @{ Schema = "contracts\build-manifest.schema.json"; Sample = "contracts\samples\valid\build-manifest.json"; Expected = $true },
+        @{ Schema = "contracts\build-manifest.schema.json"; Sample = "contracts\samples\invalid\build-manifest-unsafe-path.json"; Expected = $false },
+        @{ Schema = "contracts\runtime-release.schema.json"; Sample = "contracts\samples\valid\runtime-release.json"; Expected = $true },
+        @{ Schema = "contracts\runtime-release.schema.json"; Sample = "contracts\samples\invalid\runtime-release-unsafe-path.json"; Expected = $false },
         @{ Schema = "contracts\host-shutdown-response.schema.json"; Sample = "contracts\samples\valid\host-shutdown-response.json"; Expected = $true },
         @{ Schema = "contracts\host-shutdown-response.schema.json"; Sample = "contracts\samples\invalid\host-shutdown-response-invalid-status.json"; Expected = $false },
         @{ Schema = "contracts\module-build-status.schema.json"; Sample = "contracts\samples\valid\module-build-status.json"; Expected = $true },
@@ -577,6 +587,15 @@ try {
     }
 
     Write-Host "上下文门禁通过：语法、成功读取、边界拒绝、正文不泄漏、审计、仓库地图与忽略规则均成功。"
+
+    $buildPlanTest = Join-Path $PSScriptRoot "test-build-plan.ps1"
+    if (-not (Test-Path -LiteralPath $buildPlanTest -PathType Leaf)) {
+        throw "缺少构建计划测试：$buildPlanTest"
+    }
+    & $buildPlanTest
+    if (-not $? -or $LASTEXITCODE -ne 0) {
+        throw "构建计划测试失败，退出码：$LASTEXITCODE"
+    }
 
     Push-Location $aiRoot
     try {

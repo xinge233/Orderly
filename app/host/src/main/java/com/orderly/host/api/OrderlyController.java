@@ -137,6 +137,15 @@ public class OrderlyController {
         this.records = records;
     }
 
+    /** 只返回 Java 宿主自身存活状态，不探测可选 AI 服务。 */
+    @GetMapping("/health/live")
+    public Map<String, Object> liveness() {
+        return Map.of(
+                "status", "UP",
+                "javaVersion", Runtime.version().feature()
+        );
+    }
+
     /** 返回应用、AI 服务和工作区的最小健康摘要。 */
     @GetMapping("/health")
     public Map<String, Object> health() {

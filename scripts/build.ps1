@@ -12,6 +12,7 @@
 #   -SkipKernelInstall 供后台队列复用 BootstrapOnly 已安装的 kernel，避免每模块重复安装。
 #   -BackgroundWorker 由后台调度器持有仓库锁时使用；跳过本进程锁定并禁用运行时目录直接发布。
 #   -ModuleOutputDirectory 与 BackgroundWorker 搭配，接收已校验的单个模块 JAR 供父进程串行发布。
+#   -PreserveBusinessModules 仅与 BootstrapOnly 搭配，保留已由构建清单验证的业务模块 JAR。
 #   JDK 21 和 Maven 3.9+ 必须可从 JAVA_HOME/PATH 使用。
 #
 # 副作用：
@@ -35,7 +36,8 @@ param(
     [string]$ModuleName,
     [switch]$SkipKernelInstall,
     [switch]$BackgroundWorker,
-    [string]$ModuleOutputDirectory
+    [string]$ModuleOutputDirectory,
+    [switch]$PreserveBusinessModules
 )
 
 if ($BootstrapOnly -and $ModulesOnly) {
@@ -59,9 +61,17 @@ if ($BackgroundWorker -and [string]::IsNullOrWhiteSpace($ModuleOutputDirectory))
 if (-not $BackgroundWorker -and -not [string]::IsNullOrWhiteSpace($ModuleOutputDirectory)) {
     throw "-ModuleOutputDirectory 只能与 -BackgroundWorker 一起使用。"
 }
+if ($PreserveBusinessModules -and -not $BootstrapOnly) {
+    throw "-PreserveBusinessModules 只能与 -BootstrapOnly 一起使用。"
+}
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$buildPlanScript = Join-Path $PSScriptRoot "build-plan.ps1"
+if (-not (Test-Path -LiteralPath $buildPlanScript -PathType Leaf)) {
+    throw "缺少构建检测脚本：$buildPlanScript"
+}
+. $buildPlanScript
 $defaultRepository = if ($Offline) {
     Join-Path $repoRoot "maven-repository"
 }
@@ -75,6 +85,7 @@ else {
     [System.IO.Path]::GetFullPath($MavenRepository)
 }
 $targetRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "target"))
+$buildManifestPath = [System.IO.Path]::GetFullPath((Join-Path $targetRoot "build-manifest.json"))
 $stagingRoot = [System.IO.Path]::GetFullPath((Join-Path $targetRoot "orderly-modules"))
 $hostTargetRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "app\host\target"))
 $runName = "build-parallel-" + (Get-Date -Format "yyyyMMdd-HHmmss") + "-" + [guid]::NewGuid().ToString("N")
@@ -667,6 +678,30 @@ function Publish-CandidateModules {
     }
 }
 
+function Copy-PreservedBusinessModuleJars {
+    if (-not (Test-Path -LiteralPath $stagingRoot -PathType Container)) {
+        return
+    }
+    foreach ($jar in @(Get-ChildItem -LiteralPath $stagingRoot -Filter "*.jar" -File -Force |
+        Where-Object {
+            -not $_.Name.StartsWith($systemSourcePrefix, [System.StringComparison]::Ordinal)
+        } |
+        Sort-Object Name)) {
+        if (($jar.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "运行时模块 JAR 不能是重解析点：$($jar.FullName)"
+        }
+        $destination = Assert-PathWithin `
+            (Join-Path $candidateStagingRoot $jar.Name) `
+            $candidateStagingRoot `
+            "保留的业务模块 JAR"
+        if (Test-Path -LiteralPath $destination) {
+            throw "候选模块暂存出现重复 JAR：$destination"
+        }
+        Copy-Item -LiteralPath $jar.FullName -Destination $destination -Force
+        Write-Host "保留已验证业务模块 JAR：$($jar.Name)"
+    }
+}
+
 function Publish-RuntimeModuleJars {
     param(
         [Parameter(Mandatory = $true)][System.IO.DirectoryInfo[]]$ModuleDirectories
@@ -1049,6 +1084,9 @@ try {
     Publish-CandidateModules `
         -ModuleDirectories $moduleDirectoriesToBuild `
         -RequireControlModule:(-not $ModulesOnly)
+    if ($PreserveBusinessModules) {
+        Copy-PreservedBusinessModuleJars
+    }
 
     if ($ModulesOnly) {
         if ($BackgroundWorker) {
@@ -1124,6 +1162,20 @@ try {
     else {
         Write-Host "模块 worker 日志：$runRoot；模块 Maven 使用共享仓库：$localRepository"
     }
+    }
+    if (-not $BackgroundWorker) {
+        $existingManifest = Read-OrderlyBuildManifest $buildManifestPath
+        if ($ModulesOnly -and $null -eq $existingManifest) {
+            Write-Warning "仅构建模块时没有现有构建清单，未更新 target/build-manifest.json。"
+        }
+        else {
+            Write-OrderlyBuildManifest `
+                -RepoRoot $repoRoot `
+                -ManifestPath $buildManifestPath `
+                -Mode $buildMode `
+                -BuiltModuleNames $moduleNamesToBuild `
+                -PreserveBusinessModules:$PreserveBusinessModules
+        }
     }
 }
 finally {

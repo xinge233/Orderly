@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/build-manifest.schema.json",
+  "title": "Orderly source build manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "projectVersion",
+    "gitCommit",
+    "gitDirty",
+    "jdkMajor",
+    "createdAt",
+    "sharedInputSha256",
+    "host",
+    "modules"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "projectVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "gitCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{40,64}$"
+    },
+    "gitDirty": {
+      "type": "boolean"
+    },
+    "jdkMajor": {
+      "const": 21
+    },
+    "createdAt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sharedInputSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputSha256", "artifact"],
+      "properties": {
+        "inputSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "artifact": {
+          "$ref": "#/$defs/artifact"
+        }
+      }
+    },
+    "modules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceName", "moduleId", "inputSha256", "artifact"],
+        "properties": {
+          "sourceName": {
+            "$ref": "#/$defs/moduleId"
+          },
+          "moduleId": {
+            "$ref": "#/$defs/moduleId"
+          },
+          "inputSha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "artifact": {
+            "$ref": "#/$defs/artifact"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "moduleId": {
+      "type": "string",
+      "pattern": "^module_[a-z0-9_]+$"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "size", "sha256"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*\\\\)(?!.*:).*$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}

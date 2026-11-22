@@ -5,6 +5,7 @@
 #
 # 输入：
 #   -Port 指定 Java HTTP 端口，默认 8080；-SkipBuild 复用已有 JAR。
+#   -ForceBuild 忽略构建清单并完整重建；-RuntimeManifest 按预构建运行包清单启动。
 #   -BackgroundModules 先只构建控制模块与宿主，随后由后台队列并行构建并单线程追加业务模块。
 #   -Offline 将严格 Maven 离线模式及可选 -MavenRepository 透传给 build.ps1，
 #   并要求复用现有 ai/.venv；该开关不宣称 Node 或整个应用离线。
@@ -25,20 +26,38 @@
 param(
     [int]$Port = 8080,
     [switch]$SkipBuild,
+    [switch]$ForceBuild,
     [switch]$Offline,
     [switch]$MavenOffline,
     [string]$MavenRepository,
     [ValidateRange(1, 2147483647)]
     [int]$MaxParallel = 1,
-    [switch]$BackgroundModules
+    [switch]$BackgroundModules,
+    [string]$RuntimeManifest
 )
+
+if ($SkipBuild -and $ForceBuild) {
+    throw "-SkipBuild 与 -ForceBuild 不能同时使用。"
+}
+if (-not [string]::IsNullOrWhiteSpace($RuntimeManifest) -and $ForceBuild) {
+    throw "-RuntimeManifest 与 -ForceBuild 不能同时使用。"
+}
+if (-not [string]::IsNullOrWhiteSpace($RuntimeManifest) -and $BackgroundModules) {
+    throw "预构建运行包不允许启动源码模块构建器。"
+}
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$buildPlanScript = Join-Path $PSScriptRoot "build-plan.ps1"
+if (-not (Test-Path -LiteralPath $buildPlanScript -PathType Leaf)) {
+    throw "缺少构建检测脚本：$buildPlanScript"
+}
+. $buildPlanScript
 $hostRoot = Join-Path $repoRoot "app\host"
 $modulesRoot = Join-Path $repoRoot "target\orderly-modules"
 $themesRoot = Join-Path $repoRoot "themes"
 $aiEnvScript = Join-Path $repoRoot "ai\scripts\ensure-env.ps1"
+$buildManifestPath = Join-Path $repoRoot "target\build-manifest.json"
 
 function Invoke-NativeCapture {
     param(
@@ -126,7 +145,7 @@ function Wait-JavaHost {
             throw "Java 宿主启动失败，退出码：$($Process.ExitCode)"
         }
         try {
-            $health = Invoke-RestMethod -Uri "$BaseUrl/api/health" -Method Get -TimeoutSec 2
+            $health = Invoke-RestMethod -Uri "$BaseUrl/api/health/live" -Method Get -TimeoutSec 2
             if ([string]$health.status -eq "UP") {
                 return $health
             }
@@ -136,7 +155,7 @@ function Wait-JavaHost {
         }
         Start-Sleep -Milliseconds 250
     }
-    throw "等待 Java 宿主健康检查超时：$BaseUrl"
+    throw "等待 Java 宿主存活检查超时：$BaseUrl/api/health/live"
 }
 
 function ConvertTo-ProcessArgument {
@@ -152,6 +171,126 @@ function Join-ProcessArguments {
     return (@($Arguments | ForEach-Object { ConvertTo-ProcessArgument ([string]$_) }) -join " ")
 }
 
+function Invoke-RequiredBuild {
+    param([Parameter(Mandatory = $true)][hashtable]$BaseBuildArguments)
+
+    $plan = Resolve-OrderlyBuildPlan -RepoRoot $repoRoot -ManifestPath $buildManifestPath
+    if (-not $plan.BuildRequired) {
+        Write-Host "构建清单有效，跳过 Maven 构建。"
+        Write-Host "ORDERLY_BUILD_SKIPPED=1"
+        return
+    }
+
+    Write-Host "构建检测要求更新产物。"
+    foreach ($reason in @($plan.Reasons)) {
+        Write-Host "  - $reason"
+    }
+
+    if ($plan.FullBuildRequired) {
+        & (Join-Path $PSScriptRoot "build.ps1") @BaseBuildArguments
+        return
+    }
+
+    $moduleBuildCount = 0
+    foreach ($moduleName in @($plan.BusinessModuleNames)) {
+        $moduleArguments = @{
+            ModulesOnly = $true
+            ModuleName = $moduleName
+            SkipTests = $true
+        }
+        if ($BaseBuildArguments.ContainsKey("Offline")) {
+            $moduleArguments.Offline = $BaseBuildArguments.Offline
+        }
+        if ($BaseBuildArguments.ContainsKey("MavenRepository")) {
+            $moduleArguments.MavenRepository = $BaseBuildArguments.MavenRepository
+        }
+        if ($moduleBuildCount -gt 0) {
+            $moduleArguments.SkipKernelInstall = $true
+        }
+        & (Join-Path $PSScriptRoot "build.ps1") @moduleArguments
+        $moduleBuildCount++
+    }
+
+    if ($plan.HostBuildRequired) {
+        $bootstrapArguments = @{
+            BootstrapOnly = $true
+            PreserveBusinessModules = $true
+            SkipTests = $true
+        }
+        if ($BaseBuildArguments.ContainsKey("Offline")) {
+            $bootstrapArguments.Offline = $BaseBuildArguments.Offline
+        }
+        if ($BaseBuildArguments.ContainsKey("MavenRepository")) {
+            $bootstrapArguments.MavenRepository = $BaseBuildArguments.MavenRepository
+        }
+        if ($moduleBuildCount -gt 0) {
+            $bootstrapArguments.SkipKernelInstall = $true
+        }
+        & (Join-Path $PSScriptRoot "build.ps1") @bootstrapArguments
+    }
+}
+
+function Read-RuntimeManifest {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $manifestPath = Assert-OrderlyPathWithin $Path $repoRoot "运行包清单"
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        throw "运行包清单不存在：$manifestPath"
+    }
+    try {
+        $manifest = Get-Content -Raw -Encoding UTF8 -LiteralPath $manifestPath |
+            ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "运行包清单 JSON 损坏：$($_.Exception.Message)"
+    }
+    if ([int]$manifest.schemaVersion -ne 1 -or
+            [string]$manifest.packageType -ne "orderly-runtime") {
+        throw "运行包清单版本或类型不受支持。"
+    }
+    if ([int]$manifest.jdkMajor -ne 21) {
+        throw "运行包要求 JDK 21，清单记录：$($manifest.jdkMajor)"
+    }
+    if (-not (Test-OrderlyManifestArtifact -RepoRoot $repoRoot -Artifact $manifest.hostJar)) {
+        throw "运行包宿主 JAR 缺失、大小不符或 SHA-256 不匹配。"
+    }
+    $modules = @($manifest.modules)
+    if ($modules.Count -eq 0) {
+        throw "运行包未登记任何模块 JAR。"
+    }
+    foreach ($module in $modules) {
+        if (-not (Test-OrderlyManifestArtifact -RepoRoot $repoRoot -Artifact $module.artifact)) {
+            throw "运行包模块 JAR 缺失、大小不符或 SHA-256 不匹配：$($module.moduleId)"
+        }
+    }
+    $hostPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot ([string]$manifest.hostJar.path)))
+    $firstModulePath = [System.IO.Path]::GetFullPath(
+        (Join-Path $repoRoot ([string]$modules[0].artifact.path))
+    )
+    $runtimeModulesRoot = Split-Path -Parent $firstModulePath
+    foreach ($module in $modules) {
+        $modulePath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot ([string]$module.artifact.path)))
+        if (-not (Split-Path -Parent $modulePath).Equals(
+                $runtimeModulesRoot,
+                [System.StringComparison]::OrdinalIgnoreCase
+            )) {
+            throw "运行包模块 JAR 必须位于同一模块目录：$modulePath"
+        }
+    }
+    $runtimeThemesRoot = Assert-OrderlyPathWithin `
+        (Join-Path $repoRoot ([string]$manifest.themesRoot)) `
+        $repoRoot `
+        "运行包主题目录"
+    if (-not (Test-Path -LiteralPath $runtimeThemesRoot -PathType Container)) {
+        throw "运行包主题目录不存在：$runtimeThemesRoot"
+    }
+    return [pscustomobject]@{
+        HostJar = $hostPath
+        ModulesRoot = $runtimeModulesRoot
+        ThemesRoot = $runtimeThemesRoot
+    }
+}
+
 function Invoke-BackgroundStart {
     param(
         [Parameter(Mandatory = $true)][string]$JavaExecutable,
@@ -162,7 +301,8 @@ function Invoke-BackgroundStart {
         [switch]$OfflineMode,
         [switch]$SkipMavenTests,
         [switch]$UseMavenOffline,
-        [string]$Repository
+        [string]$Repository,
+        [switch]$SkipBackgroundModules
     )
     $logRoot = Join-Path $repoRoot "target\background"
     [System.IO.Directory]::CreateDirectory($logRoot) | Out-Null
@@ -194,7 +334,7 @@ function Invoke-BackgroundStart {
             "-Dorderly.modules-dir=$ModulesDirectory",
             "-Dorderly.module-source-dir=$repoRoot\Module",
             "-Dorderly.themes-dir=$ThemesDirectory",
-            "-Dorderly.background-modules-enabled=true",
+            ("-Dorderly.background-modules-enabled=" + $(if ($SkipBackgroundModules) { "false" } else { "true" })),
             "-Dorderly.module-build-status=$repoRoot\target\module-build-status.json",
             "-Dorderly.module-build-priority=$repoRoot\target\module-build-priority.json",
             "-Dorderly.ai-service.url=$aiBaseUrl",
@@ -215,70 +355,75 @@ function Invoke-BackgroundStart {
             -RedirectStandardError $javaErr `
             -PassThru
         Wait-JavaHost -BaseUrl $baseUrl -Process $javaProcess | Out-Null
-        Write-Host "框架已启动，开始后台准备业务模块。"
-        Write-Host "模块构建日志：$builderOut"
+        if (-not $SkipBackgroundModules) {
+            Write-Host "框架已启动，开始后台准备业务模块。"
+            Write-Host "模块构建日志：$builderOut"
 
-        $builderArguments = @(
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            (Join-Path $PSScriptRoot "build-module-background.ps1"),
-            "-BaseUrl",
-            $baseUrl,
-            "-SkipKernelInstall"
-        )
-        if ($SkipMavenTests) {
-            $builderArguments += "-SkipTests"
-        }
-        if ($OfflineMode -or $UseMavenOffline) {
-            $builderArguments += "-Offline"
-        }
-        if (-not [string]::IsNullOrWhiteSpace($Repository)) {
-            $builderArguments += @("-MavenRepository", $Repository)
-        }
-        $powerShellExecutable = (Get-Process -Id $PID).Path
-        $builderProcess = Start-Process `
-            -FilePath $powerShellExecutable `
-            -ArgumentList (Join-ProcessArguments $builderArguments) `
-            -WorkingDirectory $repoRoot `
-            -WindowStyle Hidden `
-            -RedirectStandardOutput $builderOut `
-            -RedirectStandardError $builderErr `
-            -PassThru
+            $builderArguments = @(
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                (Join-Path $PSScriptRoot "build-module-background.ps1"),
+                "-BaseUrl",
+                $baseUrl,
+                "-SkipKernelInstall"
+            )
+            if ($SkipMavenTests) {
+                $builderArguments += "-SkipTests"
+            }
+            if ($OfflineMode -or $UseMavenOffline) {
+                $builderArguments += "-Offline"
+            }
+            if (-not [string]::IsNullOrWhiteSpace($Repository)) {
+                $builderArguments += @("-MavenRepository", $Repository)
+            }
+            $powerShellExecutable = (Get-Process -Id $PID).Path
+            $builderProcess = Start-Process `
+                -FilePath $powerShellExecutable `
+                -ArgumentList (Join-ProcessArguments $builderArguments) `
+                -WorkingDirectory $repoRoot `
+                -WindowStyle Hidden `
+                -RedirectStandardOutput $builderOut `
+                -RedirectStandardError $builderErr `
+                -PassThru
 
-        $watcherArguments = @(
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            (Join-Path $PSScriptRoot "watch-module-downloads.ps1"),
-            "-BaseUrl",
-            $baseUrl,
-            "-InitialBuilderPid",
-            [string]$builderProcess.Id,
-            "-SkipKernelInstall"
-        )
-        if ($SkipMavenTests) {
-            $watcherArguments += "-SkipTests"
+            $watcherArguments = @(
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                (Join-Path $PSScriptRoot "watch-module-downloads.ps1"),
+                "-BaseUrl",
+                $baseUrl,
+                "-InitialBuilderPid",
+                [string]$builderProcess.Id,
+                "-SkipKernelInstall"
+            )
+            if ($SkipMavenTests) {
+                $watcherArguments += "-SkipTests"
+            }
+            if ($OfflineMode -or $UseMavenOffline) {
+                $watcherArguments += "-Offline"
+            }
+            if (-not [string]::IsNullOrWhiteSpace($Repository)) {
+                $watcherArguments += @("-MavenRepository", $Repository)
+            }
+            $moduleWatcherProcess = Start-Process `
+                -FilePath $powerShellExecutable `
+                -ArgumentList (Join-ProcessArguments $watcherArguments) `
+                -WorkingDirectory $repoRoot `
+                -WindowStyle Hidden `
+                -RedirectStandardOutput $watcherOut `
+                -RedirectStandardError $watcherErr `
+                -PassThru
+            Write-Host "模块下载监督器日志：$watcherOut"
         }
-        if ($OfflineMode -or $UseMavenOffline) {
-            $watcherArguments += "-Offline"
+        else {
+            Write-Host "运行包模式：跳过源码模块构建器与下载监督器。"
         }
-        if (-not [string]::IsNullOrWhiteSpace($Repository)) {
-            $watcherArguments += @("-MavenRepository", $Repository)
-        }
-        $moduleWatcherProcess = Start-Process `
-            -FilePath $powerShellExecutable `
-            -ArgumentList (Join-ProcessArguments $watcherArguments) `
-            -WorkingDirectory $repoRoot `
-            -WindowStyle Hidden `
-            -RedirectStandardOutput $watcherOut `
-            -RedirectStandardError $watcherErr `
-            -PassThru
-        Write-Host "模块下载监督器日志：$watcherOut"
 
         $aiPreparationError = $null
         try {
@@ -367,10 +512,16 @@ function Invoke-BackgroundStart {
     }
 }
 
-# 默认先构建，确保不会在源码已变化但运行 JAR 陈旧时启动应用。
-if (-not $SkipBuild) {
+$runtime = $null
+if (-not [string]::IsNullOrWhiteSpace($RuntimeManifest)) {
+    $runtime = Read-RuntimeManifest $RuntimeManifest
+}
+
+# 源码模式先按内容指纹判断是否需要构建；运行包模式只校验清单中的 JAR。
+if (-not $SkipBuild -and $null -eq $runtime) {
     $buildArguments = @{
         SkipTests = $true
+        MaxParallel = $MaxParallel
     }
     if ($Offline -or $MavenOffline) {
         $buildArguments.Offline = $true
@@ -381,13 +532,13 @@ if (-not $SkipBuild) {
     if (-not [string]::IsNullOrWhiteSpace($MavenRepository)) {
         $buildArguments.MavenRepository = $MavenRepository
     }
-    if ($BackgroundModules) {
-        $buildArguments.BootstrapOnly = $true
+    if ($ForceBuild) {
+        Write-Host "强制完整构建：-ForceBuild"
+        & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
     }
     else {
-        $buildArguments.MaxParallel = $MaxParallel
+        Invoke-RequiredBuild -BaseBuildArguments $buildArguments
     }
-    & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
 }
 
 # 显式校验 JAVA_HOME，而不依赖 PATH，防止构建或启动阶段悄悄切换到其他 JDK。
@@ -403,16 +554,34 @@ if ($javaVersion.ExitCode -ne 0 -or $javaVersion.Output -notmatch 'version "(?<m
     throw "启动需要 JDK 21，当前 JAVA_HOME Java 输出：`n$($javaVersion.Output)"
 }
 
-# 构建约定只产出一个可运行 host JAR；这里按时间选择仅用于解析现有产物。
-$jar = Get-ChildItem -LiteralPath (Join-Path $hostRoot "target") -Filter "*.jar" -File |
-    Where-Object { $_.Name -notlike "*.original" } |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1
+# 运行包按清单使用固定 JAR；开发模式优先使用构建清单，-SkipBuild 时兼容旧产物。
+if ($null -ne $runtime) {
+    $jar = Get-Item -LiteralPath $runtime.HostJar -Force
+    $modulesRoot = $runtime.ModulesRoot
+    $themesRoot = $runtime.ThemesRoot
+}
+else {
+    $buildManifest = Read-OrderlyBuildManifest $buildManifestPath
+    if ($null -ne $buildManifest -and
+            (Test-OrderlyManifestArtifact `
+                -RepoRoot $repoRoot `
+                -Artifact $buildManifest.host.artifact)) {
+        $jar = Get-Item `
+            -LiteralPath (Join-Path $repoRoot ([string]$buildManifest.host.artifact.path)) `
+            -Force
+    }
+    else {
+        $jar = Get-ChildItem -LiteralPath (Join-Path $hostRoot "target") -Filter "*.jar" -File |
+            Where-Object { $_.Name -notlike "*.original" } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+    }
+}
 if (-not $jar) {
     throw "未找到可运行的 host JAR。"
 }
 
-if ($BackgroundModules) {
+if ($BackgroundModules -or $null -ne $runtime) {
     Invoke-BackgroundStart `
         -JavaExecutable $javaExe `
         -HostJar $jar.FullName `
@@ -420,9 +589,10 @@ if ($BackgroundModules) {
         -ThemesDirectory $themesRoot `
         -HttpPort $Port `
         -OfflineMode:$Offline `
-        -SkipMavenTests `
+        -SkipMavenTests:(-not $RuntimeManifest) `
         -UseMavenOffline:($Offline -or $MavenOffline) `
-        -Repository $MavenRepository
+        -Repository $MavenRepository `
+        -SkipBackgroundModules:($null -ne $runtime)
     return
 }
 

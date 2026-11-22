@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "projectVersion": "0.1.0-SNAPSHOT",
+  "gitCommit": "0123456789abcdef0123456789abcdef01234567",
+  "gitDirty": false,
+  "jdkMajor": 21,
+  "createdAt": "2026-11-23T00:00:00.0000000Z",
+  "sharedInputSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "host": {
+    "inputSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "artifact": {
+      "path": "app/host/target/orderly-host-0.1.0-SNAPSHOT.jar",
+      "size": 1024,
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  },
+  "modules": [
+    {
+      "sourceName": "module_system_control",
+      "moduleId": "module_system_control",
+      "inputSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "artifact": {
+        "path": "target/orderly-modules/module_system_control.jar",
+        "size": 512,
+        "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+      }
+    }
+  ]
+}

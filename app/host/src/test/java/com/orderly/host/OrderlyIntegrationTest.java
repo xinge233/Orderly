@@ -102,6 +102,10 @@ class OrderlyIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"))
                 .andExpect(jsonPath("$.planner").value("LOCAL_RULES"));
+        mockMvc.perform(get("/api/health/live"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"))
+                .andExpect(jsonPath("$.javaVersion").value(21));
         mockMvc.perform(get("/api/modules"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray());

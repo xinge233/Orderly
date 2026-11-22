@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "packageType": "orderly-runtime",
+  "projectVersion": "0.1.0",
+  "gitCommit": "0123456789abcdef0123456789abcdef01234567",
+  "sourceTreeSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "jdkMajor": 21,
+  "themesRoot": "../../themes",
+  "hostJar": {
+    "path": "app/orderly-host-0.1.0.jar",
+    "size": 1024,
+    "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "modules": [
+    {
+      "moduleId": "module_system_control",
+      "artifact": {
+        "path": "../module_system_control.jar",
+        "size": 512,
+        "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      }
+    }
+  ]
+}
