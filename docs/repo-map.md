@@ -10,9 +10,9 @@
 | `docs/agents/architecture-baseline.md` | 首版架构与产品事实的阶段投影 | 每次技术任务开始 |
 | `docs/agents/collaboration-workflow.md` | 任务、交接、门禁和返工流程 | 每次协作任务开始 |
 | `README.md` | 构建、启动、功能和验证入口 | 需要运行或说明应用时 |
-| `docs/测试说明与测试记录.md` | 测试分层、覆盖范围、执行命令、已知缺口和新增测试记录 | 涉及测试新增、删除、验收结论或测试规划时 |
+| `docs/agents/testing/` | AI 测试上下文、默认命令、证据要求和按月真实执行记录 | 涉及测试新增、删除、验收结论或测试规划时 |
+| `docs/测试说明与测试记录.md` | 人类维护的完整测试资产、用例明细、历史记录和验收资料 | 仅人类日常查阅；AI 仅在用户明确要求时按章节读取 |
 | `.codex/config.toml` | Codex 项目级上下文配置 | 检查上下文预算配置时 |
-
 ## 顶层目录
 
 | 路径 | 职责 |
@@ -94,11 +94,11 @@
 | 模块动作变更 | 模块契约、模块 Java、模块 UI 清单、模块测试、宿主相关接口 |
 | 主题变更 | `themes/README.md`、目标 `theme.json`、`tokens.css`、`motion.css` |
 | 契约变更 | Schema、合法样例、非法样例、所有直接消费者 |
+| 测试新增、删除或验收 | `AGENTS.md`、`docs/agents/testing/README.md`、目标测试源码、当前月测试记录、相关构建或门禁脚本 |
 | 构建或启动问题 | `README.md`、`启动归序.cmd`、`scripts/build.ps1`、`build-module-background.ps1`、`watch-module-downloads.ps1`、`start.ps1`、`target/background/` 与 `target/build-parallel-*` 中的目标日志行段 |
 | 历史决策追溯 | `docs/agents/` 中相关交接文档的指定章节，按需读取 |
 
 历史交接文档只用于追溯事实、验证证据和已知风险，不单独构成实施授权。
-
 ## 上下文工具
 
 | 目的 | 命令 |
@@ -155,6 +155,6 @@
 | 新增或移除模块 | 更新业务模块表与模块入口说明 |
 | 新增契约或样例目录 | 更新契约入口与消费者 |
 | 新增生成目录或二进制资产 | 更新忽略目录与二进制资产表 |
-| 验证命令或测试资产变化 | 更新验证命令表；新增、重命名或删除测试时同步更新 `docs/测试说明与测试记录.md` |
+| 验证命令或测试资产变化 | 更新验证命令表；AI 新增、重命名或删除测试时更新 `docs/agents/testing/records/YYYY-MM.md`，人类完整测试资料由人类按需维护 |
 
 维护本文件时只写导航事实，不复制源码、完整规则、日志、交接正文或产品策划全文。

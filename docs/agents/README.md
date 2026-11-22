@@ -24,6 +24,8 @@
 | `.codex/agents/module-design-lead/AGENTS.md` | `module_design_lead` 程序模组设计师角色规范 |
 | `architecture-baseline.md` | 产品事实、阶段边界、未来目录结构和 UI 基线 |
 | `collaboration-workflow.md` | 任务流转、交接、审查、返工和完成规则 |
+| `testing/README.md` | AI 测试上下文、默认命令、证据要求和人类测试文档读取边界 |
+| `testing/records/YYYY-MM.md` | AI 按月维护的测试资产变更和真实执行结果 |
 | `templates/task-brief.md` | 主代理或 PM 的按需任务卡模板 |
 | `templates/pm-review.md` | 按需 PM 只读验收模板 |
 | `templates/software-engineer-handoff.md` | 按需软件工程师交接模板 |
@@ -88,6 +90,8 @@ Codex 会从项目 `.codex/agents/` 读取自定义 agent。默认无需分派�
 4. 当前任务直接相关的文件、测试、契约和资料
 
 完整架构基线只在本任务涉及架构、产品事实、依赖边界或验收口径时读取；本协作流程只在确实进入按需协作、交接、返工或验收时读取相关章节。不得以“已启动角色”为由无条件全文加载。
+
+测试任务默认读取 `docs/agents/testing/README.md` 和相关测试源码。AI 默认不得读取或修改 `docs/测试说明与测试记录.md`；只有用户明确要求查阅时，才能按指定章节或行段有界读取。
 
 材料冲突或无法读取时，停止实施并报告主代理。
 
