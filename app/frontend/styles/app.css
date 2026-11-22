@@ -2408,6 +2408,120 @@ body.is-navigation-dragging * {
     padding-top: var(--space-1);
 }
 
+.ai-query-result {
+    min-width: 0;
+    margin-top: var(--space-2);
+    color: var(--color-text);
+    font-size: 0.6875rem;
+    line-height: 1.45;
+}
+
+.ai-query-key-values {
+    display: grid;
+    grid-template-columns: minmax(64px, auto) minmax(0, 1fr);
+    gap: 3px var(--space-2);
+    margin: 0;
+}
+
+.ai-query-key-values dt {
+    color: var(--color-text-faint);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.ai-query-key-values dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.ai-query-value-list,
+.ai-query-record-list {
+    display: grid;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ai-query-value-list > li {
+    min-width: 0;
+    padding-left: var(--space-2);
+    border-left: 2px solid var(--color-border);
+}
+
+.ai-query-record {
+    display: grid;
+    gap: 3px;
+    padding: var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface);
+}
+
+.ai-query-record__line {
+    display: grid;
+    grid-template-columns: minmax(64px, auto) minmax(0, 1fr);
+    gap: var(--space-2);
+    align-items: baseline;
+}
+
+.ai-query-record__line small {
+    color: var(--color-text-faint);
+}
+
+.ai-query-record__line strong,
+.ai-query-field-value,
+.ai-query-scalar,
+.ai-query-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.ai-query-table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xs);
+}
+
+.ai-query-table {
+    width: 100%;
+    min-width: 360px;
+    border-collapse: collapse;
+    font-size: 0.6875rem;
+}
+
+.ai-query-table th,
+.ai-query-table td {
+    padding: var(--space-2);
+    border-bottom: 1px solid var(--color-border);
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+}
+
+.ai-query-table th {
+    background: var(--color-surface-muted);
+    color: var(--color-text-faint);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.ai-query-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.ai-query-empty,
+.ai-query-more {
+    color: var(--color-text-faint);
+}
+
+.ai-query-text {
+    margin: 0;
+    white-space: pre-wrap;
+}
+
 .ai-plan-step[data-status="failed"] .ai-plan-step__message,
 .ai-plan-step[data-status="failed_partially_rolled_back"] .ai-plan-step__message,
 .ai-plan-step[data-status="failed_rolled_back"] .ai-plan-step__message,

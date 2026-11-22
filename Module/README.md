@@ -193,6 +193,10 @@ src/main/resources/orderly-modules/example.json
 - 参数类型目前支持 `string`、`boolean` 和 `integer`。
 - Query 契约不得声明静态 `aiCallable`；宿主默认允许 AI Query，并可动态关闭。关闭
   只影响 AI Query，不影响模块自身使用 Query。
+- Query 可声明根类型为 `object` 的 `outputSchema`，用于校验真实只读 payload。
+- Query 可声明 `display.prompt`、`fallbackLayout`、`rowPath`、`fields` 和 `emptyText`，
+  用于本地可读视图及用户允许结果外发后的受控 `VIEW` 整理。
+- 展示字段路径必须真实存在；提示词只能描述展示，不得执行动作、修改数据或注入代码。
 - 计划规则的 `actionId` 必须指向同一模块中的动作。
 - `argumentGroups` 只能映射该动作已经声明的参数，捕获组编号必须有效。
 - `pathArguments` 中的参数必须声明为字符串参数，并出现在 `argumentGroups` 中。

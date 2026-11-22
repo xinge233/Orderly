@@ -151,7 +151,7 @@ DOCX 结构校验不判断文字内容和页面排版。实际修改 DOCX 内容
 
 - `app/kernel/`：模块 SPI 与跨端数据契约。
 - `app/host/`：授权、校验、调度、快照、回滚、事件、HTTP/SSE 外壳和 Python AI IPC 网关，不实现具体业务或模型调用。
-- `ai/`：唯一的 Python AI 实现，负责模型配置与临时 Key、模型请求、提示词、会话、`ACTIONS / PLAN / QUERY / QUESTION` 解析和 Query 选择；不持有文件权限或执行能力。
+- `ai/`：唯一的 Python AI 实现，负责模型配置与临时 Key、模型请求、提示词、会话、`ACTIONS / PLAN / QUERY / QUESTION / VIEW` 解析和 Query 展示整理；不持有文件权限或执行能力。
 - `app/frontend/`：静态本地界面。
 - `Module/module_fs/`、`module_todo/`、`module_calendar/`：各自携带契约、查询、计划规则、执行器、逆操作和 `orderly-ui/` 资源；构建脚本会自动发现新的 `Module/module_*`。模块规范见 `Module/AGENTS.md`。
 - `Module/module_study_assistant/`、`module_study_map/`、`module_study_review/`：只读学习界面参考模块，每个模块从自身 JAR 的 `orderly-data/<moduleId>.json` 返回数据，不包含动作或跨模块读取。
@@ -210,7 +210,7 @@ POST /api/executions/{executionId}/rollback
 ```
 
 旧版计划由宿主设置控制，默认关闭。关闭时旧计划生成、确认和计划回滚接口返回 `FEATURE_DISABLED`，历史执行仍可读取和回滚。独立 AI 计划不复用该开关或接口。AI 直执请求只由宿主设置 `AI_DIRECT` 或 `AI_PLAN` 来源，客户端不能覆盖风险等级、模型返回结构或确认状态。
-`POST /api/ai/turns` 必须携带 `clientRequestId`；同一设置代次、会话和请求 ID 的重复提交返回首次结果，不会再次调用模型或重复执行写入。
+`POST /api/ai/turns` 必须携带 `clientRequestId`；同一设置代次、会话和请求 ID 的重复提交返回首次结果，不会再次调用模型或重复执行写入。模块 Query 可声明 `outputSchema` 与 `display`；用户允许发送 Query 结果后，Python 可返回只描述展示的 `VIEW`，非法或缺失时前端回退到模块声明或通用可读视图。
 
 `sidebarOrder` 和 `managementOrder` 都必须完整包含当前业务模块和 `module_system_control` 的 ID。`module_system_control` 默认位于最后，但用户可以在侧边栏和模块设置列表中拖动它；旧治理文件中的 `module_control` 顺序 ID 会在读取时迁移为新 ID。两份排序独立持久化且不得重复。
 

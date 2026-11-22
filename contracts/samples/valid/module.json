@@ -32,7 +32,33 @@
       "id": "demo.list",
       "title": "列出演示项",
       "description": "返回演示项集合。",
-      "parameters": []
+      "parameters": [],
+      "outputSchema": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": { "type": "string" },
+                "status": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "display": {
+        "prompt": "按标题和状态展示为列表，空集合显示暂无演示项。",
+        "fallbackLayout": "list",
+        "rowPath": "items",
+        "fields": [
+          { "key": "title", "label": "标题", "format": "text" },
+          { "key": "status", "label": "状态", "format": "status" }
+        ],
+        "emptyText": "暂无演示项"
+      }
     }
   ],
   "plannerRules": [

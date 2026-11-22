@@ -46,6 +46,17 @@ public final class OutputSchemaValidator {
             ObjectMapper objectMapper,
             String actionId
     ) {
+        validateOutput(schema, output, objectMapper, actionId, "动作");
+    }
+
+    /** 以调用方类型生成明确错误，供 Action 与 Query 共用。 */
+    public static void validateOutput(
+            JsonNode schema,
+            Map<String, Object> output,
+            ObjectMapper objectMapper,
+            String ownerId,
+            String ownerKind
+    ) {
         if (schema == null || schema.isNull()) {
             return;
         }
@@ -53,7 +64,8 @@ public final class OutputSchemaValidator {
             validateNode(schema, objectMapper.valueToTree(output), "output");
         } catch (IllegalArgumentException exception) {
             throw new IllegalStateException(
-                    "动作 " + actionId + " 输出不符合 outputSchema：" + exception.getMessage(),
+                    ownerKind + " " + ownerId + " 输出不符合 outputSchema："
+                            + exception.getMessage(),
                     exception
             );
         }

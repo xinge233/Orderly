@@ -36,7 +36,39 @@
       "id": "todo.list",
       "title": "待办列表",
       "description": "只读读取模块自有待办集合。",
-      "parameters": []
+      "parameters": [],
+      "outputSchema": {
+        "type": "object",
+        "required": ["items", "count"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "title", "dueAt", "status", "createdAt"],
+              "properties": {
+                "id": { "type": "string" },
+                "title": { "type": "string" },
+                "dueAt": { "type": "string" },
+                "status": { "type": "string" },
+                "createdAt": { "type": "string" }
+              }
+            }
+          },
+          "count": { "type": "integer" }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示待办标题、截止时间和状态；没有待办时显示空状态。",
+        "fallbackLayout": "list",
+        "rowPath": "items",
+        "fields": [
+          { "key": "title", "label": "待办", "format": "text" },
+          { "key": "dueAt", "label": "截止时间", "format": "datetime" },
+          { "key": "status", "label": "状态", "format": "status" }
+        ],
+        "emptyText": "暂无待办"
+      }
     }
   ],
   "plannerRules": [

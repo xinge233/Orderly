@@ -130,6 +130,26 @@ def test_query_parser_requires_one_to_four_queries():
         parse_decision(empty, ("QUERY",))
 
 
+def test_view_parser_requires_a_structured_display_description():
+    parsed = parse_decision(
+        '{"kind":"VIEW","message":"整理结果","view":{'
+        '"sourceQuery":1,"layout":"table","title":"待办列表",'
+        '"rowPath":"items","fields":[{"key":"title","label":"标题",'
+        '"format":"text"}]}}',
+        ("VIEW",),
+    )
+    assert parsed.kind == "VIEW"
+    assert parsed.view is not None
+    assert parsed.view.layout == "table"
+
+    with pytest.raises(DecisionError, match="不允许的字段"):
+        parse_decision(
+            '{"kind":"VIEW","view":{"sourceQuery":1,"layout":"table",'
+            '"title":"非法","fields":[]},"actions":[]}',
+            ("VIEW",),
+        )
+
+
 def test_parser_rejects_duplicate_keys_and_plan_when_disabled():
     with pytest.raises(DecisionError, match="不是合法 JSON"):
         parse_decision(

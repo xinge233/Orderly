@@ -269,33 +269,61 @@ public class AiInterpretService {
                             queryResults
                     );
                 }
-                AiContracts.ServiceDecision continuation = aiService.continueWithQueryResults(
-                        new AiContracts.ServiceQueryContinuationRequest(
-                                goal,
-                                conversationId,
-                                continuationRequestId(clientRequestId),
-                                aiPlanEnabled,
-                                modules,
-                                queryResults
-                        ),
-                        budget.remaining()
-                );
+                AiContracts.ServiceDecision continuation;
+                try {
+                    continuation = aiService.continueWithQueryResults(
+                            new AiContracts.ServiceQueryContinuationRequest(
+                                    goal,
+                                    conversationId,
+                                    continuationRequestId(clientRequestId),
+                                    aiPlanEnabled,
+                                    modules,
+                                    queryResults
+                            ),
+                            budget.remaining()
+                    );
+                } catch (RuntimeException exception) {
+                    yield queryResponse(
+                            conversationId,
+                            decision,
+                            queryResults,
+                            "AI 展示整理不可用，已显示本地查询结果。"
+                    );
+                }
                 String continuationConversationId = requireConversationId(
                         continuation.conversationId(),
                         conversationId
                 );
-                yield processDecision(
-                        continuationConversationId,
-                        goal,
-                        clientRequestId,
-                        continuation,
-                        settings,
-                        aiPlanEnabled,
-                        modules,
-                        queryResults,
-                        false,
-                        budget
-                );
+                try {
+                    yield processDecision(
+                            continuationConversationId,
+                            goal,
+                            clientRequestId,
+                            continuation,
+                            settings,
+                            aiPlanEnabled,
+                            modules,
+                            queryResults,
+                            false,
+                            budget
+                    );
+                } catch (RuntimeException exception) {
+                    if ("VIEW".equalsIgnoreCase(continuation.kind())) {
+                        yield queryResponse(
+                                conversationId,
+                                decision,
+                                queryResults,
+                                "AI 展示整理无效，已显示本地查询结果。"
+                        );
+                    }
+                    throw exception;
+                }
+            }
+            case "VIEW" -> {
+                if (queryAllowed) {
+                    throw invalidResponse("VIEW 只能用于 Query 结果展示");
+                }
+                yield viewResponse(conversationId, decision, attachedQueryResults);
             }
             default -> throw invalidResponse("AI service 返回了未知 kind");
         };
@@ -411,9 +439,22 @@ public class AiInterpretService {
             AiContracts.ServiceDecision decision,
             List<AiContracts.QueryResult> queryResults
     ) {
+        return queryResponse(conversationId, decision, queryResults, null);
+    }
+
+    /** 返回本地 Query 结果；fallbackMessage 用于明确说明 AI 展示整理不可用。 */
+    private AiContracts.TurnResponse queryResponse(
+            String conversationId,
+            AiContracts.ServiceDecision decision,
+            List<AiContracts.QueryResult> queryResults,
+            String fallbackMessage
+    ) {
         String message = defaultMessage(
+                fallbackMessage,
+                defaultMessage(
                 decision.message(),
                 "已完成本地查询，未执行任何动作。"
+                )
         );
         return new AiContracts.TurnResponse(
                 "QUERY",
@@ -428,6 +469,156 @@ public class AiInterpretService {
                 null,
                 null
         );
+    }
+
+    /**
+     * 校验 AI 返回的展示描述，并只附带已经执行的本地 Query 结果。
+     */
+    private AiContracts.TurnResponse viewResponse(
+            String conversationId,
+            AiContracts.ServiceDecision decision,
+            List<AiContracts.QueryResult> queryResults
+    ) {
+        AiContracts.QueryView view = decision.view();
+        if (view == null) {
+            throw invalidResponse("VIEW 缺少 view");
+        }
+        if (queryResults == null || queryResults.isEmpty()) {
+            throw invalidResponse("VIEW 缺少可展示的 Query 结果");
+        }
+        if (view.sourceQuery() < 1 || view.sourceQuery() > queryResults.size()) {
+            throw invalidResponse("VIEW.sourceQuery 超出 Query 结果范围");
+        }
+        AiContracts.QueryResult source = queryResults.get(view.sourceQuery() - 1);
+        if (source.status() != AiContracts.QueryStatus.OK) {
+            throw invalidResponse("VIEW 只能引用成功的 Query 结果");
+        }
+        String layout = canonicalViewLayout(view.layout());
+        String title = normalizedRequired(view.title(), 200, "VIEW.title");
+        String rowPath = normalize(view.rowPath());
+        if (rowPath != null && !validFieldPath(rowPath)) {
+            throw invalidResponse("VIEW.rowPath 只能使用点分隔字段名");
+        }
+        String emptyText = normalize(view.emptyText());
+        if (emptyText != null && emptyText.length() > 200) {
+            throw invalidResponse("VIEW.emptyText 不能超过 200 个字符");
+        }
+        List<AiContracts.ViewField> fields = view.fields() == null
+                ? List.of()
+                : view.fields();
+        if (fields.size() > 12) {
+            throw invalidResponse("VIEW.fields 不能超过 12 项");
+        }
+        Object sourceNode = source.payload();
+        boolean rowPathPresent = rowPath == null || hasPath(sourceNode, rowPath);
+        Object rowNode = rowPath == null ? sourceNode : readPath(sourceNode, rowPath);
+        if (List.of("list", "table").contains(layout)) {
+            if (rowPath == null) {
+                throw invalidResponse("VIEW 的 list/table 布局需要 rowPath");
+            }
+            if (!rowPathPresent || !(rowNode instanceof List<?>)) {
+                throw invalidResponse("VIEW.rowPath 必须指向数组");
+            }
+        }
+        Object sample = rowNode instanceof List<?> list && !list.isEmpty()
+                ? list.getFirst()
+                : rowNode;
+        List<AiContracts.ViewField> validatedFields = new ArrayList<>();
+        for (AiContracts.ViewField field : fields) {
+            if (field == null) {
+                throw invalidResponse("VIEW.fields 不能包含空项");
+            }
+            String key = normalizedRequired(field.key(), 160, "VIEW.fields.key");
+            if (!validFieldPath(key)) {
+                throw invalidResponse("VIEW.fields.key 只能使用点分隔字段名");
+            }
+            String label = normalizedRequired(field.label(), 80, "VIEW.fields.label");
+            String format = normalizedRequired(field.format(), 32, "VIEW.fields.format");
+            if (!List.of("text", "status", "datetime", "number", "boolean")
+                    .contains(format)) {
+                throw invalidResponse("VIEW.fields.format 非法");
+            }
+            if (sample != null && !hasPath(sample, key)) {
+                throw invalidResponse("VIEW.fields 引用了不存在的字段：" + key);
+            }
+            validatedFields.add(new AiContracts.ViewField(key, label, format));
+        }
+        AiContracts.QueryView validated = new AiContracts.QueryView(
+                view.sourceQuery(),
+                layout,
+                title,
+                rowPath,
+                validatedFields,
+                emptyText
+        );
+        return new AiContracts.TurnResponse(
+                "VIEW",
+                UUID.randomUUID().toString(),
+                conversationId,
+                defaultMessage(decision.message(), "已整理本地查询结果。"),
+                RiskLevel.READ_ONLY,
+                null,
+                decision.queries(),
+                queryResults,
+                validated,
+                null,
+                null,
+                null
+        );
+    }
+
+    /** 读取点分隔字段路径；不存在时返回 null。 */
+    private Object readPath(Object source, String path) {
+        Object current = source;
+        for (String part : path.split("\\.")) {
+            if (!(current instanceof Map<?, ?> map)) {
+                return null;
+            }
+            current = map.get(part);
+            if (current == null) {
+                return null;
+            }
+        }
+        return current;
+    }
+
+    /** 判断点分隔路径是否存在；字段值本身为 null 时仍视为存在。 */
+    private boolean hasPath(Object source, String path) {
+        Object current = source;
+        for (String part : path.split("\\.")) {
+            if (!(current instanceof Map<?, ?> map) || !map.containsKey(part)) {
+                return false;
+            }
+            current = map.get(part);
+        }
+        return true;
+    }
+
+    /** 接受模型给出的常见大小写，但返回前端契约要求的规范布局值。 */
+    private String canonicalViewLayout(String value) {
+        String normalized = normalizedRequired(value, 32, "VIEW.layout");
+        return switch (normalized.toLowerCase(Locale.ROOT)) {
+            case "keyvalue" -> "keyValue";
+            case "list" -> "list";
+            case "table" -> "table";
+            case "text" -> "text";
+            default -> throw invalidResponse("VIEW.layout 非法");
+        };
+    }
+
+    private boolean validFieldPath(String value) {
+        return value.matches("[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*");
+    }
+
+    private String normalizedRequired(String value, int maximum, String field) {
+        String normalized = normalize(value);
+        if (normalized == null) {
+            throw invalidResponse(field + " 不能为空");
+        }
+        if (normalized.length() > maximum) {
+            throw invalidResponse(field + " 不能超过 " + maximum + " 个字符");
+        }
+        return normalized;
     }
 
     /** 删除直执关闭且不能转为计划时，向前端返回不执行删除的澄清结果。 */
@@ -515,7 +706,9 @@ public class AiInterpretService {
                 query.id(),
                 query.title(),
                 query.description(),
-                parameters(query.parameters())
+                parameters(query.parameters()),
+                query.outputSchema(),
+                query.display()
         );
     }
 

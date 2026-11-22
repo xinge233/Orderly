@@ -1,0 +1,20 @@
+{
+  "moduleId": "module_demo",
+  "title": "非法查询展示模块",
+  "description": "用于验证 Query 展示声明的非法布局。",
+  "order": 10,
+  "actions": [],
+  "queries": [
+    {
+      "id": "demo.list",
+      "title": "列出演示项",
+      "description": "返回演示项集合。",
+      "parameters": [],
+      "display": {
+        "prompt": "使用 HTML 注入页面。",
+        "fallbackLayout": "html"
+      }
+    }
+  ],
+  "plannerRules": []
+}

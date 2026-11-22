@@ -147,6 +147,8 @@ class AIService:
             modules=request.modules,
             config=config,
             allow_query=True,
+            allow_view=False,
+            query_results=None,
             initial_user_message=request.goal,
             fingerprint_source={
                 "goal": request.goal,
@@ -182,6 +184,8 @@ class AIService:
             modules=request.modules,
             config=config,
             allow_query=False,
+            allow_view=True,
+            query_results=request.query_results,
             initial_user_message=build_query_results_message(
                 request.query_results
             ),
@@ -204,6 +208,8 @@ class AIService:
         modules: list,
         config: ProviderConfig,
         allow_query: bool,
+        allow_view: bool,
+        query_results: list | None,
         initial_user_message: str,
         fingerprint_source: dict,
     ) -> Decision:
@@ -249,6 +255,7 @@ class AIService:
             allowed_kinds = self._allowed_kinds(
                 ai_plan_enabled=ai_plan_enabled,
                 allow_query=allow_query,
+                allow_view=allow_view,
             )
             system_prompt = build_system_prompt(
                 modules=modules,
@@ -256,6 +263,7 @@ class AIService:
                 ai_plan_enabled=ai_plan_enabled,
                 allow_delete_direct=config.allow_delete_direct,
                 allow_query=allow_query,
+                allow_view=allow_view,
             )
             decision, raw = await self._complete_with_one_repair(
                 config=config,
@@ -263,6 +271,7 @@ class AIService:
                 messages=messages,
                 allowed_kinds=allowed_kinds,
                 modules=modules,
+                query_results=query_results,
             )
             decision = decision.model_copy(
                 update={"conversation_id": conversation_id}
@@ -304,6 +313,7 @@ class AIService:
         messages: list[dict[str, str]],
         allowed_kinds: tuple[str, ...],
         modules: list,
+        query_results: list | None,
     ) -> tuple[Decision, str]:
         """调用 Provider，并在首次契约失败时只进行一次定向修复。
 
@@ -322,6 +332,7 @@ class AIService:
                     validate_decision_tools(
                         parse_decision(raw, allowed_kinds),
                         modules,
+                        query_results,
                     ),
                     raw,
                 )
@@ -347,6 +358,7 @@ class AIService:
                         validate_decision_tools(
                             parse_decision(repaired, allowed_kinds),
                             modules,
+                            query_results,
                         ),
                         repaired,
                     )
@@ -362,6 +374,7 @@ class AIService:
         *,
         ai_plan_enabled: bool,
         allow_query: bool,
+        allow_view: bool,
     ) -> tuple[str, ...]:
         """根据计划功能和回合阶段计算允许的决策集合。"""
         kinds = ["ACTIONS", "QUESTION"]
@@ -369,6 +382,8 @@ class AIService:
             kinds.insert(1, "PLAN")
         if allow_query:
             kinds.append("QUERY")
+        if allow_view:
+            kinds.append("VIEW")
         return tuple(kinds)
 
     def _validate_query_result_sizes(

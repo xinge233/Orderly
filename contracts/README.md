@@ -14,7 +14,7 @@
 
 `samples/valid/theme.json` 与 `samples/invalid/theme-*.json` 覆盖目录主题的合法清单、不支持的 `schemaVersion`、非法 id、越界样式路径、非 CSS 样式路径和不可接受的 SVG 主动内容。宿主运行时必须同时登记 `tokens.css` 与 `motion.css`，并且只能读取清单登记的资源。
 
-模块契约由各模块 JAR 内的 `orderly-modules/*.json` 提供，宿主在启动时通过统一模式聚合。动作风险、参数与确认词、只读查询和本地计划规则只允许在这些契约中声明，Java 执行器不保存第二套元数据。`GET /api/modules` 只返回业务模块；`GET /api/system-modules` 返回系统模块。查询通过通用接口 `GET /api/modules/{moduleId}/query/{queryId}` 调用，框架不包含具体业务端点。
+模块契约由各模块 JAR 内的 `orderly-modules/*.json` 提供，宿主在启动时通过统一模式聚合。动作风险、参数与确认词、只读查询和本地计划规则只允许在这些契约中声明，Java 执行器不保存第二套元数据。Query 可选声明根类型为 `object` 的 `outputSchema` 和用于布局、字段标签及空状态的 `display`；展示提示不得修改 payload 或执行动作。`GET /api/modules` 只返回业务模块；`GET /api/system-modules` 返回系统模块。查询通过通用接口 `GET /api/modules/{moduleId}/query/{queryId}` 调用，框架不包含具体业务端点。
 
 模块 UI 清单位于同一 JAR 的 `orderly-ui/module.json`，并把脚本与样式限制为同目录内的安全资源名。宿主仅通过 `GET /api/modules/{moduleId}/ui/{asset}` 提供 `module.json`、`module.js` 和 `module.css`，不接受目录穿越或任意 classpath 资源。删除业务模块源码并重新构建后，模块 JAR、契约、查询、侧栏、总览卡片和前端视图必须一起消失；零业务模块是合法状态，但系统模块 `module_system_control` 必须保留。
 

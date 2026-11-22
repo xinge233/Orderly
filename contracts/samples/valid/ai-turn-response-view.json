@@ -1,0 +1,42 @@
+{
+  "kind": "VIEW",
+  "requestId": "sample-view-response-1",
+  "conversationId": "sample-conversation-view",
+  "message": "已整理本地查询结果。",
+  "highestRisk": "READ_ONLY",
+  "queryResults": [
+    {
+      "moduleId": "module_todo",
+      "queryId": "todo.list",
+      "status": "OK",
+      "payload": {
+        "items": [
+          {
+            "title": "整理项目周报",
+            "status": "OPEN"
+          }
+        ]
+      },
+      "message": "查询完成"
+    }
+  ],
+  "view": {
+    "sourceQuery": 1,
+    "layout": "table",
+    "title": "待办列表",
+    "rowPath": "items",
+    "fields": [
+      {
+        "key": "title",
+        "label": "标题",
+        "format": "text"
+      },
+      {
+        "key": "status",
+        "label": "状态",
+        "format": "status"
+      }
+    ],
+    "emptyText": "暂无待办"
+  }
+}

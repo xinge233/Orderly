@@ -156,6 +156,51 @@ class AiServiceClientTest {
             assertThat(continuationBody.get())
                     .contains("\"goal\":\"看看待办\"")
                     .contains("\"modules\":[]");
+
+            response.set("""
+                    {
+                      "kind": "VIEW",
+                      "conversationId": "c1",
+                      "message": "整理结果",
+                      "view": {
+                        "sourceQuery": 1,
+                        "layout": "table",
+                        "title": "待办",
+                        "rowPath": "items",
+                        "fields": [
+                          {"key": "title", "label": "标题", "format": "text"}
+                        ]
+                      }
+                    }
+                    """);
+            AiContracts.ServiceDecision view = client.continueWithQueryResults(
+                    new AiContracts.ServiceQueryContinuationRequest(
+                            "看看待办",
+                            "c1",
+                            "client-2#query-results",
+                            false,
+                            List.of(),
+                            List.of(new AiContracts.QueryResult(
+                                    "module_todo",
+                                    "todo.list",
+                                    AiContracts.QueryStatus.OK,
+                                    java.util.Map.of("items", List.of()),
+                                    "查询完成"
+                            ))
+                    )
+            );
+            assertThat(view.kind()).isEqualTo("VIEW");
+            assertThat(view.view().title()).isEqualTo("待办");
+            assertThatThrownBy(() -> client.createTurn(
+                    new AiContracts.ServiceTurnRequest(
+                            "查询",
+                            null,
+                            "client-view-first",
+                            false,
+                            List.of()
+                    )
+            )).isInstanceOfSatisfying(ApiException.class, exception ->
+                    assertThat(exception.code()).isEqualTo("AI_INVALID_RESPONSE"));
         }
     }
 

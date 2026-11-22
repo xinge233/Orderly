@@ -19,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -198,6 +199,179 @@ class AiInterpretServiceTest {
         assertThat(captor.getValue().modules()).isEmpty();
         assertThat(captor.getValue().queryResults()).isEqualTo(results);
         assertThat(response.kind()).isEqualTo("QUESTION");
+        assertThat(response.queryResults()).isEqualTo(results);
+        verifyNoInteractions(actions, plans);
+    }
+
+    @Test
+    void validatesAndReturnsViewWithoutChangingQueryPayload() {
+        when(aiService.settings(any())).thenReturn(settings(false, true));
+        when(aiService.createTurn(any(), any())).thenReturn(queryDecision());
+        List<AiContracts.QueryResult> results = List.of(okQueryResult());
+        when(queries.executeAiQueries(anyList())).thenReturn(results);
+        when(aiService.continueWithQueryResults(any(), any())).thenReturn(
+                new AiContracts.ServiceDecision(
+                        "VIEW",
+                        "conversation-query",
+                        "已整理结果",
+                        null,
+                        null,
+                        null,
+                        new AiContracts.QueryView(
+                                1,
+                                "table",
+                                "待办列表",
+                                "items",
+                                List.of(
+                                        new AiContracts.ViewField("title", "标题", "text"),
+                                        new AiContracts.ViewField("status", "状态", "status")
+                                ),
+                                "暂无待办"
+                        )
+                )
+        );
+
+        AiContracts.TurnResponse response = service.interpret(new AiContracts.TurnRequest(
+                "看看待办",
+                null,
+                "query-view-request"
+        ));
+
+        assertThat(response.kind()).isEqualTo("VIEW");
+        assertThat(response.view().title()).isEqualTo("待办列表");
+        assertThat(response.queryResults()).isEqualTo(results);
+        assertThat(results.getFirst().payload()).isEqualTo(
+                Map.of("items", List.of(Map.of("title", "项目周报", "status", "OPEN")))
+        );
+        verifyNoInteractions(actions, plans);
+    }
+
+    @Test
+    void invalidViewFallsBackToLocalQueryResults() {
+        when(aiService.settings(any())).thenReturn(settings(false, true));
+        when(aiService.createTurn(any(), any())).thenReturn(queryDecision());
+        List<AiContracts.QueryResult> results = List.of(okQueryResult());
+        when(queries.executeAiQueries(anyList())).thenReturn(results);
+        when(aiService.continueWithQueryResults(any(), any())).thenReturn(
+                new AiContracts.ServiceDecision(
+                        "VIEW",
+                        "conversation-query",
+                        "非法展示",
+                        null,
+                        null,
+                        null,
+                        new AiContracts.QueryView(
+                                1,
+                                "table",
+                                "待办列表",
+                                "items",
+                                List.of(new AiContracts.ViewField(
+                                        "missing",
+                                        "不存在",
+                                        "text"
+                                )),
+                                "暂无待办"
+                        )
+                )
+        );
+
+        AiContracts.TurnResponse response = service.interpret(new AiContracts.TurnRequest(
+                "看看待办",
+                null,
+                "query-view-fallback-request"
+        ));
+
+        assertThat(response.kind()).isEqualTo("QUERY");
+        assertThat(response.message()).contains("已显示本地查询结果");
+        assertThat(response.queryResults()).isEqualTo(results);
+        verifyNoInteractions(actions, plans);
+    }
+
+    @Test
+    void normalizesKeyValueViewAndAllowsNullFields() {
+        when(aiService.settings(any())).thenReturn(settings(false, true));
+        when(aiService.createTurn(any(), any())).thenReturn(queryDecision());
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("title", "项目周报");
+        row.put("note", null);
+        List<AiContracts.QueryResult> results = List.of(new AiContracts.QueryResult(
+                "module_todo",
+                "todo.list",
+                AiContracts.QueryStatus.OK,
+                Map.of("items", List.of(row)),
+                "查询完成"
+        ));
+        when(queries.executeAiQueries(anyList())).thenReturn(results);
+        when(aiService.continueWithQueryResults(any(), any())).thenReturn(
+                new AiContracts.ServiceDecision(
+                        "VIEW",
+                        "conversation-query",
+                        "已整理结果",
+                        null,
+                        null,
+                        null,
+                        new AiContracts.QueryView(
+                                1,
+                                "keyValue",
+                                "待办摘要",
+                                "items",
+                                List.of(new AiContracts.ViewField("note", "备注", "text")),
+                                "暂无待办"
+                        )
+                )
+        );
+
+        AiContracts.TurnResponse response = service.interpret(new AiContracts.TurnRequest(
+                "看看待办",
+                null,
+                "query-view-null-field"
+        ));
+
+        assertThat(response.kind()).isEqualTo("VIEW");
+        assertThat(response.view().layout()).isEqualTo("keyValue");
+        assertThat(response.queryResults()).isEqualTo(results);
+        verifyNoInteractions(actions, plans);
+    }
+
+    @Test
+    void tableViewRequiresAnArrayRowPath() {
+        when(aiService.settings(any())).thenReturn(settings(false, true));
+        when(aiService.createTurn(any(), any())).thenReturn(queryDecision());
+        List<AiContracts.QueryResult> results = List.of(new AiContracts.QueryResult(
+                "module_todo",
+                "todo.list",
+                AiContracts.QueryStatus.OK,
+                Map.of("title", "项目周报"),
+                "查询完成"
+        ));
+        when(queries.executeAiQueries(anyList())).thenReturn(results);
+        when(aiService.continueWithQueryResults(any(), any())).thenReturn(
+                new AiContracts.ServiceDecision(
+                        "VIEW",
+                        "conversation-query",
+                        "非法展示",
+                        null,
+                        null,
+                        null,
+                        new AiContracts.QueryView(
+                                1,
+                                "table",
+                                "待办列表",
+                                "title",
+                                List.of(),
+                                "暂无待办"
+                        )
+                )
+        );
+
+        AiContracts.TurnResponse response = service.interpret(new AiContracts.TurnRequest(
+                "看看待办",
+                null,
+                "query-view-row-path"
+        ));
+
+        assertThat(response.kind()).isEqualTo("QUERY");
+        assertThat(response.message()).contains("已显示本地查询结果");
         assertThat(response.queryResults()).isEqualTo(results);
         verifyNoInteractions(actions, plans);
     }
@@ -465,7 +639,10 @@ class AiInterpretServiceTest {
                 "module_todo",
                 "todo.list",
                 AiContracts.QueryStatus.OK,
-                Map.of("items", List.of()),
+                Map.of("items", List.of(Map.of(
+                        "title", "项目周报",
+                        "status", "OPEN"
+                ))),
                 "查询完成"
         );
     }

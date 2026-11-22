@@ -14,8 +14,12 @@
  */
 import { icon, normalizeAiIcon } from "./icons.js";
 import {
+    buildQueryPayloadView,
     EVENT_ORIGIN,
+    formatQueryValue,
     normalizeAiQueryResponse,
+    normalizeQueryView,
+    resolveQueryPath,
     summarizeQueryPayload
 } from "./models.js";
 
@@ -1034,8 +1038,212 @@ export function mountAiDialog({
         updateSurfaces();
     }
 
-    // Query 只展示宿主返回的本地只读结果摘要；原始 payload 不在此重新发给模型，
-    // 失败或截断项也不会被补造成成功数据。
+    function elementText(tagName, className, text) {
+        const node = document.createElement(tagName);
+        if (className) {
+            node.className = className;
+        }
+        node.textContent = String(text ?? "");
+        return node;
+    }
+
+    function findQueryDisplay(item, index) {
+        if (dialog.query?.view?.sourceQuery === index + 1) {
+            return dialog.query.view;
+        }
+        const module = (getModules() || []).find(
+            (candidate) => candidate?.moduleId === item.moduleId
+        );
+        const query = Array.isArray(module?.queries)
+            ? module.queries.find((candidate) => candidate?.id === item.queryId)
+            : null;
+        const display = query?.display;
+        if (!display) {
+            return null;
+        }
+        return normalizeQueryView({
+            sourceQuery: index + 1,
+            layout: display.fallbackLayout,
+            title: query.title || item.queryId,
+            rowPath: display.rowPath,
+            fields: display.fields,
+            emptyText: display.emptyText
+        }, item.payload);
+    }
+
+    function appendQueryPayloadView(container, node) {
+        if (!node || node.type === "empty") {
+            container.append(elementText("span", "ai-query-empty", node?.text || "无数据"));
+            return;
+        }
+        if (node.type === "scalar") {
+            container.append(elementText("span", "ai-query-scalar", node.value));
+            return;
+        }
+        if (node.type === "array") {
+            if (!node.count) {
+                container.append(elementText("span", "ai-query-empty", "暂无数据"));
+                return;
+            }
+            const list = document.createElement("ul");
+            list.className = "ai-query-value-list";
+            node.items.forEach((item) => {
+                const row = document.createElement("li");
+                appendQueryPayloadView(row, item);
+                list.append(row);
+            });
+            container.append(list);
+            if (node.truncated) {
+                container.append(elementText(
+                    "small",
+                    "ai-query-more",
+                    `另有 ${node.count - node.items.length} 项未展开`
+                ));
+            }
+            return;
+        }
+        const list = document.createElement("dl");
+        list.className = "ai-query-key-values";
+        node.entries.forEach((entry) => {
+            const term = document.createElement("dt");
+            term.textContent = entry.key;
+            const description = document.createElement("dd");
+            appendQueryPayloadView(description, entry.value);
+            list.append(term, description);
+        });
+        container.append(list);
+        if (node.truncated) {
+            container.append(elementText(
+                "small",
+                "ai-query-more",
+                `另有 ${node.count - node.entries.length} 个字段未展开`
+            ));
+        }
+    }
+
+    function appendQueryFieldValue(container, value, format) {
+        container.append(elementText(
+            "span",
+            "ai-query-field-value",
+            formatQueryValue(value, format)
+        ));
+    }
+
+    function appendStructuredQueryView(container, payload, view) {
+        const layout = view?.layout || "keyValue";
+        const rowNode = view?.rowPath
+            ? resolveQueryPath(payload, view.rowPath)
+            : payload;
+        const rows = Array.isArray(rowNode) ? rowNode : [];
+        const fieldSource = Array.isArray(rowNode) ? rowNode[0] : rowNode;
+        const fields = Array.isArray(view?.fields) ? view.fields : [];
+        if (["table", "list"].includes(layout) && view?.rowPath) {
+            if (!rows.length) {
+                container.append(elementText(
+                    "span",
+                    "ai-query-empty",
+                    view.emptyText || "暂无数据"
+                ));
+                return;
+            }
+            if (layout === "table") {
+                const wrapper = document.createElement("div");
+                wrapper.className = "ai-query-table-wrap";
+                const table = document.createElement("table");
+                table.className = "ai-query-table";
+                const head = document.createElement("thead");
+                const headRow = document.createElement("tr");
+                fields.forEach((field) => {
+                    const cell = document.createElement("th");
+                    cell.scope = "col";
+                    cell.textContent = field.label;
+                    headRow.append(cell);
+                });
+                head.append(headRow);
+                const body = document.createElement("tbody");
+                rows.slice(0, 50).forEach((row) => {
+                    const rowNodeElement = document.createElement("tr");
+                    fields.forEach((field) => {
+                        const cell = document.createElement("td");
+                        appendQueryFieldValue(
+                            cell,
+                            resolveQueryPath(row, field.key),
+                            field.format
+                        );
+                        rowNodeElement.append(cell);
+                    });
+                    body.append(rowNodeElement);
+                });
+                table.append(head, body);
+                wrapper.append(table);
+                container.append(wrapper);
+            } else {
+                const list = document.createElement("ul");
+                list.className = "ai-query-record-list";
+                rows.slice(0, 50).forEach((row) => {
+                    const item = document.createElement("li");
+                    item.className = "ai-query-record";
+                    fields.forEach((field) => {
+                        const line = document.createElement("span");
+                        line.className = "ai-query-record__line";
+                        line.append(
+                            elementText("small", "", field.label),
+                            elementText(
+                                "strong",
+                                "",
+                                formatQueryValue(
+                                    resolveQueryPath(row, field.key),
+                                    field.format
+                                )
+                            )
+                        );
+                        item.append(line);
+                    });
+                    list.append(item);
+                });
+                container.append(list);
+            }
+            if (rows.length > 50) {
+                container.append(elementText(
+                    "small",
+                    "ai-query-more",
+                    `另有 ${rows.length - 50} 项未展开`
+                ));
+            }
+            return;
+        }
+        if (layout === "text") {
+            const text = typeof payload === "string"
+                ? payload
+                : summarizeQueryPayload(payload, 1000);
+            container.append(elementText("p", "ai-query-text", text));
+            return;
+        }
+        if (fields.length && fieldSource && typeof fieldSource === "object") {
+            const list = document.createElement("dl");
+            list.className = "ai-query-key-values";
+            fields.forEach((field) => {
+                const term = document.createElement("dt");
+                term.textContent = field.label;
+                const description = document.createElement("dd");
+                appendQueryFieldValue(
+                    description,
+                    resolveQueryPath(fieldSource, field.key),
+                    field.format
+                );
+                list.append(term, description);
+            });
+            container.append(list);
+            return;
+        }
+        container.append(elementText(
+            "span",
+            "ai-query-empty",
+            view?.emptyText || "暂无数据"
+        ));
+    }
+
+    // Query 只展示宿主返回的本地只读结果；失败或截断项不会补造成成功数据。
     function renderQueryResult() {
         const query = dialog.query;
         const queries = Array.isArray(query?.queries) ? query.queries : [];
@@ -1049,9 +1257,9 @@ export function mountAiDialog({
         const fallback = query?.status === "OK"
             ? `已完成 ${completed}/${queries.length} 条本地查询`
             : `查询可用结果 ${completed}/${queries.length}`;
-        nodes.planTitle.textContent = [query?.message, query?.notice]
-            .filter(Boolean)
-            .join(" ") || fallback;
+        nodes.planTitle.textContent = query?.view?.title
+            || [query?.message, query?.notice].filter(Boolean).join(" ")
+            || fallback;
         nodes.planList.replaceChildren();
 
         queries.forEach((item, index) => {
@@ -1072,11 +1280,25 @@ export function mountAiDialog({
             copy.className = "ai-plan-step__copy";
             const title = document.createElement("strong");
             title.textContent = `${item.moduleId || "未知模块"} · ${item.queryId || "未知查询"}`;
-            const detail = document.createElement("small");
-            detail.className = "ai-plan-step__message";
-            detail.textContent = item.status === "OK"
-                ? `本地结果：${summarizeQueryPayload(item.payload)}`
-                : item.message || queryStatusLabel(item.status);
+            const detail = document.createElement("div");
+            detail.className = "ai-query-result";
+            if (item.status === "OK") {
+                const view = findQueryDisplay(item, index);
+                if (view) {
+                    appendStructuredQueryView(detail, item.payload, view);
+                } else {
+                    appendQueryPayloadView(
+                        detail,
+                        buildQueryPayloadView(item.payload)
+                    );
+                }
+            } else {
+                detail.append(elementText(
+                    "small",
+                    "ai-plan-step__message",
+                    item.message || queryStatusLabel(item.status)
+                ));
+            }
             copy.append(title, detail);
 
             const status = document.createElement("span");
@@ -1715,7 +1937,7 @@ export function mountAiDialog({
                 notifyExecutionFinished(execution);
                 return;
             }
-            if (response?.kind === "QUERY") {
+            if (response?.kind === "QUERY" || response?.kind === "VIEW") {
                 const query = normalizeAiQueryResponse(response);
                 if (!query.valid) {
                     throw new Error(query.error || "AI 查询结果格式非法。");

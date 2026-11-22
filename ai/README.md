@@ -32,10 +32,12 @@ $env:ORDERLY_AI_IPC_TOKEN = "<由宿主进程生成并注入的临时令牌>"
   `apiKey` 时保留进程内旧 Key。
 - `DELETE /v1/settings`：清除 Key 并恢复 DeepSeek 默认设置。
 - `POST /v1/settings/test`：使用当前内存 Key 做最小模型连通性测试。
-- `POST /v1/turns`：返回 `ACTIONS|PLAN|QUESTION|QUERY`；`QUERY` 只含 1 至 4 条查询。
+- `POST /v1/turns`：返回 `ACTIONS|PLAN|QUESTION|QUERY`；`QUERY` 只含 1 至 4 条查询，
+  首次回合不能返回 `VIEW`。
 - `POST /v1/turns/query-results`：仅在
   `allowSendQueryResultsToModel=true` 时接受结果；最多 4 条，单条 16 KiB、总计 64 KiB；
-  只返回 `ACTIONS|PLAN|QUESTION`，禁止循环发起 `QUERY`。
+  可返回只描述已有字段的 `VIEW`，也允许 `ACTIONS|PLAN|QUESTION`，禁止循环发起 `QUERY`。
+  `VIEW` 的字段和行路径必须来自 Query payload，非法结果回退本地展示。
 
 错误统一为 `{code, message, timestamp, details?}`。模型输出不符合契约时只修复一次；
 第二次仍非法时返回 `AI_INVALID_RESPONSE`。删除直执最终仍由 Java 宿主强制校验。

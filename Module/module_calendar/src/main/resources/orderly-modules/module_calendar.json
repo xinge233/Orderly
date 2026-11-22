@@ -228,7 +228,43 @@
       "id": "calendar.list",
       "title": "日程列表",
       "description": "只读读取模块自有日程集合。",
-      "parameters": []
+      "parameters": [],
+      "outputSchema": {
+        "type": "object",
+        "required": ["items", "count"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "title", "startAt", "endAt", "status", "createdAt", "updatedAt"],
+              "properties": {
+                "id": { "type": "string" },
+                "title": { "type": "string" },
+                "startAt": { "type": "string" },
+                "endAt": { "type": "string" },
+                "status": { "type": "string" },
+                "createdAt": { "type": "string" },
+                "updatedAt": { "type": "string" },
+                "previousStartAt": { "type": "string" }
+              }
+            }
+          },
+          "count": { "type": "integer" }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示日程标题、开始时间、结束时间和状态；没有日程时显示空状态。",
+        "fallbackLayout": "table",
+        "rowPath": "items",
+        "fields": [
+          { "key": "title", "label": "日程", "format": "text" },
+          { "key": "startAt", "label": "开始时间", "format": "datetime" },
+          { "key": "endAt", "label": "结束时间", "format": "datetime" },
+          { "key": "status", "label": "状态", "format": "status" }
+        ],
+        "emptyText": "暂无日程"
+      }
     },
     {
       "id": "calendar.todo.list",
@@ -240,13 +276,91 @@
         { "name": "keyword", "type": "string", "required": false, "description": "标题或批注关键词" },
         { "name": "from", "type": "string", "required": false, "description": "截止时间范围起点；格式同 startAt" },
         { "name": "to", "type": "string", "required": false, "description": "截止时间范围终点；格式同 startAt" }
-      ]
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["items", "count"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "title",
+                "dueAt",
+                "status",
+                "category",
+                "annotation",
+                "createdAt",
+                "updatedAt"
+              ],
+              "properties": {
+                "id": { "type": "string" },
+                "title": { "type": "string" },
+                "dueAt": { "type": "string" },
+                "status": { "type": "string" },
+                "category": { "type": "string" },
+                "annotation": { "type": "string" },
+                "createdAt": { "type": "string" },
+                "updatedAt": { "type": "string" }
+              }
+            }
+          },
+          "count": { "type": "integer" }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示日历待办标题、截止时间、分类和状态；没有匹配项时显示空状态。",
+        "fallbackLayout": "table",
+        "rowPath": "items",
+        "fields": [
+          { "key": "title", "label": "待办", "format": "text" },
+          { "key": "dueAt", "label": "截止时间", "format": "datetime" },
+          { "key": "category", "label": "分类", "format": "text" },
+          { "key": "status", "label": "状态", "format": "status" }
+        ],
+        "emptyText": "暂无匹配的日历待办"
+      }
     },
     {
       "id": "calendar.space.list",
       "title": "自定义空间列表",
       "description": "只读读取模块自管空间元数据。",
-      "parameters": []
+      "parameters": [],
+      "outputSchema": {
+        "type": "object",
+        "required": ["items", "count"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "type", "createdAt"],
+              "properties": {
+                "id": { "type": "string" },
+                "type": { "type": "string" },
+                "createdAt": { "type": "string" },
+                "text": { "type": "string" },
+                "mediaPath": { "type": "string" },
+                "contentType": { "type": "string" }
+              }
+            }
+          },
+          "count": { "type": "integer" }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示自定义空间的标识、类型和创建时间；没有空间时显示空状态。",
+        "fallbackLayout": "list",
+        "rowPath": "items",
+        "fields": [
+          { "key": "id", "label": "空间标识", "format": "text" },
+          { "key": "type", "label": "类型", "format": "status" },
+          { "key": "createdAt", "label": "创建时间", "format": "datetime" }
+        ],
+        "emptyText": "暂无自定义空间"
+      }
     },
     {
       "id": "calendar.agenda",
@@ -255,7 +369,42 @@
       "parameters": [
         { "name": "from", "type": "string", "required": false, "description": "时间线起点；格式同 startAt" },
         { "name": "to", "type": "string", "required": false, "description": "时间线终点；格式同 startAt" }
-      ]
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["items", "count"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["kind", "id", "title", "at", "status"],
+              "properties": {
+                "kind": { "type": "string" },
+                "id": { "type": "string" },
+                "title": { "type": "string" },
+                "at": { "type": "string" },
+                "endAt": { "type": "string" },
+                "category": { "type": "string" },
+                "status": { "type": "string" }
+              }
+            }
+          },
+          "count": { "type": "integer" }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示时间线条目的类型、标题、时间和状态；没有条目时显示空状态。",
+        "fallbackLayout": "table",
+        "rowPath": "items",
+        "fields": [
+          { "key": "at", "label": "时间", "format": "datetime" },
+          { "key": "kind", "label": "类型", "format": "status" },
+          { "key": "title", "label": "标题", "format": "text" },
+          { "key": "status", "label": "状态", "format": "status" }
+        ],
+        "emptyText": "时间线暂无条目"
+      }
     }
   ],
   "plannerRules": [

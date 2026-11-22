@@ -186,6 +186,114 @@ def test_query_results_are_sent_only_after_enabled_and_cannot_return_query(
     assert "ACTIONS、PLAN、QUESTION" in provider.calls[1].messages[-1]["content"]
 
 
+def test_query_results_can_return_a_validated_view(make_client, provider):
+    client = make_client()
+    configure_settings(client, allow_query_results=True)
+    provider.responses.append(
+        '{"kind":"VIEW","message":"已整理结果","view":{'
+        '"sourceQuery":1,"layout":"keyValue","title":"文件摘要",'
+        '"fields":[{"key":"files","label":"文件数","format":"number"}]}}'
+    )
+
+    response = client.post(
+        "/v1/turns/query-results",
+        headers=AUTH_HEADERS,
+        json=query_results_body(payload={"files": 3}),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["kind"] == "VIEW"
+    assert response.json()["view"]["sourceQuery"] == 1
+    assert response.json()["view"]["fields"][0]["key"] == "files"
+    assert "display.prompt" in provider.calls[0].messages[-1]["content"]
+    assert "以文件数摘要展示文件概况" in provider.calls[0].system_prompt
+
+
+def test_view_is_forbidden_before_query_results(make_client, provider):
+    client = make_client()
+    configure_settings(client)
+    provider.responses = deque(
+        [
+            '{"kind":"VIEW","view":{"sourceQuery":1,"layout":"table",'
+            '"title":"非法视图","fields":[]}}',
+            QUESTION,
+        ]
+    )
+
+    response = client.post(
+        "/v1/turns",
+        headers=AUTH_HEADERS,
+        json=turn_body(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["kind"] == "QUESTION"
+    assert "ACTIONS、PLAN、QUESTION、QUERY" in provider.calls[1].messages[-1]["content"]
+
+
+def test_view_fields_must_exist_in_query_result(make_client, provider):
+    client = make_client()
+    configure_settings(client, allow_query_results=True)
+    invalid = (
+        '{"kind":"VIEW","view":{"sourceQuery":1,"layout":"keyValue",'
+        '"title":"非法字段","fields":[{"key":"missing","label":"不存在",'
+        '"format":"text"}]}}'
+    )
+    provider.responses = deque([invalid, QUESTION])
+
+    response = client.post(
+        "/v1/turns/query-results",
+        headers=AUTH_HEADERS,
+        json=query_results_body(payload={"files": 3}),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["kind"] == "QUESTION"
+    repair = provider.calls[1].messages[-1]["content"]
+    assert "不存在的字段" in repair
+
+
+def test_view_fields_can_reference_null_values(make_client, provider):
+    client = make_client()
+    configure_settings(client, allow_query_results=True)
+    provider.responses.append(
+        '{"kind":"VIEW","view":{"sourceQuery":1,"layout":"keyValue",'
+        '"title":"文件摘要","fields":[{"key":"note","label":"备注",'
+        '"format":"text"}]}}'
+    )
+
+    response = client.post(
+        "/v1/turns/query-results",
+        headers=AUTH_HEADERS,
+        json=query_results_body(payload={"note": None}),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["kind"] == "VIEW"
+    assert response.json()["view"]["fields"][0]["key"] == "note"
+
+
+def test_table_view_requires_an_array_row_path(make_client, provider):
+    client = make_client()
+    configure_settings(client, allow_query_results=True)
+    invalid = (
+        '{"kind":"VIEW","view":{"sourceQuery":1,"layout":"table",'
+        '"title":"非法路径","rowPath":"note","fields":[]}}'
+    )
+    provider.responses = deque([invalid, QUESTION])
+
+    response = client.post(
+        "/v1/turns/query-results",
+        headers=AUTH_HEADERS,
+        json=query_results_body(payload={"note": "不是数组"}),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["kind"] == "QUESTION"
+    repair = provider.calls[1].messages[-1]["content"]
+    assert "rowPath 必须指向数组" in repair
+
+
 def test_query_result_validation_rejects_payload_for_failed_status(make_client):
     client = make_client()
     configure_settings(client, allow_query_results=True)

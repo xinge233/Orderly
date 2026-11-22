@@ -103,25 +103,231 @@
       "description": "只读列出工作区目录内容。",
       "parameters": [
         { "name": "path", "type": "string", "required": false, "description": "工作区相对路径" }
-      ]
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["path", "entries", "count"],
+        "properties": {
+          "path": { "type": "string" },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "path", "directory", "size", "modifiedAt"],
+              "properties": {
+                "name": { "type": "string" },
+                "path": { "type": "string" },
+                "directory": { "type": "boolean" },
+                "size": { "type": "integer" },
+                "modifiedAt": { "type": "string" }
+              }
+            }
+          },
+          "count": { "type": "integer" }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示目录中的条目名称、类型、大小和修改时间；目录为空时显示空状态。",
+        "fallbackLayout": "list",
+        "rowPath": "entries",
+        "fields": [
+          { "key": "name", "label": "名称", "format": "text" },
+          { "key": "directory", "label": "目录", "format": "boolean" },
+          { "key": "size", "label": "大小", "format": "number" },
+          { "key": "modifiedAt", "label": "修改时间", "format": "datetime" }
+        ],
+        "emptyText": "暂无目录条目"
+      }
     },
     {
       "id": "fs.materials",
       "title": "资料目录",
       "description": "只读读取模块 classpath 内的课程与学习资料。",
-      "parameters": []
+      "parameters": [],
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "schemaVersion",
+          "kind",
+          "ownerModule",
+          "readOnly",
+          "title",
+          "description",
+          "sources",
+          "count",
+          "payload"
+        ],
+        "properties": {
+          "schemaVersion": { "type": "integer" },
+          "kind": { "type": "string" },
+          "ownerModule": { "type": "string" },
+          "readOnly": { "type": "boolean" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "label", "kind", "location"],
+              "properties": {
+                "id": { "type": "string" },
+                "label": { "type": "string" },
+                "kind": { "type": "string" },
+                "location": { "type": "string" }
+              }
+            }
+          },
+          "count": { "type": "integer" },
+          "payload": {
+            "type": "object",
+            "required": ["courses", "materials"],
+            "properties": {
+              "courses": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["id", "title", "code", "description"],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "title": { "type": "string" },
+                    "code": { "type": "string" },
+                    "description": { "type": "string" }
+                  }
+                }
+              },
+              "materials": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "title",
+                    "courseId",
+                    "chapter",
+                    "format",
+                    "status",
+                    "sourceId",
+                    "excerpt",
+                    "cards"
+                  ],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "title": { "type": "string" },
+                    "courseId": { "type": "string" },
+                    "chapter": { "type": "string" },
+                    "format": { "type": "string" },
+                    "status": { "type": "string" },
+                    "sourceId": { "type": "string" },
+                    "excerpt": { "type": "string" },
+                    "cards": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "title", "summary"],
+                        "properties": {
+                          "id": { "type": "string" },
+                          "title": { "type": "string" },
+                          "summary": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示资料标题、课程、格式和整理状态；没有资料时显示空状态。",
+        "fallbackLayout": "list",
+        "rowPath": "payload.materials",
+        "fields": [
+          { "key": "title", "label": "资料", "format": "text" },
+          { "key": "courseId", "label": "课程", "format": "text" },
+          { "key": "format", "label": "格式", "format": "text" },
+          { "key": "status", "label": "状态", "format": "status" }
+        ],
+        "emptyText": "暂无课程资料"
+      }
     },
     {
       "id": "fs.summary",
       "title": "文件摘要",
       "description": "读取工作区根目录的条目数量和摘要。",
-      "parameters": []
+      "parameters": [],
+      "outputSchema": {
+        "type": "object",
+        "required": ["path", "entries", "count"],
+        "properties": {
+          "path": { "type": "string" },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "path", "directory", "size", "modifiedAt"],
+              "properties": {
+                "name": { "type": "string" },
+                "path": { "type": "string" },
+                "directory": { "type": "boolean" },
+                "size": { "type": "integer" },
+                "modifiedAt": { "type": "string" }
+              }
+            }
+          },
+          "count": { "type": "integer" }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示工作区根目录的条目名称、类型、大小和修改时间；根目录为空时显示空状态。",
+        "fallbackLayout": "list",
+        "rowPath": "entries",
+        "fields": [
+          { "key": "name", "label": "名称", "format": "text" },
+          { "key": "directory", "label": "目录", "format": "boolean" },
+          { "key": "size", "label": "大小", "format": "number" },
+          { "key": "modifiedAt", "label": "修改时间", "format": "datetime" }
+        ],
+        "emptyText": "工作区暂无条目"
+      }
     },
     {
       "id": "fs.trash",
       "title": "回收站",
       "description": "只读列出项目回收站条目。",
-      "parameters": []
+      "parameters": [],
+      "outputSchema": {
+        "type": "object",
+        "required": ["entries", "count"],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "originalPath", "storedPath", "name", "deletedAt"],
+              "properties": {
+                "id": { "type": "string" },
+                "originalPath": { "type": "string" },
+                "storedPath": { "type": "string" },
+                "name": { "type": "string" },
+                "deletedAt": { "type": "string" }
+              }
+            }
+          },
+          "count": { "type": "integer" }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示回收站条目的名称、原位置和删除时间；回收站为空时显示空状态。",
+        "fallbackLayout": "list",
+        "rowPath": "entries",
+        "fields": [
+          { "key": "name", "label": "名称", "format": "text" },
+          { "key": "originalPath", "label": "原位置", "format": "text" },
+          { "key": "deletedAt", "label": "删除时间", "format": "datetime" }
+        ],
+        "emptyText": "回收站暂无条目"
+      }
     }
   ],
   "plannerRules": [

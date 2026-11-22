@@ -1,6 +1,8 @@
 package com.orderly.host.ai;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.orderly.host.contract.QueryDisplayContract;
 import com.orderly.host.execution.ExecutionRecord;
 import com.orderly.kernel.RiskLevel;
 
@@ -96,6 +98,7 @@ public final class AiContracts {
             List<Action> actions,
             List<QueryCall> queries,
             List<QueryResult> queryResults,
+            QueryView view,
             Plan plan,
             Question question,
             ExecutionRecord execution
@@ -104,6 +107,36 @@ public final class AiContracts {
             actions = copy(actions);
             queries = copy(queries);
             queryResults = copy(queryResults);
+        }
+
+        /** 兼容尚未携带展示整理结果的既有调用。 */
+        public TurnResponse(
+                String kind,
+                String requestId,
+                String conversationId,
+                String message,
+                RiskLevel highestRisk,
+                List<Action> actions,
+                List<QueryCall> queries,
+                List<QueryResult> queryResults,
+                Plan plan,
+                Question question,
+                ExecutionRecord execution
+        ) {
+            this(
+                    kind,
+                    requestId,
+                    conversationId,
+                    message,
+                    highestRisk,
+                    actions,
+                    queries,
+                    queryResults,
+                    null,
+                    plan,
+                    question,
+                    execution
+            );
         }
     }
 
@@ -228,11 +261,45 @@ public final class AiContracts {
             String queryId,
             String title,
             String description,
-            List<ToolParameter> parameters
+            List<ToolParameter> parameters,
+            JsonNode outputSchema,
+            QueryDisplayContract display
     ) {
         public ToolQuery {
             parameters = copy(parameters);
         }
+
+        /** 兼容尚未声明结果结构和展示建议的旧调用。 */
+        public ToolQuery(
+                String queryId,
+                String title,
+                String description,
+                List<ToolParameter> parameters
+        ) {
+            this(queryId, title, description, parameters, null, null);
+        }
+    }
+
+    /** AI 根据只读 Query 结果返回的受控展示描述。 */
+    public record QueryView(
+            int sourceQuery,
+            String layout,
+            String title,
+            String rowPath,
+            List<ViewField> fields,
+            String emptyText
+    ) {
+        public QueryView {
+            fields = copy(fields);
+        }
+    }
+
+    /** 展示描述中的单个已有字段引用。 */
+    public record ViewField(
+            String key,
+            String label,
+            String format
+    ) {
     }
 
     /** 按模块分组提供给 Python 模型的启用工具卡。 */
@@ -291,11 +358,24 @@ public final class AiContracts {
             String message,
             List<Action> actions,
             List<QueryCall> queries,
-            Question question
+            Question question,
+            QueryView view
     ) {
         public ServiceDecision {
             actions = copy(actions);
             queries = copy(queries);
+        }
+
+        /** 兼容既有四种决策的构造调用。 */
+        public ServiceDecision(
+                String kind,
+                String conversationId,
+                String message,
+                List<Action> actions,
+                List<QueryCall> queries,
+                Question question
+        ) {
+            this(kind, conversationId, message, actions, queries, question, null);
         }
     }
 

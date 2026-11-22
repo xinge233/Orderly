@@ -41,7 +41,7 @@ public class AiServiceClient {
             Set.of("ACTIONS", "PLAN", "QUESTION", "QUERY");
     /** Query 结果续聊允许的最终决策种类，明确禁止再次 Query。 */
     private static final Set<String> FOLLOW_UP_KINDS =
-            Set.of("ACTIONS", "PLAN", "QUESTION");
+            Set.of("ACTIONS", "PLAN", "QUESTION", "VIEW");
 
     private final ObjectMapper objectMapper;
     private final ObjectMapper strictMapper;
@@ -402,6 +402,24 @@ public class AiServiceClient {
         }
         if (!"QUESTION".equals(kind) && decision.question() != null) {
             throw invalidResponse("只有 QUESTION 决策可以包含 question");
+        }
+        if (!"VIEW".equals(kind) && decision.view() != null) {
+            throw invalidResponse("只有 VIEW 决策可以包含 view");
+        }
+        if ("VIEW".equals(kind)) {
+            if (decision.view() == null) {
+                throw invalidResponse("VIEW 缺少 view");
+            }
+            if (actions != null || queries != null || decision.question() != null) {
+                throw invalidResponse("VIEW 不得混入动作、查询或澄清字段");
+            }
+            AiContracts.QueryView view = decision.view();
+            if (view.sourceQuery() < 1 || view.sourceQuery() > 4) {
+                throw invalidResponse("VIEW.sourceQuery 必须在 1 至 4 之间");
+            }
+            if (blank(view.layout()) || blank(view.title())) {
+                throw invalidResponse("VIEW 缺少 layout 或 title");
+            }
         }
         if ("QUESTION".equals(kind)) {
             AiContracts.Question question = decision.question();

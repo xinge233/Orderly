@@ -74,7 +74,7 @@
 | `contracts/action-execution.schema.json` | 总体 AI 直执 Action 数组请求 |
 | `contracts/ai-settings.schema.json` | AI 模式、临时 API Key 与删除直执设置 |
 | `contracts/ai-turn-request.schema.json` | 自然语言 AI 回合请求 |
-| `contracts/ai-turn-response.schema.json` | ACTIONS、PLAN、QUERY、QUESTION 响应 |
+| `contracts/ai-turn-response.schema.json` | ACTIONS、PLAN、QUERY、QUESTION、VIEW 响应 |
 | `contracts/ai-service-turn-request.schema.json` | Java 到 Python AI 服务的版本化 IPC 请求 |
 | `contracts/ai-query-continuation-request.schema.json` | Query 结果回传 Python 的受控续聊请求 |
 | `contracts/ai-service-decision.schema.json` | Python 到 Java 的受控决策响应 |

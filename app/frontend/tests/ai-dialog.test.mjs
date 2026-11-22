@@ -122,16 +122,19 @@ test("AI dialog renders bounded QUERY results without inventing actions or plans
     const models = await read("../src/models.js");
 
     assert.match(component, /normalizeAiQueryResponse/);
-    assert.match(component, /summarizeQueryPayload/);
-    assert.match(component, /response\?\.kind === "QUERY"/);
+    assert.match(component, /buildQueryPayloadView/);
+    assert.match(component, /normalizeQueryView/);
+    assert.match(component, /response\?\.kind === "QUERY" \|\| response\?\.kind === "VIEW"/);
     assert.match(component, /mode: "query"/);
     assert.match(component, /function renderQueryResult\(\)/);
-    assert.match(component, /item\.status === "OK"[\s\S]*?summarizeQueryPayload\(item\.payload\)/);
+    assert.match(component, /function appendStructuredQueryView/);
+    assert.match(component, /function appendQueryPayloadView/);
+    assert.match(component, /item\.status === "OK"[\s\S]*?findQueryDisplay/);
     assert.match(component, /查询完成，未执行动作/);
     assert.match(component, /query\.status === "TRUNCATED"/);
     assert.match(component, /TRUNCATED[\s\S]*?"truncated"/);
     assert.match(component, /"error",\s*"query"/);
-    assert.match(models, /source\.queries\.slice\(0, AI_QUERY_LIMIT\)/);
+    assert.match(models, /declaredQueries\.slice\(0, AI_QUERY_LIMIT\)/);
     assert.match(models, /statusText === "OK" && Object\.hasOwn\(result, "payload"\)/);
 });
 

@@ -826,12 +826,170 @@ public class ContractCatalog implements AutoCloseable {
         requireText(node, "title");
         requireText(node, "description");
         rejectDeprecatedAiCallable(node, "查询");
+        JsonNode outputSchema = node.get("outputSchema");
+        if (outputSchema != null && !outputSchema.isNull()) {
+            if (!outputSchema.isObject()
+                    || !"object".equals(outputSchema.path("type").asText())) {
+                throw new IllegalStateException(
+                        "查询 " + node.path("id").asText()
+                                + " 的 outputSchema 根类型必须是 object"
+                );
+            }
+            try {
+                OutputSchemaValidator.validateDefinition(outputSchema);
+            } catch (IllegalStateException exception) {
+                throw new IllegalStateException(
+                        "查询 " + node.path("id").asText()
+                                + " 的 outputSchema 非法：" + exception.getMessage(),
+                        exception
+                );
+            }
+        }
         return new QueryContract(
                 node.path("id").asText(),
                 node.path("title").asText(),
                 node.path("description").asText(),
-                parseParameters(node.path("parameters"), "查询")
+                parseParameters(node.path("parameters"), "查询"),
+                outputSchema == null || outputSchema.isNull()
+                        ? null
+                        : outputSchema.deepCopy(),
+                parseQueryDisplay(node.get("display"), node.path("id").asText())
         );
+    }
+
+    /** 解析模块声明的 Query 展示建议，并限制其只能描述已有字段。 */
+    private QueryDisplayContract parseQueryDisplay(JsonNode node, String queryId) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (!node.isObject()) {
+            throw new IllegalStateException("查询 " + queryId + " 的 display 必须是对象");
+        }
+        String prompt = requiredBoundedText(node, "prompt", 1000, "查询 " + queryId + " display");
+        String fallbackLayout = requiredTextValue(
+                node,
+                "fallbackLayout",
+                "查询 " + queryId + " display"
+        );
+        if (!Set.of("keyValue", "list", "table", "text").contains(fallbackLayout)) {
+            throw new IllegalStateException(
+                    "查询 " + queryId + " display.fallbackLayout 非法：" + fallbackLayout
+            );
+        }
+        String rowPath = optionalBoundedText(
+                node,
+                "rowPath",
+                200,
+                "查询 " + queryId + " display"
+        );
+        if (rowPath != null && !rowPath.matches("[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*")) {
+            throw new IllegalStateException(
+                    "查询 " + queryId + " display.rowPath 只能使用点分隔字段名"
+            );
+        }
+        String emptyText = optionalBoundedText(
+                node,
+                "emptyText",
+                200,
+                "查询 " + queryId + " display"
+        );
+        List<QueryDisplayContract.Field> fields = new ArrayList<>();
+        JsonNode rawFields = node.get("fields");
+        if (rawFields != null) {
+            if (!rawFields.isArray() || rawFields.size() > 12) {
+                throw new IllegalStateException(
+                        "查询 " + queryId + " display.fields 必须是最多 12 项的数组"
+                );
+            }
+            rawFields.forEach(field -> {
+                if (!field.isObject()) {
+                    throw new IllegalStateException(
+                            "查询 " + queryId + " display.fields 项必须是对象"
+                    );
+                }
+                String key = requiredBoundedText(
+                        field,
+                        "key",
+                        160,
+                        "查询 " + queryId + " display.fields"
+                );
+                if (!key.matches("[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*")) {
+                    throw new IllegalStateException(
+                            "查询 " + queryId + " display.fields.key 只能使用点分隔字段名"
+                    );
+                }
+                String label = requiredBoundedText(
+                        field,
+                        "label",
+                        80,
+                        "查询 " + queryId + " display.fields"
+                );
+                String format = requiredTextValue(
+                        field,
+                        "format",
+                        "查询 " + queryId + " display.fields"
+                );
+                if (!Set.of("text", "status", "datetime", "number", "boolean")
+                        .contains(format)) {
+                    throw new IllegalStateException(
+                            "查询 " + queryId + " display.fields.format 非法：" + format
+                    );
+                }
+                fields.add(new QueryDisplayContract.Field(key, label, format));
+            });
+        }
+        return new QueryDisplayContract(
+                prompt,
+                fallbackLayout,
+                rowPath,
+                fields,
+                emptyText
+        );
+    }
+
+    private String requiredTextValue(JsonNode node, String field, String owner) {
+        JsonNode value = node.get(field);
+        if (value == null || !value.isTextual() || value.asText().isBlank()) {
+            throw new IllegalStateException(owner + "." + field + " 必须是非空文本");
+        }
+        return value.asText().trim();
+    }
+
+    private String requiredBoundedText(
+            JsonNode node,
+            String field,
+            int maximum,
+            String owner
+    ) {
+        String value = requiredTextValue(node, field, owner);
+        if (value.length() > maximum) {
+            throw new IllegalStateException(
+                    owner + "." + field + " 不能超过 " + maximum + " 个字符"
+            );
+        }
+        return value;
+    }
+
+    private String optionalBoundedText(
+            JsonNode node,
+            String field,
+            int maximum,
+            String owner
+    ) {
+        JsonNode value = node.get(field);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        if (!value.isTextual()) {
+            throw new IllegalStateException(owner + "." + field + " 必须是文本");
+        }
+        String text = value.asText().trim();
+        if (text.length() > maximum) {
+            throw new IllegalStateException(
+                    owner + "." + field + " 不能超过 " + maximum + " 个字符"
+            );
+        }
+        return text.isBlank() ? null : text;
     }
 
     private void rejectDeprecatedAiCallable(JsonNode node, String owner) {

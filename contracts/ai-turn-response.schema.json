@@ -7,7 +7,7 @@
   "required": ["kind", "requestId", "conversationId", "message"],
   "properties": {
     "kind": {
-      "enum": ["ACTIONS", "PLAN", "QUESTION", "QUERY"]
+      "enum": ["ACTIONS", "PLAN", "QUESTION", "QUERY", "VIEW"]
     },
     "requestId": { "type": "string", "minLength": 1 },
     "conversationId": { "type": "string", "minLength": 1 },
@@ -65,6 +65,34 @@
         }
       }
     },
+    "view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceQuery", "layout", "title", "fields"],
+      "properties": {
+        "sourceQuery": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "layout": { "enum": ["keyValue", "list", "table", "text"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "rowPath": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "fields": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "label", "format"],
+            "properties": {
+              "key": { "type": "string", "minLength": 1, "maxLength": 160 },
+              "label": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "format": {
+                "enum": ["text", "status", "datetime", "number", "boolean"]
+              }
+            }
+          }
+        },
+        "emptyText": { "type": "string", "maxLength": 200 }
+      }
+    },
     "question": {
       "type": "object",
       "additionalProperties": false,
@@ -96,7 +124,23 @@
     },
     {
       "if": { "properties": { "kind": { "const": "QUERY" } } },
-      "then": { "required": ["queries", "queryResults"] }
+      "then": {
+        "required": ["queries", "queryResults"],
+        "not": { "required": ["view"] }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "VIEW" } } },
+      "then": {
+        "required": ["queryResults", "view"],
+        "not": {
+          "anyOf": [
+            { "required": ["actions"] },
+            { "required": ["plan"] },
+            { "required": ["question"] }
+          ]
+        }
+      }
     }
   ],
   "$defs": {

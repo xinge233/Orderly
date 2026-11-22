@@ -8,6 +8,7 @@ kind，并按工具卡核对模块、动作/查询标识及必填参数；真正
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Iterable
 
 from pydantic import ValidationError
@@ -17,8 +18,12 @@ from .models import (
     ActionCall,
     Decision,
     QueryCall,
+    QueryResultItem,
     ToolModule,
 )
+
+
+FIELD_PATH = re.compile(r"^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$")
 
 
 def parse_decision(raw: str, allowed_kinds: Iterable[str]) -> Decision:
@@ -45,6 +50,7 @@ def parse_decision(raw: str, allowed_kinds: Iterable[str]) -> Decision:
         "PLAN": {"kind", "message", "actions"},
         "QUESTION": {"kind", "message", "question"},
         "QUERY": {"kind", "message", "queries"},
+        "VIEW": {"kind", "message", "view"},
     }[kind]
     unexpected = sorted(set(value) - allowed_fields)
     if unexpected:
@@ -62,6 +68,7 @@ def parse_decision(raw: str, allowed_kinds: Iterable[str]) -> Decision:
 def validate_decision_tools(
     decision: Decision,
     modules: Iterable[ToolModule],
+    query_results: list[QueryResultItem] | None = None,
 ) -> Decision:
     """确保模型没有发明工具、引用错误 kind 或遗漏必填参数。
 
@@ -96,7 +103,54 @@ def validate_decision_tools(
             if card is None:
                 raise DecisionError("Query 引用了未提供的查询")
             validate_required_arguments(query, card.parameters)
+    elif decision.kind == "VIEW":
+        view = decision.view
+        if view is None:
+            raise DecisionError("VIEW 缺少 view")
+        if not query_results:
+            raise DecisionError("VIEW 只能用于 Query 结果续聊")
+        if view.source_query > len(query_results):
+            raise DecisionError("VIEW.sourceQuery 超出 Query 结果范围")
+        source = query_results[view.source_query - 1]
+        if source.status != "OK":
+            raise DecisionError("VIEW 只能引用成功的 Query 结果")
+        if view.row_path and not FIELD_PATH.fullmatch(view.row_path):
+            raise DecisionError("VIEW.rowPath 只能使用点分隔字段名")
+        row_node: Any = source.payload
+        if view.row_path:
+            row_node = resolve_path(row_node, view.row_path)
+        if view.layout in {"list", "table"}:
+            if not view.row_path:
+                raise DecisionError("VIEW 的 list/table 布局需要 rowPath")
+            if not isinstance(row_node, list):
+                raise DecisionError("VIEW.rowPath 必须指向数组")
+        sample = row_node[0] if isinstance(row_node, list) and row_node else row_node
+        for field in view.fields:
+            if not FIELD_PATH.fullmatch(field.key):
+                raise DecisionError("VIEW.fields.key 只能使用点分隔字段名")
+            if isinstance(sample, (dict, list)) and not path_exists(sample, field.key):
+                raise DecisionError(f"VIEW.fields 引用了不存在的字段：{field.key}")
     return decision
+
+
+def resolve_path(source: Any, path: str) -> Any:
+    """按点分隔字段读取已有 payload；不执行表达式或数组索引。"""
+    current = source
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
+def path_exists(source: Any, path: str) -> bool:
+    """判断字段是否存在；字段值为 null 时仍视为已存在。"""
+    current = source
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return False
+        current = current[part]
+    return True
 
 
 def strip_code_fence(raw: str) -> str:
@@ -140,7 +194,12 @@ def normalize_decision(decision: Decision) -> Decision:
             actions=decision.actions,
         )
     if decision.kind == "QUERY":
-        if decision.actions or decision.question or decision.plan is not None:
+        if (
+            decision.actions
+            or decision.question
+            or decision.plan is not None
+            or decision.view is not None
+        ):
             raise DecisionError("QUERY 不得混入其他决策字段")
         queries = decision.queries or []
         if not 1 <= len(queries) <= 4:
@@ -151,9 +210,30 @@ def normalize_decision(decision: Decision) -> Decision:
             queries=queries,
         )
 
+    if decision.kind == "VIEW":
+        if decision.view is None:
+            raise DecisionError("VIEW 缺少 view")
+        if (
+            decision.actions
+            or decision.queries
+            or decision.question
+            or decision.plan is not None
+        ):
+            raise DecisionError("VIEW 不得混入其他决策字段")
+        return Decision(
+            kind="VIEW",
+            message=decision.message.strip(),
+            view=decision.view,
+        )
+
     if not decision.question or not decision.question.prompt.strip():
         raise DecisionError("QUESTION 缺少具体问题")
-    if decision.actions or decision.queries or decision.plan is not None:
+    if (
+        decision.actions
+        or decision.queries
+        or decision.plan is not None
+        or decision.view is not None
+    ):
         raise DecisionError("QUESTION 不得混入其他决策字段")
     question = decision.question.model_copy(
         update={

@@ -116,6 +116,61 @@ class AiEndpointIntegrationTest {
     }
 
     @Test
+    void queryResultsCanBeRenderedByAValidatedView() throws Exception {
+        when(aiService.settings(any())).thenReturn(settings(true));
+        when(aiService.createTurn(any(), any())).thenReturn(
+                new AiContracts.ServiceDecision(
+                        "QUERY",
+                        "integration-query-conversation",
+                        "需要读取待办",
+                        null,
+                        List.of(new AiContracts.QueryCall(
+                                "module_todo",
+                                "todo.list",
+                                java.util.Map.of()
+                        )),
+                        null
+                )
+        );
+        when(aiService.continueWithQueryResults(any(), any())).thenReturn(
+                new AiContracts.ServiceDecision(
+                        "VIEW",
+                        "integration-query-conversation",
+                        "已整理待办",
+                        null,
+                        null,
+                        null,
+                        new AiContracts.QueryView(
+                                1,
+                                "list",
+                                "待办列表",
+                                "items",
+                                List.of(
+                                        new AiContracts.ViewField("title", "标题", "text"),
+                                        new AiContracts.ViewField("status", "状态", "status")
+                                ),
+                                "暂无待办"
+                        )
+                )
+        );
+
+        mockMvc.perform(post("/api/ai/turns")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "goal": "查看待办",
+                                  "conversationId": null,
+                                  "clientRequestId": "integration-query-view"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.kind").value("VIEW"))
+                .andExpect(jsonPath("$.view.title").value("待办列表"))
+                .andExpect(jsonPath("$.view.fields[0].key").value("title"))
+                .andExpect(jsonPath("$.queryResults[0].status").value("OK"));
+    }
+
+    @Test
     void defaultPlanUsesIndependentAiPlanShape() throws Exception {
         when(aiService.createTurn(any(), any())).thenReturn(new AiContracts.ServiceDecision(
                 "PLAN",

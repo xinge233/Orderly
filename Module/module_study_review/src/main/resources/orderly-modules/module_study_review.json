@@ -9,7 +9,89 @@
       "id": "study.review.read",
       "title": "读取复习自测",
       "description": "从模块自身 JAR 读取只读复习题目，不自动阅卷。",
-      "parameters": []
+      "parameters": [],
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "schemaVersion",
+          "kind",
+          "ownerModule",
+          "readOnly",
+          "title",
+          "description",
+          "sources",
+          "count",
+          "payload"
+        ],
+        "properties": {
+          "schemaVersion": { "type": "integer" },
+          "kind": { "type": "string" },
+          "ownerModule": { "type": "string" },
+          "readOnly": { "type": "boolean" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "label", "kind", "location"],
+              "properties": {
+                "id": { "type": "string" },
+                "label": { "type": "string" },
+                "kind": { "type": "string" },
+                "location": { "type": "string" }
+              }
+            }
+          },
+          "count": { "type": "integer" },
+          "payload": {
+            "type": "object",
+            "required": ["gradingMode", "questions"],
+            "properties": {
+              "gradingMode": { "type": "string" },
+              "questions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "courseId",
+                    "chapter",
+                    "knowledgePoint",
+                    "prompt",
+                    "answerOutline",
+                    "sourceId",
+                    "difficulty",
+                    "readOnly"
+                  ],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "courseId": { "type": "string" },
+                    "chapter": { "type": "string" },
+                    "knowledgePoint": { "type": "string" },
+                    "prompt": { "type": "string" },
+                    "answerOutline": { "type": "string" },
+                    "sourceId": { "type": "string" },
+                    "difficulty": { "type": "string" },
+                    "readOnly": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示复习题目的知识点、难度和题干；没有题目时显示空状态。",
+        "fallbackLayout": "list",
+        "rowPath": "payload.questions",
+        "fields": [
+          { "key": "knowledgePoint", "label": "知识点", "format": "text" },
+          { "key": "difficulty", "label": "难度", "format": "status" },
+          { "key": "prompt", "label": "题目", "format": "text" }
+        ],
+        "emptyText": "暂无复习题目"
+      }
     }
   ],
   "plannerRules": []

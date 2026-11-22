@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+    buildQueryPayloadView,
+    formatQueryValue,
     formatBytes,
     inferEventOrigin,
     joinPath,
     mergeEvents,
     normalizeAiQueryResponse,
+    normalizeQueryView,
     normalizeEvent,
     normalizePlan,
     parentPath,
@@ -14,6 +17,64 @@ import {
     summarizeQueryPayload,
     validateConfirmation
 } from "../src/models.js";
+
+test("query views and payload trees produce readable bounded structures", () => {
+    const payload = {
+        items: [
+            { title: "项目周报", status: "OPEN" },
+            { title: "课程作业", status: "DONE" }
+        ]
+    };
+    const view = normalizeQueryView({
+        sourceQuery: 1,
+        layout: "table",
+        title: "待办列表",
+        rowPath: "items",
+        fields: [
+            { key: "title", label: "标题", format: "text" },
+            { key: "status", label: "状态", format: "status" }
+        ],
+        emptyText: "暂无待办"
+    }, payload);
+    const tree = buildQueryPayloadView(payload);
+    const keyValue = normalizeQueryView({
+        sourceQuery: 1,
+        layout: "keyValue",
+        title: "查询摘要",
+        fields: [{ key: "note", label: "备注", format: "text" }]
+    }, { note: null });
+
+    assert.equal(view.title, "待办列表");
+    assert.equal(view.fields.length, 2);
+    assert.equal(view.rowPath, "items");
+    assert.equal(keyValue.layout, "keyValue");
+    assert.equal(keyValue.fields.length, 1);
+    assert.equal(tree.type, "object");
+    assert.equal(tree.entries[0].value.type, "array");
+    assert.equal(tree.entries[0].value.items.length, 2);
+    assert.equal(formatQueryValue(true, "boolean"), "是");
+    assert.equal(formatQueryValue(null, "text"), "未返回数据");
+});
+
+test("invalid query views fall back without exposing invalid fields", () => {
+    const payload = { items: [{ title: "项目周报" }] };
+    const missingField = normalizeQueryView({
+        sourceQuery: 1,
+        layout: "table",
+        title: "非法字段",
+        rowPath: "items",
+        fields: [{ key: "missing", label: "不存在", format: "text" }]
+    }, payload);
+    const invalidLayout = normalizeQueryView({
+        sourceQuery: 1,
+        layout: "html",
+        title: "非法布局",
+        fields: []
+    }, payload);
+
+    assert.equal(missingField, null);
+    assert.equal(invalidLayout, null);
+});
 
 test("normalizes a structured plan without trusting extra fields", () => {
     const plan = normalizePlan({
@@ -124,6 +185,62 @@ test("query responses keep only valid statuses and local payload summaries", () 
     assert.equal(Object.hasOwn(query.queries[1], "payload"), false);
     assert.equal(Object.hasOwn(query.queries[2], "payload"), false);
     assert.match(summarizeQueryPayload(query.queries[0].payload), /files.*2/);
+});
+
+test("VIEW responses reuse bounded query results and validate display metadata", () => {
+    const view = normalizeAiQueryResponse({
+        kind: "VIEW",
+        message: "已整理结果",
+        queryResults: [{
+            moduleId: "module_todo",
+            queryId: "todo.list",
+            status: "OK",
+            payload: {
+                items: [{ title: "项目周报", status: "OPEN" }]
+            }
+        }],
+        view: {
+            sourceQuery: 1,
+            layout: "table",
+            title: "待办列表",
+            rowPath: "items",
+            fields: [
+                { key: "title", label: "标题", format: "text" },
+                { key: "status", label: "状态", format: "status" }
+            ]
+        }
+    });
+
+    assert.equal(view.kind, "VIEW");
+    assert.equal(view.valid, true);
+    assert.equal(view.queries.length, 1);
+    assert.equal(view.view.title, "待办列表");
+    assert.equal(view.view.fields.length, 2);
+});
+
+test("invalid VIEW falls back to the generic query view", () => {
+    const view = normalizeAiQueryResponse({
+        kind: "VIEW",
+        queryResults: [{
+            moduleId: "module_todo",
+            queryId: "todo.list",
+            status: "OK",
+            payload: { items: [{ title: "项目周报" }] }
+        }],
+        view: {
+            sourceQuery: 1,
+            layout: "table",
+            title: "非法字段",
+            rowPath: "items",
+            fields: [{ key: "missing", label: "不存在", format: "text" }]
+        }
+    });
+
+    assert.equal(view.kind, "VIEW");
+    assert.equal(view.valid, true);
+    assert.equal(view.degraded, true);
+    assert.match(view.notice, /回退/);
+    assert.equal(Object.hasOwn(view, "view"), false);
 });
 
 test("query responses cap display at four and degrade invalid items safely", () => {

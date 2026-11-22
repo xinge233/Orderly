@@ -125,6 +125,38 @@
         "parameters": {
           "type": "array",
           "items": { "$ref": "#/$defs/parameter" }
+        },
+        "outputSchema": { "type": "object" },
+        "display": { "$ref": "#/$defs/queryDisplay" }
+      }
+    },
+    "queryDisplay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prompt", "fallbackLayout"],
+      "properties": {
+        "prompt": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "fallbackLayout": {
+          "enum": ["keyValue", "list", "table", "text"]
+        },
+        "rowPath": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "fields": {
+          "type": "array",
+          "maxItems": 12,
+          "items": { "$ref": "#/$defs/queryDisplayField" }
+        },
+        "emptyText": { "type": "string", "maxLength": 200 }
+      }
+    },
+    "queryDisplayField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "label", "format"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "format": {
+          "enum": ["text", "status", "datetime", "number", "boolean"]
         }
       }
     },

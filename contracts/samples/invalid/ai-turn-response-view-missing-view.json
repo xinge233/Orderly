@@ -1,0 +1,17 @@
+{
+  "kind": "VIEW",
+  "requestId": "sample-view-response-invalid",
+  "conversationId": "sample-conversation-view-invalid",
+  "message": "缺少展示描述。",
+  "queryResults": [
+    {
+      "moduleId": "module_todo",
+      "queryId": "todo.list",
+      "status": "OK",
+      "payload": {
+        "items": []
+      },
+      "message": "查询完成"
+    }
+  ]
+}

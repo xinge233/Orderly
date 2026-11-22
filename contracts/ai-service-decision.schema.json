@@ -7,7 +7,7 @@
   "required": ["kind", "conversationId"],
   "properties": {
     "kind": {
-      "enum": ["ACTIONS", "PLAN", "QUESTION", "QUERY"]
+      "enum": ["ACTIONS", "PLAN", "QUESTION", "QUERY", "VIEW"]
     },
     "conversationId": { "type": "string", "minLength": 1 },
     "message": { "type": "string" },
@@ -32,6 +32,9 @@
           "items": { "type": "string", "minLength": 1 }
         }
       }
+    },
+    "view": {
+      "$ref": "#/$defs/view"
     }
   },
   "allOf": [
@@ -42,7 +45,8 @@
         "not": {
           "anyOf": [
             { "required": ["queries"] },
-            { "required": ["question"] }
+            { "required": ["question"] },
+            { "required": ["view"] }
           ]
         },
         "properties": {
@@ -57,7 +61,8 @@
         "not": {
           "anyOf": [
             { "required": ["actions"] },
-            { "required": ["queries"] }
+            { "required": ["queries"] },
+            { "required": ["view"] }
           ]
         }
       }
@@ -69,6 +74,20 @@
         "not": {
           "anyOf": [
             { "required": ["actions"] },
+            { "required": ["question"] },
+            { "required": ["view"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "VIEW" } } },
+      "then": {
+        "required": ["view"],
+        "not": {
+          "anyOf": [
+            { "required": ["actions"] },
+            { "required": ["queries"] },
             { "required": ["question"] }
           ]
         }
@@ -76,6 +95,35 @@
     }
   ],
   "$defs": {
+    "view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceQuery", "layout", "title", "fields"],
+      "properties": {
+        "sourceQuery": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "layout": { "enum": ["keyValue", "list", "table", "text"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "rowPath": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "fields": {
+          "type": "array",
+          "maxItems": 12,
+          "items": { "$ref": "#/$defs/viewField" }
+        },
+        "emptyText": { "type": "string", "maxLength": 200 }
+      }
+    },
+    "viewField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "label", "format"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "format": {
+          "enum": ["text", "status", "datetime", "number", "boolean"]
+        }
+      }
+    },
     "action": {
       "type": "object",
       "additionalProperties": false,

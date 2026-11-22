@@ -41,6 +41,16 @@ export const AI_QUERY_LIMIT = 4;
 
 const AI_QUERY_RESULT_STATUSES = new Set(["OK", "FAILED", "TRUNCATED"]);
 const QUERY_PAYLOAD_SUMMARY_LIMIT = 240;
+const QUERY_VIEW_LAYOUTS = new Set(["keyValue", "list", "table", "text"]);
+const QUERY_VIEW_FORMATS = new Set([
+    "text",
+    "status",
+    "datetime",
+    "number",
+    "boolean"
+]);
+const QUERY_VIEW_MAX_FIELDS = 12;
+const QUERY_FIELD_PATH = /^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/;
 
 export const EVENT_ORIGIN = Object.freeze({
     PLAN: "PLAN",
@@ -215,16 +225,189 @@ function queryResultMessage(status) {
 }
 
 /**
- * 规范化 AI 本地查询响应。只展示前四条查询，非 OK 结果不保留 payload。
+ * 按点分隔字段读取已有 payload。该函数不执行表达式，也不接受数组索引。
+ *
+ * @param {unknown} source payload
+ * @param {string} path 字段路径
+ * @returns {unknown} 字段值或 undefined
+ */
+export function resolveQueryPath(source, path) {
+    const parts = String(path ?? "").split(".").filter(Boolean);
+    if (!parts.length || !QUERY_FIELD_PATH.test(parts.join("."))) {
+        return undefined;
+    }
+    let current = source;
+    for (const part of parts) {
+        if (!current || typeof current !== "object" || Array.isArray(current)) {
+            return undefined;
+        }
+        if (!Object.hasOwn(current, part)) {
+            return undefined;
+        }
+        current = current[part];
+    }
+    return current;
+}
+
+/**
+ * 把 AI 或模块展示声明规范化为受限视图模型。
+ *
+ * @param {unknown} rawView 原始展示描述
+ * @param {unknown} sourcePayload 对应 Query payload
+ * @returns {object | null} 合法视图或 null
+ */
+export function normalizeQueryView(rawView, sourcePayload) {
+    const source = rawView && typeof rawView === "object" ? rawView : {};
+    const sourceQuery = Number(source.sourceQuery);
+    const layout = String(source.layout ?? "").trim();
+    const title = boundedQueryText(source.title, 200);
+    if (!Number.isInteger(sourceQuery) || sourceQuery < 1 || sourceQuery > AI_QUERY_LIMIT
+        || !QUERY_VIEW_LAYOUTS.has(layout) || !title) {
+        return null;
+    }
+    const rowPath = source.rowPath == null ? "" : String(source.rowPath).trim();
+    if (rowPath && !QUERY_FIELD_PATH.test(rowPath)) {
+        return null;
+    }
+    const rowSource = rowPath ? resolveQueryPath(sourcePayload, rowPath) : sourcePayload;
+    const sample = Array.isArray(rowSource) ? rowSource[0] : rowSource;
+    const rawFields = Array.isArray(source.fields) ? source.fields : [];
+    const fields = rawFields.slice(0, QUERY_VIEW_MAX_FIELDS).flatMap((rawField) => {
+        const field = rawField && typeof rawField === "object" ? rawField : {};
+        const key = String(field.key ?? "").trim();
+        const label = boundedQueryText(field.label, 80);
+        const format = String(field.format ?? "").trim();
+        if (!QUERY_FIELD_PATH.test(key) || !label || !QUERY_VIEW_FORMATS.has(format)) {
+            return [];
+        }
+        if (sample && typeof sample === "object"
+            && resolveQueryPath(sample, key) === undefined) {
+            return [];
+        }
+        return [{ key, label, format }];
+    });
+    if (rawFields.length > 0 && fields.length === 0) {
+        return null;
+    }
+    return {
+        sourceQuery,
+        layout,
+        title,
+        rowPath,
+        fields,
+        emptyText: boundedQueryText(source.emptyText, 200) || "暂无数据"
+    };
+}
+
+/**
+ * 按受控格式转换单个字段值。未知格式退回文本。
+ *
+ * @param {unknown} value 字段值
+ * @param {string} format 字段格式
+ * @returns {string} 可展示文本
+ */
+export function formatQueryValue(value, format = "text") {
+    if (value == null || value === "") {
+        return "未返回数据";
+    }
+    if (format === "boolean") {
+        return value === true ? "是" : value === false ? "否" : String(value);
+    }
+    if (format === "datetime") {
+        const parsed = Date.parse(String(value));
+        if (Number.isFinite(parsed)) {
+            return new Intl.DateTimeFormat("zh-CN", {
+                dateStyle: "medium",
+                timeStyle: "short"
+            }).format(new Date(parsed));
+        }
+    }
+    if (typeof value === "object") {
+        return summarizeQueryPayload(value);
+    }
+    return String(value);
+}
+
+/**
+ * 生成前端展示所需的只读 payload 树，限制深度、条目和文本长度。
+ *
+ * @param {unknown} payload Query payload
+ * @param {{depth?: number, seen?: WeakSet<object>, maxDepth?: number, maxItems?: number, maxText?: number}} [options] 限制
+ * @returns {object} 展示树
+ */
+export function buildQueryPayloadView(payload, options = {}) {
+    const depth = Number(options.depth ?? 0);
+    const maxDepth = Number(options.maxDepth ?? 3);
+    const maxItems = Number(options.maxItems ?? 8);
+    const maxText = Number(options.maxText ?? 240);
+    const seen = options.seen ?? new WeakSet();
+    if (payload == null || payload === "") {
+        return { type: "empty", text: "未返回数据" };
+    }
+    if (typeof payload !== "object") {
+        return {
+            type: "scalar",
+            value: boundedQueryText(formatQueryValue(payload), maxText)
+        };
+    }
+    if (seen.has(payload)) {
+        return { type: "scalar", value: "[循环引用]" };
+    }
+    if (depth >= maxDepth) {
+        return {
+            type: "scalar",
+            value: Array.isArray(payload) ? `[${payload.length} 项]` : "[嵌套对象]"
+        };
+    }
+    seen.add(payload);
+    if (Array.isArray(payload)) {
+        return {
+            type: "array",
+            count: payload.length,
+            items: payload.slice(0, maxItems).map((item) =>
+                buildQueryPayloadView(item, {
+                    ...options,
+                    depth: depth + 1,
+                    seen,
+                    maxDepth,
+                    maxItems,
+                    maxText
+                })
+            ),
+            truncated: payload.length > maxItems
+        };
+    }
+    const entries = Object.entries(payload);
+    return {
+        type: "object",
+        count: entries.length,
+        entries: entries.slice(0, maxItems).map(([key, value]) => ({
+            key: boundedQueryText(key, 80),
+            value: buildQueryPayloadView(value, {
+                ...options,
+                depth: depth + 1,
+                seen,
+                maxDepth,
+                maxItems,
+                maxText
+            })
+        })),
+        truncated: entries.length > maxItems
+    };
+}
+
+/**
+ * 规范化 AI 本地查询或展示整理响应。只展示前四条查询，非 OK 结果不保留 payload。
  *
  * @param {unknown} payload /api/ai/turns 的 QUERY 响应
  * @returns {{
- *     kind: "QUERY",
+ *     kind: "QUERY" | "VIEW",
  *     valid: boolean,
  *     degraded: boolean,
  *     status: "OK" | "FAILED" | "TRUNCATED",
  *     message: string,
  *     queries: Array<object>,
+ *     view?: object,
  *     error?: string,
  *     notice?: string
  * }} 查询模型
@@ -237,10 +420,21 @@ function queryResultMessage(status) {
  */
 export function normalizeAiQueryResponse(payload) {
     const source = payload && typeof payload === "object" ? payload : {};
+    const kind = source.kind === "VIEW" ? "VIEW" : "QUERY";
     const message = boundedQueryText(source.message);
-    if (!Array.isArray(source.queries) || source.queries.length === 0) {
+    const rawResults = Array.isArray(source.queryResults) ? source.queryResults : [];
+    const declaredQueries = Array.isArray(source.queries)
+        ? source.queries
+        : kind === "VIEW"
+            ? rawResults.map((result) => ({
+                moduleId: result?.moduleId,
+                queryId: result?.queryId,
+                arguments: {}
+            }))
+            : [];
+    if (declaredQueries.length === 0) {
         return {
-            kind: "QUERY",
+            kind,
             valid: false,
             degraded: true,
             status: "FAILED",
@@ -250,10 +444,10 @@ export function normalizeAiQueryResponse(payload) {
         };
     }
 
-    const rawResults = Array.isArray(source.queryResults) ? source.queryResults : [];
     const usedResults = new Set();
-    let degraded = source.queries.length > AI_QUERY_LIMIT || !Array.isArray(source.queryResults);
-    const queries = source.queries.slice(0, AI_QUERY_LIMIT).map((rawQuery, index) => {
+    let degraded = declaredQueries.length > AI_QUERY_LIMIT
+        || !Array.isArray(source.queryResults);
+    const queries = declaredQueries.slice(0, AI_QUERY_LIMIT).map((rawQuery, index) => {
         const query = rawQuery && typeof rawQuery === "object" ? rawQuery : {};
         const moduleId = boundedQueryText(query.moduleId, 128);
         const queryId = boundedQueryText(query.queryId, 160);
@@ -316,23 +510,32 @@ export function normalizeAiQueryResponse(payload) {
         : queries.some((query) => query.status === "TRUNCATED")
             ? "TRUNCATED"
             : "OK";
-    const status = source.queries.length > AI_QUERY_LIMIT && aggregateStatus === "OK"
+    const status = declaredQueries.length > AI_QUERY_LIMIT && aggregateStatus === "OK"
         ? "TRUNCATED"
         : aggregateStatus;
-    const notice = source.queries.length > AI_QUERY_LIMIT
+    const sourceResult = rawResults[Number(source.view?.sourceQuery) - 1];
+    const view = source.view
+        ? normalizeQueryView(source.view, sourceResult?.payload)
+        : null;
+    const invalidView = kind === "VIEW" && source.view && !view;
+    const missingView = kind === "VIEW" && !source.view;
+    const notice = declaredQueries.length > AI_QUERY_LIMIT
         ? "宿主返回的查询超过 4 条，界面仅展示前 4 条。"
         : !Array.isArray(source.queryResults)
             ? "宿主未返回有效的查询结果列表，查询项已安全降级为失败。"
             : degraded
                 ? "部分查询结果无法展示，已按失败状态安全降级。"
-                : "";
+                : invalidView || missingView
+                    ? "AI 展示整理无效，已回退到通用查询结果视图。"
+                    : "";
     return {
-        kind: "QUERY",
+        kind,
         valid: true,
-        degraded,
+        degraded: degraded || invalidView || missingView,
         status,
         message,
         queries,
+        ...(view ? { view } : {}),
         ...(notice ? { notice } : {})
     };
 }

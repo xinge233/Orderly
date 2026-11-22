@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderly.host.api.ApiException;
 import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.contract.ModuleContract;
+import com.orderly.host.contract.OutputSchemaValidator;
 import com.orderly.host.contract.ParameterContract;
 import com.orderly.host.contract.QueryContract;
 import com.orderly.host.event.ExecutionJournal;
@@ -218,6 +219,13 @@ public class AiQueryService {
             if (payload == null) {
                 throw new IllegalStateException("查询未返回对象结果");
             }
+            OutputSchemaValidator.validateOutput(
+                    query.outputSchema(),
+                    payload,
+                    objectMapper,
+                    query.id(),
+                    "查询"
+            );
             return payload;
         });
     }
@@ -256,7 +264,15 @@ public class AiQueryService {
         }
         Map<String, String> validated = validateParameters(query, supplied);
         beforeExecute.run();
-        return moduleControlQueries.query(queryId, validated);
+        Map<String, Object> payload = moduleControlQueries.query(queryId, validated);
+        OutputSchemaValidator.validateOutput(
+                query.outputSchema(),
+                payload,
+                objectMapper,
+                query.id(),
+                "查询"
+        );
+        return payload;
     }
 
     /** 从模块契约中解析指定查询。 */

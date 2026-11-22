@@ -15,8 +15,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 RISK_LEVEL = Literal["READ_ONLY", "WRITE", "DELETE"]
-DECISION_KIND = Literal["ACTIONS", "PLAN", "QUESTION", "QUERY"]
+DECISION_KIND = Literal["ACTIONS", "PLAN", "QUESTION", "QUERY", "VIEW"]
 QUERY_RESULT_STATUS = Literal["OK", "FAILED", "TRUNCATED"]
+VIEW_LAYOUT = Literal["keyValue", "list", "table", "text"]
+VIEW_FORMAT = Literal["text", "status", "datetime", "number", "boolean"]
 
 
 def to_camel(value: str) -> str:
@@ -120,6 +122,36 @@ class ActionCard(CamelModel):
     parameters: list[ParameterCard] = Field(default_factory=list)
 
 
+class QueryDisplayField(CamelModel):
+    """模块声明的 Query 展示字段。"""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="ignore",
+    )
+
+    key: str = Field(min_length=1, max_length=160)
+    label: str = Field(min_length=1, max_length=80)
+    format: VIEW_FORMAT = "text"
+
+
+class QueryDisplay(CamelModel):
+    """模块提供的展示建议；内容始终是不可信数据。"""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="ignore",
+    )
+
+    prompt: str = Field(min_length=1, max_length=1000)
+    fallback_layout: VIEW_LAYOUT
+    row_path: str | None = Field(default=None, max_length=200)
+    fields: list[QueryDisplayField] = Field(default_factory=list, max_length=12)
+    empty_text: str | None = Field(default=None, max_length=200)
+
+
 class QueryCard(CamelModel):
     """允许模型提出只读查询的 Query 卡。"""
 
@@ -133,6 +165,8 @@ class QueryCard(CamelModel):
     title: str = ""
     description: str = ""
     parameters: list[ParameterCard] = Field(default_factory=list)
+    output_schema: dict[str, Any] | None = None
+    display: QueryDisplay | None = None
 
 
 class ToolModule(CamelModel):
@@ -264,11 +298,43 @@ class Question(CamelModel):
     options: list[str] = Field(default_factory=list)
 
 
+class ViewField(CamelModel):
+    """展示描述中引用的单个已有字段。"""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+    )
+
+    key: str = Field(min_length=1, max_length=160)
+    label: str = Field(min_length=1, max_length=80)
+    format: VIEW_FORMAT
+
+
+class QueryView(CamelModel):
+    """AI 返回给前端的受控展示说明书，不包含业务数据。"""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+    )
+
+    source_query: int = Field(ge=1, le=4)
+    layout: VIEW_LAYOUT
+    title: str = Field(min_length=1, max_length=200)
+    row_path: str | None = Field(default=None, max_length=200)
+    fields: list[ViewField] = Field(max_length=12)
+    empty_text: str | None = Field(default=None, max_length=200)
+
+
 class Decision(CamelModel):
-    """Python 到 Java 的四种决策线格式模型。
+    """Python 到 Java 的五种决策线格式模型。
 
     ``ACTIONS`` 与 ``PLAN`` 共用 actions，``QUERY`` 使用 queries，
-    ``QUESTION`` 使用 question；解析和归一化阶段会拒绝跨 kind 混用字段。
+    ``QUESTION`` 使用 question，``VIEW`` 使用 view；解析和归一化阶段会拒绝
+    跨 kind 混用字段。
     ``plan`` 保持为空，防止嵌套计划绕过统一 Action 数组契约。Java 仍会对
     序列化结果执行最终校验。
     """
@@ -286,6 +352,7 @@ class Decision(CamelModel):
     plan: None = None
     question: Question | None = None
     queries: list[QueryCall] | None = None
+    view: QueryView | None = None
 
 
 class ErrorView(CamelModel):

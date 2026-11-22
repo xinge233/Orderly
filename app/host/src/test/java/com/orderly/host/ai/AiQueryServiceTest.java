@@ -222,6 +222,51 @@ class AiQueryServiceTest {
     }
 
     @Test
+    void validatesDeclaredQueryOutputSchema() throws Exception {
+        QueryContract query = new QueryContract(
+                "test.list",
+                "测试查询",
+                "读取测试数据",
+                List.of(),
+                new ObjectMapper().readTree("""
+                        {
+                          "type": "object",
+                          "required": ["value"],
+                          "properties": {
+                            "value": { "type": "string" }
+                          }
+                        }
+                        """),
+                null
+        );
+        module = new ModuleContract(
+                module.moduleId(),
+                module.title(),
+                module.description(),
+                module.order(),
+                null,
+                List.of(),
+                List.of(query),
+                List.of()
+        );
+        when(moduleControl.withEnabledBusinessModule(eq("module_test"), any()))
+                .thenAnswer(invocation -> {
+                    Function<ModuleContract, Map<String, Object>> operation =
+                            invocation.getArgument(1);
+                    return operation.apply(module);
+                });
+        when(executor.query(eq("test.list"), anyMap(), eq(runtime)))
+                .thenReturn(Map.of("value", 42));
+
+        List<AiContracts.QueryResult> results = service.executeAiQueries(List.of(query()));
+
+        assertThat(results).singleElement().satisfies(result -> {
+            assertThat(result.status()).isEqualTo(AiContracts.QueryStatus.FAILED);
+            assertThat(result.message()).contains("outputSchema");
+        });
+    }
+
+    @Test
     void routesWhitelistedControlQueriesThroughHostGovernanceService() {
         QueryContract query = new QueryContract(
                 "module_system_control.module.list",

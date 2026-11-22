@@ -134,6 +134,17 @@ def module_cards() -> list[dict[str, Any]]:
                     "title": "文件摘要",
                     "description": "读取文件摘要",
                     "parameters": [],
+                    "display": {
+                        "prompt": "以文件数摘要展示文件概况，没有文件时显示空状态。",
+                        "fallbackLayout": "keyValue",
+                        "fields": [
+                            {
+                                "key": "files",
+                                "label": "文件数",
+                                "format": "number",
+                            }
+                        ],
+                    },
                 }
             ],
         }

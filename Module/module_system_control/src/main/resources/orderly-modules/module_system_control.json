@@ -98,7 +98,55 @@
       "id": "module_system_control.module.list",
       "title": "查询业务模块",
       "description": "返回业务模块标识、标题、启用状态、管理排序和接口数量摘要，不返回系统模块或敏感设置正文。",
-      "parameters": []
+      "parameters": [],
+      "outputSchema": {
+        "type": "object",
+        "required": ["items", "count", "revision"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "moduleId",
+                "title",
+                "description",
+                "enabled",
+                "managementOrder",
+                "settingsCount",
+                "actionCount",
+                "queryCount"
+              ],
+              "properties": {
+                "moduleId": { "type": "string" },
+                "title": { "type": "string" },
+                "description": { "type": "string" },
+                "enabled": { "type": "boolean" },
+                "managementOrder": { "type": "integer" },
+                "settingsCount": { "type": "integer" },
+                "actionCount": { "type": "integer" },
+                "queryCount": { "type": "integer" }
+              }
+            }
+          },
+          "count": { "type": "integer" },
+          "revision": { "type": "string" }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示业务模块标题、标识、启用状态和接口数量；没有业务模块时显示空状态。",
+        "fallbackLayout": "table",
+        "rowPath": "items",
+        "fields": [
+          { "key": "title", "label": "模块", "format": "text" },
+          { "key": "moduleId", "label": "模块标识", "format": "text" },
+          { "key": "enabled", "label": "启用", "format": "boolean" },
+          { "key": "actionCount", "label": "动作数", "format": "number" },
+          { "key": "queryCount", "label": "查询数", "format": "number" },
+          { "key": "managementOrder", "label": "管理排序", "format": "number" }
+        ],
+        "emptyText": "暂无业务模块"
+      }
     },
     {
       "id": "module_system_control.interface.list",
@@ -117,7 +165,56 @@
           "required": false,
           "description": "可选接口类型，只能是 action 或 query"
         }
-      ]
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["items", "count", "revision"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "moduleId",
+                "moduleTitle",
+                "kind",
+                "interfaceId",
+                "title",
+                "description",
+                "aiCallable",
+                "inUse"
+              ],
+              "properties": {
+                "moduleId": { "type": "string" },
+                "moduleTitle": { "type": "string" },
+                "kind": { "type": "string" },
+                "interfaceId": { "type": "string" },
+                "title": { "type": "string" },
+                "description": { "type": "string" },
+                "risk": { "type": "string" },
+                "aiCallable": { "type": "boolean" },
+                "inUse": { "type": "boolean" }
+              }
+            }
+          },
+          "count": { "type": "integer" },
+          "revision": { "type": "string" }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示模块、接口类型、接口名称、风险、AI 可调用状态和使用中状态；没有匹配接口时显示空状态。",
+        "fallbackLayout": "table",
+        "rowPath": "items",
+        "fields": [
+          { "key": "moduleTitle", "label": "模块", "format": "text" },
+          { "key": "interfaceId", "label": "接口", "format": "text" },
+          { "key": "kind", "label": "类型", "format": "status" },
+          { "key": "risk", "label": "风险", "format": "status" },
+          { "key": "aiCallable", "label": "AI 可调用", "format": "boolean" },
+          { "key": "inUse", "label": "使用中", "format": "boolean" }
+        ],
+        "emptyText": "暂无匹配接口"
+      }
     },
     {
       "id": "module_system_control.setting.get",
@@ -130,7 +227,54 @@
           "required": true,
           "description": "目标业务模块 ID"
         }
-      ]
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["moduleId", "title", "fields", "values", "revision"],
+        "properties": {
+          "moduleId": { "type": "string" },
+          "title": { "type": "string" },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["key", "type", "label", "description", "options"],
+              "properties": {
+                "key": { "type": "string" },
+                "type": { "type": "string" },
+                "label": { "type": "string" },
+                "description": { "type": "string" },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["value", "label"],
+                    "properties": {
+                      "value": { "type": "string" },
+                      "label": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "revision": { "type": "string" }
+        }
+      },
+      "display": {
+        "prompt": "以键值摘要展示模块标识、模块标题和设置版本；没有设置数据时显示空状态。",
+        "fallbackLayout": "keyValue",
+        "fields": [
+          { "key": "title", "label": "模块", "format": "text" },
+          { "key": "moduleId", "label": "模块标识", "format": "text" },
+          { "key": "revision", "label": "设置版本", "format": "text" }
+        ],
+        "emptyText": "暂无设置数据"
+      }
     }
   ],
   "plannerRules": [],

@@ -1,0 +1,24 @@
+{
+  "kind": "VIEW",
+  "conversationId": "service-conversation-view",
+  "message": "已整理本地查询结果。",
+  "view": {
+    "sourceQuery": 1,
+    "layout": "table",
+    "title": "待办列表",
+    "rowPath": "items",
+    "fields": [
+      {
+        "key": "title",
+        "label": "标题",
+        "format": "text"
+      },
+      {
+        "key": "status",
+        "label": "状态",
+        "format": "status"
+      }
+    ],
+    "emptyText": "暂无待办"
+  }
+}

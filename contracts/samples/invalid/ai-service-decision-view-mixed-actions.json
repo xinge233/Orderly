@@ -1,0 +1,20 @@
+{
+  "kind": "VIEW",
+  "conversationId": "service-conversation-view-invalid",
+  "message": "非法混合决策",
+  "actions": [
+    {
+      "moduleId": "module_todo",
+      "actionId": "todo.create",
+      "arguments": {
+        "title": "不应执行"
+      }
+    }
+  ],
+  "view": {
+    "sourceQuery": 1,
+    "layout": "table",
+    "title": "非法视图",
+    "fields": []
+  }
+}

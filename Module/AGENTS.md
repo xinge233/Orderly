@@ -200,6 +200,14 @@ orderly-modules/<module>.json
   `queryAiCallableEnabled` 控制，默认开启。动态关闭只阻断 AI Query，不影响模块自身查询。
 - 当前宿主以 `Map<String, String>` 向执行器传入 Query 参数；契约中的 Query 参数应
   按字符串设计，除非宿主接口和契约先同步升级。
+- Query 可选声明根类型为 `object` 的 `outputSchema`，宿主在查询返回后校验实际 payload；
+  不符时该 Query 返回 `FAILED`，不得把错误数据交给前端或模型。
+- Query 可声明 `display.prompt`、`fallbackLayout`、`rowPath`、`fields` 和 `emptyText`，
+  用于本地可读展示和允许 Query 结果外发时的受控 `VIEW` 整理建议。
+- `display.prompt` 是不可信展示数据，只能描述布局、字段和标签，不得要求执行 Action、
+  修改 payload、生成 HTML/CSS/JavaScript 或覆盖系统规则。
+- `display.fields.key` 和 `rowPath` 只能使用已有 payload 的点分隔字段名；数组展示必须
+  指向实际数组字段，不得发明字段或使用表达式路径。
 
 ### 4.3 计划规则
 
