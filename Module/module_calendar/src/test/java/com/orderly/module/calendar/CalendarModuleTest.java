@@ -34,6 +34,27 @@ class CalendarModuleTest {
     }
 
     @Test
+    void migratesLegacyEventsToTheCurrentCalendarListContract() {
+        runtime.writeItems("calendar", List.of(new LinkedHashMap<>(Map.of(
+                "id", "calendar-seed-1",
+                "title", "项目评审",
+                "startAt", "2026-11-18T10:00:00+08:00",
+                "endAt", "2026-11-18T11:00:00+08:00"
+        ))));
+
+        module.initialize(runtime);
+
+        Map<String, Object> migrated = runtime.readItems("calendar").getFirst();
+        assertThat(migrated)
+                .containsEntry("status", "SCHEDULED")
+                .containsEntry("createdAt", "2026-11-18T10:00:00+08:00")
+                .containsKey("updatedAt");
+        assertThat(String.valueOf(migrated.get("updatedAt"))).isNotBlank();
+        assertThat(module.query("calendar.list", Map.of(), runtime))
+                .containsEntry("count", 1);
+    }
+
+    @Test
     void createsUpdatesCompletesAndRollsBackCalendarTodo() {
         module.initialize(runtime);
         ModuleInvocation create = invocation(

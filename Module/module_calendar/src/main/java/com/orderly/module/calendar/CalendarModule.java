@@ -86,6 +86,8 @@ public final class CalendarModule implements OrderlyModule {
                     "createdAt", "2026-11-10T09:00:00+08:00",
                     "updatedAt", "2026-11-10T09:00:00+08:00"
             )));
+        } else {
+            migrateLegacyEvents(runtime);
         }
         if (!runtime.hasItems(TODOS)) {
             runtime.writeItems(TODOS, List.of(Map.of(
@@ -98,6 +100,42 @@ public final class CalendarModule implements OrderlyModule {
                     "createdAt", "2026-11-10T09:00:00+08:00",
                     "updatedAt", "2026-11-10T09:00:00+08:00"
             )));
+        }
+    }
+
+    /**
+     * 补齐旧版日程缺少的审计字段，避免已持久化数据与新版查询契约不一致。
+     *
+     * <p>初始化只在集合不存在时写入种子，因此旧版已经落盘的日程不会被新种子自动覆盖。
+     * 对缺少字段的记录补入兼容默认值并一次性写回；完整记录保持原样。</p>
+     */
+    private void migrateLegacyEvents(ModuleRuntime runtime) {
+        String migratedAt = Instant.now().toString();
+        List<Map<String, Object>> events = new ArrayList<>(runtime.readItems(EVENTS));
+        boolean changed = false;
+        for (int index = 0; index < events.size(); index++) {
+            Map<String, Object> event = new LinkedHashMap<>(events.get(index));
+            String createdAt = text(event.get("createdAt"));
+            if (createdAt.isBlank()) {
+                createdAt = text(event.get("startAt"));
+                if (createdAt.isBlank()) {
+                    createdAt = migratedAt;
+                }
+                event.put("createdAt", createdAt);
+                changed = true;
+            }
+            if (text(event.get("updatedAt")).isBlank()) {
+                event.put("updatedAt", migratedAt);
+                changed = true;
+            }
+            if (text(event.get("status")).isBlank()) {
+                event.put("status", "SCHEDULED");
+                changed = true;
+            }
+            events.set(index, event);
+        }
+        if (changed) {
+            runtime.writeItems(EVENTS, events);
         }
     }
 
