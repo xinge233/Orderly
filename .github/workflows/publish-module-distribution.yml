@@ -36,7 +36,7 @@ jobs:
             & git checkout --orphan module-distribution
             if ($LASTEXITCODE -ne 0) { throw "无法创建 module-distribution 分支" }
           }
-          & git rm -r --ignore-unmatch .
+          & git rm -r --ignore-unmatch catalog.json packages
           if ($LASTEXITCODE -ne 0) { throw "无法清理分发分支旧内容" }
           Copy-Item -Path ./target/module-distribution/* -Destination . -Recurse -Force
 
