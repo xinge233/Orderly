@@ -19,10 +19,17 @@ export const MOTION_OPTIONS = Object.freeze([
     { value: "none", label: "关闭" }
 ]);
 
+export const AI_PANEL_WIDTH_LIMITS = Object.freeze({
+    default: 460,
+    minimum: 340,
+    maximum: 720
+});
+
 const DEFAULTS = Object.freeze({
     theme: "",
     motion: "gentle",
     aiIcon: "spark",
+    aiPanelWidth: AI_PANEL_WIDTH_LIMITS.default,
     notifications: true,
     moduleOrderIds: []
 });
@@ -32,6 +39,28 @@ const THEME_ID = /^[a-z][a-z0-9-]{0,63}$/;
 const THEME_STYLE_PATH = /^(?:[a-z0-9][a-z0-9.-]*\/)*[a-z0-9][a-z0-9.-]*\.css$/;
 const SUPPORTED_THEME_SCHEMA_VERSION = 1;
 const REQUIRED_THEME_STYLES = Object.freeze(["tokens.css", "motion.css"]);
+
+/**
+ * 清洗 AI 面板宽度，使其保持在可读且不会吞没工作区的范围内。
+ *
+ * @param {unknown} value 原始宽度
+ * @param {number} [fallback] 缺失或非法值时的默认宽度
+ * @returns {number} 整数像素宽度
+ */
+export function normalizeAiPanelWidth(
+    value,
+    fallback = AI_PANEL_WIDTH_LIMITS.default
+) {
+    const normalizedFallback = Number.isFinite(Number(fallback))
+        ? Number(fallback)
+        : AI_PANEL_WIDTH_LIMITS.default;
+    const parsed = value == null || value === "" ? Number.NaN : Number(value);
+    const candidate = Number.isFinite(parsed) ? parsed : normalizedFallback;
+    return Math.round(Math.min(
+        AI_PANEL_WIDTH_LIMITS.maximum,
+        Math.max(AI_PANEL_WIDTH_LIMITS.minimum, candidate)
+    ));
+}
 
 /**
  * 读取宿主计划功能状态；缺失或损坏时按产品默认关闭处理。
@@ -122,6 +151,7 @@ export function normalizeSettings(input) {
         theme: typeof source.theme === "string" ? source.theme.trim() : DEFAULTS.theme,
         motion: MOTIONS.has(source.motion) ? source.motion : DEFAULTS.motion,
         aiIcon: normalizeAiIcon(source.aiIcon),
+        aiPanelWidth: normalizeAiPanelWidth(source.aiPanelWidth),
         notifications: typeof source.notifications === "boolean"
             ? source.notifications
             : DEFAULTS.notifications,

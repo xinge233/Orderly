@@ -371,6 +371,10 @@ async function bootstrap() {
         interpretGoal: (payload) => api.interpretAiTurn(payload),
         confirmAiPlan: (planId) => api.confirmAiPlan(planId),
         beforeAiTurn: waitForModulesBeforeAiTurn,
+        getAiPanelWidth: () => settingsStore.getSnapshot().aiPanelWidth,
+        onAiPanelWidthChange: (aiPanelWidth) => {
+            settingsStore.update({ aiPanelWidth });
+        },
         onAiSettingsChanged: (settings) => {
             state.aiSettings = normalizeAiSettings(settings);
             state.aiSettingsError = "";
@@ -1823,6 +1827,7 @@ function cancelSidebarCountRefresh() {
 function applySettings(settings) {
     document.documentElement.dataset.motion = settings.motion;
     aiDialog?.setIcon(settings.aiIcon);
+    aiDialog?.setPanelWidth(settings.aiPanelWidth);
     syncSettingControls(settings);
     void applyThemeSelection(settings.theme);
     renderNavigation(document.querySelector("#nav-search")?.value ?? "");

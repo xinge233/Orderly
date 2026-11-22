@@ -2265,7 +2265,7 @@ body.is-navigation-dragging * {
     right: 0;
     bottom: calc(var(--ai-composer-height) + var(--space-3));
     display: flex;
-    width: min(var(--ai-plan-width), calc(100vw - var(--space-6)));
+    width: min(var(--ai-panel-width), calc(100vw - var(--space-6)));
     max-height: min(64vh, calc(100vh - var(--ai-launcher-size) - var(--ai-composer-height) - 64px));
     height: auto;
     flex-direction: column;
@@ -2279,6 +2279,64 @@ body.is-navigation-dragging * {
     transform-origin: right bottom;
     backdrop-filter: blur(20px);
     overflow-y: auto;
+}
+
+.ai-panel-resizer {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    bottom: 0;
+    width: 12px;
+    border: 0;
+    background: transparent;
+    cursor: ew-resize;
+    touch-action: none;
+    user-select: none;
+}
+
+.ai-plan-panel[data-resize-edge="left"] .ai-panel-resizer {
+    left: 0;
+}
+
+.ai-plan-panel[data-resize-edge="right"] .ai-panel-resizer {
+    right: 0;
+}
+
+.ai-panel-resizer::after {
+    content: "";
+    position: absolute;
+    top: 16px;
+    bottom: 16px;
+    width: 2px;
+    border-radius: 2px;
+    background: transparent;
+}
+
+.ai-plan-panel[data-resize-edge="left"] .ai-panel-resizer::after {
+    left: 3px;
+}
+
+.ai-plan-panel[data-resize-edge="right"] .ai-panel-resizer::after {
+    right: 3px;
+}
+
+.ai-panel-resizer:hover::after,
+.ai-panel-resizer:focus-visible::after,
+.ai-dock[data-resizing="true"] .ai-panel-resizer::after {
+    background: color-mix(in srgb, var(--color-accent) 74%, transparent);
+}
+
+.ai-panel-resizer:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: -2px;
+}
+
+.ai-panel-resizer[hidden] {
+    display: none;
+}
+
+.ai-dock[data-resizing="true"] .ai-plan-panel {
+    user-select: none;
 }
 
 .ai-dock[data-panel="open"] .ai-plan-panel {
@@ -2412,8 +2470,8 @@ body.is-navigation-dragging * {
     min-width: 0;
     margin-top: var(--space-2);
     color: var(--color-text);
-    font-size: 0.6875rem;
-    line-height: 1.45;
+    font-size: var(--font-size-small);
+    line-height: 1.55;
 }
 
 .ai-query-key-values {
@@ -2487,9 +2545,10 @@ body.is-navigation-dragging * {
 
 .ai-query-table {
     width: 100%;
-    min-width: 360px;
+    min-width: 0;
+    table-layout: auto;
     border-collapse: collapse;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-small);
 }
 
 .ai-query-table th,
@@ -2504,8 +2563,8 @@ body.is-navigation-dragging * {
 .ai-query-table th {
     background: var(--color-surface-muted);
     color: var(--color-text-faint);
+    font-size: var(--font-size-caption);
     font-weight: 600;
-    white-space: nowrap;
 }
 
 .ai-query-table tbody tr:last-child td {
@@ -3435,6 +3494,10 @@ body.is-navigation-dragging * {
 
     .ai-plan-panel {
         padding: var(--space-3);
+    }
+
+    .ai-panel-resizer {
+        display: none;
     }
 }
 

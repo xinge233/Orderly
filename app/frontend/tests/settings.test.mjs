@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { AI_ICON_OPTIONS, normalizeAiIcon } from "../src/icons.js";
 import {
+    normalizeAiPanelWidth,
     normalizeSettings,
     normalizeThemeCatalog,
     reconcileAppliedTheme,
@@ -138,10 +139,26 @@ test("invalid settings fall back to safe defaults", () => {
         theme: "unknown",
         motion: "gentle",
         aiIcon: "spark",
+        aiPanelWidth: 460,
         notifications: true,
         moduleOrderIds: []
     });
 });
+
+test("AI panel width is bounded and persisted as local presentation", () => {
+    assert.equal(normalizeAiPanelWidth(null), 460);
+    assert.equal(normalizeAiPanelWidth(200), 340);
+    assert.equal(normalizeAiPanelWidth(900), 720);
+    assert.equal(normalizeAiPanelWidth("512"), 512);
+
+    const storage = memoryStorage();
+    const store = new SettingsStore({ storage, storageKey: "ai-panel-width" });
+    store.update({ aiPanelWidth: 512 });
+
+    assert.equal(store.getSnapshot().aiPanelWidth, 512);
+    assert.match(storage.getItem(), /"aiPanelWidth":512/);
+});
+
 test("AI icon options are built in and invalid stored values fall back to spark", () => {
     assert.deepEqual(
         AI_ICON_OPTIONS.map((option) => option.value),

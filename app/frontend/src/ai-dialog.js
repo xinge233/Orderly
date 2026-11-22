@@ -6,8 +6,9 @@
  * 都通过 app.js 注入的回调完成。
  *
  * 状态来源：AI 设置来自宿主快照，回合结果来自 interpretGoal，计划执行结果来自
- * confirmAiPlan；拖动位置是唯一进入 localStorage 的局部界面偏好。API Key 仅存在于
- * 输入控件和 Python 服务进程内，不进入本模块状态或浏览器存储。
+ * confirmAiPlan；拖动位置保存在本组件 localStorage，面板宽度通过注入的本地外观
+ * 设置回调持久化。API Key 仅存在于输入控件和 Python 服务进程内，不进入本模块状态
+ * 或浏览器存储。
  *
  * 边界：Java 宿主仍是契约校验、授权、执行、快照、审计和回滚的唯一控制面；本组件
  * 只负责界面状态、交互动画和结果呈现，失败时不得伪造计划或执行成功。
@@ -22,6 +23,10 @@ import {
     resolveQueryPath,
     summarizeQueryPayload
 } from "./models.js";
+import {
+    AI_PANEL_WIDTH_LIMITS,
+    normalizeAiPanelWidth
+} from "./settings.js";
 
 const AI_RISK_ORDER = Object.freeze({
     READ_ONLY: 0,
@@ -39,6 +44,9 @@ const AI_PROGRESS_HIDE_DELAY_MS = 140;
 const AI_RUNNING_LEAVE_DELAY_MS = 120;
 const AI_DRAG_THRESHOLD_PX = 6;
 const AI_SNAP_DISTANCE_PX = 76;
+const AI_PANEL_RESIZE_STEP_PX = 16;
+const AI_PANEL_RESIZE_FINE_STEP_PX = 4;
+const AI_PANEL_MOBILE_QUERY = "(max-width: 620px)";
 const AI_POSITION_STORAGE_KEY = "orderly.ai.dock.position.v1";
 const AI_VIEWPORT_MARGIN_PX = 12;
 const AI_INVOCATION_TYPES = new Set(["STEP", "QUERY"]);
@@ -109,7 +117,7 @@ export function invocationEventModuleId(event, startedAt = 0) {
  * @param {number} [input.gap=12] 面板间距
  * @param {number} [input.composerWidth=720] 首选输入区宽度
  * @param {number} [input.composerHeight=68] 输入区高度
- * @param {number} [input.planWidth=288] 首选计划宽度
+ * @param {number} [input.planWidth=460] 首选面板宽度
  * @param {number} [input.planContentHeight=420] 计划内容自然高度
  * @param {boolean} [input.composerOpen=true] 输入区是否打开
  * @returns {{
@@ -137,7 +145,7 @@ export function resolveAiSurfaceLayout({
     gap = 12,
     composerWidth = 720,
     composerHeight = 68,
-    planWidth = 288,
+    planWidth = AI_PANEL_WIDTH_LIMITS.default,
     planContentHeight = 420,
     composerOpen = true
 }) {
@@ -209,6 +217,53 @@ export function resolveAiSurfaceLayout({
             bottom: planBottom
         }
     };
+}
+
+/**
+ * 按拖动方向和当前可用空间计算 AI 面板宽度。
+ *
+ * 面板从 Dock 向右展开时拖动右边缘，位移为正即变宽；向左展开时拖动左边缘，
+ * 位移为负才变宽。结果同时受用户上限和当前视口可用空间限制。
+ *
+ * @param {object} input 调宽参数
+ * @param {number} input.startWidth 起始宽度
+ * @param {number} input.deltaX 指针水平位移
+ * @param {"left" | "right"} [input.edge] 当前可拖动边缘
+ * @param {number} [input.minimum] 最小宽度
+ * @param {number} [input.maximum] 最大宽度
+ * @param {number} [input.availableWidth] 当前视口可用空间
+ * @returns {number} 夹紧后的整数像素宽度
+ */
+export function resolveAiPanelResizeWidth({
+    startWidth = AI_PANEL_WIDTH_LIMITS.default,
+    deltaX = 0,
+    edge = "right",
+    minimum = AI_PANEL_WIDTH_LIMITS.minimum,
+    maximum = AI_PANEL_WIDTH_LIMITS.maximum,
+    availableWidth = maximum
+} = {}) {
+    const rawStart = Number(startWidth);
+    const rawDelta = Number(deltaX);
+    const rawMaximum = Number(maximum);
+    const rawMinimum = Number(minimum);
+    const rawAvailable = Number(availableWidth);
+    const safeMaximum = Math.max(
+        1,
+        Math.min(
+            Number.isFinite(rawMaximum) ? rawMaximum : AI_PANEL_WIDTH_LIMITS.maximum,
+            Number.isFinite(rawAvailable) ? rawAvailable : AI_PANEL_WIDTH_LIMITS.maximum
+        )
+    );
+    const safeMinimum = Math.min(
+        safeMaximum,
+        Number.isFinite(rawMinimum) ? rawMinimum : AI_PANEL_WIDTH_LIMITS.minimum
+    );
+    const base = Number.isFinite(rawStart)
+        ? rawStart
+        : AI_PANEL_WIDTH_LIMITS.default;
+    const delta = Number.isFinite(rawDelta) ? rawDelta : 0;
+    const candidate = edge === "left" ? base - delta : base + delta;
+    return Math.round(Math.min(safeMaximum, Math.max(safeMinimum, candidate)));
 }
 
 /**
@@ -375,7 +430,8 @@ export function executionCompletedModules(execution) {
  * 统一关闭延迟任务和调用轨迹。
  *
  * 副作用：查询并绑定 dock 内 DOM、注册 document/window 监听器、恢复 localStorage
- * 中的 Dock 位置、创建动画/定时器，并在页面隐藏或 destroy 时清理长生命周期资源。
+ * 中的 Dock 位置、读写 AI 面板宽度、创建动画/定时器，并在页面隐藏或 destroy 时
+ * 清理长生命周期资源。
  *
  * @param {object} options 挂载配置
  * @param {HTMLElement} options.dock AI Dock 根节点
@@ -389,12 +445,15 @@ export function executionCompletedModules(execution) {
  * @param {(planId: string) => Promise<object>} [options.confirmAiPlan] 请求宿主确认并执行独立 AI 计划
  * @param {(request: object) => Promise<boolean>} [options.beforeAiTurn] 在请求模型前等待模块构建完成
  * @param {(settings: object) => void} [options.onAiSettingsChanged] 回传已归一化设置
+ * @param {() => number} [options.getAiPanelWidth] 读取持久化的面板宽度
+ * @param {(width: number) => void} [options.onAiPanelWidthChange] 保存面板宽度
  * @param {(execution: object | null) => void} [options.onExecutionFinished] 通知框架刷新受影响模块
  * @param {(message: string, options?: {error?: boolean}) => void} [options.onNotice] 显示框架级提示
  * @returns {{
  *     setEnabled: (enabled: boolean) => void,
  *     reset: () => void,
  *     setAiSettings: (settings: object) => void,
+ *     setPanelWidth: (width: number) => void,
  *     setIcon: (name: string) => void,
  *     openWithText: (text?: string) => void,
  *     destroy: () => void
@@ -418,6 +477,8 @@ export function mountAiDialog({
     },
     beforeAiTurn = async () => true,
     onAiSettingsChanged = () => {},
+    getAiPanelWidth = () => AI_PANEL_WIDTH_LIMITS.default,
+    onAiPanelWidthChange = () => {},
     onExecutionFinished = () => {},
     onNotice = () => {}
 }) {
@@ -436,6 +497,7 @@ export function mountAiDialog({
         composerSend: dock.querySelector("#ai-send-button"),
         sendIcon: dock.querySelector("#ai-send-icon"),
         plan: dock.querySelector("#ai-plan-panel"),
+        resizer: dock.querySelector("#ai-panel-resizer"),
         planEyebrow: dock.querySelector(".ai-plan-panel__eyebrow"),
         planClose: dock.querySelector("#ai-plan-close"),
         planTitle: dock.querySelector("#ai-plan-title"),
@@ -486,7 +548,12 @@ export function mountAiDialog({
         contentAnimation: null,
         snapAnimation: null,
         drag: null,
+        panelResize: null,
+        panelWidth: normalizeAiPanelWidth(getAiPanelWidth()),
+        panelEffectiveWidth: AI_PANEL_WIDTH_LIMITS.default,
+        panelAvailableWidth: AI_PANEL_WIDTH_LIMITS.maximum,
         dragging: false,
+        resizing: false,
         morphing: false,
         snapAnimating: false,
         aiIcon: "spark",
@@ -598,6 +665,37 @@ export function mountAiDialog({
         return Number.isFinite(parsed) ? parsed : fallback;
     }
 
+    function syncPanelResizeControl(layout) {
+        const edge = layout.horizontal === "right" ? "right" : "left";
+        const mobile = typeof window.matchMedia === "function"
+            && window.matchMedia(AI_PANEL_MOBILE_QUERY).matches;
+        const disabled = mobile
+            || layout.availableWidth <= AI_PANEL_WIDTH_LIMITS.minimum;
+        const minimum = Math.max(1, Math.min(
+            AI_PANEL_WIDTH_LIMITS.minimum,
+            Math.floor(layout.availableWidth)
+        ));
+        const maximum = Math.max(minimum, Math.min(
+            AI_PANEL_WIDTH_LIMITS.maximum,
+            Math.floor(layout.availableWidth)
+        ));
+        nodes.plan.dataset.resizeEdge = edge;
+        nodes.resizer.hidden = disabled;
+        nodes.resizer.tabIndex = disabled ? -1 : 0;
+        nodes.resizer.setAttribute("aria-hidden", String(disabled));
+        nodes.resizer.setAttribute("aria-valuemin", String(minimum));
+        nodes.resizer.setAttribute("aria-valuemax", String(maximum));
+        nodes.resizer.setAttribute(
+            "aria-valuenow",
+            String(Math.round(layout.planWidth))
+        );
+        nodes.resizer.setAttribute(
+            "aria-valuetext",
+            `${Math.round(layout.planWidth)} 像素`
+        );
+        dock.dataset.panelResizable = String(!disabled);
+    }
+
     function readStoredPosition() {
         try {
             const raw = window.localStorage.getItem(AI_POSITION_STORAGE_KEY);
@@ -647,10 +745,7 @@ export function mountAiDialog({
             style.getPropertyValue(free ? "--ai-composer-free-width" : "--ai-composer-width"),
             free ? 720 : 860
         );
-        const basePlanWidth = cssPixels(
-            style.getPropertyValue("--ai-plan-width"),
-            288
-        );
+        const basePlanWidth = normalizeAiPanelWidth(dialog.panelWidth);
         const composerHeight = nodes.composerForm.offsetHeight
             || cssPixels(style.getPropertyValue("--ai-composer-height"), 68);
         const gap = cssPixels(style.getPropertyValue("--space-3"), 12);
@@ -679,6 +774,9 @@ export function mountAiDialog({
         nodes.plan.style.width = `${layout.planWidth}px`;
         nodes.plan.style.maxHeight = `${layout.maxPlanHeight}px`;
         nodes.progress.style.width = `${Math.min(280, layout.availableWidth)}px`;
+        dialog.panelEffectiveWidth = layout.planWidth;
+        dialog.panelAvailableWidth = layout.availableWidth;
+        syncPanelResizeControl(layout);
 
         const horizontalAxis = layout.horizontal === "right"
             ? { left: "0px", right: "auto" }
@@ -881,6 +979,7 @@ export function mountAiDialog({
         dock.dataset.panel = planOpen ? "open" : "closed";
         dock.dataset.popover = dialog.popoverOpen ? "open" : "closed";
         dock.dataset.dragging = dialog.dragging ? "true" : "false";
+        dock.dataset.resizing = dialog.resizing ? "true" : "false";
         dock.dataset.expanded = expanded ? "true" : "false";
         dock.dataset.morphing = dialog.morphing ? "true" : "false";
         dock.dataset.snapAnimating = dialog.snapAnimating ? "true" : "false";
@@ -1745,6 +1844,7 @@ export function mountAiDialog({
         dialog.collapseTimer = later(() => {
             dialog.collapseTimer = null;
             if (dialog.mode === "running" && dialog.panelOpen
+                && !dialog.resizing
                 && !dock.matches(":hover")
                 && !dock.contains(document.activeElement)) {
                 collapsePlanOnly({ focusLauncher: true });
@@ -2357,6 +2457,118 @@ export function mountAiDialog({
         }
     }
 
+    // 面板宽度只由一次松手或键盘操作落盘；拖动帧本身只更新几何，避免高频写 Storage。
+    function storePanelWidth(width) {
+        const normalized = normalizeAiPanelWidth(width);
+        dialog.panelWidth = normalized;
+        try {
+            onAiPanelWidthChange(normalized);
+        } catch {
+            // 本地设置写入失败时保留本次会话宽度，不阻断面板交互。
+        }
+    }
+
+    function onPanelResizePointerDown(event) {
+        if (event.button !== 0
+            || nodes.resizer.hidden
+            || nodes.resizer.getAttribute("aria-hidden") === "true") {
+            return;
+        }
+        const edge = nodes.plan.dataset.resizeEdge === "left" ? "left" : "right";
+        const rect = nodes.plan.getBoundingClientRect();
+        dialog.panelResize = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startWidth: rect.width || dialog.panelEffectiveWidth,
+            edge,
+            changed: false
+        };
+        dialog.resizing = true;
+        dock.dataset.resizing = "true";
+        event.preventDefault();
+        try {
+            nodes.resizer.setPointerCapture?.(event.pointerId);
+        } catch {
+            // 合成事件或已结束指针仍可通过页面坐标完成调宽。
+        }
+    }
+
+    function onPanelResizePointerMove(event) {
+        const resize = dialog.panelResize;
+        if (!resize || resize.pointerId !== event.pointerId) {
+            return;
+        }
+        const width = resolveAiPanelResizeWidth({
+            startWidth: resize.startWidth,
+            deltaX: event.clientX - resize.startX,
+            edge: resize.edge,
+            minimum: AI_PANEL_WIDTH_LIMITS.minimum,
+            maximum: AI_PANEL_WIDTH_LIMITS.maximum,
+            availableWidth: dialog.panelAvailableWidth
+        });
+        resize.changed = resize.changed || width !== dialog.panelEffectiveWidth;
+        dialog.panelWidth = width;
+        updateExpandedGeometry();
+        event.preventDefault();
+    }
+
+    function finishPanelResize(event) {
+        const resize = dialog.panelResize;
+        if (!resize || resize.pointerId !== event.pointerId) {
+            return;
+        }
+        dialog.panelResize = null;
+        dialog.resizing = false;
+        dock.dataset.resizing = "false";
+        if (nodes.resizer.hasPointerCapture?.(event.pointerId)) {
+            try {
+                nodes.resizer.releasePointerCapture(event.pointerId);
+            } catch {
+                // 指针捕获可能已由浏览器自动释放。
+            }
+        }
+        if (resize.changed) {
+            storePanelWidth(dialog.panelEffectiveWidth);
+        }
+        updateExpandedGeometry();
+    }
+
+    function onPanelResizerKeyDown(event) {
+        if (nodes.resizer.hidden
+            || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+            return;
+        }
+        event.preventDefault();
+        const minimum = Number(nodes.resizer.getAttribute("aria-valuemin"))
+            || AI_PANEL_WIDTH_LIMITS.minimum;
+        const maximum = Number(nodes.resizer.getAttribute("aria-valuemax"))
+            || AI_PANEL_WIDTH_LIMITS.maximum;
+        if (event.key === "Home" || event.key === "End") {
+            dialog.panelWidth = event.key === "Home" ? minimum : maximum;
+        } else {
+            const step = event.shiftKey
+                ? AI_PANEL_RESIZE_FINE_STEP_PX
+                : AI_PANEL_RESIZE_STEP_PX;
+            dialog.panelWidth = resolveAiPanelResizeWidth({
+                startWidth: dialog.panelEffectiveWidth,
+                deltaX: event.key === "ArrowRight" ? step : -step,
+                edge: "right",
+                minimum,
+                maximum,
+                availableWidth: dialog.panelAvailableWidth
+            });
+        }
+        updateExpandedGeometry();
+        storePanelWidth(dialog.panelEffectiveWidth);
+    }
+
+    function resetPanelWidth(event) {
+        event?.preventDefault();
+        dialog.panelWidth = AI_PANEL_WIDTH_LIMITS.default;
+        updateExpandedGeometry();
+        storePanelWidth(AI_PANEL_WIDTH_LIMITS.default);
+    }
+
     // 点击 Dock 外部只收起计划面板，保留已打开的输入区；这样用户可以在不中断
     // composing 状态的情况下查看主界面，符合输入区与计划面板可共存的设计。
     function onDocumentPointerDown(event) {
@@ -2414,7 +2626,7 @@ export function mountAiDialog({
         dialog.collapseTimer = null;
     });
     nodes.plan.addEventListener("pointerleave", () => {
-        if (dialog.mode === "running") {
+        if (dialog.mode === "running" && !dialog.resizing) {
             scheduleRunningCollapse();
         }
     });
@@ -2423,10 +2635,16 @@ export function mountAiDialog({
         dialog.collapseTimer = null;
     });
     nodes.plan.addEventListener("focusout", () => {
-        if (dialog.mode === "running") {
+        if (dialog.mode === "running" && !dialog.resizing) {
             scheduleRunningCollapse();
         }
     });
+    nodes.resizer.addEventListener("pointerdown", onPanelResizePointerDown);
+    nodes.resizer.addEventListener("pointermove", onPanelResizePointerMove);
+    nodes.resizer.addEventListener("pointerup", finishPanelResize);
+    nodes.resizer.addEventListener("pointercancel", finishPanelResize);
+    nodes.resizer.addEventListener("keydown", onPanelResizerKeyDown);
+    nodes.resizer.addEventListener("dblclick", resetPanelWidth);
     nodes.run.addEventListener("click", () => void confirmPlan());
     dock.addEventListener("keydown", onDockKeyDown);
     document.addEventListener("pointerdown", onDocumentPointerDown);
@@ -2445,6 +2663,8 @@ export function mountAiDialog({
         dialog.iconAnimation = null;
         dialog.contentAnimation = null;
         dialog.snapAnimation = null;
+        dialog.panelResize = null;
+        dialog.resizing = false;
         clearAllTimers();
         clearInvocationLayer();
     };
@@ -2473,6 +2693,13 @@ export function mountAiDialog({
                 return;
             }
             updateSurfaces();
+        },
+        setPanelWidth(width) {
+            if (dialog.resizing) {
+                return;
+            }
+            dialog.panelWidth = normalizeAiPanelWidth(width);
+            updateExpandedGeometry();
         },
         setIcon(name) {
             dialog.aiIcon = normalizeAiIcon(name);

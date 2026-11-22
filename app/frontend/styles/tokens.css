@@ -43,7 +43,9 @@
         --sidebar-expanded-width: 272px;
         --sidebar-row-height: 48px;
         --sidebar-icon-size: 40px;
-        --ai-plan-width: 288px;
+        --ai-panel-width: 460px;
+        --ai-panel-min-width: 340px;
+        --ai-panel-max-width: 720px;
         --ai-launcher-size: 58px;
         --ai-composer-width: 860px;
         --ai-composer-free-width: 720px;

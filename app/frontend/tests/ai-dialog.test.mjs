@@ -9,6 +9,7 @@ import {
     executionSucceeded,
     higherAiRisk,
     invocationEventModuleId,
+    resolveAiPanelResizeWidth,
     resolveAiSnapPosition,
     resolveAiSurfaceLayout
 } from "../src/ai-dialog.js";
@@ -106,7 +107,7 @@ test("AI dialog delegates model work through injected callbacks", async () => {
         component,
         /import \{ icon, normalizeAiIcon \} from "\.\/icons\.js"/
     );
-    assert.doesNotMatch(component, /from "\.\/settings\.js"/);
+    assert.match(component, /from "\.\/settings\.js"/);
     assert.doesNotMatch(component, /\bfetch\s*\(/);
     assert.doesNotMatch(component, /OrderlyApi|draftPlan|executeAiActions/);
     assert.match(component, /interpretGoal/);
@@ -119,6 +120,7 @@ test("AI dialog delegates model work through injected callbacks", async () => {
 
 test("AI dialog renders bounded QUERY results without inventing actions or plans", async () => {
     const component = await read("../src/ai-dialog.js");
+    const css = await read("../styles/app.css");
     const models = await read("../src/models.js");
 
     assert.match(component, /normalizeAiQueryResponse/);
@@ -134,6 +136,8 @@ test("AI dialog renders bounded QUERY results without inventing actions or plans
     assert.match(component, /query\.status === "TRUNCATED"/);
     assert.match(component, /TRUNCATED[\s\S]*?"truncated"/);
     assert.match(component, /"error",\s*"query"/);
+    assert.match(css, /\.ai-query-result\s*\{[\s\S]*?font-size:\s*var\(--font-size-small\);[\s\S]*?line-height:\s*1\.55;/);
+    assert.match(css, /\.ai-query-table\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?font-size:\s*var\(--font-size-small\);/);
     assert.match(models, /declaredQueries\.slice\(0, AI_QUERY_LIMIT\)/);
     assert.match(models, /statusText === "OK" && Object\.hasOwn\(result, "payload"\)/);
 });
@@ -191,6 +195,10 @@ test("AI dock exposes the required themed surfaces and states", async () => {
     assert.match(dialog, /id="ai-launcher"/);
     assert.match(dialog, /id="ai-composer"/);
     assert.match(dialog, /id="ai-plan-panel"/);
+    assert.match(dialog, /id="ai-panel-resizer"/);
+    assert.match(dialog, /role="separator"/);
+    assert.match(dialog, /aria-orientation="vertical"/);
+    assert.match(dialog, /aria-controls="ai-plan-panel"/);
     assert.match(dialog, /id="ai-plan-list" aria-live="polite"/);
     assert.match(dialog, /id="ai-plan-close"/);
     assert.match(dialog, /id="ai-progress-popover"/);
@@ -203,7 +211,9 @@ test("AI dock exposes the required themed surfaces and states", async () => {
     assert.match(html, /id="ai-snap-target"/);
     assert.match(dialog, /data-anchor="default"/);
     assert.match(dialog, /data-composer="closed"/);
-    assert.match(tokens, /--ai-plan-width:\s*288px;/);
+    assert.match(tokens, /--ai-panel-width:\s*460px;/);
+    assert.match(tokens, /--ai-panel-min-width:\s*340px;/);
+    assert.match(tokens, /--ai-panel-max-width:\s*720px;/);
     assert.match(tokens, /--ai-launcher-size:\s*58px;/);
     assert.match(tokens, /--ai-composer-width:\s*860px;/);
     assert.match(tokens, /--ai-composer-free-width:\s*720px;/);
@@ -212,6 +222,9 @@ test("AI dock exposes the required themed surfaces and states", async () => {
     assert.match(tokens, /--duration-ai-call:\s*180ms;/);
     assert.match(css, /\.ai-dock\[data-composer="open"\] \.ai-composer/);
     assert.match(css, /\.ai-dock\[data-panel="open"\] \.ai-plan-panel/);
+    assert.match(css, /\.ai-panel-resizer\s*\{[\s\S]*?cursor:\s*ew-resize;/);
+    assert.match(css, /\.ai-plan-panel\[data-resize-edge="left"\] \.ai-panel-resizer/);
+    assert.match(css, /\.ai-plan-panel\[data-resize-edge="right"\] \.ai-panel-resizer/);
     assert.match(css, /\.ai-dock\[data-popover="open"\] \.ai-progress-popover/);
     assert.match(css, /\.ai-risk-indicator\[data-risk="WRITE"\][\s\S]*?var\(--color-warning-soft\)/);
     assert.match(css, /\.ai-risk-indicator\[data-risk="DELETE"\][\s\S]*?var\(--color-danger\)/);
@@ -333,6 +346,46 @@ test("AI dock supports persistent dragging, snapping and viewport clamping", asy
     assert.match(css, /\.ai-dock\[data-anchor="free"\]/);
 });
 
+test("AI panels share bounded pointer and keyboard resizing", async () => {
+    const component = await read("../src/ai-dialog.js");
+    const css = await read("../styles/app.css");
+
+    assert.equal(resolveAiPanelResizeWidth({
+        startWidth: 460,
+        deltaX: 80,
+        edge: "right",
+        availableWidth: 720
+    }), 540);
+    assert.equal(resolveAiPanelResizeWidth({
+        startWidth: 460,
+        deltaX: -80,
+        edge: "left",
+        availableWidth: 720
+    }), 540);
+    assert.equal(resolveAiPanelResizeWidth({
+        startWidth: 460,
+        deltaX: 1000,
+        edge: "right",
+        availableWidth: 580
+    }), 580);
+    assert.equal(resolveAiPanelResizeWidth({
+        startWidth: 460,
+        deltaX: -1000,
+        edge: "right"
+    }), 340);
+
+    assert.match(component, /getAiPanelWidth/);
+    assert.match(component, /onAiPanelWidthChange/);
+    assert.match(component, /function onPanelResizePointerDown/);
+    assert.match(component, /function onPanelResizePointerMove/);
+    assert.match(component, /function onPanelResizerKeyDown/);
+    assert.match(component, /nodes\.resizer\.addEventListener\("dblclick", resetPanelWidth\)/);
+    assert.match(component, /nodes\.resizer\.setPointerCapture/);
+    assert.match(component, /dock\.dataset\.panelResizable/);
+    assert.match(css, /\.ai-panel-resizer\[hidden\]/);
+    assert.match(css, /\.ai-dock\[data-resizing="true"\] \.ai-plan-panel/);
+});
+
 test("only a fully collapsed dock accepts pointer or keyboard movement", () => {
     assert.equal(canDragAiDock({}), true);
     assert.equal(canDragAiDock({ composerOpen: true }), false);
@@ -426,7 +479,7 @@ test("AI surfaces stay inside four viewport corners without overlapping", () => 
                 gap,
                 composerWidth: 720,
                 composerHeight,
-                planWidth: 288,
+                planWidth: 460,
                 planContentHeight: 420,
                 composerOpen: true
             });
