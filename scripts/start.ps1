@@ -11,13 +11,14 @@
 #   并要求复用现有 ai/.venv；该开关不宣称 Node 或整个应用离线。
 #   -MavenOffline 只让 Maven 使用包内 maven-repository 严格离线构建，
 #   Python 环境仍由 ensure-env.ps1 正常准备。
+#   -AiExecutable 使用应用目录内的 PyInstaller AI 可执行文件，跳过 Python 环境准备。
 #   -MaxParallel 原样透传给前台完整构建，默认 1；后台并发由宿主持久化设置决定。
 #   JAVA_HOME 必须指向 JDK 21，模块和主题目录由仓库根目录推导。
 #
 # 副作用：
 #   未跳过构建时写入 target、对应 Maven 本地仓库和 ai/.venv；启动期间占用 Java 端口及一个临时回环端口，
-#   Python 子进程当前以隐藏窗口启动且未捕获或转发标准日志，失败主要由启动健康检查和退出码体现；
-#   Java 退出后脚本也会终止本次创建的 Python 进程。
+#   AI 子进程以隐藏窗口启动；后台模式写独立日志，前台模式由健康检查和退出码体现失败。
+#   Java 退出后脚本也会终止本次创建的 AI 进程。
 #
 # 安全边界：
 #   每次运行生成随机 Bearer Token，只放入当前进程及 Python 子进程环境，不写入仓库或普通配置。
@@ -33,7 +34,8 @@ param(
     [ValidateRange(1, 2147483647)]
     [int]$MaxParallel = 1,
     [switch]$BackgroundModules,
-    [string]$RuntimeManifest
+    [string]$RuntimeManifest,
+    [string]$AiExecutable
 )
 
 if ($SkipBuild -and $ForceBuild) {
@@ -58,6 +60,26 @@ $modulesRoot = Join-Path $repoRoot "target\orderly-modules"
 $themesRoot = Join-Path $repoRoot "themes"
 $aiEnvScript = Join-Path $repoRoot "ai\scripts\ensure-env.ps1"
 $buildManifestPath = Join-Path $repoRoot "target\build-manifest.json"
+$aiExecutablePath = if ([string]::IsNullOrWhiteSpace($AiExecutable)) {
+    ""
+}
+else {
+    $candidate = [System.IO.Path]::GetFullPath($AiExecutable)
+    $fullRoot = [System.IO.Path]::GetFullPath($repoRoot).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    if (-not $candidate.StartsWith(
+            $fullRoot + [System.IO.Path]::DirectorySeparatorChar,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )) {
+        throw "AI 可执行文件必须位于应用目录内：$candidate"
+    }
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+        throw "AI 可执行文件不存在：$candidate"
+    }
+    $candidate
+}
 
 function Invoke-NativeCapture {
     param(
@@ -298,13 +320,20 @@ function Invoke-BackgroundStart {
         [Parameter(Mandatory = $true)][string]$ModulesDirectory,
         [Parameter(Mandatory = $true)][string]$ThemesDirectory,
         [Parameter(Mandatory = $true)][int]$HttpPort,
+        [string]$AiExecutable,
         [switch]$OfflineMode,
         [switch]$SkipMavenTests,
         [switch]$UseMavenOffline,
         [string]$Repository,
         [switch]$SkipBackgroundModules
     )
-    $logRoot = Join-Path $repoRoot "target\background"
+    $runtimeStateRoot = if ([string]::IsNullOrWhiteSpace($env:ORDERLY_DATA_DIR)) {
+        Join-Path $repoRoot "target"
+    }
+    else {
+        Join-Path $env:ORDERLY_DATA_DIR "runtime"
+    }
+    $logRoot = Join-Path $runtimeStateRoot "background"
     [System.IO.Directory]::CreateDirectory($logRoot) | Out-Null
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $javaOut = Join-Path $logRoot "java-$stamp.out.log"
@@ -335,13 +364,16 @@ function Invoke-BackgroundStart {
             "-Dorderly.module-source-dir=$repoRoot\Module",
             "-Dorderly.themes-dir=$ThemesDirectory",
             ("-Dorderly.background-modules-enabled=" + $(if ($SkipBackgroundModules) { "false" } else { "true" })),
-            "-Dorderly.module-build-status=$repoRoot\target\module-build-status.json",
-            "-Dorderly.module-build-priority=$repoRoot\target\module-build-priority.json",
+            "-Dorderly.module-build-status=$(Join-Path $runtimeStateRoot 'module-build-status.json')",
+            "-Dorderly.module-build-priority=$(Join-Path $runtimeStateRoot 'module-build-priority.json')",
             "-Dorderly.ai-service.url=$aiBaseUrl",
             "-jar",
             $HostJar,
             "--server.port=$HttpPort"
         )
+        if (-not [string]::IsNullOrWhiteSpace($env:ORDERLY_DATA_DIR)) {
+            $javaArguments = @("-Dorderly.data-dir=$env:ORDERLY_DATA_DIR") + $javaArguments
+        }
         Write-Host "使用 Java：$JavaExecutable"
         Write-Host "模块目录：$ModulesDirectory"
         Write-Host "本地地址：$baseUrl/"
@@ -368,6 +400,8 @@ function Invoke-BackgroundStart {
                 (Join-Path $PSScriptRoot "build-module-background.ps1"),
                 "-BaseUrl",
                 $baseUrl,
+                "-RuntimeStateRoot",
+                $runtimeStateRoot,
                 "-SkipKernelInstall"
             )
             if ($SkipMavenTests) {
@@ -400,6 +434,8 @@ function Invoke-BackgroundStart {
                 $baseUrl,
                 "-InitialBuilderPid",
                 [string]$builderProcess.Id,
+                "-RuntimeStateRoot",
+                $runtimeStateRoot,
                 "-SkipKernelInstall"
             )
             if ($SkipMavenTests) {
@@ -427,6 +463,17 @@ function Invoke-BackgroundStart {
 
         $aiPreparationError = $null
         try {
+            if (-not [string]::IsNullOrWhiteSpace($AiExecutable)) {
+                $aiProcess = Start-Process `
+                    -FilePath $AiExecutable `
+                    -ArgumentList (Join-ProcessArguments @("--port", [string]$aiPort)) `
+                    -WorkingDirectory (Split-Path -Parent $AiExecutable) `
+                    -WindowStyle Hidden `
+                    -RedirectStandardOutput $aiOut `
+                    -RedirectStandardError $aiErr `
+                    -PassThru
+            }
+            else {
             if ($OfflineMode) {
                 $python = Join-Path $repoRoot "ai\.venv\Scripts\python.exe"
                 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
@@ -455,11 +502,15 @@ function Invoke-BackgroundStart {
                 -RedirectStandardOutput $aiOut `
                 -RedirectStandardError $aiErr `
                 -PassThru
+            }
             Wait-AiService -BaseUrl $aiBaseUrl -Token $env:ORDERLY_AI_IPC_TOKEN -Process $aiProcess
             Write-Host "AI 服务已就绪：$aiBaseUrl"
         }
         catch {
             $aiPreparationError = $_
+            if (-not [string]::IsNullOrWhiteSpace($AiExecutable)) {
+                throw $aiPreparationError
+            }
             Write-Warning "Java 与模块构建继续运行，但 AI 服务未就绪：$($_.Exception.Message)"
         }
 
@@ -572,7 +623,10 @@ else {
     }
     else {
         $jar = Get-ChildItem -LiteralPath (Join-Path $hostRoot "target") -Filter "*.jar" -File |
-            Where-Object { $_.Name -notlike "*.original" } |
+            Where-Object {
+                $_.Name -notlike "*.original" -and
+                $_.Name -notlike "*-launcher.jar"
+            } |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
     }
@@ -588,6 +642,7 @@ if ($BackgroundModules -or $null -ne $runtime) {
         -ModulesDirectory $modulesRoot `
         -ThemesDirectory $themesRoot `
         -HttpPort $Port `
+        -AiExecutable $aiExecutablePath `
         -OfflineMode:$Offline `
         -SkipMavenTests:(-not $RuntimeManifest) `
         -UseMavenOffline:($Offline -or $MavenOffline) `
@@ -596,20 +651,22 @@ if ($BackgroundModules -or $null -ne $runtime) {
     return
 }
 
-if ($Offline) {
+$python = ""
+if ([string]::IsNullOrWhiteSpace($AiExecutable) -and $Offline) {
     # 严格 Maven 离线启动不得触发 ensure-env 的 pip 网络安装；复用已准备好的 AI 环境。
     $python = Join-Path $repoRoot "ai\.venv\Scripts\python.exe"
     if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
         throw "严格离线启动需要现有 ai/.venv；未运行 ensure-env.ps1，也不会联网安装 Python 依赖。"
     }
 }
-else {
+elseif ([string]::IsNullOrWhiteSpace($AiExecutable)) {
     if (-not (Test-Path -LiteralPath $aiEnvScript -PathType Leaf)) {
         throw "未找到 Python AI 环境脚本：$aiEnvScript"
     }
     $python = & $aiEnvScript
 }
-if (-not $python -or -not (Test-Path -LiteralPath $python -PathType Leaf)) {
+if ([string]::IsNullOrWhiteSpace($AiExecutable) -and
+        (-not $python -or -not (Test-Path -LiteralPath $python -PathType Leaf))) {
     throw "Python AI 环境准备失败。"
 }
 
@@ -631,23 +688,39 @@ try {
     Write-Host "AI 服务：$aiBaseUrl"
     Write-Host "本地地址：http://127.0.0.1:$Port/"
     # Python 作为受控子进程后台运行，日志和生命周期由当前启动会话负责。
-    $aiProcess = Start-Process -FilePath $python `
-        -ArgumentList @("-m", "orderly_ai", "--port", [string]$aiPort) `
-        -WorkingDirectory $repoRoot `
-        -WindowStyle Hidden `
-        -PassThru
+    if (-not [string]::IsNullOrWhiteSpace($AiExecutable)) {
+        $aiProcess = Start-Process `
+            -FilePath $AiExecutable `
+            -ArgumentList (Join-ProcessArguments @("--port", [string]$aiPort)) `
+            -WorkingDirectory (Split-Path -Parent $AiExecutable) `
+            -WindowStyle Hidden `
+            -PassThru
+    }
+    else {
+        $aiProcess = Start-Process -FilePath $python `
+            -ArgumentList @("-m", "orderly_ai", "--port", [string]$aiPort) `
+            -WorkingDirectory $repoRoot `
+            -WindowStyle Hidden `
+            -PassThru
+    }
     Wait-AiService -BaseUrl $aiBaseUrl -Token $aiToken -Process $aiProcess
 
     # Java 是前台长驻进程。暂时使用 Continue 以读取真实退出码，随后由本脚本统一转成明确失败。
     $previousErrorActionPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = "Continue"
-        & $javaExe `
-            "-Dorderly.modules-dir=$modulesRoot" `
-            "-Dorderly.themes-dir=$themesRoot" `
-            "-Dorderly.ai-service.url=$aiBaseUrl" `
-            -jar $jar.FullName `
+        $hostArguments = @(
+            "-Dorderly.modules-dir=$modulesRoot",
+            "-Dorderly.themes-dir=$themesRoot",
+            "-Dorderly.ai-service.url=$aiBaseUrl",
+            "-jar",
+            $jar.FullName,
             "--server.port=$Port"
+        )
+        if (-not [string]::IsNullOrWhiteSpace($env:ORDERLY_DATA_DIR)) {
+            $hostArguments = @("-Dorderly.data-dir=$env:ORDERLY_DATA_DIR") + $hostArguments
+        }
+        & $javaExe @hostArguments
         $appExitCode = $LASTEXITCODE
     }
     finally {

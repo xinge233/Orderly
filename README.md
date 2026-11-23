@@ -16,10 +16,21 @@
 - AI Query：模型可选择模块已声明且允许 AI 调用的只读 Query，最多 4 条，由 Java 校验并执行。查询原始结果始终返回本地界面，并在受控大小上限内自动回传模型用于展示或后续决策；不提供可修改的发送开关。
 - 中央控制：风险分级、服务端确认、路径边界、快照、持久化执行记录、事件时间线和逆序回滚。
 - 本地界面：动态模块侧栏与总览、彼此独立的可持久化卡片和侧边栏排序、默认时间线且可切换摘要的历史记录、设置弹窗；旧版计划功能启用后恢复计划界面，独立的可拖动 AI 对话 Dock 始终可用。
+- Windows 完整版：正式应用包含 Java 运行时、完整 JDK 21、Maven、本地仓库、AI 可执行文件和模块源码。终端用户不需要自行安装 JDK、Python 或 Maven；只需单独提供真实模型 API Key。
 
 ## 启动
 
-环境要求：支持 Windows PowerShell 5.1 与 PowerShell 7+；另需 JDK 21、Maven 3.9+、Python 3.14。脚本显式使用 `JAVA_HOME\bin\java.exe`，因此必须把 `JAVA_HOME` 指向 JDK 21；即使 PATH 中还有另一个 Java 版本，也不会用于构建或启动。启动脚本会创建或复用 `ai/.venv`，安装 FastAPI、Uvicorn 和测试依赖，然后启动仅监听回环地址的 Python AI 服务。
+### Windows 完整版
+
+普通用户使用 GitHub Release 中的 `Orderly-0.1.0.exe` 安装器，或解压 `Orderly-0.1.0-full-app.zip` 后双击 `Orderly.exe`。安装器为当前用户安装，不需要管理员权限，也不需要安装 JDK、Python 或 Maven。完整版使用系统自带的 Windows PowerShell 5.1 作为启动编排层，其余构建和运行工具均来自应用目录。
+
+完整版运行时数据默认写入 `%LOCALAPPDATA%\Orderly\data`，包括工作区、回收站、执行记录、模块治理和日志。模块源码与运行 JAR 保留在安装目录；jpackage 的当前用户安装目录对该用户可写，因此设置界面中的模块下载、源码安装和本地 Maven 构建仍可工作。可通过 `ORDERLY_DATA_DIR` 把应用数据改到另一个专用目录。
+
+完整版安装器尚未进行代码签名，Windows SmartScreen 可能显示“未知发布者”。应用不会自动更新；升级前应保留 `%LOCALAPPDATA%\Orderly\data`，安装新版本后再次启动即可继续使用原有数据。
+
+### 源码开发
+
+源码开发环境要求：支持 Windows PowerShell 5.1 与 PowerShell 7+；另需 JDK 21、Maven 3.9+、Python 3.14。脚本显式使用 `JAVA_HOME\bin\java.exe`，因此必须把 `JAVA_HOME` 指向 JDK 21；即使 PATH 中还有另一个 Java 版本，也不会用于构建或启动。启动脚本会创建或复用 `ai/.venv`，安装 FastAPI、Uvicorn 和测试依赖，然后启动仅监听回环地址的 Python AI 服务。
 
 ```powershell
 .\scripts\start.ps1
@@ -65,7 +76,7 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 
 待构建模块会以真实构建状态显示在侧边栏和总览。点击待构建模块会写入优先请求；正在运行的 Maven 不会被抢占，调度器会在下一个可用 worker 上选择它。存在未就绪模块时，AI 输入会先提示等待；用户确认后，AI 在全部模块完成或失败前不会提交模型回合，也不会执行部分 Action。
 
-程序首次运行会在仓库根目录创建 `.orderly-data/`：
+源码启动首次运行会在仓库根目录创建 `.orderly-data/`；完整版默认使用 `%LOCALAPPDATA%\Orderly\data`：
 
 - `.orderly-data/workspace/`：隔离演示工作区。
 - `.orderly-data/trash/`：应用回收站。
@@ -104,6 +115,9 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 .\scripts\test-build-parallel.ps1
 .\scripts\test-build-plan.ps1
 .\scripts\test-startup-cache.ps1
+.\scripts\package-full.ps1 -OutputDirectory D:\Orderly-artifacts\0.1.0
+.\scripts\verify-full.ps1 D:\Orderly-artifacts\0.1.0\staging\Orderly
+.\scripts\verify-full-release-pair.ps1 D:\Orderly-artifacts\0.1.0\staging\Orderly <offline-source.zip>
 .\scripts\package-runtime.ps1
 .\scripts\verify-runtime.ps1 .\target\orderly-runtime\Orderly-0.1.0-runtime.zip
 .\scripts\verify-release-pair.ps1 <runtime.zip> <offline-source.zip>
@@ -117,13 +131,30 @@ DOCX 结构校验不判断文字内容和页面排版。实际修改 DOCX 内容
 
 `gate.ps1` 会先无条件调用 `scripts/doc-gate.ps1`。当变更是纯 Markdown/DOCX 文档时，`gate.ps1` 在文档门禁成功后直接退出，不运行 Maven、Node 或 Python 测试；空变更集、其他文件类型、混合变更或分类不确定的变更继续完整门禁。完整分支使用标准 Python `jsonschema` 校验契约样例，并执行模块化 Maven 测试与打包、框架与模块 UI 语法、前端 Node 测试，同时检查物理删除调用、业务样式硬编码色值、固定模块映射和固定业务端点。`-DocumentOnly` 要求变更集必须是非空纯 Markdown/DOCX，否则失败且不启动构建。`modularity.ps1` 通过移动源码和重启宿主，验证全业务模块、移除单模块、零业务模块（保留 `module_system_control`）、恢复、临时模块自动发现与可逆移出、模块 UI/查询/计划规则、动态主题与已选主题失效回退；结束后恢复原生模块源码，并清理 `target` 验收临时目录。服务启动后的端到端 HTTP 烟测由 `scripts/smoke.ps1` 完成。
 
-### 预构建运行包与离线源码包
+### 完整 Windows 发布与离线源码包
 
-正式发布同时提供两种资产。普通用户下载名称形如 `Orderly-0.1.0-runtime.zip` 的预构建运行包及同名 `.sha256`；解压后双击 `启动归序.cmd`，启动时只校验 `runtime-manifest.json`、宿主 JAR 和模块 JAR，不调用 Maven。开发者、审查者和离线重建场景继续下载 `Orderly-0.1.0-offline-source.zip`。GitHub 的 `Code -> Download ZIP` 不包含 Release 资产或校验元数据，不属于正式运行包。
+正式发布提供三类资产：`Orderly-0.1.0.exe` 当前用户安装器、`Orderly-0.1.0-full-app.zip` 完整应用归档，以及 `Orderly-0.1.0-offline-source.zip` 离线源码包；每个资产都有同名 `.sha256`。安装器和完整应用归档都内置 Java 运行时、JDK 21、Maven、Maven 仓库、AI 可执行文件、模块源码与已构建模块 JAR。完整版和源码包必须来自同一个干净 Git 提交和同一源码树摘要。
 
-运行包第一版仍要求 JDK 21 和 Python 3.14；它消除 Java 编译和 Maven 启动构建，但不宣称完全零运行时依赖。通过源码安装新的业务模块仍需要 Maven，除非后续提供预编译模块分发。运行包和源码包必须来自同一个干净 Git 提交。
+完整版构建需要 WiX Toolset 3.x；普通用户不需要安装 WiX。构建脚本会复制 Git 跟踪源码，使用 PyInstaller 生成 AI 可执行文件，并使用 jpackage 生成应用镜像和当前用户安装器。正式发布要求干净 Git 工作树，构建物应放在仓库外，例如 `D:\Orderly-artifacts\0.1.0`：
 
-正式包默认要求 Git 工作树干净。维护者可通过以下命令在 `target/orderly-offline` 中从空 Maven 仓库执行一次在线预热构建和 Java/Maven 测试，再生成包含源码、`maven-repository`、`maven-manifest.json`、`files.sha256`、第三方制品清单和许可风险提示的 ZIP。源码路径只来自 Git 索引，新增文件必须先显式加入索引。打包脚本不代替发布步骤，正式 ZIP 必须由维护者上传到对应 Git Tag 的 GitHub Release：
+```powershell
+.\scripts\package-full.ps1 -OutputDirectory D:\Orderly-artifacts\0.1.0
+.\scripts\verify-full.ps1 D:\Orderly-artifacts\0.1.0\staging\Orderly
+```
+
+仅验证应用目录和 ZIP、暂不生成 `setup.exe` 时可使用 `-SkipInstaller`。只用于本地脏工作树验收时，可同时使用 `-AllowDirtySnapshot`；该清单会记录 `gitDirty=true`，不属于正式发布。`package-full.ps1` 默认执行 Java/Maven 测试，`-SkipTests` 只用于已经在同一提交通过完整门禁的 CI 发布链。
+
+`verify-full.ps1` 会核对 `full-runtime-manifest.json`、`files.sha256`、宿主 JAR、AI 可执行文件、模块 JAR、内置 JDK/Maven 和完整应用目录，然后移除外部 `JAVA_HOME` 并使用最小 PATH 实际启动 `Orderly.exe`。验证链路会检查宿主存活、Python AI 代理、业务/系统模块、目录主题和正常退出，并确认退出后没有残留进程引用应用目录。`-SkipLaunch` 只执行结构与哈希验证。
+
+轻量 `Orderly-0.1.0-runtime.zip` 打包脚本仍保留用于内部兼容和运行包回归，但它要求外部 JDK 21 与 Python 3.14，不再是普通用户的主发布资产。完整版构建与离线源码包完成后，使用以下命令核对版本、提交和源码树摘要：
+
+```powershell
+.\scripts\verify-full-release-pair.ps1 `
+  D:\Orderly-artifacts\0.1.0\staging\Orderly `
+  .\target\orderly-offline\Orderly-0.1.0-offline-source.zip
+```
+
+离线源码包默认要求 Git 工作树干净。维护者可通过以下命令在 `target/orderly-offline` 中从空 Maven 仓库执行一次在线预热构建和 Java/Maven 测试，再生成包含源码、`maven-repository`、`maven-manifest.json`、`files.sha256`、第三方制品清单和许可风险提示的 ZIP。源码路径只来自 Git 索引，新增文件必须先显式加入索引。打包脚本不代替发布步骤，正式 ZIP 必须由维护者上传到对应 Git Tag 的 GitHub Release：
 
 ```powershell
 .\scripts\package-offline.ps1
@@ -236,6 +267,6 @@ POST /api/executions/{executionId}/rollback
 
 ## 首版边界
 
-这是可运行的受控工作流切片，不是 V7 的最终发行版。真实模型需要用户临时输入 API Key；没有可用 Key 时 DeepSeek 实际连通性属于未验证项。尚未支持任意个人目录选择、重复文件哈希清理、提醒调度、云备份、安装包和自动更新。学习相关模块是界面参考扩展，不代表 V7 已承诺通用 AI 学习业务；其中上传、AI 整理、任务记录、自动出题和自动阅卷仍未接入。计划定义与 AI 会话保存在进程内存中；执行记录、步骤快照、输出和事件会持久化，已完成执行可跨重启查询和回滚。目录边界、离线行为和功能完成度必须在界面中如实展示，不能把规则匹配或演示数据描述为完整 AI 能力。
+这是可运行的受控工作流切片，不是 V7 的最终发行版。真实模型需要用户临时输入 API Key；没有可用 Key 时 DeepSeek 实际连通性属于未验证项。完整版已经支持 Windows 当前用户安装，但尚未支持任意个人目录选择、重复文件哈希清理、提醒调度、云备份、自动更新和代码签名。学习相关模块是界面参考扩展，不代表 V7 已承诺通用 AI 学习业务；其中上传、AI 整理、任务记录、自动出题和自动阅卷仍未接入。计划定义与 AI 会话保存在进程内存中；执行记录、步骤快照、输出和事件会持久化，已完成执行可跨重启查询和回滚。目录边界、离线行为和功能完成度必须在界面中如实展示，不能把规则匹配或演示数据描述为完整 AI 能力。
 
 模块注册完全由 `Module/module_*` 源码扫描和 `target/orderly-modules/` 中的 JAR 发现完成，不维护单独的模块索引文件，也不会把模块变成 Maven reactor 成员。当前模块分发风险仍位于可执行代码信任模型：仓库没有发布者签名或权限隔离，不支持覆盖更新、替换或卸载；运行中只允许通过受控下载与本地构建追加全新业务模块。

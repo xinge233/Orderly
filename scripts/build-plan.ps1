@@ -283,7 +283,10 @@ function Get-OrderlyHostJar {
 
     $hostTargetRoot = Join-Path $RepoRoot "app\host\target"
     $jars = @(Get-ChildItem -LiteralPath $hostTargetRoot -Filter "*.jar" -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -notlike "*.original" } |
+        Where-Object {
+            $_.Name -notlike "*.original" -and
+            $_.Name -notlike "*-launcher.jar"
+        } |
         Sort-Object Name)
     if ($jars.Count -ne 1) {
         throw "宿主构建应产生且仅产生一个 JAR，实际 $($jars.Count) 个。"

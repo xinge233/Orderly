@@ -621,25 +621,27 @@ function Publish-CandidateModules {
                 if ([string]$contract.moduleId -ne $moduleDirectory.Name) {
                     throw "模块目录名与契约 moduleId 不一致：$($moduleDirectory.Name) -> $($contract.moduleId)"
                 }
-                if ($null -ne $contract.system) {
+                $systemProperty = $contract.PSObject.Properties["system"]
+                $system = if ($null -ne $systemProperty) { $systemProperty.Value } else { $null }
+                if ($null -ne $system) {
                     if (-not ([string]$contract.moduleId).StartsWith(
                             $systemSourcePrefix,
                             [System.StringComparison]::Ordinal
                         )) {
                         throw "受保护系统模块必须使用 module_system_ 前缀：$($moduleDirectory.Name)"
                     }
-                    if (@("MODULE_CONTROL", "SYSTEM_SERVICE") -notcontains [string]$contract.system.role -or
-                            $contract.system.protected -ne $true) {
+                    if (@("MODULE_CONTROL", "SYSTEM_SERVICE") -notcontains [string]$system.role -or
+                            $system.protected -ne $true) {
                         throw "模块 $($moduleDirectory.Name) 的 system 元数据必须声明受保护系统角色。"
                     }
-                    $capabilities = @($contract.system.capabilities)
+                    $capabilities = @($system.capabilities)
                     if ($capabilities.Count -eq 0 -or
                             @($capabilities | Where-Object {
                                 [string]$_ -notin @("MODULE_GOVERNANCE")
                             }).Count -gt 0) {
                         throw "模块 $($moduleDirectory.Name) 声明了不支持的系统能力。"
                     }
-                    if ($contract.system.role -eq "MODULE_CONTROL" -and
+                    if ($system.role -eq "MODULE_CONTROL" -and
                             $capabilities -notcontains "MODULE_GOVERNANCE") {
                         throw "MODULE_CONTROL 必须声明 MODULE_GOVERNANCE 能力。"
                     }
@@ -847,6 +849,12 @@ function Get-HostJars {
     return @(Get-ChildItem -LiteralPath $hostTargetRoot -Filter "*.jar" -File |
         Where-Object { $_.Name -notlike "*.original" } |
         Sort-Object Name)
+}
+
+function Get-HostRuntimeJars {
+    return @(Get-HostJars | Where-Object {
+        $_.Name -notlike "*-launcher.jar"
+    })
 }
 
 function Get-HostJarFingerprint {
@@ -1116,7 +1124,7 @@ try {
         Invoke-Maven $hostArguments
 
         # 宿主必须产出一个可运行 fat JAR；随后检查其内容，防止模块或主题被静默打进框架。
-        $hostJars = @(Get-HostJars)
+        $hostJars = @(Get-HostRuntimeJars)
         if ($hostJars.Count -ne 1) {
             throw "宿主构建应产出一个 fat JAR，实际 $($hostJars.Count) 个。"
         }

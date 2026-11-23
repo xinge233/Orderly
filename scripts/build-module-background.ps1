@@ -7,6 +7,7 @@
 # 输入：
 #   -BaseUrl 指定已启动的本地宿主；-SkipTests、-Offline、-MavenRepository 透传给 build.ps1。
 #   -SkipKernelInstall 表示 BootstrapOnly 已安装 kernel，后续模块不再重复安装。
+#   -RuntimeStateRoot 指定宿主共享的构建状态目录；默认使用仓库 target。
 #   -HealthTimeoutSeconds 限制等待宿主健康状态的时间。
 #
 # 副作用：
@@ -24,6 +25,7 @@ param(
     [switch]$Offline,
     [string]$MavenRepository,
     [switch]$SkipKernelInstall,
+    [string]$RuntimeStateRoot,
     [ValidateRange(5, 3600)]
     [int]$HealthTimeoutSeconds = 120
 )
@@ -35,8 +37,14 @@ $moduleRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "Module"))
 $targetRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "target"))
 $stagingRoot = [System.IO.Path]::GetFullPath((Join-Path $targetRoot "orderly-modules"))
 $buildManifestPath = [System.IO.Path]::GetFullPath((Join-Path $targetRoot "build-manifest.json"))
-$statusFile = [System.IO.Path]::GetFullPath((Join-Path $targetRoot "module-build-status.json"))
-$priorityFile = [System.IO.Path]::GetFullPath((Join-Path $targetRoot "module-build-priority.json"))
+$stateRoot = if ([string]::IsNullOrWhiteSpace($RuntimeStateRoot)) {
+    $targetRoot
+}
+else {
+    [System.IO.Path]::GetFullPath($RuntimeStateRoot)
+}
+$statusFile = [System.IO.Path]::GetFullPath((Join-Path $stateRoot "module-build-status.json"))
+$priorityFile = [System.IO.Path]::GetFullPath((Join-Path $stateRoot "module-build-priority.json"))
 $buildScript = Join-Path $PSScriptRoot "build.ps1"
 $sourcePattern = '^module_[a-z0-9_]+$'
 $systemSourcePrefix = "module_system_"

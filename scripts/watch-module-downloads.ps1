@@ -6,6 +6,7 @@
 # 输入：
 #   -BaseUrl 指定本地宿主；-InitialBuilderPid 等待首轮构建器退出后再扫描。
 #   -SkipTests、-Offline、-MavenRepository、-SkipKernelInstall 透传给 build.ps1。
+#   -RuntimeStateRoot 指定宿主共享的构建状态目录；默认使用仓库 target。
 #
 # 副作用：
 #   调用 build.ps1 构建单个模块并调用宿主刷新接口；空闲时不持有仓库构建锁。
@@ -20,6 +21,7 @@ param(
     [switch]$Offline,
     [string]$MavenRepository,
     [switch]$SkipKernelInstall,
+    [string]$RuntimeStateRoot,
     [ValidateRange(100, 10000)]
     [int]$PollMilliseconds = 750,
     [ValidateRange(5, 3600)]
@@ -29,8 +31,14 @@ param(
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $moduleRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "Module"))
-$statusFile = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "target\module-build-status.json"))
-$priorityFile = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "target\module-build-priority.json"))
+$stateRoot = if ([string]::IsNullOrWhiteSpace($RuntimeStateRoot)) {
+    [System.IO.Path]::GetFullPath((Join-Path $repoRoot "target"))
+}
+else {
+    [System.IO.Path]::GetFullPath($RuntimeStateRoot)
+}
+$statusFile = [System.IO.Path]::GetFullPath((Join-Path $stateRoot "module-build-status.json"))
+$priorityFile = [System.IO.Path]::GetFullPath((Join-Path $stateRoot "module-build-priority.json"))
 $buildScript = Join-Path $PSScriptRoot "build.ps1"
 $sourcePattern = '^module_[a-z0-9_]+$'
 $systemSourcePrefix = "module_system_"

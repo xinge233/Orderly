@@ -280,7 +280,10 @@ function Remove-GeneratedTheme {
 
 function Get-HostJar {
     $jar = Get-ChildItem -LiteralPath (Join-Path $repoRoot "app\host\target") -Filter "*.jar" -File |
-        Where-Object { $_.Name -notlike "*.original" } |
+        Where-Object {
+            $_.Name -notlike "*.original" -and
+            $_.Name -notlike "*-launcher.jar"
+        } |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
     if (-not $jar) { throw "未找到宿主 fat JAR。" }

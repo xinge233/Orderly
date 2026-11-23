@@ -1,4 +1,4 @@
-name: Publish runtime and source release
+name: Publish full Windows and source release
 
 on:
   workflow_dispatch:
@@ -39,24 +39,49 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Install WiX Toolset 3.x
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $wixBin = Join-Path $env:RUNNER_TEMP "wix3141rtm"
+          $wixZip = Join-Path $env:RUNNER_TEMP "wix314-binaries.zip"
+          Invoke-WebRequest `
+            -Uri "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip" `
+            -OutFile $wixZip `
+            -UseBasicParsing
+          $expectedHash = "6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31"
+          $actualHash = (Get-FileHash -LiteralPath $wixZip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) {
+            throw "WiX 3.14.1 下载摘要不符：$actualHash"
+          }
+          Expand-Archive -LiteralPath $wixZip -DestinationPath $wixBin
+          if (-not (Test-Path -LiteralPath (Join-Path $wixBin "candle.exe") -PathType Leaf) -or
+              -not (Test-Path -LiteralPath (Join-Path $wixBin "light.exe") -PathType Leaf)) {
+            throw "WiX 3.14.1 工具不完整"
+          }
+          $wixBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Validate release source
         shell: pwsh
         run: ./scripts/gate.ps1 -MaxParallel 2
 
-      - name: Build release artifacts
-        shell: pwsh
-        run: ./scripts/build.ps1 -MaxParallel 2
-
-      - name: Package and verify prebuilt runtime
+      - name: Package and verify full Windows application
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          ./scripts/package-runtime.ps1
-          $runtimeZip = Get-ChildItem ./target/orderly-runtime -File -Filter "*-runtime.zip" |
+          $outputRoot = Join-Path $env:RUNNER_TEMP "orderly-full-release"
+          ./scripts/package-full.ps1 -OutputDirectory $outputRoot -SkipTests
+          $appDirectory = Join-Path $outputRoot "staging\Orderly"
+          ./scripts/verify-full.ps1 -AppDirectory $appDirectory
+          $fullZip = Get-ChildItem $outputRoot -File -Filter "*-full-app.zip" |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
-          if (-not $runtimeZip) { throw "未生成预构建运行包" }
-          ./scripts/verify-runtime.ps1 -PackagePath $runtimeZip.FullName
+          $installer = Get-ChildItem (Join-Path $outputRoot "installer") -File -Filter "*.exe" |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $fullZip -or -not $installer) {
+            throw "完整版 ZIP 或安装器未生成"
+          }
 
       - name: Package and verify offline source
         shell: pwsh
@@ -68,8 +93,9 @@ jobs:
             Select-Object -First 1
           if (-not $sourceZip) { throw "未生成离线源码包" }
           ./scripts/verify-offline.ps1 $sourceZip.FullName -MaxParallel 2
-          ./scripts/verify-release-pair.ps1 `
-            -RuntimePackage $runtimeZip.FullName `
+          $appDirectory = Join-Path $env:RUNNER_TEMP "orderly-full-release\staging\Orderly"
+          ./scripts/verify-full-release-pair.ps1 `
+            -AppDirectory $appDirectory `
             -SourcePackage $sourceZip.FullName
 
       - name: Upload release assets
@@ -78,18 +104,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = "Stop"
-          $runtimeZip = Get-ChildItem ./target/orderly-runtime -File -Filter "*-runtime.zip" |
+          $fullRoot = Join-Path $env:RUNNER_TEMP "orderly-full-release"
+          $fullZip = Get-ChildItem $fullRoot -File -Filter "*-full-app.zip" |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          $installer = Get-ChildItem (Join-Path $fullRoot "installer") -File -Filter "*.exe" |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
           $sourceZip = Get-ChildItem ./target/orderly-offline -File -Filter "*-offline-source.zip" |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
-          if (-not $runtimeZip -or -not $sourceZip) {
+          if (-not $fullZip -or -not $installer -or -not $sourceZip) {
             throw "发布资产不完整"
           }
           $assets = @(
-            $runtimeZip.FullName,
-            "$($runtimeZip.FullName).sha256",
+            $installer.FullName,
+            "$($installer.FullName).sha256",
+            $fullZip.FullName,
+            "$($fullZip.FullName).sha256",
             $sourceZip.FullName,
             "$($sourceZip.FullName).sha256"
           )

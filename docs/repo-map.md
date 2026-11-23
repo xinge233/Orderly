@@ -48,7 +48,7 @@
 
 | 区域 | 优先入口 |
 |---|---|
-| 宿主生命周期 | `app/host/src/main/java/com/orderly/host/OrderlyHostApplication.java` |
+| 宿主生命周期与完整版入口 | `app/host/src/main/java/com/orderly/host/OrderlyHostApplication.java`；桌面启动器为 `desktop/PackagedLauncher.java` |
 | HTTP API | `app/host/src/main/java/com/orderly/host/api/OrderlyController.java` |
 | 计划服务 | `app/host/src/main/java/com/orderly/host/plan/PlanService.java` |
 | 本地规则计划器 | `app/host/src/main/java/com/orderly/host/planner/LocalRulePlanner.java` |
@@ -82,7 +82,7 @@
 | `contracts/ai-service-decision.schema.json` | Python 到 Java 的受控决策响应 |
 | `contracts/module.schema.json`、`module-ui.schema.json`、`module-catalog.schema.json` | 模块 JAR、模块 UI 与 GitHub 分发目录契约 |
 | `contracts/theme.schema.json` | 宿主主题加载与主题样例 |
-| `contracts/runtime-release.schema.json` | 预构建运行包清单和启动路径 |
+| `contracts/runtime-release.schema.json`、`full-release.schema.json` | 轻量运行包与 Windows 完整版的清单、工件和启动路径 |
 | `contracts/study-data.schema.json` | 学习数据校验脚本与模块数据 |
 | `contracts/samples/valid/` | 合法样例与契约测试 |
 | `contracts/samples/invalid/` | 非法样例与失败路径测试 |
@@ -99,7 +99,7 @@
 | 契约变更 | Schema、合法样例、非法样例、所有直接消费者 |
 | 测试新增、删除或验收 | `AGENTS.md`、`docs/agents/testing/README.md`、目标测试源码、当前月测试记录、相关构建或门禁脚本 |
 | 构建或启动问题 | `README.md`、`启动归序.cmd`、`scripts/build-plan.ps1`、`build.ps1`、`build-module-background.ps1`、`watch-module-downloads.ps1`、`start.ps1`、`target/background/` 与 `target/build-parallel-*` 中的目标日志行段 |
-| 发布包问题 | `scripts/package-runtime.ps1`、`verify-runtime.ps1`、`package-offline.ps1`、`verify-offline.ps1`、对应契约和 `target/orderly-runtime/` 目标日志行段 |
+| 发布包问题 | 完整版读 `package-full.ps1`、`verify-full.ps1`、`verify-full-release-pair.ps1`；轻量运行包读 `package-runtime.ps1`、`verify-runtime.ps1`；离线源码包读 `package-offline.ps1`、`verify-offline.ps1`；同时读取对应契约和目标日志行段 |
 | 历史决策追溯 | `docs/agents/` 中相关交接文档的指定章节，按需读取 |
 历史交接文档只用于追溯事实、验证证据和已知风险，不单独构成实施授权。
 ## 上下文工具
@@ -139,7 +139,7 @@
 | 完整门禁 | `.\scripts\gate.ps1` |
 | 模块化验收 | `.\scripts\modularity.ps1` |
 | 构建与分层启动 | `.\scripts\build.ps1 -MaxParallel 3` 或 `.\scripts\test-build-parallel.ps1`；分层启动用 `.\scripts\start.ps1 -BackgroundModules` 先启动控制模块与宿主，再按默认两路、可调 1-4 的队列并行构建并由单线程发布业务模块 |
-| 构建检测与运行包 | `.\scripts\test-build-plan.ps1`；`.\scripts\package-runtime.ps1`；`.\scripts\verify-runtime.ps1 <zip>`；启动时由 `scripts/build-plan.ps1` 校验输入指纹和 JAR 哈希 |
+| 构建检测、运行包与完整版 | `test-build-plan.ps1` 与 `build-plan.ps1` 校验输入；`package-runtime.ps1`、`verify-runtime.ps1` 处理轻量包；`package-full.ps1 -OutputDirectory <目录>` 和 `verify-full.ps1` 处理内置 JDK、Maven、AI 的完整版 |
 | 离线源码包 | 生成用 `.\scripts\package-offline.ps1`，脏快照加 `-AllowDirtySnapshot`；验证用 `.\scripts\verify-offline.ps1 <zip>` |
 | 启动 | 开发路径用 `.\scripts\start.ps1 -BackgroundModules`；预构建运行包执行 `.\启动归序.cmd` 后直接校验运行清单并启动；离线源码包使用包内 `maven-repository` 和后台模块队列 |
 | 发布模块目录 | `.\scripts\export-module-distribution.ps1` 生成源码 ZIP 与 `catalog.json`；手动运行 GitHub Action 更新 `module-distribution` 分支 |
