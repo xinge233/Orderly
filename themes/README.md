@@ -2,6 +2,8 @@
 
 归序在宿主启动时扫描 `themes/` 的直接子目录。添加、替换或移除主题目录后，重启宿主即可生效，不需要重新构建 fat JAR，也不支持运行中热加载或热卸载。当前内置 `paper`、`moss`、`night`、浅色 `study`（研习蓝）与 `empty`（空白）五个目录主题；`study` 使用清爽的灰蓝画布、白卡片、蓝色主操作与紫色辅助强调，`empty` 不覆盖任何语义变量或动效，只使用框架基础外观。
 
+可调整的语义外观变量、公开动效挂点、示例与交付检查见 [THEME-CUSTOMIZATION.md](THEME-CUSTOMIZATION.md)。
+
 ## 目录结构
 
 ```text
@@ -47,7 +49,7 @@ themes/
 - `motion.css` 负责框架公开语义挂点对应的关键帧、过渡和组合动画。
 - 主题 CSS 必须写入 `@layer orderly.theme { ... }`。
 - 主题不得携带 JavaScript，也不得选择具体业务模块内部 DOM。
-- 框架公开挂点只包括 `app-shell`、`sidebar`、`main`、`overview`、`module-card`、`settings-dialog`、`command-panel` 和 `feedback`。
+- 框架公开挂点包括 `app-shell`、`sidebar`、`main`、`overview`、`module-card`、`settings-dialog`、`ai-dialog` 和 `feedback`。
 - 桌面 `sidebar` 是固定 272px 覆盖层，收起时通过 `clip-path` 只露出 72px 图标轨道；主内容网格始终只预留 72px。72px 轨道边线由侧栏背景层绘制，展开态清除该背景线并保留覆盖层自身的右边框，不能用覆盖内容的伪元素制造边线。主题只负责该挂点公开状态的视觉与动效，不得改变主内容重排规则或侧栏内部几何。
 - `sidebar` 桌面端只使用 `clip-path var(--duration-sidebar) var(--ease-out)` 过渡，不再动画 `width`、内边距、文字或高度；移动抽屉使用 `clip-path: none` 并单独保留 `transform` 过渡。基础 `app.css` 不声明过渡。`attention` 是由计划目标提示短暂覆盖的动效状态，结束后必须回到真实的 `expanded` 或 `collapsed` 状态。
 - 动效只由程序内 `gentle`、`minimal`、`none` 三档控制，系统 `prefers-reduced-motion` 完全不参与。默认主题的 `--duration-sidebar` 为 `200ms`，克制动效为 `110ms`，只有程序关闭档 `motion: none` 为 `0ms`。主题不得在该侧栏规则中写死时长。
