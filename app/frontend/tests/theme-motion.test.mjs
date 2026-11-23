@@ -223,9 +223,31 @@ test("empty theme is a valid inherit-only package", async () => {
     assert.equal(manifest.colorScheme, undefined);
     assert.equal(manifest.browserColor, undefined);
     assert.deepEqual(manifest.styles, ["tokens.css", "motion.css"]);
-    assert.deepEqual(manifest.assets, []);
+    assert.equal(manifest.assets.length, 4);
+    assert.deepEqual(manifest.aiIconAssets, {
+        spark: "assets/ai/icons/spark.png",
+        route: "assets/ai/icons/route.png",
+        shield: "assets/ai/icons/shield.png",
+        modules: "assets/ai/icons/modules.png"
+    });
     assert.equal(withoutCommentsAndWhitespace(tokens), "@layerorderly.theme{}");
     assert.equal(withoutCommentsAndWhitespace(motion), "@layerorderly.theme{}");
+});
+
+test("every built-in theme registers the four AI icon PNG masks", async () => {
+    for (const id of ["paper", "moss", "night", "study", "empty"]) {
+        const manifest = JSON.parse(await read(`../../../themes/${id}/theme.json`));
+        assert.deepEqual(manifest.aiIconAssets, {
+            spark: "assets/ai/icons/spark.png",
+            route: "assets/ai/icons/route.png",
+            shield: "assets/ai/icons/shield.png",
+            modules: "assets/ai/icons/modules.png"
+        });
+        for (const asset of Object.values(manifest.aiIconAssets)) {
+            assert.ok(manifest.assets.includes(asset));
+            assert.ok(asset.endsWith(".png"));
+        }
+    }
 });
 
 test("settings uses dedicated live regions and keeps the panel mounted on changes", async () => {

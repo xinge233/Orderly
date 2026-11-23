@@ -2089,6 +2089,29 @@ body.is-navigation-dragging * {
 .ai-launcher__icon {
     display: grid;
     place-items: center;
+    width: 26px;
+    height: 26px;
+}
+
+.ai-send-button__icon .ai-launcher__icon {
+    width: 16px;
+    height: 16px;
+}
+
+.ai-launcher__icon[data-icon-source="theme"]::before,
+.ai-icon-option__icon[data-icon-source="theme"]::before {
+    width: var(--ai-icon-size);
+    height: var(--ai-icon-size);
+    content: "";
+    background: currentColor;
+    -webkit-mask-image: var(--ai-icon-image);
+    -webkit-mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-size: var(--ai-icon-size) var(--ai-icon-size);
+    mask-image: var(--ai-icon-image);
+    mask-position: center;
+    mask-repeat: no-repeat;
+    mask-size: var(--ai-icon-size) var(--ai-icon-size);
 }
 
 .ai-dock[data-composer="open"] .ai-launcher {

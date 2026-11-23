@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "ai-icon-mismatch",
+  "label": "错配 AI 图标",
+  "order": 20,
+  "styles": [
+    "tokens.css",
+    "motion.css"
+  ],
+  "aiIconAssets": {
+    "spark": "assets/ai/icons/route.png"
+  },
+  "assets": [
+    "assets/ai/icons/route.png"
+  ]
+}

@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { AI_ICON_OPTIONS, normalizeAiIcon } from "../src/icons.js";
+import { AI_ICON_OPTIONS, normalizeAiIcon, paintAiIcon } from "../src/icons.js";
 import {
     normalizeAiPanelWidth,
     normalizeSettings,
     normalizeThemeCatalog,
     reconcileAppliedTheme,
     reconcileSettingsForCatalog,
+    resolveThemeAiIconUrls,
     resolveThemeSelection,
     SettingsStore,
     ThemeManager
@@ -170,6 +171,61 @@ test("AI icon options are built in and invalid stored values fall back to spark"
     }
     assert.equal(normalizeAiIcon("upload"), "spark");
     assert.equal(normalizeAiIcon(null), "spark");
+});
+
+test("theme AI icon assets resolve to registered PNG URLs and paint as masks", () => {
+    const urls = resolveThemeAiIconUrls({
+        schemaVersion: 1,
+        id: "paper",
+        aiIconAssets: {
+            spark: "assets/ai/icons/spark.png",
+            route: "assets/ai/icons/route.png",
+            shield: "assets/ai/icons/outside.png",
+            modules: "assets/ai/icons/modules.webp",
+            unknown: "assets/ai/icons/spark.png"
+        }
+    });
+
+    assert.deepEqual(urls, {
+        spark: "/api/themes/paper/assets/assets/ai/icons/spark.png",
+        route: "/api/themes/paper/assets/assets/ai/icons/route.png"
+    });
+    assert.deepEqual(resolveThemeAiIconUrls({ id: "paper", schemaVersion: 2 }), {});
+    assert.deepEqual(resolveThemeAiIconUrls({ id: "../paper", schemaVersion: 1 }), {});
+
+    const properties = new Map();
+    const element = {
+        dataset: {},
+        innerHTML: "",
+        replaceCount: 0,
+        style: {
+            setProperty(name, value) {
+                properties.set(name, value);
+            },
+            removeProperty(name) {
+                properties.delete(name);
+            }
+        },
+        replaceChildren() {
+            this.replaceCount += 1;
+            this.innerHTML = "";
+        }
+    };
+
+    paintAiIcon(element, "route", { url: urls.route, size: 32 });
+    assert.equal(element.dataset.aiIcon, "route");
+    assert.equal(element.dataset.iconSource, "theme");
+    assert.equal(properties.get("--ai-icon-size"), "32px");
+    assert.equal(
+        properties.get("--ai-icon-image"),
+        'url("/api/themes/paper/assets/assets/ai/icons/route.png")'
+    );
+    assert.equal(element.replaceCount, 1);
+
+    paintAiIcon(element, "route", { url: "javascript:alert(1)", size: 18 });
+    assert.equal(element.dataset.iconSource, "fallback");
+    assert.equal(properties.has("--ai-icon-image"), false);
+    assert.match(element.innerHTML, /^<svg /);
 });
 
 test("legacy visibility and sidebar settings are discarded", () => {

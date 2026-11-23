@@ -46,10 +46,13 @@ public class ThemeCatalog {
             "assets/(?:[a-z0-9][a-z0-9.-]*/)*[a-z0-9][a-z0-9.-]*\\."
                     + "(?:png|jpe?g|webp|gif|avif|woff2?|ttf|otf)"
     );
+    private static final Set<String> AI_ICON_IDS = Set.of(
+            "spark", "route", "shield", "modules"
+    );
     private static final Set<String> REQUIRED_STYLES = Set.of("tokens.css", "motion.css");
     private static final Set<String> MANIFEST_FIELDS = Set.of(
             "schemaVersion", "id", "label", "note", "order", "default",
-            "colorScheme", "browserColor", "styles", "assets"
+            "colorScheme", "browserColor", "styles", "aiIconAssets", "assets"
     );
     private static final Map<String, String> CONTENT_TYPES = Map.ofEntries(
             Map.entry("css", "text/css"),
@@ -365,6 +368,7 @@ public class ThemeCatalog {
             );
         }
         List<String> assets = pathList(root, "assets", false, directoryId);
+        Map<String, String> aiIconAssets = aiIconAssetMap(root, directoryId);
 
         for (String style : styles) {
             if (!STYLE_PATH.matcher(style).matches()) {
@@ -386,6 +390,23 @@ public class ThemeCatalog {
             }
             requireThemeResource(themeRoot, asset, directoryId, "THEME_ASSET_UNREADABLE");
         }
+        for (Map.Entry<String, String> entry : aiIconAssets.entrySet()) {
+            String asset = entry.getValue();
+            if (!assets.contains(asset)) {
+                throw ThemeLoadFailure.of(
+                        directoryId,
+                        "AI_ICON_ASSET_UNREGISTERED",
+                        "AI 图标资源必须先登记在 assets：" + entry.getKey() + "=" + asset
+                );
+            }
+            if (!asset.equals("assets/ai/icons/" + entry.getKey() + ".png")) {
+                throw ThemeLoadFailure.of(
+                        directoryId,
+                        "INVALID_AI_ICON_ASSET",
+                        "AI 图标资源文件名必须与图标 ID 一致：" + entry.getKey() + "=" + asset
+                );
+            }
+        }
 
         return new ThemeDefinition(
                 schemaVersion,
@@ -398,8 +419,63 @@ public class ThemeCatalog {
                 browserColor,
                 styles,
                 assets,
+                aiIconAssets,
                 themeRoot
         );
+    }
+
+    /**
+     * 读取可选的 AI 图标资源映射。
+     *
+     * <p>字段缺失时返回空映射以兼容旧主题。字段存在时必须是以四个固定图标 ID 为键的
+     * 对象，值必须是无逃逸的 PNG 路径。路径是否已登记在 assets 由调用方继续检查。</p>
+     */
+    private Map<String, String> aiIconAssetMap(
+            JsonNode root,
+            String id
+    ) throws ThemeLoadFailure {
+        JsonNode node = root.get("aiIconAssets");
+        if (node == null) {
+            return Map.of();
+        }
+        if (!node.isObject()) {
+            throw ThemeLoadFailure.of(
+                    id,
+                    "INVALID_AI_ICON_ASSETS",
+                    "aiIconAssets 必须是对象"
+            );
+        }
+        Map<String, String> assets = new LinkedHashMap<>();
+        Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> field = fields.next();
+            String iconId = field.getKey();
+            if (!AI_ICON_IDS.contains(iconId)) {
+                throw ThemeLoadFailure.of(
+                        id,
+                        "INVALID_AI_ICON_ID",
+                        "不支持的 AI 图标 ID：" + iconId
+                );
+            }
+            JsonNode value = field.getValue();
+            if (!value.isTextual() || value.asText().isBlank()) {
+                throw ThemeLoadFailure.of(
+                        id,
+                        "INVALID_AI_ICON_ASSET",
+                        "AI 图标资源必须是非空路径：" + iconId
+                );
+            }
+            String path = value.asText();
+            if (!isSafeRelativePath(path)) {
+                throw ThemeLoadFailure.of(
+                        id,
+                        "INVALID_AI_ICON_ASSET",
+                        "AI 图标资源路径不安全：" + path
+                );
+            }
+            assets.put(iconId, path);
+        }
+        return Map.copyOf(assets);
     }
 
     /**

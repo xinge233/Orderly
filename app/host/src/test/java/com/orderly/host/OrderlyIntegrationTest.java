@@ -131,8 +131,17 @@ class OrderlyIntegrationTest {
                 .andExpect(jsonPath("$.schemaVersion").value(1))
                 .andExpect(jsonPath("$.styles[0]").value("tokens.css"))
                 .andExpect(jsonPath("$.styles[1]").value("motion.css"))
-                .andExpect(jsonPath("$.assets").isEmpty())
+                .andExpect(jsonPath("$.assets.length()").value(4))
+                .andExpect(jsonPath("$.aiIconAssets.spark").value("assets/ai/icons/spark.png"))
+                .andExpect(jsonPath("$.aiIconAssets.route").value("assets/ai/icons/route.png"))
+                .andExpect(jsonPath("$.aiIconAssets.shield").value("assets/ai/icons/shield.png"))
+                .andExpect(jsonPath("$.aiIconAssets.modules").value("assets/ai/icons/modules.png"))
                 .andExpect(jsonPath("$.rootPath").doesNotExist());
+        mockMvc.perform(get("/api/themes/paper/assets/assets/ai/icons/spark.png"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.IMAGE_PNG))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .header().string("Cache-Control", "no-cache"));
         mockMvc.perform(get("/api/themes/paper/assets/tokens.css"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.parseMediaType("text/css")))

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "ai-icon-unregistered",
+  "label": "未登记的 AI 图标",
+  "order": 20,
+  "styles": [
+    "tokens.css",
+    "motion.css"
+  ],
+  "aiIconAssets": {
+    "spark": "assets/ai/icons/spark.png"
+  },
+  "assets": []
+}

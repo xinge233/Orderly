@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 一个已通过启动校验的主题包内部定义。
@@ -22,6 +23,7 @@ import java.util.List;
  * @param browserColor 可选浏览器颜色
  * @param styles 已登记且存在的 CSS 路径
  * @param assets 已登记且存在的静态资源路径
+ * @param aiIconAssets AI 图标 ID 到已登记 PNG 资源路径的映射
  * @param rootPath 宿主内部主题根路径
  */
 public record ThemeDefinition(
@@ -35,12 +37,14 @@ public record ThemeDefinition(
         String browserColor,
         List<String> styles,
         List<String> assets,
+        Map<String, String> aiIconAssets,
         @JsonIgnore Path rootPath
 ) {
     /** 复制资源列表并规范化内部根路径；不再次访问文件系统。 */
     public ThemeDefinition {
         styles = List.copyOf(styles);
         assets = List.copyOf(assets);
+        aiIconAssets = Map.copyOf(aiIconAssets);
         rootPath = rootPath.toAbsolutePath().normalize();
     }
 

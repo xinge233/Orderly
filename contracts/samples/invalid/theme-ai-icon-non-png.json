@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "ai-icon-non-png",
+  "label": "错误 AI 图标格式",
+  "order": 20,
+  "styles": [
+    "tokens.css",
+    "motion.css"
+  ],
+  "aiIconAssets": {
+    "spark": "assets/ai/icons/spark.webp"
+  },
+  "assets": [
+    "assets/ai/icons/spark.webp"
+  ]
+}

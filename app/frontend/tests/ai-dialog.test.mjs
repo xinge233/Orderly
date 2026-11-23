@@ -105,7 +105,7 @@ test("AI dialog delegates model work through injected callbacks", async () => {
 
     assert.match(
         component,
-        /import \{ icon, normalizeAiIcon \} from "\.\/icons\.js"/
+        /import \{ icon, normalizeAiIcon, paintAiIcon \} from "\.\/icons\.js"/
     );
     assert.match(component, /from "\.\/settings\.js"/);
     assert.doesNotMatch(component, /\bfetch\s*\(/);
@@ -430,6 +430,8 @@ test("launcher surface morphs into the composer and reuses its icon in Generate"
     );
 
     assert.match(dialog, /id="ai-send-icon"/);
+    assert.match(dialog, /id="ai-launcher-icon" data-ai-icon="spark"/);
+    assert.doesNotMatch(dialog, /id="ai-launcher-icon"[^>]*data-icon=/);
     assert.match(dialog, /<span>生成<\/span>/);
     assert.match(
         css,
@@ -441,9 +443,28 @@ test("launcher surface morphs into the composer and reuses its icon in Generate"
     );
     assert.match(component, /nodes\.sendIcon\.append\(nodes\.launcherIcon\)/);
     assert.match(component, /nodes\.launcher\.append\(nodes\.launcherIcon\)/);
+    assert.match(
+        component,
+        /paintAiIcon\(nodes\.launcherIcon, dialog\.aiIcon,[\s\S]*?url: dialog\.aiIconAssets\[dialog\.aiIcon\]/
+    );
+    assert.match(component, /setIconAssets\(assets\)/);
     assert.match(component, /nodes\.launcher\.animate\(/);
     assert.match(component, /nodes\.launcherIcon\.animate\(/);
     assert.match(component, /dock\.dataset\.morph = expanded \? "opening" : "closing"/);
+});
+
+test("theme AI icon images use a recolorable mask with generic fallback", async () => {
+    const css = await read("../styles/app.css");
+    const icons = await read("../src/icons.js");
+
+    assert.match(css, /\.ai-launcher__icon\s*\{[\s\S]*?width:\s*26px;[\s\S]*?height:\s*26px;/);
+    assert.match(css, /\.ai-send-button__icon \.ai-launcher__icon\s*\{[\s\S]*?width:\s*16px;/);
+    assert.match(css, /\[data-icon-source="theme"\]::before[\s\S]*?background:\s*currentColor;/);
+    assert.match(css, /mask-image:\s*var\(--ai-icon-image\);/);
+    assert.match(css, /mask-size:\s*var\(--ai-icon-size\) var\(--ai-icon-size\);/);
+    assert.match(icons, /element\.replaceChildren\(\)/);
+    assert.match(icons, /element\.innerHTML = icon\("info", iconSize\)/);
+    assert.match(icons, /THEME_AI_ICON_URL/);
 });
 
 test("AI surfaces stay inside four viewport corners without overlapping", () => {

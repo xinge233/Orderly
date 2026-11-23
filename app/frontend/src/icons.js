@@ -47,6 +47,7 @@ export const AI_ICON_OPTIONS = Object.freeze([
 ]);
 
 const AI_ICONS = new Set(AI_ICON_OPTIONS.map((item) => item.value));
+const THEME_AI_ICON_URL = /^\/api\/themes\/[a-z][a-z0-9-]{0,63}\/assets\/assets\/ai\/icons\/(?:spark|route|shield|modules)\.png$/;
 
 /**
  * 将 AI 图标限制为前端内置选项；非法值统一回退星芒。
@@ -58,6 +59,40 @@ const AI_ICONS = new Set(AI_ICON_OPTIONS.map((item) => item.value));
  */
 export function normalizeAiIcon(value) {
     return AI_ICONS.has(value) ? value : "spark";
+}
+
+/**
+ * 将 AI 身份图标绘制为主题 PNG mask 或框架通用兜底图标。
+ *
+ * @param {HTMLElement} element 图标容器
+ * @param {unknown} name AI 图标 ID
+ * @param {{url?: unknown, size?: unknown}} options 主题资源 URL 与渲染尺寸
+ * @returns {void}
+ *
+ * 主题 URL 只接受宿主生成的四类 PNG 资源路径，避免把任意字符串写入 CSS。资源缺失时
+ * 使用通用信息图标，保证无主题、旧主题和加载失败场景仍显示可识别入口。副作用：改写
+ * 目标元素的数据属性、CSS 变量、子节点和 innerHTML。
+ */
+export function paintAiIcon(element, name, { url = "", size = 18 } = {}) {
+    if (!element) {
+        return;
+    }
+    const iconName = normalizeAiIcon(name);
+    const iconSize = Number.isFinite(Number(size))
+        ? Math.max(8, Math.min(64, Math.round(Number(size))))
+        : 18;
+    const themeUrl = typeof url === "string" && THEME_AI_ICON_URL.test(url) ? url : "";
+    element.dataset.aiIcon = iconName;
+    element.style.setProperty("--ai-icon-size", `${iconSize}px`);
+    if (themeUrl) {
+        element.dataset.iconSource = "theme";
+        element.style.setProperty("--ai-icon-image", `url("${themeUrl}")`);
+        element.replaceChildren();
+        return;
+    }
+    element.dataset.iconSource = "fallback";
+    element.style.removeProperty("--ai-icon-image");
+    element.innerHTML = icon("info", iconSize);
 }
 
 /**

@@ -627,7 +627,7 @@ try {
     }
 
     # 前端和每个模块 UI 脚本都做语法检查，避免只验证框架而遗漏外部模块资源。
-    $sourceFiles = @("app.js", "ai-dialog.js", "ai-settings.js", "api.js", "models.js", "modules.js", "settings.js")
+    $sourceFiles = @("app.js", "ai-dialog.js", "ai-settings.js", "api.js", "icons.js", "models.js", "modules.js", "settings.js")
     foreach ($sourceFile in $sourceFiles) {
         & node --check (Join-Path $frontendRoot "src\$sourceFile")
         if ($LASTEXITCODE -ne 0) {

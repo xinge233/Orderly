@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "ai-icon-unknown",
+  "label": "未知 AI 图标",
+  "order": 20,
+  "styles": [
+    "tokens.css",
+    "motion.css"
+  ],
+  "aiIconAssets": {
+    "unknown": "assets/ai/icons/unknown.png"
+  },
+  "assets": [
+    "assets/ai/icons/unknown.png"
+  ]
+}

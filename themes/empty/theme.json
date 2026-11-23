@@ -9,5 +9,16 @@
     "tokens.css",
     "motion.css"
   ],
-  "assets": []
+  "aiIconAssets": {
+    "spark": "assets/ai/icons/spark.png",
+    "route": "assets/ai/icons/route.png",
+    "shield": "assets/ai/icons/shield.png",
+    "modules": "assets/ai/icons/modules.png"
+  },
+  "assets": [
+    "assets/ai/icons/spark.png",
+    "assets/ai/icons/route.png",
+    "assets/ai/icons/shield.png",
+    "assets/ai/icons/modules.png"
+  ]
 }

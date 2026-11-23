@@ -34,6 +34,16 @@
         "pattern": "^(?:[a-z0-9][a-z0-9.-]*/)*[a-z0-9][a-z0-9.-]*\\.css$"
       }
     },
+    "aiIconAssets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "spark": { "const": "assets/ai/icons/spark.png" },
+        "route": { "const": "assets/ai/icons/route.png" },
+        "shield": { "const": "assets/ai/icons/shield.png" },
+        "modules": { "const": "assets/ai/icons/modules.png" }
+      }
+    },
     "assets": {
       "type": "array",
       "uniqueItems": true,

@@ -13,7 +13,7 @@
  * 边界：Java 宿主仍是契约校验、授权、执行、快照、审计和回滚的唯一控制面；本组件
  * 只负责界面状态、交互动画和结果呈现，失败时不得伪造计划或执行成功。
  */
-import { icon, normalizeAiIcon } from "./icons.js";
+import { icon, normalizeAiIcon, paintAiIcon } from "./icons.js";
 import {
     buildQueryPayloadView,
     EVENT_ORIGIN,
@@ -454,6 +454,7 @@ export function executionCompletedModules(execution) {
  *     setAiSettings: (settings: object) => void,
  *     setPanelWidth: (width: number) => void,
  *     setIcon: (name: string) => void,
+ *     setIconAssets: (assets: Record<string, string>) => void,
  *     openWithText: (text?: string) => void,
  *     destroy: () => void
  * }} Dock 控制器
@@ -556,6 +557,7 @@ export function mountAiDialog({
         morphing: false,
         snapAnimating: false,
         aiIcon: "spark",
+        aiIconAssets: {},
         suppressClickUntil: 0,
         position: null
     };
@@ -945,8 +947,10 @@ export function mountAiDialog({
 
     function renderAiIcon() {
         const inSendButton = nodes.sendIcon.contains(nodes.launcherIcon);
-        nodes.launcherIcon.dataset.aiIcon = dialog.aiIcon;
-        nodes.launcherIcon.innerHTML = icon(dialog.aiIcon, inSendButton ? 16 : 26);
+        paintAiIcon(nodes.launcherIcon, dialog.aiIcon, {
+            url: dialog.aiIconAssets[dialog.aiIcon],
+            size: inSendButton ? 16 : 26
+        });
     }
 
     // 所有界面可见性都从状态派生，避免按钮、ARIA 与 CSS dataset 各自维护一份真值。
@@ -2701,6 +2705,12 @@ export function mountAiDialog({
         },
         setIcon(name) {
             dialog.aiIcon = normalizeAiIcon(name);
+            renderAiIcon();
+        },
+        setIconAssets(assets) {
+            dialog.aiIconAssets = assets && typeof assets === "object" && !Array.isArray(assets)
+                ? { ...assets }
+                : {};
             renderAiIcon();
         },
         openWithText(text = "") {

@@ -10,7 +10,7 @@
  * 副作用：`SettingsStore` 会读写注入的 Storage 并通知订阅者；`ThemeManager` 会请求主题
  * 详情、增删文档样式表并更新根节点与 meta。纯规范化函数不产生这些副作用。
  */
-import { normalizeAiIcon } from "./icons.js";
+import { AI_ICON_OPTIONS, normalizeAiIcon } from "./icons.js";
 import { reconcileModuleOrder } from "./modules.js";
 
 export const MOTION_OPTIONS = Object.freeze([
@@ -37,6 +37,7 @@ const DEFAULTS = Object.freeze({
 const MOTIONS = new Set(MOTION_OPTIONS.map((item) => item.value));
 const THEME_ID = /^[a-z][a-z0-9-]{0,63}$/;
 const THEME_STYLE_PATH = /^(?:[a-z0-9][a-z0-9.-]*\/)*[a-z0-9][a-z0-9.-]*\.css$/;
+const THEME_AI_ICON_PATH = /^assets\/ai\/icons\/(spark|route|shield|modules)\.png$/;
 const SUPPORTED_THEME_SCHEMA_VERSION = 1;
 const REQUIRED_THEME_STYLES = Object.freeze(["tokens.css", "motion.css"]);
 
@@ -230,6 +231,49 @@ export function reconcileAppliedTheme(requested, appliedTheme) {
         ? appliedTheme.id
         : "";
     return requestedId === appliedId ? null : { theme: appliedId };
+}
+
+/**
+ * 从主题详情解析当前主题可用的 AI 图标 PNG 地址。
+ *
+ * @param {unknown} theme 已应用主题详情
+ * @param {string} baseUrl 主题 API 根路径
+ * @returns {Record<string, string>} AI 图标 ID 到资源 URL 的映射
+ *
+ * 只接受当前四个 AI 图标 ID、固定 `assets/ai/icons/<id>.png` 路径和主题 API 根路径。
+ * 主题缺失、版本不支持、映射损坏或资源路径不匹配时返回空映射，由 AI Dock 使用通用
+ * 兜底图形。异常与副作用：无。
+ */
+export function resolveThemeAiIconUrls(theme, baseUrl = "/api/themes") {
+    if (!theme
+            || typeof theme !== "object"
+            || !THEME_ID.test(theme.id)
+            || theme.schemaVersion !== SUPPORTED_THEME_SCHEMA_VERSION
+            || !theme.aiIconAssets
+            || typeof theme.aiIconAssets !== "object"
+            || Array.isArray(theme.aiIconAssets)) {
+        return {};
+    }
+    const apiBase = String(baseUrl ?? "").replace(/\/+$/, "");
+    if (apiBase !== "/api/themes") {
+        return {};
+    }
+    const encodedTheme = encodeURIComponent(theme.id);
+    return Object.fromEntries(AI_ICON_OPTIONS.flatMap((option) => {
+        const asset = theme.aiIconAssets[option.value];
+        if (typeof asset !== "string") {
+            return [];
+        }
+        const match = THEME_AI_ICON_PATH.exec(asset);
+        if (!match || match[1] !== option.value) {
+            return [];
+        }
+        const encodedAsset = asset
+            .split("/")
+            .map((segment) => encodeURIComponent(segment))
+            .join("/");
+        return [[option.value, `${apiBase}/${encodedTheme}/assets/${encodedAsset}`]];
+    }));
 }
 
 /**

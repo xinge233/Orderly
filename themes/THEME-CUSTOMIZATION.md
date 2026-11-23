@@ -11,7 +11,7 @@
 | `theme.json` | 主题名称、说明、排序、是否默认、颜色方案、浏览器主题色、样式和资源登记 |
 | `tokens.css` | 颜色、字体、字号、圆角、间距、阴影和纹理等语义外观 |
 | `motion.css` | 框架公开动效挂点上的过渡、关键帧和组合动画 |
-| `assets/` | 清单登记的本地位图与字体资源 |
+| `assets/` | 清单登记的本地位图、AI 图标 mask 与字体资源 |
 
 目录名必须与 `theme.json` 的 `id` 一致。主题 CSS 必须写入 `@layer orderly.theme { ... }`，并使用 `html[data-theme="<主题 id>"]` 限定作用范围。
 
@@ -104,7 +104,36 @@
 
 纹理资源应登记在 `assets/`，并在主题自己的 CSS 中直接声明 `url("assets/<file>")`。不要把 `url(...)` 存入自定义属性后再交给基础样式解析，否则相对路径可能指向错误位置。
 
-### 2.8 应保留的框架令牌
+### 2.8 AI 图标贴图
+
+主题可以通过 `aiIconAssets` 为 AI Dock 的四枚身份图标提供 PNG 贴图：
+
+```json
+{
+  "aiIconAssets": {
+    "spark": "assets/ai/icons/spark.png",
+    "route": "assets/ai/icons/route.png",
+    "shield": "assets/ai/icons/shield.png",
+    "modules": "assets/ai/icons/modules.png"
+  },
+  "assets": [
+    "assets/ai/icons/spark.png",
+    "assets/ai/icons/route.png",
+    "assets/ai/icons/shield.png",
+    "assets/ai/icons/modules.png"
+  ]
+}
+```
+
+- 只允许 `spark`、`route`、`shield`、`modules` 四个固定 ID。
+- 只允许 `assets/ai/icons/<id>.png`，且路径必须同时登记在 `assets`。
+- PNG 应为透明单色 alpha mask；前端使用 `currentColor` 着色，不直接显示 PNG 的像素颜色。
+- 用户选择的是图标 ID，不是主题文件。切换主题后保持同一 ID，只替换视觉贴图。
+- 主题缺少某个 ID、清单未声明 `aiIconAssets` 或图片加载失败时，AI Dock 回退到框架通用图形。
+
+当前 AI 身份图标只用于收起态入口、展开后的生成按钮和设置页图标预览。关闭、执行、警告、风险盾牌等通用图标仍属于框架，不随主题 AI 贴图迁移。
+
+### 2.9 应保留的框架令牌
 
 以下令牌属于运行时安全或结构性约束，普通主题不应覆写：
 

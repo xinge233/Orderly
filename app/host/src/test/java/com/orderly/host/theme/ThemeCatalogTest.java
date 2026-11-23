@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,8 +37,10 @@ class ThemeCatalogTest {
         ThemeDefinition alpha = catalog.require("alpha");
         assertThat(alpha.styles()).containsExactly("tokens.css", "motion.css");
         assertThat(alpha.assets()).containsExactly("assets/sample.webp");
+        assertThat(alpha.aiIconAssets()).isEmpty();
         JsonNode serialized = objectMapper.valueToTree(alpha);
         assertThat(serialized.has("rootPath")).isFalse();
+        assertThat(serialized.path("aiIconAssets").isObject()).isTrue();
         assertThat(serialized.path("schemaVersion").asInt()).isEqualTo(1);
     }
 
@@ -221,6 +224,84 @@ class ThemeCatalogTest {
     }
 
     @Test
+    void aiIconAssetsRequireKnownIdsRegisteredPngResources() throws Exception {
+        Path root = directory("ai-icons");
+
+        Path good = Files.createDirectories(root.resolve("good"));
+        writeManifest(
+                good,
+                "good",
+                "有效 AI 图标",
+                10,
+                true,
+                List.of("tokens.css", "motion.css"),
+                List.of("assets/ai/icons/spark.png"),
+                Map.of("spark", "assets/ai/icons/spark.png")
+        );
+        writeStyles(good, false);
+
+        Path unknown = Files.createDirectories(root.resolve("unknown"));
+        writeManifest(
+                unknown,
+                "unknown",
+                "未知 AI 图标",
+                20,
+                false,
+                List.of("tokens.css", "motion.css"),
+                List.of("assets/ai/icons/spark.png"),
+                Map.of("upload", "assets/ai/icons/spark.png")
+        );
+        writeStyles(unknown, false);
+
+        Path unregistered = Files.createDirectories(root.resolve("unregistered"));
+        writeManifest(
+                unregistered,
+                "unregistered",
+                "未登记 AI 图标",
+                30,
+                false,
+                List.of("tokens.css", "motion.css"),
+                List.of(),
+                Map.of("spark", "assets/ai/icons/spark.png")
+        );
+        writeStyles(unregistered, false);
+
+        Path nonPng = Files.createDirectories(root.resolve("nonpng"));
+        writeManifest(
+                nonPng,
+                "nonpng",
+                "非 PNG AI 图标",
+                40,
+                false,
+                List.of("tokens.css", "motion.css"),
+                List.of("assets/ai/icons/spark.webp"),
+                Map.of("spark", "assets/ai/icons/spark.webp")
+        );
+        writeStyles(nonPng, false);
+
+        Path mismatch = Files.createDirectories(root.resolve("mismatch"));
+        writeManifest(
+                mismatch,
+                "mismatch",
+                "错配 AI 图标",
+                50,
+                false,
+                List.of("tokens.css", "motion.css"),
+                List.of("assets/ai/icons/route.png"),
+                Map.of("spark", "assets/ai/icons/route.png")
+        );
+        writeStyles(mismatch, false);
+
+        ThemeCatalog catalog = new ThemeCatalog(objectMapper, root.toString());
+
+        assertThat(catalog.summaries()).extracting(ThemeSummary::id).containsExactly("good");
+        assertThat(catalog.require("good").aiIconAssets())
+                .containsExactly(Map.entry("spark", "assets/ai/icons/spark.png"));
+        assertThat(catalog.snapshot().issues()).extracting(ThemeIssue::code)
+                .contains("INVALID_AI_ICON_ID", "AI_ICON_ASSET_UNREGISTERED", "INVALID_AI_ICON_ASSET");
+    }
+
+    @Test
     void contractSamplesTrackRuntimePolicy() throws Exception {
         Path samples = Path.of(System.getProperty("orderly.contracts-samples-dir"))
                 .toAbsolutePath()
@@ -247,6 +328,22 @@ class ThemeCatalogTest {
         assertInvalidSample(
                 samples.resolve("invalid/theme-active-svg-asset.json"),
                 "INVALID_ASSET_PATH"
+        );
+        assertInvalidSample(
+                samples.resolve("invalid/theme-ai-icon-unknown.json"),
+                "INVALID_AI_ICON_ID"
+        );
+        assertInvalidSample(
+                samples.resolve("invalid/theme-ai-icon-unregistered.json"),
+                "AI_ICON_ASSET_UNREGISTERED"
+        );
+        assertInvalidSample(
+                samples.resolve("invalid/theme-ai-icon-non-png.json"),
+                "INVALID_AI_ICON_ASSET"
+        );
+        assertInvalidSample(
+                samples.resolve("invalid/theme-ai-icon-mismatch.json"),
+                "INVALID_AI_ICON_ASSET"
         );
     }
 
@@ -301,11 +398,27 @@ class ThemeCatalogTest {
             List<String> styles,
             List<String> assets
     ) throws IOException {
+        writeManifest(theme, id, label, order, isDefault, styles, assets, Map.of());
+    }
+
+    private void writeManifest(
+            Path theme,
+            String id,
+            String label,
+            int order,
+            boolean isDefault,
+            List<String> styles,
+            List<String> assets,
+            Map<String, String> aiIconAssets
+    ) throws IOException {
         String stylesJson = styles.stream()
                 .map(value -> "\"" + value + "\"")
                 .collect(java.util.stream.Collectors.joining(", "));
         String assetsJson = assets.stream()
                 .map(value -> "\"" + value + "\"")
+                .collect(java.util.stream.Collectors.joining(", "));
+        String aiIconAssetsJson = aiIconAssets.entrySet().stream()
+                .map(entry -> "\"" + entry.getKey() + "\": \"" + entry.getValue() + "\"")
                 .collect(java.util.stream.Collectors.joining(", "));
         Files.writeString(theme.resolve("theme.json"), """
                 {
@@ -318,9 +431,18 @@ class ThemeCatalogTest {
                   "colorScheme": "light",
                   "browserColor": "Canvas",
                   "styles": [%s],
+                  "aiIconAssets": {%s},
                   "assets": [%s]
                 }
-                """.formatted(id, label, order, isDefault, stylesJson, assetsJson));
+                """.formatted(
+                id,
+                label,
+                order,
+                isDefault,
+                stylesJson,
+                aiIconAssetsJson,
+                assetsJson
+        ));
     }
 
     private void writeStyles(Path theme, boolean withAsset) throws IOException {
@@ -335,6 +457,17 @@ class ThemeCatalogTest {
             writeRaster(assets.resolve("sample.webp"));
             writeRaster(assets.resolve("sample-grain.webp"));
         }
+        writeAiIconAssets(theme);
+    }
+
+    private void writeAiIconAssets(Path theme) throws IOException {
+        Path icons = Files.createDirectories(theme.resolve("assets/ai/icons"));
+        writeRaster(icons.resolve("spark.png"));
+        writeRaster(icons.resolve("route.png"));
+        writeRaster(icons.resolve("shield.png"));
+        writeRaster(icons.resolve("modules.png"));
+        writeRaster(icons.resolve("spark.webp"));
+        writeRaster(icons.resolve("unknown.png"));
     }
 
     private void writeRaster(Path path) throws IOException {

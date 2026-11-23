@@ -17,7 +17,7 @@ import {
     normalizeAiSettings,
     validateAiSettingsDraft
 } from "./ai-settings.js";
-import { AI_ICON_OPTIONS, hydrateIcons, icon } from "./icons.js";
+import { AI_ICON_OPTIONS, hydrateIcons, icon, paintAiIcon } from "./icons.js";
 import {
     EVENT_ORIGIN,
     EVENT_ORIGIN_LABEL,
@@ -62,6 +62,7 @@ import {
     normalizePlanningFeature,
     reconcileAppliedTheme,
     reconcileSettingsForCatalog,
+    resolveThemeAiIconUrls,
     SettingsStore,
     ThemeManager
 } from "./settings.js";
@@ -161,6 +162,7 @@ const state = {
     moduleCatalogIssues: [],
     moduleRefreshIssues: [],
     themes: [],
+    themeAiIconUrls: {},
     themeIssues: [],
     builtInFallbackActive: true,
     plan: null,
@@ -1830,6 +1832,7 @@ function applySettings(settings) {
     aiDialog?.setIcon(settings.aiIcon);
     aiDialog?.setPanelWidth(settings.aiPanelWidth);
     syncSettingControls(settings);
+    syncAiIconPreviews();
     void applyThemeSelection(settings.theme);
     renderNavigation(document.querySelector("#nav-search")?.value ?? "");
     if (state.activeView === "overview" && document.querySelector("#module-card-grid")) {
@@ -1853,6 +1856,7 @@ async function applyThemeSelection(themeId) {
     if (settingsStore.getSnapshot().theme !== requested) {
         return;
     }
+    applyThemeAiIcons(theme);
     const patch = reconcileAppliedTheme(requested, theme);
     if (patch) {
         const actualId = patch.theme;
@@ -1877,6 +1881,33 @@ async function applyThemeSelection(themeId) {
     } else {
         updateSettingsStatus("没有可用目录主题，当前使用内置安全外观。");
     }
+}
+
+/**
+ * 将当前主题的 AI 图标资源同步到 Dock 与设置预览。
+ *
+ * @param {object | null} theme 实际应用的主题详情
+ * @returns {void}
+ */
+function applyThemeAiIcons(theme) {
+    state.themeAiIconUrls = resolveThemeAiIconUrls(theme);
+    aiDialog?.setIconAssets(state.themeAiIconUrls);
+    syncAiIconPreviews();
+}
+
+/**
+ * 用当前主题资源重绘设置页中的四个 AI 图标预览。
+ *
+ * @returns {void}
+ */
+function syncAiIconPreviews() {
+    document.querySelectorAll("[data-ai-icon-preview]").forEach((preview) => {
+        const iconId = preview.dataset.aiIconPreview;
+        paintAiIcon(preview, iconId, {
+            url: state.themeAiIconUrls[iconId],
+            size: 20
+        });
+    });
 }
 
 /**
@@ -4218,7 +4249,11 @@ function renderAppearanceSettings(panel) {
         input.checked = settings.aiIcon === option.value;
         const card = element("span", "ai-icon-option__card");
         const iconPreview = element("span", "ai-icon-option__icon");
-        iconPreview.innerHTML = icon(option.value, 20);
+        iconPreview.dataset.aiIconPreview = option.value;
+        paintAiIcon(iconPreview, option.value, {
+            url: state.themeAiIconUrls[option.value],
+            size: 20
+        });
         card.append(iconPreview, element("strong", "", option.label));
         label.append(input, card);
         input.addEventListener("change", () => {

@@ -20,6 +20,7 @@ themes/
 - 每个包必须包含 `theme.json`、`tokens.css` 和 `motion.css`。
 - `theme.json` 必须声明 `schemaVersion: 1`，并通过 `styles` 登记 `tokens.css` 与 `motion.css`。
 - 静态资源放在 `assets/`，每个文件都必须在清单 `assets` 数组中登记。
+- AI 图标通过可选的 `aiIconAssets` 映射登记四枚 PNG；映射路径必须同时出现在 `assets` 数组中。
 - 允许的主动资源类型仅为栅格图与字体：PNG、JPEG、WebP、GIF、AVIF、WOFF/WOFF2、TTF、OTF。SVG 和其它可承载脚本的主动内容不允许进入白名单。
 - 主题包不能是符号链接，包内资源也不能经过链接。
 - `_legacy-flat-json/` 只是迁移前的 JSON 归档，不会被宿主发现。
@@ -37,7 +38,19 @@ themes/
   "colorScheme": "light",
   "browserColor": "#f3efe7",
   "styles": ["tokens.css", "motion.css"],
-  "assets": ["assets/paper-grain.webp"]
+  "aiIconAssets": {
+    "spark": "assets/ai/icons/spark.png",
+    "route": "assets/ai/icons/route.png",
+    "shield": "assets/ai/icons/shield.png",
+    "modules": "assets/ai/icons/modules.png"
+  },
+  "assets": [
+    "assets/paper-grain.webp",
+    "assets/ai/icons/spark.png",
+    "assets/ai/icons/route.png",
+    "assets/ai/icons/shield.png",
+    "assets/ai/icons/modules.png"
+  ]
 }
 ```
 
@@ -50,6 +63,8 @@ themes/
 - 主题 CSS 必须写入 `@layer orderly.theme { ... }`。
 - 主题不得携带 JavaScript，也不得选择具体业务模块内部 DOM。
 - 框架公开挂点包括 `app-shell`、`sidebar`、`main`、`overview`、`module-card`、`settings-dialog`、`ai-dialog` 和 `feedback`。
+- AI 图标 PNG 作为主题资源通过 `/api/themes/{id}/assets/...` 提供，前端以 alpha mask 和 `currentColor` 着色。用户选择的图标 ID 保存在本地；主题只决定该 ID 当前使用的贴图。
+- `aiIconAssets` 只接受 `spark`、`route`、`shield`、`modules` 四个固定 ID。字段缺失、某个 ID 未登记或资源加载失败时，AI Dock 使用框架通用图形回退。
 - 桌面 `sidebar` 是固定 272px 覆盖层，收起时通过 `clip-path` 只露出 72px 图标轨道；主内容网格始终只预留 72px。72px 轨道边线由侧栏背景层绘制，展开态清除该背景线并保留覆盖层自身的右边框，不能用覆盖内容的伪元素制造边线。主题只负责该挂点公开状态的视觉与动效，不得改变主内容重排规则或侧栏内部几何。
 - `sidebar` 桌面端只使用 `clip-path var(--duration-sidebar) var(--ease-out)` 过渡，不再动画 `width`、内边距、文字或高度；移动抽屉使用 `clip-path: none` 并单独保留 `transform` 过渡。基础 `app.css` 不声明过渡。`attention` 是由计划目标提示短暂覆盖的动效状态，结束后必须回到真实的 `expanded` 或 `collapsed` 状态。
 - 动效只由程序内 `gentle`、`minimal`、`none` 三档控制，系统 `prefers-reduced-motion` 完全不参与。默认主题的 `--duration-sidebar` 为 `200ms`，克制动效为 `110ms`，只有程序关闭档 `motion: none` 为 `0ms`。主题不得在该侧栏规则中写死时长。
