@@ -435,23 +435,6 @@ AI API Key 只保存在 AI 服务进程内存中，不会写入此目录或日�
     [System.Text.UTF8Encoding]::new($false)
 )
 
-Write-ChecksumFile $appRoot
-$zipPath = Join-Path $outputRoot "Orderly-$projectVersion-full-app.zip"
-if (Test-Path -LiteralPath $zipPath) {
-    Remove-Item -LiteralPath $zipPath -Force
-}
-[System.IO.Compression.ZipFile]::CreateFromDirectory(
-    $appRoot,
-    $zipPath,
-    [System.IO.Compression.CompressionLevel]::Optimal,
-    $false
-)
-[System.IO.File]::WriteAllText(
-    "$zipPath.sha256",
-    "$(Get-OrderlySha256 $zipPath)  $([System.IO.Path]::GetFileName($zipPath))`n",
-    [System.Text.UTF8Encoding]::new($false)
-)
-
 $installerPath = $null
 if (-not $SkipInstaller) {
     $installerRoot = Join-Path $outputRoot "installer"
@@ -492,6 +475,23 @@ if (-not $SkipInstaller) {
         [System.Text.UTF8Encoding]::new($false)
     )
 }
+
+Write-ChecksumFile $appRoot
+$zipPath = Join-Path $outputRoot "Orderly-$projectVersion-full-app.zip"
+if (Test-Path -LiteralPath $zipPath) {
+    Remove-Item -LiteralPath $zipPath -Force
+}
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+    $appRoot,
+    $zipPath,
+    [System.IO.Compression.CompressionLevel]::Optimal,
+    $false
+)
+[System.IO.File]::WriteAllText(
+    "$zipPath.sha256",
+    "$(Get-OrderlySha256 $zipPath)  $([System.IO.Path]::GetFileName($zipPath))`n",
+    [System.Text.UTF8Encoding]::new($false)
+)
 
 Write-Host "完整版应用目录：$appRoot"
 Write-Host "完整版 ZIP：$zipPath"
