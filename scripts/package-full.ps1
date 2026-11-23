@@ -135,7 +135,8 @@ function Get-GitSourceTreeSha256 {
         $item = Get-Item -LiteralPath $source -Force
         $records.Add("$relative`t$($item.Length)`t$(Get-OrderlySha256 $source)")
     }
-    $payload = ($records | Sort-Object) -join "`n"
+    $records.Sort([System.StringComparer]::Ordinal)
+    $payload = ($records -join "`n")
     $algorithm = [System.Security.Cryptography.SHA256]::Create()
     try {
         $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($payload + "`n")
