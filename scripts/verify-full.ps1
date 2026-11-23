@@ -185,7 +185,7 @@ foreach ($line in Get-Content -Encoding UTF8 -LiteralPath $checksumPath) {
 $actualFiles = @(
     Get-ChildItem -LiteralPath $appRoot -Recurse -File -Force |
         ForEach-Object { Get-OrderlyRelativePath $_.FullName $appRoot } |
-        Where-Object { $_ -ne "files.sha256" } |
+        Where-Object { $_ -ne "files.sha256" -and $_ -ne "app/.jpackage.xml" } |
         Sort-Object
 )
 if (($actualFiles -join "|") -ne (@($seen | Sort-Object) -join "|")) {
