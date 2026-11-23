@@ -162,10 +162,13 @@ function Write-JsonFile {
 function Write-ChecksumFile {
     param([Parameter(Mandatory = $true)][string]$Root)
     $path = Join-Path $Root "files.sha256"
-    $jpackageMetadataPath = Join-Path $Root "app\.jpackage.xml"
+    $jpackageMetadataPaths = @(
+        (Join-Path $Root "app\.jpackage.xml"),
+        (Join-Path $Root "app\.package")
+    )
     $lines = @(
         Get-ChildItem -LiteralPath $Root -Recurse -File -Force |
-            Where-Object { $_.FullName -ne $path -and $_.FullName -ne $jpackageMetadataPath } |
+            Where-Object { $_.FullName -ne $path -and $jpackageMetadataPaths -notcontains $_.FullName } |
             Sort-Object FullName |
             ForEach-Object {
                 "$(Get-OrderlySha256 $_.FullName)  $(Get-OrderlyRelativePath $_.FullName $Root)"
