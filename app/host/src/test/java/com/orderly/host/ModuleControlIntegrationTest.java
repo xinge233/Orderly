@@ -131,7 +131,6 @@ class ModuleControlIntegrationTest {
                 true,
                 false,
                 false,
-                false,
                 0
         ));
         org.mockito.Mockito.when(aiService.settings(any()))
@@ -142,12 +141,20 @@ class ModuleControlIntegrationTest {
                         true,
                         false,
                         false,
-                        false,
                         0
                 ));
         org.mockito.Mockito.when(aiService.beginTurn()).thenReturn(
                 new AiServiceClient.TurnBudget(Instant.now().plusSeconds(60))
         );
+        org.mockito.Mockito.when(aiService.continueWithQueryResults(any(), any()))
+                .thenReturn(new AiContracts.ServiceDecision(
+                        "QUESTION",
+                        "module-system-control-query-conversation",
+                        "查询结果已自动用于后续决策",
+                        null,
+                        null,
+                        new AiContracts.Question("继续处理？", List.of("继续", "取消"))
+                ));
     }
 
     @AfterEach
@@ -315,7 +322,7 @@ class ModuleControlIntegrationTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.kind").value("QUERY"))
+                .andExpect(jsonPath("$.kind").value("QUESTION"))
                 .andExpect(jsonPath("$.queryResults[0].status").value("OK"))
                 .andExpect(jsonPath("$.queryResults[0].payload.count").value(1));
 

@@ -61,7 +61,6 @@ function normalizeSettings(value) {
         configured: value?.configured === true,
         mode: value?.mode === "CUSTOM" ? "CUSTOM" : "DEEPSEEK",
         allowDeleteDirect: value?.allowDeleteDirect === true,
-        allowSendQueryResultsToModel: value?.allowSendQueryResultsToModel === true,
         baseUrl: typeof value?.baseUrl === "string" ? value.baseUrl : "",
         model: typeof value?.model === "string" ? value.model : ""
     };
@@ -1897,8 +1896,7 @@ export function mountAiDialog({
                 apiKey,
                 baseUrl: null,
                 model: null,
-                allowDeleteDirect: dialog.settings.allowDeleteDirect,
-                allowSendQueryResultsToModel: dialog.settings.allowSendQueryResultsToModel
+                allowDeleteDirect: dialog.settings.allowDeleteDirect
             });
             const test = await testAiSettings();
             if (test?.ok === false) {

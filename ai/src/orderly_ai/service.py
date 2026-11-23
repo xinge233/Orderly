@@ -85,8 +85,8 @@ class AIService:
     """协调 Provider 调用并维护进程内短期状态。
 
     核心不变量：同一 ``clientRequestId`` 不能对应不同语义内容；模型结构
-    违规最多修复一次；设置变更后旧会话和重放结果不能被复用；Query 结果
-    未经显式隐私同意不得发送给外部模型。
+    违规最多修复一次；设置变更后旧会话和重放结果不能被复用；本地 Query
+    结果在受控大小上限内始终回传模型。
     """
 
     def __init__(
@@ -159,16 +159,9 @@ class AIService:
     async def query_results(self, request: QueryResultsRequest) -> Decision:
         """提交只读 Query 结果，并禁止续聊再次发起 Query。
 
-        隐私开关先于任何序列化或 Provider 调用检查，确保未获同意时结果不会
-        离开本机进程。通过开关后再检查单条与总计 UTF-8 大小上限。
+        Query 结果始终进入受控续聊；序列化前先检查单条与总计 UTF-8 大小上限。
         """
         config = self.settings.require_configured()
-        if not config.allow_send_query_results_to_model:
-            raise ServiceError(
-                403,
-                "AI_QUERY_RESULTS_NOT_ALLOWED",
-                "当前未允许将查询结果发送给模型。",
-            )
         self._validate_query_result_sizes(request)
         serialized_results = [
             result.model_dump(by_alias=True, exclude_none=True)

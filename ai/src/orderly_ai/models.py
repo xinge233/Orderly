@@ -56,7 +56,6 @@ class SettingsPutRequest(CamelModel):
     base_url: str | None = None
     model: str | None = None
     allow_delete_direct: bool | None = None
-    allow_send_query_results_to_model: bool | None = None
 
     @field_validator("api_key")
     @classmethod
@@ -75,7 +74,6 @@ class SettingsView(CamelModel):
     model: str
     configured: bool
     allow_delete_direct: bool
-    allow_send_query_results_to_model: bool
     allow_local_provider: bool = False
     settings_version: int
 
@@ -237,8 +235,8 @@ class QueryResultItem(CamelModel):
 class QueryResultsRequest(CamelModel):
     """Query 结果续聊请求。
 
-    服务层还必须检查用户的显式隐私开关和 UTF-8 大小上限；这里是结构层，
-    不能单独证明结果已获准发送给外部模型。
+    Query 结果始终进入受控续聊；服务层仍需检查 UTF-8 大小上限，避免把
+    超出模型上下文边界的本地数据发送出去。
     """
 
     goal: str = Field(min_length=1, max_length=4000)
@@ -377,7 +375,6 @@ class ProviderConfig:
     model: str
     api_key: str | None
     allow_delete_direct: bool
-    allow_send_query_results_to_model: bool
     version: int
 
     @property
@@ -393,6 +390,5 @@ class ProviderConfig:
             f"mode={self.mode!r}, base_url={self.base_url!r}, model={self.model!r}, "
             f"api_key={key_state!r}, "
             f"allow_delete_direct={self.allow_delete_direct!r}, "
-            "allow_send_query_results_to_model="
-            f"{self.allow_send_query_results_to_model!r}, version={self.version!r})"
+            f"version={self.version!r})"
         )

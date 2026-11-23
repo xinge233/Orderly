@@ -289,8 +289,7 @@ test("API client uses independent AI settings, turns and plan confirmation endpo
         apiKey: "temporary-key",
         baseUrl: null,
         model: null,
-        allowDeleteDirect: false,
-        allowSendQueryResultsToModel: true
+        allowDeleteDirect: false
     });
     await api.testAiSettings();
     await api.interpretAiTurn({
@@ -321,7 +320,6 @@ test("API client uses independent AI settings, turns and plan confirmation endpo
         apiKey: "temporary-key",
         baseUrl: null,
         model: null,
-        allowDeleteDirect: false,
-        allowSendQueryResultsToModel: true
+        allowDeleteDirect: false
     });
 });

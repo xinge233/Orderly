@@ -72,7 +72,7 @@ class AiInterpretServiceTest {
         lenient().when(aiService.beginTurn()).thenReturn(
                 new AiServiceClient.TurnBudget(Instant.now().plusSeconds(60))
         );
-        lenient().when(aiService.settings(any())).thenReturn(settings(false, false));
+        lenient().when(aiService.settings(any())).thenReturn(settings(false));
     }
 
     @Test
@@ -149,27 +149,7 @@ class AiInterpretServiceTest {
     }
 
     @Test
-    void queryResultsStayLocalByDefaultAndNeverContinueToTheModel() {
-        when(aiService.createTurn(any(), any())).thenReturn(queryDecision());
-        List<AiContracts.QueryResult> results = List.of(okQueryResult());
-        when(queries.executeAiQueries(anyList())).thenReturn(results);
-
-        AiContracts.TurnResponse response = service.interpret(new AiContracts.TurnRequest(
-                "看看待办",
-                null,
-                "query-private-request"
-        ));
-
-        assertThat(response.kind()).isEqualTo("QUERY");
-        assertThat(response.queryResults()).isEqualTo(results);
-        verify(queries).executeAiQueries(anyList());
-        verify(aiService, never()).continueWithQueryResults(any(), any());
-        verifyNoInteractions(actions, plans);
-    }
-
-    @Test
-    void explicitQueryResultSharingSendsBoundedResultsAndOnlyUsesFinalDecisionKinds() {
-        when(aiService.settings(any())).thenReturn(settings(false, true));
+    void queryResultsAlwaysSendBoundedResultsAndOnlyUseFinalDecisionKinds() {
         when(aiService.createTurn(any(), any())).thenReturn(queryDecision());
         List<AiContracts.QueryResult> results = List.of(okQueryResult());
         when(queries.executeAiQueries(anyList())).thenReturn(results);
@@ -205,7 +185,6 @@ class AiInterpretServiceTest {
 
     @Test
     void validatesAndReturnsViewWithoutChangingQueryPayload() {
-        when(aiService.settings(any())).thenReturn(settings(false, true));
         when(aiService.createTurn(any(), any())).thenReturn(queryDecision());
         List<AiContracts.QueryResult> results = List.of(okQueryResult());
         when(queries.executeAiQueries(anyList())).thenReturn(results);
@@ -248,7 +227,6 @@ class AiInterpretServiceTest {
 
     @Test
     void invalidViewFallsBackToLocalQueryResults() {
-        when(aiService.settings(any())).thenReturn(settings(false, true));
         when(aiService.createTurn(any(), any())).thenReturn(queryDecision());
         List<AiContracts.QueryResult> results = List.of(okQueryResult());
         when(queries.executeAiQueries(anyList())).thenReturn(results);
@@ -289,7 +267,6 @@ class AiInterpretServiceTest {
 
     @Test
     void normalizesKeyValueViewAndAllowsNullFields() {
-        when(aiService.settings(any())).thenReturn(settings(false, true));
         when(aiService.createTurn(any(), any())).thenReturn(queryDecision());
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("title", "项目周报");
@@ -335,7 +312,6 @@ class AiInterpretServiceTest {
 
     @Test
     void tableViewRequiresAnArrayRowPath() {
-        when(aiService.settings(any())).thenReturn(settings(false, true));
         when(aiService.createTurn(any(), any())).thenReturn(queryDecision());
         List<AiContracts.QueryResult> results = List.of(new AiContracts.QueryResult(
                 "module_todo",
@@ -408,8 +384,8 @@ class AiInterpretServiceTest {
     @Test
     void replayKeyIncludesSettingsVersion() {
         when(aiService.settings(any())).thenReturn(
-                settings(false, false, 0),
-                settings(false, false, 1)
+                settings(false, 0),
+                settings(false, 1)
         );
         when(aiService.createTurn(any(), any())).thenReturn(
                 decision("QUESTION", new AiContracts.Question("第一次？", List.of())),
@@ -595,16 +571,12 @@ class AiInterpretServiceTest {
         });
     }
 
-    private AiContracts.SettingsView settings(
-            boolean allowDeleteDirect,
-            boolean allowSendQueryResultsToModel
-    ) {
-        return settings(allowDeleteDirect, allowSendQueryResultsToModel, 0);
+    private AiContracts.SettingsView settings(boolean allowDeleteDirect) {
+        return settings(allowDeleteDirect, 0);
     }
 
     private AiContracts.SettingsView settings(
             boolean allowDeleteDirect,
-            boolean allowSendQueryResultsToModel,
             int settingsVersion
     ) {
         return new AiContracts.SettingsView(
@@ -613,7 +585,6 @@ class AiInterpretServiceTest {
                 "deepseek-flash",
                 true,
                 allowDeleteDirect,
-                allowSendQueryResultsToModel,
                 false,
                 settingsVersion
         );

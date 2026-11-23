@@ -218,8 +218,8 @@ public class AiInterpretService {
     /**
      * 按决策类型分派后续处理。
      *
-     * <p>Query 结果默认停止在本地并直接返回前端；只有设置显式允许时才携带受限结果
-     * 回传 Python。续聊响应禁止再次产生 Query，避免形成不受控的查询循环。</p>
+     * <p>Query 结果完成本地查询后始终携带受限结果回传 Python。续聊响应禁止再次
+     * 产生 Query，避免形成不受控的查询循环；模型调用失败时仍返回本地结果。</p>
      */
     private AiContracts.TurnResponse processDecision(
             String conversationId,
@@ -262,13 +262,6 @@ public class AiInterpretService {
                 }
                 List<AiContracts.QueryResult> queryResults =
                         queries.executeAiQueries(decision.queries());
-                if (!settings.allowSendQueryResultsToModel()) {
-                    yield queryResponse(
-                            conversationId,
-                            decision,
-                            queryResults
-                    );
-                }
                 AiContracts.ServiceDecision continuation;
                 try {
                     continuation = aiService.continueWithQueryResults(

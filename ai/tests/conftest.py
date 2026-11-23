@@ -89,7 +89,6 @@ def configure_settings(
     client: TestClient,
     *,
     api_key: str = "temporary-secret-key",
-    allow_query_results: bool = False,
     allow_delete_direct: bool = False,
 ) -> dict[str, Any]:
     response = client.put(
@@ -99,7 +98,6 @@ def configure_settings(
             "mode": "DEEPSEEK",
             "apiKey": api_key,
             "allowDeleteDirect": allow_delete_direct,
-            "allowSendQueryResultsToModel": allow_query_results,
         },
     )
     assert response.status_code == 200, response.text

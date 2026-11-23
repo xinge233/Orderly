@@ -33,7 +33,7 @@ def test_health_is_public_and_other_endpoints_fail_closed(make_client):
 
     authorized = client.get("/v1/settings", headers=AUTH_HEADERS)
     assert authorized.status_code == 200
-    assert authorized.json()["allowSendQueryResultsToModel"] is False
+    assert "allowSendQueryResultsToModel" not in authorized.json()
 
 
 @pytest.mark.parametrize(
@@ -98,7 +98,7 @@ def test_settings_fix_deepseek_endpoint_and_never_return_key(make_client):
     assert configured["baseUrl"] == "https://api.deepseek.com"
     assert configured["model"] == "deepseek-flash"
     assert configured["configured"] is True
-    assert configured["allowSendQueryResultsToModel"] is False
+    assert "allowSendQueryResultsToModel" not in configured
     assert configured["settingsVersion"] == 1
     assert "apiKey" not in configured
     assert secret not in str(configured)
@@ -185,13 +185,27 @@ def test_custom_localhost_http_requires_explicit_development_flag(
     assert accepted.json()["allowLocalProvider"] is True
 
 
+def test_query_result_sharing_setting_cannot_be_overridden(make_client):
+    client = make_client()
+
+    response = client.put(
+        "/v1/settings",
+        headers=AUTH_HEADERS,
+        json={
+            "mode": "DEEPSEEK",
+            "apiKey": "temporary-secret-key",
+            "allowDeleteDirect": False,
+            "allowSendQueryResultsToModel": False,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "INVALID_REQUEST"
+
+
 def test_delete_resets_settings_without_returning_key(make_client):
     client = make_client()
-    configure_settings(
-        client,
-        api_key="delete-me",
-        allow_query_results=True,
-    )
+    configure_settings(client, api_key="delete-me")
 
     response = client.delete("/v1/settings", headers=AUTH_HEADERS)
 
@@ -199,7 +213,7 @@ def test_delete_resets_settings_without_returning_key(make_client):
     payload = response.json()
     assert payload["configured"] is False
     assert payload["allowDeleteDirect"] is False
-    assert payload["allowSendQueryResultsToModel"] is False
+    assert "allowSendQueryResultsToModel" not in payload
     assert payload["settingsVersion"] == 2
     assert "delete-me" not in response.text
 
@@ -217,7 +231,6 @@ def test_request_and_provider_reprs_redact_api_key():
         model="deepseek-flash",
         api_key=secret,
         allow_delete_direct=False,
-        allow_send_query_results_to_model=False,
         version=1,
     )
 

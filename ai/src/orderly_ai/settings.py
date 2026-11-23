@@ -44,7 +44,6 @@ class SettingsStore:
             model=DEEPSEEK_MODEL,
             api_key=None,
             allow_delete_direct=False,
-            allow_send_query_results_to_model=False,
             version=0,
         )
 
@@ -94,11 +93,6 @@ class SettingsStore:
                 if request.allow_delete_direct is None
                 else request.allow_delete_direct
             )
-            allow_query_results = (
-                current.allow_send_query_results_to_model
-                if request.allow_send_query_results_to_model is None
-                else request.allow_send_query_results_to_model
-            )
 
             if mode == "DEEPSEEK":
                 base_url = DEEPSEEK_BASE_URL
@@ -132,7 +126,6 @@ class SettingsStore:
                 model=model,
                 api_key=api_key,
                 allow_delete_direct=allow_delete_direct,
-                allow_send_query_results_to_model=allow_query_results,
                 version=current.version + 1,
             )
             return self._view(
@@ -149,7 +142,6 @@ class SettingsStore:
                 model=DEEPSEEK_MODEL,
                 api_key=None,
                 allow_delete_direct=False,
-                allow_send_query_results_to_model=False,
                 version=self._config.version + 1,
             )
             return self._view(
@@ -170,9 +162,6 @@ class SettingsStore:
             model=config.model,
             configured=config.configured,
             allow_delete_direct=config.allow_delete_direct,
-            allow_send_query_results_to_model=(
-                config.allow_send_query_results_to_model
-            ),
             allow_local_provider=allow_local_provider,
             settings_version=config.version,
         )

@@ -95,7 +95,7 @@ test("planning features default to disabled and never enter local appearance sto
     assert.doesNotMatch(storage.getItem(), /aiPlanEnabled/);
 });
 
-test("AI query-result sharing stays in host settings instead of appearance storage", async () => {
+test("AI query-result sharing is immutable and absent from appearance settings", async () => {
     const app = await read("../src/app.js");
     const settings = await read("../src/settings.js");
     const aiSettings = between(
@@ -109,9 +109,8 @@ test("AI query-result sharing stays in host settings instead of appearance stora
         "async function clearAiSettings"
     );
 
-    assert.match(aiSettings, /默认不把本地查询结果发送给模型/);
-    assert.match(aiSettings, /\[data-setting-key="allowSendQueryResultsToModel"\]/);
-    assert.match(persist, /allowSendQueryResultsToModel: queryResultsInput\.checked/);
+    assert.doesNotMatch(aiSettings, /allowSendQueryResultsToModel/);
+    assert.doesNotMatch(persist, /allowSendQueryResultsToModel/);
     assert.doesNotMatch(persist, /localStorage|settingsStore/);
     assert.doesNotMatch(settings, /allowSendQueryResultsToModel/);
 });
@@ -212,7 +211,7 @@ test("settings provide reusable accessible help tooltips", async () => {
     );
     assert.match(
         app,
-        /"allowSendQueryResultsToModel",\s*"发送本地查询结果给模型",[\s\S]*?每回合最多发送 4 条/
+        /"aiPlanEnabled",\s*"允许 AI 生成计划",[\s\S]*?写入与删除仍由宿主统一校验/
     );
     assert.match(css, /\.setting-help__trigger:hover \+ \.setting-help__tooltip/);
     assert.match(css, /\.setting-help__trigger:focus-visible \+ \.setting-help__tooltip/);

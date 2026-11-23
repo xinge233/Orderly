@@ -26,8 +26,8 @@ def build_system_prompt(
     """生成包含当前时间、能力开关和工具卡的只读系统规则。
 
     ``PLAN``、``QUERY`` 与删除直执是否出现在提示中，分别由当前功能开关和
-    隐私/安全设置决定。提示层只表达模型可见范围，Java 仍会独立复核最终
-    决策与删除授权。
+    安全策略决定。提示层只表达模型可见范围，Java 仍会独立复核最终决策与
+    删除授权。
     """
     module_cards = [
         module.model_dump(by_alias=True, exclude_none=True)
@@ -103,7 +103,7 @@ def build_system_prompt(
 def build_query_results_message(results: Iterable[QueryResultItem]) -> str:
     """把宿主提供的只读 Query 结果封装为不可信数据消息。
 
-    调用方必须先确认用户显式允许发送，并完成 16 KiB/64 KiB 上限检查。
+    调用方必须先完成 16 KiB/64 KiB 上限检查。
     续聊禁止再次产生 QUERY，以避免模型在 Java 控制循环之外形成查询循环。
     """
     serialized = [

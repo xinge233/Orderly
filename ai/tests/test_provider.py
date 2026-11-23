@@ -21,7 +21,6 @@ def provider_config(
         model="custom-model",
         api_key=api_key,
         allow_delete_direct=False,
-        allow_send_query_results_to_model=False,
         version=1,
     )
 

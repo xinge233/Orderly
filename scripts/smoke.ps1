@@ -307,8 +307,8 @@ if ($aiSettings.mode -ne "DEEPSEEK" -or
         $aiSettings.model -ne "deepseek-flash") {
     throw "AI 设置未返回 DeepSeek 固定默认值。"
 }
-if ($aiSettings.allowSendQueryResultsToModel -isnot [bool]) {
-    throw "AI 设置缺少布尔 allowSendQueryResultsToModel。"
+if ($aiSettings.PSObject.Properties.Name -contains "allowSendQueryResultsToModel") {
+    throw "AI 设置仍暴露可修改的查询结果发送开关。"
 }
 
 # 文件模块存在时构造真实但隔离的写入/回滚链；模块缺失时由通用模块测试负责零模块场景。

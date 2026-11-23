@@ -27,16 +27,16 @@ $env:ORDERLY_AI_IPC_TOKEN = "<由宿主进程生成并注入的临时令牌>"
 
 ## 接口
 
-- `GET /v1/settings`：返回内存设置；永远包含 `allowSendQueryResultsToModel`，默认 `false`。
-- `PUT /v1/settings`：更新 provider、删除直执策略与查询结果隐私开关；省略或留空
+- `GET /v1/settings`：返回内存设置；不包含可修改的 Query 结果发送开关。
+- `PUT /v1/settings`：更新 provider 与删除直执策略；省略或留空
   `apiKey` 时保留进程内旧 Key。
 - `DELETE /v1/settings`：清除 Key 并恢复 DeepSeek 默认设置。
 - `POST /v1/settings/test`：使用当前内存 Key 做最小模型连通性测试。
 - `POST /v1/turns`：返回 `ACTIONS|PLAN|QUESTION|QUERY`；`QUERY` 只含 1 至 4 条查询，
   首次回合不能返回 `VIEW`。
-- `POST /v1/turns/query-results`：仅在
-  `allowSendQueryResultsToModel=true` 时接受结果；最多 4 条，单条 16 KiB、总计 64 KiB；
-  可返回只描述已有字段的 `VIEW`，也允许 `ACTIONS|PLAN|QUESTION`，禁止循环发起 `QUERY`。
+- `POST /v1/turns/query-results`：始终接受受控续聊结果；最多 4 条，单条 16 KiB、
+  总计 64 KiB；可返回只描述已有字段的 `VIEW`，也允许 `ACTIONS|PLAN|QUESTION`，
+  禁止循环发起 `QUERY`。
   `VIEW` 的字段和行路径必须来自 Query payload，非法结果回退本地展示。
 
 错误统一为 `{code, message, timestamp, details?}`。模型输出不符合契约时只修复一次；

@@ -4397,28 +4397,17 @@ function renderAiSettings(panel) {
         "开启后，AI 可先生成需要确认的计划。关闭时，AI 只返回可直执动作或澄清问题；写入与删除仍由宿主统一校验，不能绕过确认、快照、审计和回滚。"
     );
 
-    const queryResultsRow = settingRow(
-        "allowSendQueryResultsToModel",
-        "发送本地查询结果给模型",
-        "默认不把本地查询结果发送给模型，开启后仅发送有上限的查询结果。",
-        settings.allowSendQueryResultsToModel === true,
-        () => {},
-        state.aiSettingsLoading || state.aiSettingsSaving || state.aiSettingsTesting,
-        "发送本地查询结果给模型",
-        "开启后，每回合最多发送 4 条、单条最多 16 KiB、总计最多 64 KiB 的只读查询结果给模型，用于生成受控展示视图。原始结果默认只留在本地，模型不能修改数据或发起动作。"
-    );
-
     const policyField = element("fieldset", "setting-field");
     policyField.append(
         element("legend", "", "执行策略"),
         element(
             "p",
             "",
-            "风险开关由宿主保存；本地查询结果是否发送给模型由下方开关控制。"
+            "风险开关由宿主保存；写入与删除仍受确认、快照、审计和回滚约束。"
         )
     );
     const policyRows = element("div", "settings-fields");
-    policyRows.append(deleteRow, planRow, queryResultsRow);
+    policyRows.append(deleteRow, planRow);
     policyField.append(policyRows);
 
     const actions = element("div", "settings-actions");
@@ -4477,15 +4466,11 @@ async function persistAiSettings(panel, { test = false } = {}) {
     const baseUrlInput = panel.querySelector("#ai-settings-base-url");
     const modelInput = panel.querySelector("#ai-settings-model");
     const deleteInput = panel.querySelector('[data-setting-key="allowDeleteDirect"]');
-    const queryResultsInput = panel.querySelector(
-        '[data-setting-key="allowSendQueryResultsToModel"]'
-    );
     if (!modeSelect
         || !keyInput
         || !baseUrlInput
         || !modelInput
-        || !deleteInput
-        || !queryResultsInput) {
+        || !deleteInput) {
         return;
     }
     const draft = {
@@ -4516,8 +4501,7 @@ async function persistAiSettings(panel, { test = false } = {}) {
             apiKey: draft.apiKey.trim(),
             baseUrl: draft.mode === "CUSTOM" ? draft.baseUrl.trim() : null,
             model: draft.mode === "CUSTOM" ? draft.model.trim() : null,
-            allowDeleteDirect: deleteInput.checked,
-            allowSendQueryResultsToModel: queryResultsInput.checked
+            allowDeleteDirect: deleteInput.checked
         });
         state.aiSettings = normalizeAiSettings(saved);
         state.aiSettingsError = "";

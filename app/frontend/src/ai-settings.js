@@ -18,7 +18,7 @@ const AI_MODE_VALUES = new Set(AI_MODES.map((item) => item.value));
  * 清洗宿主返回的 AI 设置；响应永远不会包含 API Key。
  *
  * @param {unknown} payload /api/ai/settings 响应
- * @returns {{mode: string, baseUrl: string, model: string, configured: boolean, allowDeleteDirect: boolean, allowSendQueryResultsToModel: boolean, allowLocalProvider: boolean}} 设置
+ * @returns {{mode: string, baseUrl: string, model: string, configured: boolean, allowDeleteDirect: boolean, allowLocalProvider: boolean}} 设置
  *
  * 缺失字段采用保守默认值，布尔开关仅在宿主明确返回 `true` 时开启。这里不复制
  * `apiKey`，避免页面状态或后续渲染意外持有短暂凭据。
@@ -31,7 +31,6 @@ export function normalizeAiSettings(payload) {
         model: typeof source.model === "string" ? source.model : "",
         configured: source.configured === true,
         allowDeleteDirect: source.allowDeleteDirect === true,
-        allowSendQueryResultsToModel: source.allowSendQueryResultsToModel === true,
         allowLocalProvider: source.allowLocalProvider === true
     };
 }

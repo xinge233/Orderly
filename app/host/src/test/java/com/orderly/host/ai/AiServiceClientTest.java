@@ -36,7 +36,6 @@ class AiServiceClientTest {
                       "model": "deepseek-flash",
                       "configured": true,
                       "allowDeleteDirect": false,
-                      "allowSendQueryResultsToModel": false,
                       "allowLocalProvider": false
                     }
                     """);
@@ -48,7 +47,6 @@ class AiServiceClientTest {
                             "temporary-key",
                             null,
                             null,
-                            false,
                             false
                     )
             );
@@ -56,7 +54,7 @@ class AiServiceClientTest {
             assertThat(view.configured()).isTrue();
             assertThat(authorization.get()).isEqualTo("Bearer ipc-token");
             assertThat(body.get()).contains("\"temporary-key\"");
-            assertThat(body.get()).contains("\"allowSendQueryResultsToModel\":false");
+            assertThat(body.get()).doesNotContain("allowSendQueryResultsToModel");
         }
     }
 

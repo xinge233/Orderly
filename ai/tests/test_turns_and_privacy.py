@@ -140,30 +140,12 @@ def query_results_body(*, payload: dict | None = None) -> dict:
     }
 
 
-def test_query_results_blocked_without_explicit_privacy_consent(
+def test_query_results_are_always_sent_and_cannot_return_query(
     make_client,
     provider,
 ):
     client = make_client()
-    configure_settings(client, allow_query_results=False)
-
-    response = client.post(
-        "/v1/turns/query-results",
-        headers=AUTH_HEADERS,
-        json=query_results_body(),
-    )
-
-    assert response.status_code == 403
-    assert response.json()["code"] == "AI_QUERY_RESULTS_NOT_ALLOWED"
-    assert len(provider.calls) == 0
-
-
-def test_query_results_are_sent_only_after_enabled_and_cannot_return_query(
-    make_client,
-    provider,
-):
-    client = make_client()
-    configure_settings(client, allow_query_results=True)
+    configure_settings(client)
     provider.responses = deque(
         [
             '{"kind":"QUERY","queries":[{"moduleId":"module_fs",'
@@ -188,7 +170,7 @@ def test_query_results_are_sent_only_after_enabled_and_cannot_return_query(
 
 def test_query_results_can_return_a_validated_view(make_client, provider):
     client = make_client()
-    configure_settings(client, allow_query_results=True)
+    configure_settings(client)
     provider.responses.append(
         '{"kind":"VIEW","message":"已整理结果","view":{'
         '"sourceQuery":1,"layout":"keyValue","title":"文件摘要",'
@@ -233,7 +215,7 @@ def test_view_is_forbidden_before_query_results(make_client, provider):
 
 def test_view_fields_must_exist_in_query_result(make_client, provider):
     client = make_client()
-    configure_settings(client, allow_query_results=True)
+    configure_settings(client)
     invalid = (
         '{"kind":"VIEW","view":{"sourceQuery":1,"layout":"keyValue",'
         '"title":"非法字段","fields":[{"key":"missing","label":"不存在",'
@@ -255,7 +237,7 @@ def test_view_fields_must_exist_in_query_result(make_client, provider):
 
 def test_view_fields_can_reference_null_values(make_client, provider):
     client = make_client()
-    configure_settings(client, allow_query_results=True)
+    configure_settings(client)
     provider.responses.append(
         '{"kind":"VIEW","view":{"sourceQuery":1,"layout":"keyValue",'
         '"title":"文件摘要","fields":[{"key":"note","label":"备注",'
@@ -275,7 +257,7 @@ def test_view_fields_can_reference_null_values(make_client, provider):
 
 def test_table_view_requires_an_array_row_path(make_client, provider):
     client = make_client()
-    configure_settings(client, allow_query_results=True)
+    configure_settings(client)
     invalid = (
         '{"kind":"VIEW","view":{"sourceQuery":1,"layout":"table",'
         '"title":"非法路径","rowPath":"note","fields":[]}}'
@@ -296,7 +278,7 @@ def test_table_view_requires_an_array_row_path(make_client, provider):
 
 def test_query_result_validation_rejects_payload_for_failed_status(make_client):
     client = make_client()
-    configure_settings(client, allow_query_results=True)
+    configure_settings(client)
     body = query_results_body()
     body["queryResults"][0]["status"] = "FAILED"
     body["queryResults"][0]["payload"] = {"unexpected": True}
@@ -313,7 +295,7 @@ def test_query_result_validation_rejects_payload_for_failed_status(make_client):
 
 def test_single_query_result_over_16_kib_is_rejected(make_client, provider):
     client = make_client()
-    configure_settings(client, allow_query_results=True)
+    configure_settings(client)
 
     response = client.post(
         "/v1/turns/query-results",
@@ -336,7 +318,7 @@ def test_total_query_results_over_64_kib_is_rejected(
         100 * 1024,
     )
     client = make_client()
-    configure_settings(client, allow_query_results=True)
+    configure_settings(client)
     body = query_results_body()
     body["queryResults"] = [
         {
@@ -363,7 +345,7 @@ def test_total_query_results_over_64_kib_is_rejected(
 
 def test_query_results_array_is_limited_to_four(make_client):
     client = make_client()
-    configure_settings(client, allow_query_results=True)
+    configure_settings(client)
     body = query_results_body()
     body["queryResults"] = [
         {

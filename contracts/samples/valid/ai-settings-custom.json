@@ -3,6 +3,5 @@
   "apiKey": "temporary-test-key",
   "baseUrl": "https://api.example.com/v1",
   "model": "custom-model",
-  "allowDeleteDirect": false,
-  "allowSendQueryResultsToModel": true
+  "allowDeleteDirect": false
 }

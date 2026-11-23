@@ -38,14 +38,14 @@ class AiEndpointIntegrationTest {
 
     @BeforeEach
     void configureGateway() {
-        AiContracts.SettingsView settings = settings(false);
+        AiContracts.SettingsView settings = settings();
         when(aiService.settings()).thenReturn(settings);
         when(aiService.settings(any())).thenReturn(settings);
         when(aiService.beginTurn()).thenReturn(
                 new AiServiceClient.TurnBudget(Instant.now().plusSeconds(60))
         );
         when(aiService.updateSettings(any())).thenReturn(settings);
-        when(aiService.clearSettings()).thenReturn(settings(false));
+        when(aiService.clearSettings()).thenReturn(settings());
         when(aiService.testSettings()).thenReturn(new AiContracts.ConnectionTest(true, "连接成功"));
         when(aiService.health()).thenReturn("UP");
         when(aiService.configured()).thenReturn(true);
@@ -56,7 +56,7 @@ class AiEndpointIntegrationTest {
         mockMvc.perform(get("/api/ai/settings"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.configured").value(true))
-                .andExpect(jsonPath("$.allowSendQueryResultsToModel").value(false));
+                .andExpect(jsonPath("$.allowSendQueryResultsToModel").doesNotExist());
         mockMvc.perform(put("/api/ai/settings")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -65,8 +65,7 @@ class AiEndpointIntegrationTest {
                                   "apiKey": "temporary-integration-key",
                                   "baseUrl": null,
                                   "model": null,
-                                  "allowDeleteDirect": false,
-                                  "allowSendQueryResultsToModel": true
+                                  "allowDeleteDirect": false
                                 }
                                 """))
                 .andExpect(status().isOk())
@@ -117,7 +116,6 @@ class AiEndpointIntegrationTest {
 
     @Test
     void queryResultsCanBeRenderedByAValidatedView() throws Exception {
-        when(aiService.settings(any())).thenReturn(settings(true));
         when(aiService.createTurn(any(), any())).thenReturn(
                 new AiContracts.ServiceDecision(
                         "QUERY",
@@ -251,14 +249,13 @@ class AiEndpointIntegrationTest {
                 .andExpect(jsonPath("$.status").value("ROLLED_BACK"));
     }
 
-    private AiContracts.SettingsView settings(boolean allowSendQueryResultsToModel) {
+    private AiContracts.SettingsView settings() {
         return new AiContracts.SettingsView(
                 AiContracts.Mode.DEEPSEEK,
                 "https://api.deepseek.com",
                 "deepseek-flash",
                 true,
                 false,
-                allowSendQueryResultsToModel,
                 false,
                 0
         );

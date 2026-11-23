@@ -41,8 +41,7 @@ public final class AiContracts {
             String apiKey,
             String baseUrl,
             String model,
-            Boolean allowDeleteDirect,
-            Boolean allowSendQueryResultsToModel
+            Boolean allowDeleteDirect
     ) {
         @Override
         public String toString() {
@@ -52,7 +51,6 @@ public final class AiContracts {
                     + ", baseUrl=" + baseUrl
                     + ", model=" + model
                     + ", allowDeleteDirect=" + allowDeleteDirect
-                    + ", allowSendQueryResultsToModel=" + allowSendQueryResultsToModel
                     + "]";
         }
     }
@@ -64,7 +62,6 @@ public final class AiContracts {
             String model,
             boolean configured,
             boolean allowDeleteDirect,
-            boolean allowSendQueryResultsToModel,
             boolean allowLocalProvider,
             int settingsVersion
     ) {
@@ -329,9 +326,7 @@ public final class AiContracts {
         }
     }
 
-    /**
-     * 用户显式允许后，Java 将本地 Query 结果回传 Python 的续聊请求。
-     */
+    /** Java 将受限的本地 Query 结果回传 Python 的续聊请求。 */
     public record ServiceQueryContinuationRequest(
             String goal,
             String conversationId,
