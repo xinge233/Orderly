@@ -162,9 +162,10 @@ function Write-JsonFile {
 function Write-ChecksumFile {
     param([Parameter(Mandatory = $true)][string]$Root)
     $path = Join-Path $Root "files.sha256"
+    $jpackageMetadataPath = Join-Path $Root "app\.jpackage.xml"
     $lines = @(
         Get-ChildItem -LiteralPath $Root -Recurse -File -Force |
-            Where-Object { $_.FullName -ne $path } |
+            Where-Object { $_.FullName -ne $path -and $_.FullName -ne $jpackageMetadataPath } |
             Sort-Object FullName |
             ForEach-Object {
                 "$(Get-OrderlySha256 $_.FullName)  $(Get-OrderlyRelativePath $_.FullName $Root)"
@@ -435,6 +436,23 @@ AI API Key 只保存在 AI 服务进程内存中，不会写入此目录或日�
     [System.Text.UTF8Encoding]::new($false)
 )
 
+Write-ChecksumFile $appRoot
+$zipPath = Join-Path $outputRoot "Orderly-$projectVersion-full-app.zip"
+if (Test-Path -LiteralPath $zipPath) {
+    Remove-Item -LiteralPath $zipPath -Force
+}
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+    $appRoot,
+    $zipPath,
+    [System.IO.Compression.CompressionLevel]::Optimal,
+    $false
+)
+[System.IO.File]::WriteAllText(
+    "$zipPath.sha256",
+    "$(Get-OrderlySha256 $zipPath)  $([System.IO.Path]::GetFileName($zipPath))`n",
+    [System.Text.UTF8Encoding]::new($false)
+)
+
 $installerPath = $null
 if (-not $SkipInstaller) {
     $installerRoot = Join-Path $outputRoot "installer"
@@ -475,23 +493,6 @@ if (-not $SkipInstaller) {
         [System.Text.UTF8Encoding]::new($false)
     )
 }
-
-Write-ChecksumFile $appRoot
-$zipPath = Join-Path $outputRoot "Orderly-$projectVersion-full-app.zip"
-if (Test-Path -LiteralPath $zipPath) {
-    Remove-Item -LiteralPath $zipPath -Force
-}
-[System.IO.Compression.ZipFile]::CreateFromDirectory(
-    $appRoot,
-    $zipPath,
-    [System.IO.Compression.CompressionLevel]::Optimal,
-    $false
-)
-[System.IO.File]::WriteAllText(
-    "$zipPath.sha256",
-    "$(Get-OrderlySha256 $zipPath)  $([System.IO.Path]::GetFileName($zipPath))`n",
-    [System.Text.UTF8Encoding]::new($false)
-)
 
 Write-Host "完整版应用目录：$appRoot"
 Write-Host "完整版 ZIP：$zipPath"
