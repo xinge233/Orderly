@@ -2679,12 +2679,12 @@ function renderOverview() {
         ? `
             <p>
                 计划功能已开启。下方计划预览仍使用本地规则计划器；
-                右下角 AI 对话框当前仅演示界面，尚未接入真实 AI。
+                右下角 AI 对话框使用独立的真实模型接入，不受此开关控制。
             </p>
             <div class="hero-tags">
                 <span>${icon("shield")} 本地优先</span>
                 <span>${icon("route")} 计划先于执行</span>
-                <span>${icon("spark")} AI 对话框仅演示</span>
+                <span>${icon("spark")} AI 对话独立接入</span>
             </div>
         `
         : `

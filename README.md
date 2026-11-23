@@ -13,7 +13,7 @@
 - 学习界面参考扩展：新增 `研习蓝` 浅色主题、只读 AI 学习助手、知识脉络与复习自测模块；文件模块同时提供原型风格的资料管理视图和自身只读示例。它们不是 V7 已交付能力；全局 AI 接入不等同于学习模块的上传、自动整理、任务记录、自动出题与自动阅卷能力，这些学习能力仍明确标注尚未接入。
 - AI 直执：业务 Action 默认允许 AI 调用，用户可在模组设置中动态关闭；Action 数组顺序执行，首次失败停止并逆序回滚此前完成项；支持指向前序输出的宿主解析引用。
 - 真实 AI 接入：根目录 `ai/` 的 Python 3.14 + FastAPI 服务负责模型配置、提示词、会话和结构化决策；Java 宿主只做本机 IPC 网关、最终契约校验与执行。API Key 只临时保存在 Python AI 服务进程内。
-- AI Query：模型可选择模块已声明且允许 AI 调用的只读 Query，最多 4 条，由 Java 校验并执行。查询原始结果默认只返回本地界面，不发送模型；只有用户显式开启设置后才按大小上限发送结构化结果。
+- AI Query：模型可选择模块已声明且允许 AI 调用的只读 Query，最多 4 条，由 Java 校验并执行。查询原始结果始终返回本地界面，并在受控大小上限内自动回传模型用于展示或后续决策；不提供可修改的发送开关。
 - 中央控制：风险分级、服务端确认、路径边界、快照、持久化执行记录、事件时间线和逆序回滚。
 - 本地界面：动态模块侧栏与总览、彼此独立的可持久化卡片和侧边栏排序、默认时间线且可切换摘要的历史记录、设置弹窗；旧版计划功能启用后恢复计划界面，独立的可拖动 AI 对话 Dock 始终可用。
 
@@ -105,7 +105,7 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 .\scripts\test-build-plan.ps1
 .\scripts\test-startup-cache.ps1
 .\scripts\package-runtime.ps1
-.\scripts\verify-runtime.ps1 .\target\orderly-runtime\Orderly-0.1.0-SNAPSHOT-runtime.zip
+.\scripts\verify-runtime.ps1 .\target\orderly-runtime\Orderly-0.1.0-runtime.zip
 .\scripts\verify-release-pair.ps1 <runtime.zip> <offline-source.zip>
 ```
 
@@ -119,7 +119,7 @@ DOCX 结构校验不判断文字内容和页面排版。实际修改 DOCX 内容
 
 ### 预构建运行包与离线源码包
 
-正式发布同时提供两种资产。普通用户下载名称形如 `Orderly-0.1.0-SNAPSHOT-runtime.zip` 的预构建运行包及同名 `.sha256`；解压后双击 `启动归序.cmd`，启动时只校验 `runtime-manifest.json`、宿主 JAR 和模块 JAR，不调用 Maven。开发者、审查者和离线重建场景继续下载 `Orderly-0.1.0-SNAPSHOT-offline-source.zip`。GitHub 的 `Code -> Download ZIP` 不包含 Release 资产或校验元数据，不属于正式运行包。
+正式发布同时提供两种资产。普通用户下载名称形如 `Orderly-0.1.0-runtime.zip` 的预构建运行包及同名 `.sha256`；解压后双击 `启动归序.cmd`，启动时只校验 `runtime-manifest.json`、宿主 JAR 和模块 JAR，不调用 Maven。开发者、审查者和离线重建场景继续下载 `Orderly-0.1.0-offline-source.zip`。GitHub 的 `Code -> Download ZIP` 不包含 Release 资产或校验元数据，不属于正式运行包。
 
 运行包第一版仍要求 JDK 21 和 Python 3.14；它消除 Java 编译和 Maven 启动构建，但不宣称完全零运行时依赖。通过源码安装新的业务模块仍需要 Maven，除非后续提供预编译模块分发。运行包和源码包必须来自同一个干净 Git 提交。
 
@@ -127,7 +127,7 @@ DOCX 结构校验不判断文字内容和页面排版。实际修改 DOCX 内容
 
 ```powershell
 .\scripts\package-offline.ps1
-.\scripts\verify-offline.ps1 .\target\orderly-offline\Orderly-0.1.0-SNAPSHOT-offline-source.zip
+.\scripts\verify-offline.ps1 .\target\orderly-offline\Orderly-0.1.0-offline-source.zip
 ```
 
 仅用于本地验收脏工作树时，可使用 `.\scripts\package-offline.ps1 -AllowDirtySnapshot`。该包会在 manifest 中记录 `gitDirty=true`，不属于正式干净发布；正式包的 `gitDirty` 必须为 `false`。`sourceTreeSha256` 是对排序后的源码路径、文件大小和 SHA-256 组成规范文本计算的稳定摘要，`sourceFiles` 同时记录每个源码文件的大小和哈希。
@@ -218,7 +218,7 @@ POST /api/executions/{executionId}/rollback
 ```
 
 旧版计划由宿主设置控制，默认关闭。关闭时旧计划生成、确认和计划回滚接口返回 `FEATURE_DISABLED`，历史执行仍可读取和回滚。独立 AI 计划不复用该开关或接口。AI 直执请求只由宿主设置 `AI_DIRECT` 或 `AI_PLAN` 来源，客户端不能覆盖风险等级、模型返回结构或确认状态。
-`POST /api/ai/turns` 必须携带 `clientRequestId`；同一设置代次、会话和请求 ID 的重复提交返回首次结果，不会再次调用模型或重复执行写入。模块 Query 可声明 `outputSchema` 与 `display`；用户允许发送 Query 结果后，Python 可返回只描述展示的 `VIEW`，非法或缺失时前端回退到模块声明或通用可读视图。
+`POST /api/ai/turns` 必须携带 `clientRequestId`；同一设置代次、会话和请求 ID 的重复提交返回首次结果，不会再次调用模型或重复执行写入。模块 Query 可声明 `outputSchema` 与 `display`；受限 Query 结果会始终回传 Python，Python 可返回只描述展示的 `VIEW`，非法或缺失时前端回退到模块声明或通用可读视图。
 
 `sidebarOrder` 和 `managementOrder` 都必须完整包含当前业务模块和 `module_system_control` 的 ID。`module_system_control` 默认位于最后，但用户可以在侧边栏和模块设置列表中拖动它；旧治理文件中的 `module_control` 顺序 ID 会在读取时迁移为新 ID。两份排序独立持久化且不得重复。
 

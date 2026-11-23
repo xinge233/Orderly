@@ -116,7 +116,7 @@ Module/
 <parent>
     <groupId>com.orderly</groupId>
     <artifactId>orderly-parent</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
     <relativePath>../../pom.xml</relativePath>
 </parent>
 
@@ -385,7 +385,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-build-parallel.ps1
 ```powershell
 .\scripts\package-offline.ps1
 .\scripts\package-offline.ps1 -AllowDirtySnapshot
-.\scripts\verify-offline.ps1 .\target\orderly-offline\Orderly-0.1.0-SNAPSHOT-offline-source.zip
+.\scripts\verify-offline.ps1 .\target\orderly-offline\Orderly-0.1.0-offline-source.zip
 ```
 
 正式干净包的 manifest 必须记录 `gitDirty=false`。`sourceTreeSha256` 是排序后的源码路径、大小和 SHA-256 的稳定摘要，验证时还会双向核对 `sourceFiles`。包生成与验证只要求 JDK、Maven 和 Java 测试环境，不要求或运行 Node/Python 测试。离线承诺只覆盖包内 Maven 构建，不代表整个应用可以离线安装。

@@ -51,7 +51,7 @@
 - 用户已明确要求接入 OpenAI 兼容大模型：DeepSeek 模式固定使用官方 URL 与 API 模型标识 `deepseek-flash`，自定义模式使用用户提供的 HTTPS Base URL 和 Model；API Key 仅临时保存在 Python AI 服务进程的内存中。
 - AI 设置是设置弹窗中的独立分区，不新增 `Module/` 系统模块；独立 AI 计划与旧版计划审查完全分离。
 - 用户已明确要求：除前端界面外，AI 能力全部集中在根目录 `ai/` 的 Python 3.14 + FastAPI + Uvicorn 服务；Java 只保留 IPC 网关、最终契约校验、Query/Action 执行与安全担保。
-- Query 是独立只读接口。Python 每回合最多提出 4 条 Query，Java 校验模块启用、宿主 `queryAiCallableEnabled` 动态开关与参数后执行；模块 Query 契约可声明只读 `outputSchema` 和 `display` 展示建议。原始结果默认只返回本地前端，不得发送给模型，只有用户显式开启设置后才可按大小上限发送，并允许 Python 返回受控 `VIEW` 展示描述。
+- Query 是独立只读接口。Python 每回合最多提出 4 条 Query，Java 校验模块启用、宿主 `queryAiCallableEnabled` 动态开关与参数后执行；模块 Query 契约可声明只读 `outputSchema` 和 `display` 展示建议。原始结果始终返回本地前端，并在数量和大小上限内自动回传模型用于受控展示或后续决策；不提供可修改的查询结果发送开关，并允许 Python 返回受控 `VIEW` 展示描述。
 - 如果遇到无法读取、内容缺失、引用失效或材料冲突，必须立即报告，不得猜测后继续。
 
 ## 3. 指令与材料优先级

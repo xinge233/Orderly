@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "projectVersion": "0.1.0-SNAPSHOT",
+  "projectVersion": "0.1.0",
   "gitCommit": "0123456789abcdef0123456789abcdef01234567",
   "gitDirty": false,
   "jdkMajor": 21,

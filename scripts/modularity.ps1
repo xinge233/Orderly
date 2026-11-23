@@ -358,7 +358,7 @@ function New-AcceptanceModule {
     <parent>
         <groupId>com.orderly</groupId>
         <artifactId>orderly-parent</artifactId>
-        <version>0.1.0-SNAPSHOT</version>
+        <version>0.1.0</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
     <artifactId>$moduleId</artifactId>
