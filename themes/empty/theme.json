@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "empty",
+  "label": "空白",
+  "note": "仅使用框架基础外观",
+  "order": 40,
+  "default": false,
+  "styles": [
+    "tokens.css",
+    "motion.css"
+  ],
+  "assets": []
+}

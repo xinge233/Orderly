@@ -206,6 +206,28 @@ test("each directory theme owns layered tokens and motion CSS", async () => {
     }
 });
 
+test("empty theme is a valid inherit-only package", async () => {
+    const tokens = await read("../../../themes/empty/tokens.css");
+    const motion = await read("../../../themes/empty/motion.css");
+    const manifest = JSON.parse(await read("../../../themes/empty/theme.json"));
+
+    function withoutCommentsAndWhitespace(source) {
+        return source
+            .replace(/\/\*[\s\S]*?\*\//g, "")
+            .replace(/\s+/g, "");
+    }
+
+    assert.equal(manifest.schemaVersion, 1);
+    assert.equal(manifest.id, "empty");
+    assert.equal(manifest.default, false);
+    assert.equal(manifest.colorScheme, undefined);
+    assert.equal(manifest.browserColor, undefined);
+    assert.deepEqual(manifest.styles, ["tokens.css", "motion.css"]);
+    assert.deepEqual(manifest.assets, []);
+    assert.equal(withoutCommentsAndWhitespace(tokens), "@layerorderly.theme{}");
+    assert.equal(withoutCommentsAndWhitespace(motion), "@layerorderly.theme{}");
+});
+
 test("settings uses dedicated live regions and keeps the panel mounted on changes", async () => {
     const html = await read("../index.html");
     const app = await read("../src/app.js");
