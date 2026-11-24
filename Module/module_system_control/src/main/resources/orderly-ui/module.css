@@ -276,15 +276,52 @@
     font-size: 0.96rem;
 }
 
+.module-control-ui-row.is-pending-removal .module-control-ui-title {
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+    color: var(--color-text-soft);
+}
+
 .module-control-ui-copy span {
     font-size: 0.82rem;
     line-height: 1.45;
+}
+
+.module-control-ui-removal-badge {
+    width: fit-content;
+    border: 1px solid var(--color-warning);
+    border-radius: var(--radius-sm);
+    background: var(--color-warning-soft);
+    color: var(--color-warning);
+    padding: 0 var(--space-2);
+    font-size: 0.72rem !important;
+    line-height: 1.5 !important;
 }
 
 .module-control-ui-row-actions {
     display: flex;
     align-items: center;
     gap: var(--space-2);
+}
+
+.module-control-ui-toolbar-delete {
+    margin-left: auto;
+}
+
+.module-control-ui-button.is-danger {
+    border-color: var(--color-danger);
+    background: var(--color-danger-soft);
+    color: var(--color-danger);
+}
+
+.module-control-ui-removal-action {
+    min-width: 5.5rem;
+}
+
+.module-control-ui-removal-unavailable {
+    color: var(--color-text-soft);
+    font-size: 0.8rem;
+    white-space: nowrap;
 }
 
 .module-control-ui-copy:focus-visible {
@@ -582,6 +619,12 @@
     border-color: var(--color-danger);
     background: var(--color-danger-soft);
     color: var(--color-danger);
+}
+
+.module-control-ui-status.is-warn {
+    border-color: var(--color-warning);
+    background: var(--color-warning-soft);
+    color: var(--color-warning);
 }
 
 .module-control-ui-settings-header h2 {

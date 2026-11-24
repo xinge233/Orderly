@@ -293,6 +293,9 @@ function normalizeModule(raw, index, sharedValues) {
         managementOrder: finiteNumber(source.managementOrder ?? source.order ?? contract.order, index),
         protected: source.protected === true || system.protected === true,
         role: text(source.role ?? system.role),
+        canRemove: source.canRemove === true,
+        removalStatus: text(source.removalStatus, "NONE").toUpperCase(),
+        removalMessage: text(source.removalMessage),
         settings: normalizeDefinitions({
             ...source,
             ui,
@@ -350,6 +353,8 @@ export default async function mount(root, context) {
         "moduleInstallStatus"
     );
     const retryModuleBuild = adminMethod(admin, "retryModuleBuild", "prioritizeModuleBuild");
+    const removeModule = adminMethod(admin, "removeModule", "deleteModule");
+    const undoModuleRemoval = adminMethod(admin, "undoModuleRemoval", "restoreModule");
     const saveOrder = adminMethod(admin, "saveManagementOrder", "saveOrder", "setManagementOrder");
     const setEnabled = adminMethod(admin, "setModuleEnabled", "setEnabled");
     const saveSettings = adminMethod(
@@ -387,17 +392,67 @@ export default async function mount(root, context) {
         catalog: normalizeModuleCatalog({}),
         catalogLoading: false,
         catalogError: "",
-        installJobs: new Map()
+        installJobs: new Map(),
+        deleteMode: false,
+        pendingDeleteId: "",
+        removalBusyId: ""
     };
     // 事件可能在短时间内成批到达，单一 timer 用于合并刷新并保证视图销毁时可取消。
     let interfaceRefreshTimer = null;
     let catalogPollTimer = null;
     let catalogPollBusy = false;
+    let deleteConfirmTimer = null;
 
     function setStatus(message, kind = "") {
         state.status = message;
         state.statusKind = kind;
     }
+
+    function clearDeleteConfirmation() {
+        if (deleteConfirmTimer) {
+            clearTimeout(deleteConfirmTimer);
+            deleteConfirmTimer = null;
+        }
+        state.pendingDeleteId = "";
+    }
+
+    function beginDeleteConfirmation(moduleId) {
+        clearDeleteConfirmation();
+        state.pendingDeleteId = moduleId;
+        render();
+        deleteConfirmTimer = setTimeout(() => {
+            deleteConfirmTimer = null;
+            if (!root.isConnected) return;
+            if (state.pendingDeleteId === moduleId) {
+                state.pendingDeleteId = "";
+                render();
+            }
+        }, 5000);
+    }
+
+    function toggleDeleteMode() {
+        clearDeleteConfirmation();
+        state.deleteMode = !state.deleteMode;
+        setStatus(
+            state.deleteMode ? "选择要删除的模组。" : "",
+            state.deleteMode ? "warn" : ""
+        );
+        render();
+    }
+
+    root.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        if (state.pendingDeleteId) {
+            event.preventDefault();
+            clearDeleteConfirmation();
+            render();
+            return;
+        }
+        if (state.deleteMode) {
+            event.preventDefault();
+            toggleDeleteMode();
+        }
+    });
 
     function applySnapshot(payload) {
         const source = payload?.state && typeof payload.state === "object" ? payload.state : payload;
@@ -412,6 +467,11 @@ export default async function mount(root, context) {
                 left.managementOrder - right.managementOrder
                 || left.moduleId.localeCompare(right.moduleId));
         state.modules = modules;
+        if (state.pendingDeleteId
+                && !modules.some((module) =>
+                    module.moduleId === state.pendingDeleteId && module.canRemove)) {
+            clearDeleteConfirmation();
+        }
         state.added = listOf(snapshot.added ?? payload?.added);
         state.issues = listOf(snapshot.issues ?? payload?.issues);
         state.interfaceState = normalizeInterfaceState(
@@ -727,6 +787,8 @@ export default async function mount(root, context) {
     }
 
     function openCatalog() {
+        clearDeleteConfirmation();
+        state.deleteMode = false;
         state.subpage = "catalog";
         state.selectedId = "";
         setStatus("", "");
@@ -809,6 +871,67 @@ export default async function mount(root, context) {
                 terminal: true
             });
             setStatus(runtimeMessage(error, "模块重建请求失败"), "error");
+            render();
+        }
+    }
+
+    async function markModuleRemoval(module) {
+        if (!removeModule) {
+            setStatus("宿主尚未接入模块删除 API", "error");
+            render();
+            return;
+        }
+        if (!module.canRemove || module.removalStatus === "PENDING_RESTART") {
+            return;
+        }
+        clearDeleteConfirmation();
+        state.busy = true;
+        state.removalBusyId = module.moduleId;
+        render();
+        try {
+            const payload = await removeModule(module.moduleId);
+            if (hasModuleCollection(payload)) {
+                applySnapshot(payload);
+            } else {
+                applySnapshot(await readSnapshot());
+            }
+            setStatus(`${module.title}已标记删除，重启后生效。`, "safe");
+        } catch (error) {
+            try {
+                applySnapshot(await readSnapshot());
+            } catch {
+                // 保留原始删除错误；下一次手动刷新会重新同步宿主状态。
+            }
+            setStatus(runtimeMessage(error, "模块删除失败"), "error");
+        } finally {
+            state.busy = false;
+            state.removalBusyId = "";
+            render();
+        }
+    }
+
+    async function restoreModuleRemoval(module) {
+        if (!undoModuleRemoval) {
+            setStatus("宿主尚未接入撤销删除 API", "error");
+            render();
+            return;
+        }
+        state.busy = true;
+        state.removalBusyId = module.moduleId;
+        render();
+        try {
+            const payload = await undoModuleRemoval(module.moduleId);
+            if (hasModuleCollection(payload)) {
+                applySnapshot(payload);
+            } else {
+                applySnapshot(await readSnapshot());
+            }
+            setStatus(`${module.title}已撤销删除。`, "safe");
+        } catch (error) {
+            setStatus(runtimeMessage(error, "撤销删除失败"), "error");
+        } finally {
+            state.busy = false;
+            state.removalBusyId = "";
             render();
         }
     }
@@ -963,6 +1086,8 @@ export default async function mount(root, context) {
     }
 
     function openSettings(module) {
+        clearDeleteConfirmation();
+        state.deleteMode = false;
         state.selectedId = module.moduleId;
         state.subpage = "settings";
         // 编辑从宿主持久化值复制成独立草稿，保存成功后才以宿主返回值更新模块快照。
@@ -1124,10 +1249,13 @@ export default async function mount(root, context) {
         if (module.protected || module.role === MODULE_CONTROL_ROLE) {
             row.classList.add("is-protected");
         }
+        const pendingRemoval = module.removalStatus === "PENDING_RESTART";
+        row.classList.toggle("is-pending-removal", pendingRemoval);
 
         const header = make("div", "module-control-ui-row-header");
         const handle = make("button", "module-control-ui-drag");
         handle.type = "button";
+        handle.disabled = state.busy || state.deleteMode || pendingRemoval;
         handle.title = `拖动排序 ${module.title}`;
         handle.setAttribute("aria-label", `拖动排序 ${module.title}`);
         handle.setAttribute("aria-keyshortcuts", "Alt+ArrowUp Alt+ArrowDown");
@@ -1159,9 +1287,16 @@ export default async function mount(root, context) {
             copy.classList.add("is-static");
         }
         copy.append(
-            make("strong", "", module.title),
+            make("strong", "module-control-ui-title", module.title),
             make("span", "", module.description || "尚无模块说明")
         );
+        if (pendingRemoval) {
+            copy.append(make(
+                "span",
+                "module-control-ui-removal-badge",
+                module.removalMessage || "重启后生效"
+            ));
+        }
         const toggleInterfaces = () => {
             const nextExpanded = !state.expandedIds.has(module.moduleId);
             if (nextExpanded) {
@@ -1182,24 +1317,73 @@ export default async function mount(root, context) {
         settingsButton.title = `打开 ${module.title} 设置`;
         settingsButton.setAttribute("aria-label", `打开 ${module.title} 设置`);
         settingsButton.append(iconNode("settings", 18));
+        settingsButton.disabled = state.busy || state.deleteMode || pendingRemoval;
         settingsButton.addEventListener("click", () => openSettings(module));
 
-        const switchLabel = make("label", "module-control-ui-switch");
-        const checkbox = make("input");
-        checkbox.type = "checkbox";
-        checkbox.checked = module.enabled;
         const protectedModule = module.protected || module.role === MODULE_CONTROL_ROLE;
-        checkbox.disabled = state.busy || protectedModule;
-        checkbox.setAttribute(
-            "aria-label",
-            protectedModule
-                ? `${module.title}是受保护系统模块，不能停用`
-                : `${module.title}${module.enabled ? "已启用" : "已停用"}`
-        );
-        const track = make("span", "module-control-ui-switch__track");
-        switchLabel.append(checkbox, track);
-        checkbox.addEventListener("change", () => void toggleModule(module, checkbox));
-        rowActions.append(settingsButton, switchLabel);
+        if (pendingRemoval) {
+            const undoButton = button(
+                state.removalBusyId === module.moduleId ? "处理中…" : "已删除",
+                "undo",
+                "module-control-ui-button is-danger module-control-ui-removal-action"
+            );
+            undoButton.type = "button";
+            undoButton.title = "点击撤销删除";
+            undoButton.setAttribute("aria-label", `撤销删除 ${module.title}`);
+            undoButton.disabled = state.busy || state.removalBusyId === module.moduleId;
+            undoButton.addEventListener("click", () => void restoreModuleRemoval(module));
+            rowActions.append(settingsButton, undoButton);
+        } else if (state.deleteMode) {
+            if (module.canRemove && !protectedModule) {
+                const confirming = state.pendingDeleteId === module.moduleId;
+                const removeButton = button(
+                    state.removalBusyId === module.moduleId
+                        ? "处理中…"
+                        : confirming ? "确认删除？" : "删除",
+                    "trash",
+                    "module-control-ui-button is-danger module-control-ui-removal-action"
+                );
+                removeButton.type = "button";
+                removeButton.setAttribute("aria-pressed", String(confirming));
+                removeButton.setAttribute("aria-label", confirming
+                    ? `确认删除 ${module.title}`
+                    : `删除 ${module.title}`);
+                removeButton.disabled = state.busy || state.removalBusyId === module.moduleId;
+                removeButton.addEventListener("click", () => {
+                    if (state.pendingDeleteId !== module.moduleId) {
+                        beginDeleteConfirmation(module.moduleId);
+                        return;
+                    }
+                    void markModuleRemoval(module);
+                });
+                rowActions.append(settingsButton, removeButton);
+            } else {
+                rowActions.append(
+                    settingsButton,
+                    make(
+                        "span",
+                        "module-control-ui-removal-unavailable",
+                        protectedModule ? "受保护模块" : "不可删除"
+                    )
+                );
+            }
+        } else {
+            const switchLabel = make("label", "module-control-ui-switch");
+            const checkbox = make("input");
+            checkbox.type = "checkbox";
+            checkbox.checked = module.enabled;
+            checkbox.disabled = state.busy || protectedModule;
+            checkbox.setAttribute(
+                "aria-label",
+                protectedModule
+                    ? `${module.title}是受保护系统模块，不能停用`
+                    : `${module.title}${module.enabled ? "已启用" : "已停用"}`
+            );
+            const track = make("span", "module-control-ui-switch__track");
+            switchLabel.append(checkbox, track);
+            checkbox.addEventListener("change", () => void toggleModule(module, checkbox));
+            rowActions.append(settingsButton, switchLabel);
+        }
 
         header.append(handle, moduleIcon, copy, rowActions);
         if (canExpandInterfaces) {
@@ -1207,7 +1391,8 @@ export default async function mount(root, context) {
             // 由标题栏统一接收点击，同时让拖动、设置和启停控件保持独立。
             header.addEventListener("click", (event) => {
                 if (event.target.closest?.(
-                    ".module-control-ui-drag, .module-control-ui-row-actions button, .module-control-ui-switch"
+                    ".module-control-ui-drag, .module-control-ui-row-actions button, " +
+                    ".module-control-ui-removal-unavailable, .module-control-ui-switch"
                 )) {
                     return;
                 }
@@ -1250,7 +1435,20 @@ export default async function mount(root, context) {
         catalog.disabled = state.busy;
         catalog.dataset.catalogEntry = "true";
         catalog.addEventListener("click", openCatalog);
-        toolbar.append(refresh, folder, catalog);
+        const canRemoveAny = state.modules.some((module) => module.canRemove);
+        const deleteMode = button(
+            state.deleteMode ? "退出删除" : "删除",
+            "trash",
+            `module-control-ui-button module-control-ui-toolbar-delete${
+                state.deleteMode ? " is-danger" : ""
+            }`
+        );
+        deleteMode.type = "button";
+        deleteMode.setAttribute("aria-pressed", String(state.deleteMode));
+        deleteMode.title = state.deleteMode ? "退出删除模式" : "进入删除模式";
+        deleteMode.disabled = state.busy || (!state.deleteMode && !canRemoveAny);
+        deleteMode.addEventListener("click", toggleDeleteMode);
+        toolbar.append(refresh, folder, catalog, deleteMode);
 
         const status = buildStatus();
         const scroller = make("div", "module-control-ui-list-scroll");
@@ -1584,6 +1782,7 @@ export default async function mount(root, context) {
         // 框架事件只触发接口状态轻量刷新；根节点脱离文档后取消 timer 和订阅，阻止死后重渲染。
         unsubscribe = context.subscribeEvents(() => {
             if (!root.isConnected) {
+                clearDeleteConfirmation();
                 if (interfaceRefreshTimer) {
                     clearTimeout(interfaceRefreshTimer);
                     interfaceRefreshTimer = null;

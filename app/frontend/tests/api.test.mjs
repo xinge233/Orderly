@@ -198,6 +198,38 @@ test("API client reads the distribution catalog and installs only by module id",
     });
 });
 
+test("API client uses module removal endpoints with explicit action headers", async () => {
+    const requests = [];
+    const api = new OrderlyApi({
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url, options });
+            return new Response("{}", { status: 200 });
+        }
+    });
+
+    await api.getModuleRemovals();
+    await api.removeModule("module_todo");
+    await api.undoModuleRemoval("module_todo");
+
+    assert.deepEqual(requests.map(({ url }) => url), [
+        "/api/system/module-removals",
+        "/api/system/module-removals",
+        "/api/system/module-removals/undo"
+    ]);
+    assert.equal(requests[1].options.method, "POST");
+    assert.equal(
+        requests[1].options.headers["X-Orderly-Action"],
+        "remove-module"
+    );
+    assert.deepEqual(JSON.parse(requests[1].options.body), {
+        moduleId: "module_todo"
+    });
+    assert.equal(
+        requests[2].options.headers["X-Orderly-Action"],
+        "undo-module-removal"
+    );
+});
+
 test("API client requests host shutdown with a non-simple action header", async () => {
     let captured;
     const api = new OrderlyApi({

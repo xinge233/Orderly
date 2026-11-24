@@ -30,6 +30,8 @@ test("module_system_control bridge exposes the required systemAdmin surface", as
         "installModule",
         "getModuleInstallStatus",
         "retryModuleBuild",
+        "removeModule",
+        "undoModuleRemoval",
         "saveManagementOrder",
         "saveModuleSettings",
         "resetModuleSettings",
@@ -48,6 +50,8 @@ test("module_system_control bridge exposes the required systemAdmin surface", as
         "installModule",
         "getModuleInstallStatus",
         "retryModuleBuild",
+        "removeModule",
+        "undoModuleRemoval",
         "saveManagementOrder",
         "saveModuleSettings",
         "resetModuleSettings",
@@ -64,7 +68,7 @@ test("module download opens from the toolbar and renders catalog and install sta
     const style = await readFile(styleUrl, "utf8");
 
     assert.match(control, /const catalog = button\("模块下载", "download"\);/);
-    assert.match(control, /toolbar\.append\(refresh, folder, catalog\);/);
+    assert.match(control, /toolbar\.append\(refresh, folder, catalog, deleteMode\);/);
     assert.match(control, /catalog\.addEventListener\("click", openCatalog\);/);
     assert.match(control, /state\.subpage = "catalog"/);
     assert.match(control, /buildCatalogPanel\(\)/);
@@ -192,4 +196,24 @@ test("module_system_control renders interface AI switches with locking states", 
     assert.doesNotMatch(rowRule, /flex:\s*1 1/);
     assert.match(style, /\.module-control-ui-list-scroll\s*\{\s*overflow-anchor:\s*none;/);
     assert.doesNotMatch(style, /grid-auto-rows:\s*minmax\(4\.75rem,\s*1fr\)/);
+});
+
+test("module deletion mode replaces switches, confirms, marks restart and supports undo", async () => {
+    const control = await readFile(controlUrl, "utf8");
+    const style = await readFile(styleUrl, "utf8");
+
+    assert.match(control, /state\.deleteMode/);
+    assert.match(control, /state\.pendingDeleteId/);
+    assert.match(control, /beginDeleteConfirmation/);
+    assert.match(control, /toggleDeleteMode/);
+    assert.match(control, /module-control-ui-toolbar-delete/);
+    assert.match(control, /确认删除？/);
+    assert.match(control, /已标记删除，重启后生效/);
+    assert.match(control, /restoreModuleRemoval/);
+    assert.match(control, /module-control-ui-removal-badge/);
+    assert.match(control, /is-pending-removal/);
+    assert.match(control, /module\.canRemove/);
+    assert.match(style, /\.module-control-ui-toolbar-delete\s*\{/);
+    assert.match(style, /\.module-control-ui-row\.is-pending-removal/);
+    assert.match(style, /\.module-control-ui-button\.is-danger\s*\{/);
 });

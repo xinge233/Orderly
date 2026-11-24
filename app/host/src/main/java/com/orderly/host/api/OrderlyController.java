@@ -23,6 +23,7 @@ import com.orderly.host.modulecontrol.ModuleLifecycleService;
 import com.orderly.host.modulecontrol.ModulePreferences;
 import com.orderly.host.modulecontrol.ModuleRefreshResult;
 import com.orderly.host.modulecontrol.ModuleRefreshService;
+import com.orderly.host.modulecontrol.ModuleRemovalService;
 import com.orderly.host.moduledata.ModuleDataService;
 import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanView;
@@ -84,6 +85,7 @@ public class OrderlyController {
     private final ModuleLifecycleService moduleLifecycle;
     private final ModuleRefreshService moduleRefresh;
     private final ModuleDistributionService moduleDistribution;
+    private final ModuleRemovalService moduleRemoval;
     private final ModuleFolderService moduleFolder;
     private final ModuleDataService moduleData;
     private final SystemFeatureService features;
@@ -106,6 +108,7 @@ public class OrderlyController {
             ModuleLifecycleService moduleLifecycle,
             ModuleRefreshService moduleRefresh,
             ModuleDistributionService moduleDistribution,
+            ModuleRemovalService moduleRemoval,
             ModuleFolderService moduleFolder,
             ModuleDataService moduleData,
             SystemFeatureService features,
@@ -127,6 +130,7 @@ public class OrderlyController {
         this.moduleLifecycle = moduleLifecycle;
         this.moduleRefresh = moduleRefresh;
         this.moduleDistribution = moduleDistribution;
+        this.moduleRemoval = moduleRemoval;
         this.moduleFolder = moduleFolder;
         this.moduleData = moduleData;
         this.features = features;
@@ -656,6 +660,58 @@ public class OrderlyController {
     @GetMapping("/system/module-catalog/install/{jobId}")
     public ModuleDistributionService.InstallStatus moduleInstallStatus(@PathVariable String jobId) {
         return moduleDistribution.status(jobId);
+    }
+
+    /** 返回业务模组的待移除状态。 */
+    @GetMapping("/system/module-removals")
+    public ModuleRemovalService.Snapshot moduleRemovals() {
+        return moduleRemoval.snapshot();
+    }
+
+    /** 标记业务模组删除；运行中的模块在下一次启动完成 JAR 清理。 */
+    @PostMapping("/system/module-removals")
+    public ModuleRemovalService.Change removeModule(
+            @RequestHeader(value = "X-Orderly-Action", required = false) String action,
+            @RequestBody(required = false) ModuleRemovalService.Request request
+    ) {
+        if (!"remove-module".equals(action)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "MODULE_REMOVAL_ACTION_REQUIRED",
+                    "删除模块必须声明 X-Orderly-Action: remove-module"
+            );
+        }
+        if (request == null || request.moduleId() == null || request.moduleId().isBlank()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "MODULE_ID_REQUIRED",
+                    "moduleId 不能为空"
+            );
+        }
+        return moduleRemoval.remove(request.moduleId());
+    }
+
+    /** 重启前撤销待移除标记。 */
+    @PostMapping("/system/module-removals/undo")
+    public ModuleRemovalService.Change undoModuleRemoval(
+            @RequestHeader(value = "X-Orderly-Action", required = false) String action,
+            @RequestBody(required = false) ModuleRemovalService.Request request
+    ) {
+        if (!"undo-module-removal".equals(action)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "MODULE_REMOVAL_ACTION_REQUIRED",
+                    "撤销删除必须声明 X-Orderly-Action: undo-module-removal"
+            );
+        }
+        if (request == null || request.moduleId() == null || request.moduleId().isBlank()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "MODULE_ID_REQUIRED",
+                    "moduleId 不能为空"
+            );
+        }
+        return moduleRemoval.undo(request.moduleId());
     }
 
     /**

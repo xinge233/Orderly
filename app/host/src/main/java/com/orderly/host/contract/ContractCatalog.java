@@ -3,10 +3,12 @@ package com.orderly.host.contract;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderly.host.modulecontrol.ModuleControlInterfaces;
+import com.orderly.host.modulecontrol.ModuleRemovalStore;
 import com.orderly.kernel.ModuleRuntime;
 import com.orderly.kernel.OrderlyModule;
 import com.orderly.kernel.RiskLevel;
 import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -80,8 +82,23 @@ public class ContractCatalog implements AutoCloseable {
             ObjectMapper objectMapper,
             @Value("${orderly.modules-dir:target/orderly-modules}") String modulesDirectory
     ) {
+        this(objectMapper, modulesDirectory, ModuleRemovalStore.empty(objectMapper));
+    }
+
+    /**
+     * 启动扫描前排除已登记待移除模块，避免重启后重新加载待删除 JAR。
+     */
+    @Autowired
+    public ContractCatalog(
+            ObjectMapper objectMapper,
+            @Value("${orderly.modules-dir:target/orderly-modules}") String modulesDirectory,
+            ModuleRemovalStore removalStore
+    ) {
         this.moduleDirectory = Path.of(modulesDirectory).toAbsolutePath().normalize();
-        List<Path> jars = findModuleJars(moduleDirectory);
+        List<Path> jars = findModuleJars(
+                moduleDirectory,
+                removalStore == null ? Set.of() : removalStore.pendingModuleIds()
+        );
 
         Map<String, ModuleContract> loaded = new LinkedHashMap<>();
         Map<String, ActionContract> actions = new LinkedHashMap<>();
@@ -554,7 +571,7 @@ public class ContractCatalog implements AutoCloseable {
      * <p>缺失目录表示没有模块；符号链接目录直接被拒绝，文件按名称排序以保证启动
      * 快照可重复。实现不递归进入子目录。</p>
      */
-    private List<Path> findModuleJars(Path directory) {
+    private List<Path> findModuleJars(Path directory, Set<String> excludedSourceNames) {
         if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) {
             return List.of();
         }
@@ -564,6 +581,9 @@ public class ContractCatalog implements AutoCloseable {
         try (Stream<Path> entries = Files.list(directory)) {
             return entries
                     .filter(path -> path.getFileName().toString().toLowerCase().endsWith(".jar"))
+                    .filter(path -> !excludedSourceNames.contains(
+                            sourceName(path.getFileName().toString())
+                    ))
                     .sorted(Comparator.comparing(path -> path.getFileName().toString()))
                     .map(this::requireRegularJar)
                     .toList();

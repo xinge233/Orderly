@@ -81,7 +81,7 @@
 | `contracts/ai-service-turn-request.schema.json` | Java 到 Python AI 服务的版本化 IPC 请求 |
 | `contracts/ai-query-continuation-request.schema.json` | Query 结果回传 Python 的受控续聊请求 |
 | `contracts/ai-service-decision.schema.json` | Python 到 Java 的受控决策响应 |
-| `contracts/module.schema.json`、`module-ui.schema.json`、`module-catalog.schema.json` | 模块 JAR、模块 UI 与 GitHub 分发目录契约 |
+| `contracts/module.schema.json`、`module-ui.schema.json`、`module-catalog.schema.json`、`module-removal.schema.json` | 模块 JAR、模块 UI、GitHub 分发与删除生命周期契约 |
 | `contracts/theme.schema.json` | 宿主主题加载与主题样例 |
 | `contracts/runtime-release.schema.json`、`full-release.schema.json` | 轻量运行包与 Windows 完整版的清单、工件和启动路径 |
 | `contracts/study-data.schema.json` | 学习数据校验脚本与模块数据 |

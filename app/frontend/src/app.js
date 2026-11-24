@@ -132,6 +132,39 @@ function normalizeModuleInterfaceState(input) {
 }
 
 /**
+ * 规范化宿主返回的模块移除状态。
+ *
+ * <p>只接受合法业务模块 ID；缺失条目视为正常状态，非法条目被丢弃，避免单个状态
+ * 损坏阻断整个模组管理页。</p>
+ */
+function normalizeModuleRemovalState(input) {
+    const source = input?.state && typeof input.state === "object"
+        ? input.state
+        : input && typeof input === "object" ? input : {};
+    const items = Array.isArray(source.modules)
+        ? source.modules
+        : Array.isArray(source.items) ? source.items : [];
+    const result = {};
+    items.forEach((item) => {
+        if (!item || typeof item !== "object") return;
+        const moduleId = String(item.moduleId ?? "").trim();
+        if (!/^module_[a-z0-9_]+$/.test(moduleId) || moduleId.startsWith("module_system_")) {
+            return;
+        }
+        result[moduleId] = {
+            moduleId,
+            status: String(item.status ?? "NONE").trim().toUpperCase() || "NONE",
+            canRemove: item.canRemove === true,
+            reason: String(item.reason ?? ""),
+            trashId: String(item.trashId ?? ""),
+            requestedAt: String(item.requestedAt ?? ""),
+            previousEnabled: item.previousEnabled === true
+        };
+    });
+    return result;
+}
+
+/**
  * 框架共享视图状态。这里保存的是宿主快照、界面派生数据和临时交互状态；只有
  * SettingsStore 持有的外观项与卡片顺序会进入浏览器本地存储。
  */
@@ -159,6 +192,7 @@ const state = {
     moduleBuildLoading: true,
     modulePreferences: normalizeModulePreferences({}),
     moduleInterfaceState: normalizeModuleInterfaceState({}),
+    moduleRemovalState: normalizeModuleRemovalState({}),
     moduleCatalogIssues: [],
     moduleRefreshIssues: [],
     themes: [],
@@ -581,6 +615,14 @@ async function refreshModuleCatalogState() {
     return catalogs;
 }
 
+/** 重新读取业务模组的待移除状态。 */
+async function refreshModuleRemovalState() {
+    state.moduleRemovalState = normalizeModuleRemovalState(
+        await api.getModuleRemovals()
+    );
+    return state.moduleRemovalState;
+}
+
 function issuesForModule(moduleId) {
     return state.moduleCatalogIssues.filter((issue) =>
         String(issue.id ?? issue.moduleId ?? "") === moduleId);
@@ -601,6 +643,7 @@ function managementModuleEntries() {
     return managementModules().map((module, managementOrder) => {
         const ui = state.moduleUi[module.moduleId] ?? null;
         const settings = moduleSettings(module.moduleId);
+        const removal = state.moduleRemovalState[module.moduleId] ?? {};
         const issues = [
             ...issuesForModule(module.moduleId),
             ...(state.moduleErrors[module.moduleId]
@@ -620,6 +663,13 @@ function managementModuleEntries() {
             managementOrder,
             enabled: module.enabled !== false,
             system: module.system ?? null,
+            removalStatus: removal.status ?? "NONE",
+            removalMessage: removal.reason ?? "",
+            canRemove: isBusinessModule(module)
+                && module.system == null
+                && removal.canRemove === true,
+            removalTrashId: removal.trashId ?? "",
+            removalRequestedAt: removal.requestedAt ?? "",
             module: { ...module, ui },
             ui,
             settings,
@@ -635,6 +685,7 @@ function systemAdminSnapshot(extra = {}) {
         modules: managementModuleEntries(),
         settingValues: { ...state.modulePreferences.moduleSettings },
         interfaceState: { ...state.moduleInterfaceState },
+        removalState: normalizeModuleRemovalState({ modules: Object.values(state.moduleRemovalState) }),
         issues: [
             ...state.moduleCatalogIssues,
             ...state.moduleRefreshIssues,
@@ -1047,7 +1098,10 @@ function createSystemAdminApi() {
         async getState() {
             await Promise.all([
                 refreshModuleCatalogState(),
-                systemAdminApi.getInterfaceState()
+                systemAdminApi.getInterfaceState(),
+                refreshModuleRemovalState().catch(() => {
+                    state.moduleRemovalState = normalizeModuleRemovalState({});
+                })
             ]);
             return systemAdminSnapshot();
         },
@@ -1111,6 +1165,26 @@ function createSystemAdminApi() {
 
         retryModuleBuild(sourceName) {
             return api.prioritizeModuleBuild(sourceName);
+        },
+
+        async removeModule(moduleId) {
+            const module = businessModuleOrThrow(moduleId);
+            const result = await api.removeModule(module.moduleId);
+            await Promise.all([
+                refreshModuleCatalogState(),
+                refreshModuleRemovalState()
+            ]);
+            return systemAdminSnapshot({ removal: result });
+        },
+
+        async undoModuleRemoval(moduleId) {
+            const module = businessModuleOrThrow(moduleId);
+            const result = await api.undoModuleRemoval(module.moduleId);
+            await Promise.all([
+                refreshModuleCatalogState(),
+                refreshModuleRemovalState()
+            ]);
+            return systemAdminSnapshot({ removal: result });
         },
 
         async saveManagementOrder(moduleIds) {

@@ -353,8 +353,10 @@ export default async function mount(root, context) {
   Query、计划规则和视图 ID 唯一。
 - 运行中只允许显式刷新追加已经构建的新业务模块 JAR；未构建源码返回
   `MODULE_NOT_BUILT`。
-- 已加载模块的更新、替换或删除返回 `RESTART_REQUIRED`，必须重新构建并重启。不得
-  热替换、热卸载或要求框架清理具体业务分支。
+- 已加载模块的更新、替换或删除返回 `RESTART_REQUIRED`，必须重新构建并重启。删除
+  请求只停用模块、把源码移入 `.orderly-data/trash/modules` 并登记重启清理；启动扫描
+  在加载 JAR 前跳过待删除模块，重启后再移入 JAR。重启前允许撤销，禁止物理删除。
+  不得热替换、热卸载或要求框架清理具体业务分支。
 - 模块 ClassLoader 在宿主关闭时关闭。应用运行期间不得替换已加载 JAR。
 
 ### 9.2 信任边界

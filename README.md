@@ -83,6 +83,8 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 - `.orderly-data/state/`：各模块自己的集合状态、初始化标记和执行记录。
 - `.orderly-data/executions/`：宿主统一持久化的执行、步骤、参数、输出、快照和审计结果。
 - `.orderly-data/module-governance.json`：业务模块启用状态、两套排序、模块设置以及 Action/Query 的动态 AI 可调用状态；使用原子文件替换写入。
+- `.orderly-data/module-removals.json`：等待重启清理的业务模块删除登记；启动扫描会跳过对应 JAR。
+- `.orderly-data/trash/modules/`：已移除模块源码和构建产物的本地回收站。
 - `.orderly-data/system-features.json`：宿主功能开关；首次运行默认关闭计划功能。
 - `.orderly-data/build-settings.json`：后台模块构建并发；首次运行默认 2，允许 1-4。
 
@@ -219,11 +221,16 @@ POST  /api/system/module-folder/open
 GET   /api/system/module-catalog
 POST  /api/system/module-catalog/install
 GET   /api/system/module-catalog/install/{jobId}
+GET   /api/system/module-removals
+POST  /api/system/module-removals
+POST  /api/system/module-removals/undo
 ```
 
 `module-folder/open` 只接受 `X-Orderly-Action: open-module-folder`，只在 Windows 上打开配置的 `orderly.module-source-dir`，不接受客户端路径。模块查询、计划规则、计划生成、确认和执行都检查 `enabled`；执行中拒绝停用，回滚始终允许。开关、设置、排序、刷新和打开目录会写入审计事件。
 
 模块下载读取固定官方 `raw.githubusercontent.com` 分发分支的 `catalog.json`。安装请求只提交 `moduleId` 并携带 `X-Orderly-Action: install-module`；宿主拒绝全部 `module_system_*`、已存在模块、不安全路径、摘要不符、超限 ZIP、多根目录和非法契约。校验通过后源码原子写入 `Module/`，后台监督器完成本地 Maven 构建并调用刷新接口追加。新模块无需重启；已有模块更新、替换和卸载仍要求重启。
+
+删除只作用于非系统业务模块，并要求 `X-Orderly-Action: remove-module`。宿主先把源码移入 `.orderly-data/trash/modules`、停用模块并登记 `PENDING_RESTART`；当前 JVM 不热卸载已加载 JAR，下一次启动会跳过并清理该 JAR。重启前可用 `X-Orderly-Action: undo-module-removal` 撤销并恢复原源码与启用状态。删除不会物理清除模块回收站中的内容，也不会删除模块工作区数据。
 
 `GET /api/system/build-settings` 返回后台模块构建并发和允许范围。`PUT /api/system/build-settings` 只接受带 `X-Orderly-Action: update-build-settings` 的请求，`maxParallel` 必须是 1-4 的整数；改变只影响后续 worker 调度，不终止已经在构建的模块。
 

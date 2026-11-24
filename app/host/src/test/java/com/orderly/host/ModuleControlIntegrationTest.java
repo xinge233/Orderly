@@ -17,6 +17,7 @@ import com.orderly.host.event.ExecutionJournal;
 import com.orderly.host.modulecontrol.ModuleControlService;
 import com.orderly.host.modulecontrol.ModulePreferencesService;
 import com.orderly.host.modulecontrol.ModuleRefreshService;
+import com.orderly.host.modulecontrol.ModuleRemovalService;
 import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanView;
 import com.orderly.host.runtime.WorkspaceRuntime;
@@ -29,6 +30,7 @@ import com.orderly.host.support.TestSecondBusinessModule;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -120,6 +122,9 @@ class ModuleControlIntegrationTest {
 
     @MockBean
     private AiServiceClient aiService;
+
+    @MockBean
+    private ModuleRemovalService moduleRemoval;
 
     @BeforeEach
     void enablePlanning() {
@@ -263,6 +268,65 @@ class ModuleControlIntegrationTest {
                         .content("{\"enabled\":false}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("MODULE_PROTECTED"));
+    }
+
+    @Test
+    void moduleRemovalApiRequiresActionHeaderAndDelegatesLifecycle() throws Exception {
+        Mockito.when(moduleRemoval.snapshot()).thenReturn(new ModuleRemovalService.Snapshot(
+                1,
+                List.of(new ModuleRemovalService.RemovalView(
+                        "module_business",
+                        "NONE",
+                        true,
+                        "",
+                        "",
+                        "",
+                        true
+                )),
+                "revision-1"
+        ));
+        mockMvc.perform(get("/api/system/module-removals"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.modules[0].moduleId").value("module_business"))
+                .andExpect(jsonPath("$.modules[0].canRemove").value(true));
+
+        mockMvc.perform(post("/api/system/module-removals")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"moduleId\":\"module_business\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MODULE_REMOVAL_ACTION_REQUIRED"));
+
+        Mockito.when(moduleRemoval.remove("module_business"))
+                .thenReturn(new ModuleRemovalService.Change(
+                        "module_business",
+                        "PENDING_RESTART",
+                        "已标记删除，重启后生效",
+                        "trash-1",
+                        "revision-2"
+                ));
+        mockMvc.perform(post("/api/system/module-removals")
+                        .header("X-Orderly-Action", "remove-module")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"moduleId\":\"module_business\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PENDING_RESTART"))
+                .andExpect(jsonPath("$.trashId").value("trash-1"));
+
+        Mockito.when(moduleRemoval.undo("module_business"))
+                .thenReturn(new ModuleRemovalService.Change(
+                        "module_business",
+                        "RESTORED",
+                        "已撤销删除",
+                        "trash-1",
+                        "revision-3"
+                ));
+        mockMvc.perform(post("/api/system/module-removals/undo")
+                        .header("X-Orderly-Action", "undo-module-removal")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"moduleId\":\"module_business\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("RESTORED"));
     }
 
     @Test

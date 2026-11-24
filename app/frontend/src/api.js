@@ -244,6 +244,34 @@ export class OrderlyApi {
         );
     }
 
+    getModuleRemovals(options) {
+        return this.request("/api/system/module-removals", options);
+    }
+
+    removeModule(moduleId, options = {}) {
+        return this.request("/api/system/module-removals", {
+            ...options,
+            method: "POST",
+            headers: {
+                ...options.headers,
+                "X-Orderly-Action": "remove-module"
+            },
+            body: { moduleId }
+        });
+    }
+
+    undoModuleRemoval(moduleId, options = {}) {
+        return this.request("/api/system/module-removals/undo", {
+            ...options,
+            method: "POST",
+            headers: {
+                ...options.headers,
+                "X-Orderly-Action": "undo-module-removal"
+            },
+            body: { moduleId }
+        });
+    }
+
     getThemes(options) {
         return this.request("/api/themes", options);
     }

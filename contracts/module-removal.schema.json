@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/module-removal.schema.json",
+  "title": "Orderly module removal request and state",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/snapshot" },
+    { "$ref": "#/$defs/change" }
+  ],
+  "$defs": {
+    "moduleId": {
+      "type": "string",
+      "pattern": "^module_(?!system_)[a-z0-9_]+$"
+    },
+    "trashId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,127}$"
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["moduleId"],
+      "properties": {
+        "moduleId": { "$ref": "#/$defs/moduleId" }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "modules", "revision"],
+      "properties": {
+        "version": { "const": 1 },
+        "revision": { "type": "string", "minLength": 1 },
+        "modules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/removalView" }
+        }
+      }
+    },
+    "removalView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "moduleId",
+        "status",
+        "canRemove",
+        "reason",
+        "trashId",
+        "requestedAt",
+        "previousEnabled"
+      ],
+      "properties": {
+        "moduleId": { "$ref": "#/$defs/moduleId" },
+        "status": { "enum": ["NONE", "PENDING_RESTART"] },
+        "canRemove": { "type": "boolean" },
+        "reason": { "type": "string" },
+        "trashId": {
+          "type": "string",
+          "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9-]{0,127}$"
+        },
+        "requestedAt": {
+          "type": "string",
+          "pattern": "^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+        },
+        "previousEnabled": { "type": "boolean" }
+      }
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["moduleId", "status", "message", "trashId", "revision"],
+      "properties": {
+        "moduleId": { "$ref": "#/$defs/moduleId" },
+        "status": { "enum": ["PENDING_RESTART", "RESTORED"] },
+        "message": { "type": "string", "minLength": 1 },
+        "trashId": { "$ref": "#/$defs/trashId" },
+        "revision": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
