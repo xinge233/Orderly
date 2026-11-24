@@ -2376,13 +2376,17 @@ body.is-navigation-dragging * {
     gap: var(--space-2);
 }
 
-.ai-plan-step--question {
-    align-items: center;
+.ai-question-option {
+    border-radius: var(--radius-xs);
+    background: var(--color-surface-muted);
 }
 
-.ai-plan-step--question .text-button {
+.ai-question-option__button {
+    display: block;
     width: 100%;
-    justify-content: flex-start;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .ai-plan-panel__eyebrow {

@@ -142,6 +142,27 @@ test("AI dialog renders bounded QUERY results without inventing actions or plans
     assert.match(models, /statusText === "OK" && Object\.hasOwn\(result, "payload"\)/);
 });
 
+test("AI clarification options use a full-width question layout", async () => {
+    const component = await read("../src/ai-dialog.js");
+    const css = await read("../styles/app.css");
+
+    assert.match(component, /item\.className = "ai-question-option"/);
+    assert.match(
+        component,
+        /button\.className = "text-button ai-question-option__button"/
+    );
+    assert.doesNotMatch(component, /ai-plan-step ai-plan-step--question/);
+    assert.match(
+        css,
+        /\.ai-question-option\s*\{[\s\S]*?border-radius:\s*var\(--radius-xs\);[\s\S]*?background:\s*var\(--color-surface-muted\);/
+    );
+    assert.match(
+        css,
+        /\.ai-question-option__button\s*\{[\s\S]*?display:\s*block;[\s\S]*?width:\s*100%;[\s\S]*?text-align:\s*left;[\s\S]*?white-space:\s*normal;[\s\S]*?overflow-wrap:\s*anywhere;/
+    );
+    assert.doesNotMatch(css, /\.ai-plan-step--question/);
+});
+
 test("AI actions surface host failures and notify the framework after execution", async () => {
     const component = await read("../src/ai-dialog.js");
     const app = await read("../src/app.js");

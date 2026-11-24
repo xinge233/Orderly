@@ -1455,10 +1455,10 @@ export function mountAiDialog({
                 : [];
             options.forEach((option) => {
                 const item = document.createElement("li");
-                item.className = "ai-plan-step ai-plan-step--question";
+                item.className = "ai-question-option";
                 const button = document.createElement("button");
                 button.type = "button";
-                button.className = "text-button";
+                button.className = "text-button ai-question-option__button";
                 button.textContent = option;
                 button.addEventListener("click", () => {
                     nodes.composerInput.value = option;
