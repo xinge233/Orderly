@@ -1,0 +1,19 @@
+{
+  "kind": "VIEW",
+  "conversationId": "service-conversation-invalid-timeline",
+  "message": "非法时间线展示。",
+  "view": {
+    "sourceQuery": 1,
+    "layout": "timeline",
+    "title": "缺少时间角色",
+    "rowPath": "items",
+    "fields": [
+      {
+        "key": "title",
+        "label": "标题",
+        "format": "text",
+        "role": "primary"
+      }
+    ]
+  }
+}

@@ -254,6 +254,7 @@ public final class AiContracts {
     }
 
     /** 提供给 Python 模型的单个 Query 工具卡。 */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ToolQuery(
             String queryId,
             String title,
@@ -278,25 +279,62 @@ public final class AiContracts {
     }
 
     /** AI 根据只读 Query 结果返回的受控展示描述。 */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record QueryView(
             int sourceQuery,
             String layout,
             String title,
             String rowPath,
             List<ViewField> fields,
-            String emptyText
+            List<ViewField> detailFields,
+            String emptyText,
+            String density,
+            String groupBy,
+            Boolean hideRepeatedFields,
+            List<String> emphasisFields
     ) {
         public QueryView {
             fields = copy(fields);
+            detailFields = copy(detailFields);
+            emphasisFields = copy(emphasisFields);
+        }
+
+        /** 兼容尚未声明扩展展示语义的旧响应。 */
+        public QueryView(
+                int sourceQuery,
+                String layout,
+                String title,
+                String rowPath,
+                List<ViewField> fields,
+                String emptyText
+        ) {
+            this(
+                    sourceQuery,
+                    layout,
+                    title,
+                    rowPath,
+                    fields,
+                    List.of(),
+                    emptyText,
+                    "comfortable",
+                    "none",
+                    false,
+                    List.of()
+            );
         }
     }
 
     /** 展示描述中的单个已有字段引用。 */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ViewField(
             String key,
             String label,
-            String format
+            String format,
+            String role
     ) {
+        public ViewField(String key, String label, String format) {
+            this(key, label, format, null);
+        }
     }
 
     /** 按模块分组提供给 Python 模型的启用工具卡。 */

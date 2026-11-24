@@ -1150,9 +1150,6 @@ export function mountAiDialog({
     }
 
     function findQueryDisplay(item, index) {
-        if (dialog.query?.view?.sourceQuery === index + 1) {
-            return dialog.query.view;
-        }
         const module = (getModules() || []).find(
             (candidate) => candidate?.moduleId === item.moduleId
         );
@@ -1160,17 +1157,43 @@ export function mountAiDialog({
             ? module.queries.find((candidate) => candidate?.id === item.queryId)
             : null;
         const display = query?.display;
-        if (!display) {
+        const aiView = dialog.query?.viewSource?.sourceQuery === index + 1
+            ? dialog.query.viewSource
+            : null;
+        if (!display && !aiView) {
             return null;
+        }
+        const merged = {
+            sourceQuery: index + 1,
+            layout: aiView?.layout ?? display?.fallbackLayout,
+            title: aiView?.title ?? query?.title ?? item.queryId,
+            rowPath: aiView?.rowPath ?? display?.rowPath,
+            fields: aiView?.fields ?? display?.fields,
+            detailFields: aiView?.detailFields ?? display?.detailFields,
+            emptyText: aiView?.emptyText ?? display?.emptyText,
+            density: aiView?.density ?? display?.density,
+            groupBy: aiView?.groupBy ?? display?.groupBy,
+            hideRepeatedFields:
+                aiView?.hideRepeatedFields ?? display?.hideRepeatedFields,
+            emphasisFields: aiView?.emphasisFields ?? display?.emphasisFields
+        };
+        const normalized = normalizeQueryView(merged, item.payload, display);
+        if (normalized || !aiView) {
+            return normalized;
         }
         return normalizeQueryView({
             sourceQuery: index + 1,
-            layout: display.fallbackLayout,
-            title: query.title || item.queryId,
-            rowPath: display.rowPath,
-            fields: display.fields,
-            emptyText: display.emptyText
-        }, item.payload);
+            layout: display?.fallbackLayout,
+            title: query?.title ?? item.queryId,
+            rowPath: display?.rowPath,
+            fields: display?.fields,
+            detailFields: display?.detailFields,
+            emptyText: display?.emptyText,
+            density: display?.density,
+            groupBy: display?.groupBy,
+            hideRepeatedFields: display?.hideRepeatedFields,
+            emphasisFields: display?.emphasisFields
+        }, item.payload, display);
     }
 
     function appendQueryPayloadView(container, node) {
@@ -1223,12 +1246,180 @@ export function mountAiDialog({
         }
     }
 
-    function appendQueryFieldValue(container, value, format) {
+    function appendQueryFieldValue(container, value, format, valueLabels = null) {
         container.append(elementText(
             "span",
             "ai-query-field-value",
-            formatQueryValue(value, format)
+            formatQueryValue(value, format, valueLabels)
         ));
+    }
+
+    function repeatedQueryFieldKeys(rows, fields) {
+        const repeated = new Set();
+        if (rows.length < 2) {
+            return repeated;
+        }
+        fields.forEach((field) => {
+            if (field.role === "time" || field.role === "primary") {
+                return;
+            }
+            const first = formatQueryValue(
+                resolveQueryPath(rows[0], field.key),
+                field.format,
+                field.valueLabels
+            );
+            if (rows.every((row) => formatQueryValue(
+                resolveQueryPath(row, field.key),
+                field.format,
+                field.valueLabels
+            ) === first)) {
+                repeated.add(field.key);
+            }
+        });
+        return repeated;
+    }
+
+    function appendQueryTimeline(container, rows, view, fields, repeatedKeys) {
+        const timeField = fields.find((field) => field.role === "time")
+            || fields.find((field) => ["time", "datetime"].includes(field.format));
+        const primaryField = fields.find((field) => field.role === "primary")
+            || fields.find((field) => field.format === "text");
+        const secondaryFields = fields.filter(
+            (field) => field.key !== timeField?.key
+                && field.key !== primaryField?.key
+        );
+        const detailFields = [
+            ...(Array.isArray(view.detailFields) ? view.detailFields : []),
+            ...(Array.isArray(view.fields) ? view.fields : [])
+                .filter((field) => repeatedKeys.has(field.key))
+        ].filter((field, index, values) =>
+            values.findIndex((candidate) => candidate.key === field.key) === index
+        );
+        const timeline = document.createElement("ol");
+        timeline.className = "ai-query-timeline";
+        if (view.density === "compact") {
+            timeline.dataset.density = "compact";
+        }
+        let currentDate = "";
+        let currentEntries = timeline;
+        rows.slice(0, 50).forEach((row) => {
+            if (view.groupBy === "date" && timeField) {
+                const timeValue = resolveQueryPath(row, timeField.key);
+                const dateText = formatQueryDateGroup(timeValue) || "日期未知";
+                if (dateText !== currentDate) {
+                    currentDate = dateText;
+                    const group = document.createElement("li");
+                    group.className = "ai-query-timeline__group";
+                    group.setAttribute("role", "group");
+                    group.setAttribute("aria-label", dateText);
+                    group.append(elementText("span", "ai-query-timeline__date", dateText));
+                    currentEntries = document.createElement("ol");
+                    currentEntries.className = "ai-query-timeline__entries";
+                    group.append(currentEntries);
+                    timeline.append(group);
+                }
+            } else {
+                currentEntries = timeline;
+            }
+            const item = document.createElement("li");
+            item.className = "ai-query-timeline__item";
+            if (timeField) {
+                item.append(elementText(
+                    "time",
+                    "ai-query-timeline__time",
+                    formatQueryValue(
+                        resolveQueryPath(row, timeField.key),
+                        timeField.format,
+                        timeField.valueLabels
+                    )
+                ));
+            }
+            const copy = document.createElement("span");
+            copy.className = "ai-query-timeline__copy";
+            if (primaryField) {
+                const title = elementText(
+                    "strong",
+                    "ai-query-timeline__title",
+                    formatQueryValue(
+                        resolveQueryPath(row, primaryField.key),
+                        primaryField.format,
+                        primaryField.valueLabels
+                    )
+                );
+                if (view.emphasisFields.includes(primaryField.key)) {
+                    title.dataset.emphasis = "true";
+                }
+                copy.append(title);
+            }
+            const chips = secondaryFields
+                .filter((field) => !repeatedKeys.has(field.key))
+                .map((field) => {
+                    const value = formatQueryValue(
+                        resolveQueryPath(row, field.key),
+                        field.format,
+                        field.valueLabels
+                    );
+                    const chip = elementText("span", "ai-query-timeline__chip", value);
+                    chip.setAttribute("aria-label", `${field.label}：${value}`);
+                    return chip;
+                });
+            if (chips.length) {
+                const chipList = document.createElement("span");
+                chipList.className = "ai-query-timeline__meta";
+                chipList.append(...chips);
+                copy.append(chipList);
+            }
+            if (detailFields.length) {
+                const details = document.createElement("details");
+                details.className = "ai-query-row-details";
+                const summary = elementText("summary", "", "详情");
+                const primaryValue = primaryField
+                    ? formatQueryValue(
+                        resolveQueryPath(row, primaryField.key),
+                        primaryField.format,
+                        primaryField.valueLabels
+                    )
+                    : "";
+                summary.setAttribute(
+                    "aria-label",
+                    primaryValue ? `${primaryValue} 的详情` : "查看详情"
+                );
+                details.append(summary);
+                const list = document.createElement("dl");
+                detailFields.forEach((field) => {
+                    list.append(
+                        elementText("dt", "", field.label),
+                        elementText(
+                            "dd",
+                            "",
+                            formatQueryValue(
+                                resolveQueryPath(row, field.key),
+                                field.format,
+                                field.valueLabels
+                            )
+                        )
+                    );
+                });
+                details.append(list);
+                copy.append(details);
+            }
+            item.append(copy);
+            currentEntries.append(item);
+        });
+        container.append(timeline);
+    }
+
+    function formatQueryDateGroup(value) {
+        const parsed = Date.parse(String(value));
+        if (!Number.isFinite(parsed)) {
+            return "";
+        }
+        return new Intl.DateTimeFormat("zh-CN", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            weekday: "short"
+        }).format(new Date(parsed));
     }
 
     function appendStructuredQueryView(container, payload, view) {
@@ -1239,13 +1430,39 @@ export function mountAiDialog({
         const rows = Array.isArray(rowNode) ? rowNode : [];
         const fieldSource = Array.isArray(rowNode) ? rowNode[0] : rowNode;
         const fields = Array.isArray(view?.fields) ? view.fields : [];
-        if (["table", "list"].includes(layout) && view?.rowPath) {
+        if (["table", "list", "timeline"].includes(layout) && view?.rowPath) {
             if (!rows.length) {
                 container.append(elementText(
                     "span",
                     "ai-query-empty",
                     view.emptyText || "暂无数据"
                 ));
+                return;
+            }
+            const repeatedKeys = view.hideRepeatedFields
+                ? repeatedQueryFieldKeys(rows, fields)
+                : new Set();
+            const visibleFields = fields.filter(
+                (field) => !repeatedKeys.has(field.key)
+                    && !view.emphasisFields.includes(field.key)
+            );
+            const emphasizedFields = fields.filter(
+                (field) => view.emphasisFields.includes(field.key)
+                    && !repeatedKeys.has(field.key)
+            );
+            const primaryFields = [...emphasizedFields, ...visibleFields].filter(
+                (field, index, values) =>
+                    values.findIndex((candidate) => candidate.key === field.key) === index
+            );
+            if (layout === "timeline") {
+                appendQueryTimeline(container, rows, view, primaryFields, repeatedKeys);
+                if (rows.length > 50) {
+                    container.append(elementText(
+                        "small",
+                        "ai-query-more",
+                        `另有 ${rows.length - 50} 项未展开`
+                    ));
+                }
                 return;
             }
             if (layout === "table") {
@@ -1255,7 +1472,7 @@ export function mountAiDialog({
                 table.className = "ai-query-table";
                 const head = document.createElement("thead");
                 const headRow = document.createElement("tr");
-                fields.forEach((field) => {
+                primaryFields.forEach((field) => {
                     const cell = document.createElement("th");
                     cell.scope = "col";
                     cell.textContent = field.label;
@@ -1265,12 +1482,13 @@ export function mountAiDialog({
                 const body = document.createElement("tbody");
                 rows.slice(0, 50).forEach((row) => {
                     const rowNodeElement = document.createElement("tr");
-                    fields.forEach((field) => {
+                    primaryFields.forEach((field) => {
                         const cell = document.createElement("td");
                         appendQueryFieldValue(
                             cell,
                             resolveQueryPath(row, field.key),
-                            field.format
+                            field.format,
+                            field.valueLabels
                         );
                         rowNodeElement.append(cell);
                     });
@@ -1285,7 +1503,7 @@ export function mountAiDialog({
                 rows.slice(0, 50).forEach((row) => {
                     const item = document.createElement("li");
                     item.className = "ai-query-record";
-                    fields.forEach((field) => {
+                    primaryFields.forEach((field) => {
                         const line = document.createElement("span");
                         line.className = "ai-query-record__line";
                         line.append(
@@ -1295,7 +1513,8 @@ export function mountAiDialog({
                                 "",
                                 formatQueryValue(
                                     resolveQueryPath(row, field.key),
-                                    field.format
+                                    field.format,
+                                    field.valueLabels
                                 )
                             )
                         );
@@ -1331,7 +1550,8 @@ export function mountAiDialog({
                 appendQueryFieldValue(
                     description,
                     resolveQueryPath(fieldSource, field.key),
-                    field.format
+                    field.format,
+                    field.valueLabels
                 );
                 list.append(term, description);
             });
@@ -1355,7 +1575,9 @@ export function mountAiDialog({
             : query?.status === "TRUNCATED"
                 ? "结果已截断"
                 : "未全部完成";
-        nodes.planEyebrow.textContent = `AI 本地查询 · ${statusText}`;
+        nodes.planEyebrow.textContent = query?.status === "OK"
+            ? "只读查询"
+            : `只读查询 · ${statusText}`;
         const fallback = query?.status === "OK"
             ? `已完成 ${completed}/${queries.length} 条本地查询`
             : `查询可用结果 ${completed}/${queries.length}`;
@@ -1370,18 +1592,32 @@ export function mountAiDialog({
                 : item.status === "TRUNCATED"
                     ? "truncated"
                     : "failed";
+            const compact = queries.length === 1 && item.status === "OK";
             const row = document.createElement("li");
-            row.className = "ai-plan-step";
+            row.className = compact
+                ? "ai-query-display"
+                : "ai-plan-step ai-query-display ai-query-display--technical";
             row.dataset.status = visualStatus;
 
-            const indexNode = document.createElement("span");
-            indexNode.className = "ai-plan-step__index";
-            indexNode.textContent = String(index + 1).padStart(2, "0");
+            let indexNode = null;
+            let status = null;
+            if (!compact) {
+                indexNode = document.createElement("span");
+                indexNode.className = "ai-plan-step__index";
+                indexNode.textContent = String(index + 1).padStart(2, "0");
+                status = document.createElement("span");
+                status.className = "ai-plan-step__status";
+                status.dataset.status = visualStatus;
+                status.textContent = queryStatusLabel(item.status);
+            }
 
             const copy = document.createElement("span");
-            copy.className = "ai-plan-step__copy";
-            const title = document.createElement("strong");
-            title.textContent = `${item.moduleId || "未知模块"} · ${item.queryId || "未知查询"}`;
+            copy.className = compact ? "ai-query-display__copy" : "ai-plan-step__copy";
+            if (!compact) {
+                const title = document.createElement("strong");
+                title.textContent = queryTitle(item);
+                copy.append(title);
+            }
             const detail = document.createElement("div");
             detail.className = "ai-query-result";
             if (item.status === "OK") {
@@ -1401,24 +1637,66 @@ export function mountAiDialog({
                     item.message || queryStatusLabel(item.status)
                 ));
             }
-            copy.append(title, detail);
-
-            const status = document.createElement("span");
-            status.className = "ai-plan-step__status";
-            status.dataset.status = visualStatus;
-            status.textContent = queryStatusLabel(item.status);
-            row.append(indexNode, copy, status);
+            copy.append(detail);
+            appendQuerySource(copy, item);
+            if (compact) {
+                row.append(copy);
+            } else {
+                row.append(indexNode, copy, status);
+            }
             nodes.planList.append(row);
         });
 
         nodes.risk.dataset.risk = "READ_ONLY";
         nodes.risk.innerHTML = query?.status === "OK"
-            ? `${icon("check-plain", 14)}<span>查询完成，未执行动作</span>`
+            ? `${icon("check-plain", 14)}<span>已读取本地数据，未执行任何动作</span>`
             : query?.status === "TRUNCATED"
                 ? `${icon("alert", 14)}<span>查询结果已截断，未执行动作</span>`
                 : `${icon("alert", 14)}<span>查询未全部完成，未执行动作</span>`;
         nodes.run.disabled = true;
+        nodes.run.hidden = true;
         updateSurfaces();
+    }
+
+    function queryTitle(item) {
+        const module = (getModules() || []).find(
+            (candidate) => candidate?.moduleId === item.moduleId
+        );
+        const query = Array.isArray(module?.queries)
+            ? module.queries.find((candidate) => candidate?.id === item.queryId)
+            : null;
+        return query?.title || "查询结果";
+    }
+
+    function appendQuerySource(container, item) {
+        const details = document.createElement("details");
+        details.className = "ai-query-source";
+        const summary = elementText("summary", "", "查看来源");
+        summary.setAttribute(
+            "aria-label",
+            `查看 ${queryTitle(item)} 的来源与原始数据`
+        );
+        details.append(summary);
+        const meta = document.createElement("dl");
+        meta.className = "ai-query-source__meta";
+        meta.append(
+            elementText("dt", "", "模块"),
+            elementText("dd", "", item.moduleId || "未知"),
+            elementText("dt", "", "查询"),
+            elementText("dd", "", item.queryId || "未知"),
+            elementText("dt", "", "状态"),
+            elementText("dd", "", queryStatusLabel(item.status))
+        );
+        details.append(meta);
+        if (item.status === "OK") {
+            const raw = document.createElement("div");
+            raw.className = "ai-query-source__raw";
+            appendQueryPayloadView(raw, buildQueryPayloadView(item.payload));
+            details.append(raw);
+        } else if (item.message) {
+            details.append(elementText("p", "ai-plan-step__message", item.message));
+        }
+        container.append(details);
     }
 
     function queryStatusLabel(status) {
@@ -1432,6 +1710,7 @@ export function mountAiDialog({
     // renderPlan 只负责状态到视图的映射：错误、Query、澄清、执行结果和待确认计划
     // 互斥展示。真正的 Action/计划执行必须经过宿主回调，不能由渲染路径触发。
     function renderPlan() {
+        nodes.run.hidden = false;
         if (dialog.error && !dialog.plan && !dialog.question && !dialog.query) {
             nodes.planEyebrow.textContent = "AI 暂不可用";
             nodes.planTitle.textContent = dialog.error;

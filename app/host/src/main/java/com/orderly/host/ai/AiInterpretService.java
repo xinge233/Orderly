@@ -496,18 +496,19 @@ public class AiInterpretService {
         if (emptyText != null && emptyText.length() > 200) {
             throw invalidResponse("VIEW.emptyText 不能超过 200 个字符");
         }
-        List<AiContracts.ViewField> fields = view.fields() == null
-                ? List.of()
-                : view.fields();
-        if (fields.size() > 12) {
-            throw invalidResponse("VIEW.fields 不能超过 12 项");
+        List<AiContracts.ViewField> fields = view.fields();
+        if (fields == null) {
+            throw invalidResponse("VIEW.fields 必须存在");
         }
+        List<AiContracts.ViewField> detailFields = view.detailFields() == null
+                ? List.of()
+                : view.detailFields();
         Object sourceNode = source.payload();
         boolean rowPathPresent = rowPath == null || hasPath(sourceNode, rowPath);
         Object rowNode = rowPath == null ? sourceNode : readPath(sourceNode, rowPath);
-        if (List.of("list", "table").contains(layout)) {
+        if (List.of("list", "table", "timeline").contains(layout)) {
             if (rowPath == null) {
-                throw invalidResponse("VIEW 的 list/table 布局需要 rowPath");
+                throw invalidResponse("VIEW 的 list/table/timeline 布局需要 rowPath");
             }
             if (!rowPathPresent || !(rowNode instanceof List<?>)) {
                 throw invalidResponse("VIEW.rowPath 必须指向数组");
@@ -516,25 +517,37 @@ public class AiInterpretService {
         Object sample = rowNode instanceof List<?> list && !list.isEmpty()
                 ? list.getFirst()
                 : rowNode;
-        List<AiContracts.ViewField> validatedFields = new ArrayList<>();
-        for (AiContracts.ViewField field : fields) {
-            if (field == null) {
-                throw invalidResponse("VIEW.fields 不能包含空项");
-            }
-            String key = normalizedRequired(field.key(), 160, "VIEW.fields.key");
-            if (!validFieldPath(key)) {
-                throw invalidResponse("VIEW.fields.key 只能使用点分隔字段名");
-            }
-            String label = normalizedRequired(field.label(), 80, "VIEW.fields.label");
-            String format = normalizedRequired(field.format(), 32, "VIEW.fields.format");
-            if (!List.of("text", "status", "datetime", "number", "boolean")
-                    .contains(format)) {
-                throw invalidResponse("VIEW.fields.format 非法");
-            }
-            if (sample != null && !hasPath(sample, key)) {
-                throw invalidResponse("VIEW.fields 引用了不存在的字段：" + key);
-            }
-            validatedFields.add(new AiContracts.ViewField(key, label, format));
+        List<AiContracts.ViewField> validatedFields =
+                validateViewFields(fields, sample, "VIEW.fields");
+        List<AiContracts.ViewField> validatedDetailFields =
+                validateViewFields(detailFields, sample, "VIEW.detailFields");
+        String density = canonicalViewDensity(view.density());
+        String groupBy = canonicalViewGroupBy(view.groupBy());
+        boolean hideRepeatedFields = Boolean.TRUE.equals(view.hideRepeatedFields());
+        List<String> emphasisFields = view.emphasisFields() == null
+                ? List.of()
+                : view.emphasisFields().stream()
+                        .map(this::normalize)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .toList();
+        if (emphasisFields.size() > 2) {
+            throw invalidResponse("VIEW.emphasisFields 不能超过 2 项");
+        }
+        java.util.Set<String> availableKeys = new java.util.LinkedHashSet<>();
+        validatedFields.forEach(field -> availableKeys.add(field.key()));
+        validatedDetailFields.forEach(field -> availableKeys.add(field.key()));
+        if (!availableKeys.containsAll(emphasisFields)) {
+            throw invalidResponse("VIEW.emphasisFields 引用了未展示字段");
+        }
+        boolean hasTimeRole = validatedFields.stream()
+                .anyMatch(field -> "time".equals(field.role()));
+        if ("timeline".equals(layout)
+                && !validatedFields.stream().anyMatch(field -> "primary".equals(field.role()))) {
+            throw invalidResponse("VIEW 的 timeline 布局需要 primary 字段");
+        }
+        if (("timeline".equals(layout) || "date".equals(groupBy)) && !hasTimeRole) {
+            throw invalidResponse("VIEW 的时间线或日期分组需要 time 字段");
         }
         AiContracts.QueryView validated = new AiContracts.QueryView(
                 view.sourceQuery(),
@@ -542,7 +555,12 @@ public class AiInterpretService {
                 title,
                 rowPath,
                 validatedFields,
-                emptyText
+                validatedDetailFields,
+                emptyText,
+                density,
+                groupBy,
+                hideRepeatedFields,
+                emphasisFields
         );
         return new AiContracts.TurnResponse(
                 "VIEW",
@@ -595,8 +613,78 @@ public class AiInterpretService {
             case "list" -> "list";
             case "table" -> "table";
             case "text" -> "text";
+            case "timeline" -> "timeline";
             default -> throw invalidResponse("VIEW.layout 非法");
         };
+    }
+
+    /** 校验 VIEW 字段列表并规范化字段角色。 */
+    private List<AiContracts.ViewField> validateViewFields(
+            List<AiContracts.ViewField> fields,
+            Object sample,
+            String owner
+    ) {
+        if (fields.size() > 12) {
+            throw invalidResponse(owner + " 不能超过 12 项");
+        }
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        List<AiContracts.ViewField> validated = new ArrayList<>();
+        for (AiContracts.ViewField field : fields) {
+            if (field == null) {
+                throw invalidResponse(owner + " 不能包含空项");
+            }
+            String key = normalizedRequired(field.key(), 160, owner + ".key");
+            if (!validFieldPath(key)) {
+                throw invalidResponse(owner + ".key 只能使用点分隔字段名");
+            }
+            if (!seen.add(key)) {
+                throw invalidResponse(owner + " 不能包含重复字段：" + key);
+            }
+            String label = normalizedRequired(field.label(), 80, owner + ".label");
+            String format = normalizedRequired(field.format(), 32, owner + ".format");
+            if (!List.of("text", "status", "date", "time", "datetime", "number", "boolean")
+                    .contains(format)) {
+                throw invalidResponse(owner + ".format 非法");
+            }
+            String role = normalize(field.role());
+            if (role != null
+                    && !List.of("time", "primary", "secondary", "status").contains(role)) {
+                throw invalidResponse(owner + ".role 非法");
+            }
+            if ("time".equals(role)
+                    && !List.of("date", "time", "datetime").contains(format)) {
+                throw invalidResponse(owner + ".time 角色需要日期或时间格式");
+            }
+            if (sample != null && !hasPath(sample, key)) {
+                throw invalidResponse(owner + " 引用了不存在的字段：" + key);
+            }
+            validated.add(new AiContracts.ViewField(key, label, format, role));
+        }
+        return List.copyOf(validated);
+    }
+
+    private String canonicalViewDensity(String value) {
+        String normalized = normalize(value);
+        if (normalized == null) {
+            return "comfortable";
+        }
+        String lower = normalized.toLowerCase(Locale.ROOT);
+        if (!List.of("compact", "comfortable").contains(lower)) {
+            throw invalidResponse("VIEW.density 非法");
+        }
+        return lower;
+    }
+
+    private String canonicalViewGroupBy(String value) {
+        String normalized = normalize(value);
+        if (normalized == null) {
+            return "none";
+        }
+        String lower = normalized.toLowerCase(Locale.ROOT);
+        if (!List.of("none", "date").contains(lower)) {
+            throw invalidResponse("VIEW.groupBy 非法");
+        }
+        return lower;
     }
 
     private boolean validFieldPath(String value) {

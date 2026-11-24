@@ -119,18 +119,52 @@ def validate_decision_tools(
         row_node: Any = source.payload
         if view.row_path:
             row_node = resolve_path(row_node, view.row_path)
-        if view.layout in {"list", "table"}:
+        if view.layout in {"list", "table", "timeline"}:
             if not view.row_path:
-                raise DecisionError("VIEW 的 list/table 布局需要 rowPath")
+                raise DecisionError("VIEW 的 list/table/timeline 布局需要 rowPath")
             if not isinstance(row_node, list):
                 raise DecisionError("VIEW.rowPath 必须指向数组")
         sample = row_node[0] if isinstance(row_node, list) and row_node else row_node
-        for field in view.fields:
-            if not FIELD_PATH.fullmatch(field.key):
-                raise DecisionError("VIEW.fields.key 只能使用点分隔字段名")
-            if isinstance(sample, (dict, list)) and not path_exists(sample, field.key):
-                raise DecisionError(f"VIEW.fields 引用了不存在的字段：{field.key}")
+        field_keys = _validate_view_fields(view.fields, sample, "VIEW.fields")
+        detail_keys = _validate_view_fields(
+            view.detail_fields,
+            sample,
+            "VIEW.detailFields",
+        )
+        available = field_keys | detail_keys
+        if len(set(view.emphasis_fields)) != len(view.emphasis_fields):
+            raise DecisionError("VIEW.emphasisFields 不能包含重复字段")
+        if not set(view.emphasis_fields).issubset(available):
+            raise DecisionError("VIEW.emphasisFields 引用了未展示字段")
+        if view.layout == "timeline" and not any(
+            field.role == "primary" for field in view.fields
+        ):
+            raise DecisionError("VIEW 的 timeline 布局需要 primary 字段")
+        if (view.layout == "timeline" or view.group_by == "date") and not any(
+            field.role == "time" for field in view.fields
+        ):
+            raise DecisionError("VIEW 的时间线或日期分组需要 time 字段")
     return decision
+
+
+def _validate_view_fields(
+    fields: list[Any],
+    sample: Any,
+    owner: str,
+) -> set[str]:
+    """校验 VIEW 字段路径、角色与重复引用。"""
+    keys: set[str] = set()
+    for field in fields:
+        if not FIELD_PATH.fullmatch(field.key):
+            raise DecisionError(f"{owner}.key 只能使用点分隔字段名")
+        if field.key in keys:
+            raise DecisionError(f"{owner} 不能包含重复字段：{field.key}")
+        keys.add(field.key)
+        if field.role == "time" and field.format not in {"date", "time", "datetime"}:
+            raise DecisionError(f"{owner}.time 角色需要日期或时间格式")
+        if isinstance(sample, (dict, list)) and not path_exists(sample, field.key):
+            raise DecisionError(f"{owner} 引用了不存在的字段：{field.key}")
+    return keys
 
 
 def resolve_path(source: Any, path: str) -> Any:

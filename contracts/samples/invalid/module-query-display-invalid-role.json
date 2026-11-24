@@ -1,0 +1,29 @@
+{
+  "moduleId": "module_demo",
+  "title": "非法查询字段角色模块",
+  "description": "用于验证 Query 展示字段角色不能绕过白名单。",
+  "order": 10,
+  "actions": [],
+  "queries": [
+    {
+      "id": "demo.list",
+      "title": "列出演示项",
+      "description": "返回演示项集合。",
+      "parameters": [],
+      "display": {
+        "prompt": "展示演示项。",
+        "fallbackLayout": "timeline",
+        "rowPath": "items",
+        "fields": [
+          {
+            "key": "title",
+            "label": "标题",
+            "format": "text",
+            "role": "script"
+          }
+        ]
+      }
+    }
+  ],
+  "plannerRules": []
+}

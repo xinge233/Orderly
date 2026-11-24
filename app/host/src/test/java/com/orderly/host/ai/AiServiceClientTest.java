@@ -2,6 +2,7 @@ package com.orderly.host.ai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orderly.host.api.ApiException;
+import com.orderly.host.contract.QueryDisplayContract;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -55,6 +57,69 @@ class AiServiceClientTest {
             assertThat(authorization.get()).isEqualTo("Bearer ipc-token");
             assertThat(body.get()).contains("\"temporary-key\"");
             assertThat(body.get()).doesNotContain("allowSendQueryResultsToModel");
+        }
+    }
+
+    @Test
+    void omitsNullQueryDisplayFieldsFromPythonRequests() throws Exception {
+        AtomicReference<String> body = new AtomicReference<>();
+        try (Server server = Server.start(exchange -> {
+            body.set(readBody(exchange));
+            writeJson(exchange, 200, """
+                    {
+                      "kind": "QUESTION",
+                      "conversationId": "c1",
+                      "message": "请补充目标",
+                      "question": {"prompt": "要查询什么？", "options": []}
+                    }
+                    """);
+        })) {
+            AiServiceClient client = client(server.url(), "");
+            QueryDisplayContract display = new QueryDisplayContract(
+                    "按状态展示",
+                    "list",
+                    null,
+                    List.of(new QueryDisplayContract.Field(
+                            "status",
+                            "状态",
+                            "status",
+                            null,
+                            Map.of("OPEN", "待处理")
+                    )),
+                    null,
+                    "compact",
+                    "none",
+                    false,
+                    List.of(),
+                    List.of()
+            );
+            client.createTurn(new AiContracts.ServiceTurnRequest(
+                    "查询",
+                    null,
+                    "client-display-null",
+                    false,
+                    List.of(new AiContracts.ToolModule(
+                            "module_todo",
+                            "待办",
+                            "待办模块",
+                            List.of(),
+                            List.of(new AiContracts.ToolQuery(
+                                    "todo.list",
+                                    "待办列表",
+                                    "查询待办",
+                                    List.of(),
+                                    null,
+                                    display
+                            ))
+                    ))
+            ));
+
+            assertThat(body.get())
+                    .contains("\"valueLabels\":{\"OPEN\":\"待处理\"}")
+                    .doesNotContain("\"role\":null")
+                    .doesNotContain("\"rowPath\":null")
+                    .doesNotContain("\"emptyText\":null")
+                    .doesNotContain("\"outputSchema\":null");
         }
     }
 
@@ -145,7 +210,10 @@ class AiServiceClientTest {
                                     "module_todo",
                                     "todo.list",
                                     AiContracts.QueryStatus.OK,
-                                    java.util.Map.of("items", List.of()),
+                                    java.util.Map.of(
+                                            "items",
+                                            List.of(java.util.Map.of("title", "项目周报"))
+                                    ),
                                     "查询完成"
                             ))
                     )

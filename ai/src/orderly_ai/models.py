@@ -17,8 +17,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 RISK_LEVEL = Literal["READ_ONLY", "WRITE", "DELETE"]
 DECISION_KIND = Literal["ACTIONS", "PLAN", "QUESTION", "QUERY", "VIEW"]
 QUERY_RESULT_STATUS = Literal["OK", "FAILED", "TRUNCATED"]
-VIEW_LAYOUT = Literal["keyValue", "list", "table", "text"]
-VIEW_FORMAT = Literal["text", "status", "datetime", "number", "boolean"]
+VIEW_LAYOUT = Literal["keyValue", "list", "table", "text", "timeline"]
+VIEW_FORMAT = Literal["text", "status", "date", "time", "datetime", "number", "boolean"]
+VIEW_ROLE = Literal["time", "primary", "secondary", "status"]
+VIEW_DENSITY = Literal["compact", "comfortable"]
+VIEW_GROUP_BY = Literal["none", "date"]
 
 
 def to_camel(value: str) -> str:
@@ -132,6 +135,8 @@ class QueryDisplayField(CamelModel):
     key: str = Field(min_length=1, max_length=160)
     label: str = Field(min_length=1, max_length=80)
     format: VIEW_FORMAT = "text"
+    role: VIEW_ROLE | None = None
+    value_labels: dict[str, str] = Field(default_factory=dict, max_length=64)
 
 
 class QueryDisplay(CamelModel):
@@ -148,6 +153,11 @@ class QueryDisplay(CamelModel):
     row_path: str | None = Field(default=None, max_length=200)
     fields: list[QueryDisplayField] = Field(default_factory=list, max_length=12)
     empty_text: str | None = Field(default=None, max_length=200)
+    density: VIEW_DENSITY = "comfortable"
+    group_by: VIEW_GROUP_BY = "none"
+    hide_repeated_fields: bool = False
+    detail_fields: list[QueryDisplayField] = Field(default_factory=list, max_length=12)
+    emphasis_fields: list[str] = Field(default_factory=list, max_length=2)
 
 
 class QueryCard(CamelModel):
@@ -308,6 +318,7 @@ class ViewField(CamelModel):
     key: str = Field(min_length=1, max_length=160)
     label: str = Field(min_length=1, max_length=80)
     format: VIEW_FORMAT
+    role: VIEW_ROLE | None = None
 
 
 class QueryView(CamelModel):
@@ -324,7 +335,12 @@ class QueryView(CamelModel):
     title: str = Field(min_length=1, max_length=200)
     row_path: str | None = Field(default=None, max_length=200)
     fields: list[ViewField] = Field(max_length=12)
+    detail_fields: list[ViewField] = Field(default_factory=list, max_length=12)
     empty_text: str | None = Field(default=None, max_length=200)
+    density: VIEW_DENSITY = "comfortable"
+    group_by: VIEW_GROUP_BY = "none"
+    hide_repeated_fields: bool = False
+    emphasis_fields: list[str] = Field(default_factory=list, max_length=2)
 
 
 class Decision(CamelModel):

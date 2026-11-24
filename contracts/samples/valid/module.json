@@ -53,9 +53,19 @@
         "prompt": "按标题和状态展示为列表，空集合显示暂无演示项。",
         "fallbackLayout": "list",
         "rowPath": "items",
+        "density": "compact",
+        "hideRepeatedFields": true,
+        "emphasisFields": ["title"],
         "fields": [
-          { "key": "title", "label": "标题", "format": "text" },
-          { "key": "status", "label": "状态", "format": "status" }
+          { "key": "title", "label": "标题", "format": "text", "role": "primary" }
+        ],
+        "detailFields": [
+          {
+            "key": "status",
+            "label": "状态",
+            "format": "status",
+            "valueLabels": { "OPEN": "待处理", "DONE": "已完成" }
+          }
         ],
         "emptyText": "暂无演示项"
       }

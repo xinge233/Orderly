@@ -28,12 +28,12 @@
         --color-accent-contrast: Canvas;
         --color-secondary: LinkText;
         --color-secondary-soft: ButtonFace;
-        --color-safe: Green;
-        --color-safe-soft: ButtonFace;
-        --color-warning: DarkOrange;
-        --color-warning-soft: ButtonFace;
-        --color-danger: Red;
-        --color-danger-soft: ButtonFace;
+        --color-safe: ButtonText;
+        --color-safe-soft: Canvas;
+        --color-warning: ButtonText;
+        --color-warning-soft: Canvas;
+        --color-danger: ButtonText;
+        --color-danger-soft: Canvas;
         --color-focus: Highlight;
         --color-overlay: CanvasText;
         --shadow-soft: none;

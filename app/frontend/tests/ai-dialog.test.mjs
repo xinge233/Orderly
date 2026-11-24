@@ -132,14 +132,35 @@ test("AI dialog renders bounded QUERY results without inventing actions or plans
     assert.match(component, /function appendStructuredQueryView/);
     assert.match(component, /function appendQueryPayloadView/);
     assert.match(component, /item\.status === "OK"[\s\S]*?findQueryDisplay/);
-    assert.match(component, /查询完成，未执行动作/);
+    assert.match(component, /已读取本地数据，未执行任何动作/);
     assert.match(component, /query\.status === "TRUNCATED"/);
     assert.match(component, /TRUNCATED[\s\S]*?"truncated"/);
     assert.match(component, /"error",\s*"query"/);
+    assert.match(component, /function appendQueryTimeline/);
+    assert.match(component, /ai-query-timeline/);
+    assert.match(component, /function appendQuerySource/);
+    assert.match(component, /nodes\.run\.hidden = true/);
     assert.match(css, /\.ai-query-result\s*\{[\s\S]*?font-size:\s*var\(--font-size-small\);[\s\S]*?line-height:\s*1\.55;/);
     assert.match(css, /\.ai-query-table\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?font-size:\s*var\(--font-size-small\);/);
     assert.match(models, /declaredQueries\.slice\(0, AI_QUERY_LIMIT\)/);
     assert.match(models, /statusText === "OK" && Object\.hasOwn\(result, "payload"\)/);
+});
+
+test("AI query rendering exposes compact display and source details", async () => {
+    const component = await read("../src/ai-dialog.js");
+    const css = await read("../styles/app.css");
+
+    assert.match(component, /function repeatedQueryFieldKeys/);
+    assert.match(component, /view\.hideRepeatedFields/);
+    assert.match(component, /view\.groupBy === "date"/);
+    assert.match(component, /view\.detailFields/);
+    assert.match(component, /aria-label",\s*`查看 \$\{queryTitle\(item\)\} 的来源与原始数据`/);
+    assert.match(component, /currentEntries\.append\(item\)/);
+    assert.match(component, /查看来源/);
+    assert.match(css, /\.ai-query-timeline\s*\{[\s\S]*?display:\s*grid;/);
+    assert.match(css, /\.ai-query-timeline__item\s*\{[\s\S]*?grid-template-columns:/);
+    assert.match(css, /\.ai-query-source\s*\{/);
+    assert.match(css, /\.ai-run-button\[hidden\]\s*\{[\s\S]*?display:\s*none;/);
 });
 
 test("AI clarification options use a full-width question layout", async () => {

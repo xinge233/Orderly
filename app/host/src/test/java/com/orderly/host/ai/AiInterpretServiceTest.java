@@ -226,6 +226,124 @@ class AiInterpretServiceTest {
     }
 
     @Test
+    void validatesCompactTimelineViewAndKeepsDetailFieldsReadOnly() {
+        when(aiService.createTurn(any(), any())).thenReturn(queryDecision());
+        List<AiContracts.QueryResult> results = List.of(timelineQueryResult());
+        when(queries.executeAiQueries(anyList())).thenReturn(results);
+        when(aiService.continueWithQueryResults(any(), any())).thenReturn(
+                new AiContracts.ServiceDecision(
+                        "VIEW",
+                        "conversation-query",
+                        "已整理结果",
+                        null,
+                        null,
+                        null,
+                        new AiContracts.QueryView(
+                                1,
+                                "timeline",
+                                "今天的安排",
+                                "items",
+                                List.of(
+                                        new AiContracts.ViewField(
+                                                "at",
+                                                "时间",
+                                                "time",
+                                                "time"
+                                        ),
+                                        new AiContracts.ViewField(
+                                                "title",
+                                                "标题",
+                                                "text",
+                                                "primary"
+                                        )
+                                ),
+                                List.of(new AiContracts.ViewField(
+                                        "status",
+                                        "状态",
+                                        "status",
+                                        null
+                                )),
+                                "今天没有安排",
+                                "compact",
+                                "date",
+                                true,
+                                List.of("title")
+                        )
+                )
+        );
+
+        AiContracts.TurnResponse response = service.interpret(new AiContracts.TurnRequest(
+                "看看今天的日程",
+                null,
+                "query-view-timeline"
+        ));
+
+        assertThat(response.kind()).isEqualTo("VIEW");
+        assertThat(response.view().layout()).isEqualTo("timeline");
+        assertThat(response.view().density()).isEqualTo("compact");
+        assertThat(response.view().groupBy()).isEqualTo("date");
+        assertThat(response.view().hideRepeatedFields()).isTrue();
+        assertThat(response.view().fields().getFirst().role()).isEqualTo("time");
+        assertThat(response.view().detailFields().getFirst().key()).isEqualTo("status");
+        assertThat(response.queryResults()).isEqualTo(results);
+        verifyNoInteractions(actions, plans);
+    }
+
+    @Test
+    void invalidTimelineWithoutTimeRoleFallsBackToLocalQueryResults() {
+        when(aiService.createTurn(any(), any())).thenReturn(queryDecision());
+        List<AiContracts.QueryResult> results = List.of(timelineQueryResult());
+        when(queries.executeAiQueries(anyList())).thenReturn(results);
+        when(aiService.continueWithQueryResults(any(), any())).thenReturn(
+                new AiContracts.ServiceDecision(
+                        "VIEW",
+                        "conversation-query",
+                        "非法时间线",
+                        null,
+                        null,
+                        null,
+                        new AiContracts.QueryView(
+                                1,
+                                "timeline",
+                                "今天的安排",
+                                "items",
+                                List.of(
+                                        new AiContracts.ViewField(
+                                                "at",
+                                                "时间",
+                                                "time",
+                                                "secondary"
+                                        ),
+                                        new AiContracts.ViewField(
+                                                "title",
+                                                "标题",
+                                                "text",
+                                                "primary"
+                                        )
+                                ),
+                                List.of(),
+                                "今天没有安排",
+                                "compact",
+                                "date",
+                                true,
+                                List.of("title")
+                        )
+                )
+        );
+
+        AiContracts.TurnResponse response = service.interpret(new AiContracts.TurnRequest(
+                "看看今天的日程",
+                null,
+                "query-view-invalid-timeline"
+        ));
+
+        assertThat(response.kind()).isEqualTo("QUERY");
+        assertThat(response.view()).isNull();
+        assertThat(response.queryResults()).isEqualTo(results);
+        verifyNoInteractions(actions, plans);
+    }
+
+    @Test
     void invalidViewFallsBackToLocalQueryResults() {
         when(aiService.createTurn(any(), any())).thenReturn(queryDecision());
         List<AiContracts.QueryResult> results = List.of(okQueryResult());
@@ -613,6 +731,21 @@ class AiInterpretServiceTest {
                 Map.of("items", List.of(Map.of(
                         "title", "项目周报",
                         "status", "OPEN"
+                ))),
+                "查询完成"
+        );
+    }
+
+    private AiContracts.QueryResult timelineQueryResult() {
+        return new AiContracts.QueryResult(
+                "module_calendar",
+                "calendar.agenda",
+                AiContracts.QueryStatus.OK,
+                Map.of("items", List.of(Map.of(
+                        "title", "数学课",
+                        "at", "2026-11-24T14:00:00+08:00",
+                        "kind", "EVENT",
+                        "status", "SCHEDULED"
                 ))),
                 "查询完成"
         );

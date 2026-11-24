@@ -394,16 +394,38 @@
         }
       },
       "display": {
-        "prompt": "以列表展示时间线条目的类型、标题、时间和状态；没有条目时显示空状态。",
-        "fallbackLayout": "table",
+        "prompt": "优先以紧凑时间线展示时间和标题；类型与状态仅在存在差异时显示，其余放入详情；没有条目时显示空状态。",
+        "fallbackLayout": "timeline",
         "rowPath": "items",
+        "density": "compact",
+        "groupBy": "date",
+        "hideRepeatedFields": true,
+        "emphasisFields": ["title"],
         "fields": [
-          { "key": "at", "label": "时间", "format": "datetime" },
-          { "key": "kind", "label": "类型", "format": "status" },
-          { "key": "title", "label": "标题", "format": "text" },
-          { "key": "status", "label": "状态", "format": "status" }
+          { "key": "at", "label": "时间", "format": "time", "role": "time" },
+          { "key": "title", "label": "标题", "format": "text", "role": "primary" },
+          {
+            "key": "kind",
+            "label": "类型",
+            "format": "status",
+            "role": "secondary",
+            "valueLabels": { "EVENT": "日程", "TODO": "待办" }
+          }
         ],
-        "emptyText": "时间线暂无条目"
+        "detailFields": [
+          {
+            "key": "status",
+            "label": "状态",
+            "format": "status",
+            "valueLabels": {
+              "SCHEDULED": "已安排",
+              "CANCELLED": "已取消",
+              "COMPLETED": "已完成"
+            }
+          },
+          { "key": "id", "label": "标识", "format": "text" }
+        ],
+        "emptyText": "今天没有安排"
       }
     }
   ],

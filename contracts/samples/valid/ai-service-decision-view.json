@@ -4,15 +4,28 @@
   "message": "已整理本地查询结果。",
   "view": {
     "sourceQuery": 1,
-    "layout": "table",
-    "title": "待办列表",
+    "layout": "timeline",
+    "title": "今天的待办",
     "rowPath": "items",
+    "density": "compact",
+    "groupBy": "date",
+    "hideRepeatedFields": true,
+    "emphasisFields": ["title"],
     "fields": [
       {
         "key": "title",
         "label": "标题",
-        "format": "text"
+        "format": "text",
+        "role": "primary"
       },
+      {
+        "key": "dueAt",
+        "label": "时间",
+        "format": "time",
+        "role": "time"
+      }
+    ],
+    "detailFields": [
       {
         "key": "status",
         "label": "状态",

@@ -71,9 +71,135 @@ test("invalid query views fall back without exposing invalid fields", () => {
         title: "非法布局",
         fields: []
     }, payload);
+    const invalidRole = normalizeQueryView({
+        sourceQuery: 1,
+        layout: "table",
+        title: "非法角色",
+        rowPath: "items",
+        fields: [{ key: "title", label: "标题", format: "text", role: "script" }]
+    }, payload);
+    const invalidDensity = normalizeQueryView({
+        sourceQuery: 1,
+        layout: "table",
+        title: "非法密度",
+        rowPath: "items",
+        density: "tiny",
+        fields: [{ key: "title", label: "标题", format: "text" }]
+    }, payload);
+    const invalidTimeFormat = normalizeQueryView({
+        sourceQuery: 1,
+        layout: "table",
+        title: "非法时间格式",
+        rowPath: "items",
+        fields: [{ key: "title", label: "标题", format: "text", role: "time" }]
+    }, payload);
+    const scalarRows = normalizeQueryView({
+        sourceQuery: 1,
+        layout: "table",
+        title: "不是数组",
+        rowPath: "items.0",
+        fields: [{ key: "title", label: "标题", format: "text" }]
+    }, payload);
+    const emptyRows = normalizeQueryView({
+        sourceQuery: 1,
+        layout: "table",
+        title: "空结果",
+        rowPath: "items",
+        fields: [{ key: "missing", label: "不存在", format: "text" }]
+    }, { items: [] });
 
     assert.equal(missingField, null);
     assert.equal(invalidLayout, null);
+    assert.equal(invalidRole, null);
+    assert.equal(invalidDensity, null);
+    assert.equal(invalidTimeFormat, null);
+    assert.equal(scalarRows, null);
+    assert.equal(emptyRows, null);
+});
+
+test("timeline views preserve display roles, labels and compact options", () => {
+    const payload = {
+        items: [{
+            title: "数学课",
+            at: "2026-11-24T14:00:00+08:00",
+            kind: "EVENT",
+            status: "SCHEDULED"
+        }]
+    };
+    const view = normalizeQueryView({
+        sourceQuery: 1,
+        layout: "timeline",
+        title: "今天的安排",
+        rowPath: "items",
+        density: "compact",
+        groupBy: "date",
+        hideRepeatedFields: true,
+        emphasisFields: ["title"],
+        fields: [
+            {
+                key: "at",
+                label: "时间",
+                format: "time",
+                role: "time"
+            },
+            {
+                key: "title",
+                label: "标题",
+                format: "text",
+                role: "primary"
+            }
+        ],
+        detailFields: [{
+            key: "status",
+            label: "状态",
+            format: "status",
+            valueLabels: { SCHEDULED: "模型自造" }
+        }]
+    }, payload);
+    const invalidTimeline = normalizeQueryView({
+        sourceQuery: 1,
+        layout: "timeline",
+        title: "缺少角色",
+        rowPath: "items",
+        fields: [
+            { key: "at", label: "时间", format: "time" },
+            { key: "title", label: "标题", format: "text" }
+        ]
+    }, payload);
+    const hintedStatus = normalizeQueryView({
+        sourceQuery: 1,
+        layout: "table",
+        title: "状态",
+        rowPath: "items",
+        fields: [{ key: "status", label: "状态", format: "status" }]
+    }, payload, {
+        fields: [{
+            key: "status",
+            label: "状态",
+            format: "status",
+            valueLabels: { SCHEDULED: "已安排" }
+        }]
+    });
+
+    assert.equal(view.layout, "timeline");
+    assert.equal(view.density, "compact");
+    assert.equal(view.groupBy, "date");
+    assert.equal(view.hideRepeatedFields, true);
+    assert.equal(view.fields[0].role, "time");
+    assert.deepEqual(view.detailFields[0].valueLabels, {});
+    assert.deepEqual(view.fields[0].valueLabels, {});
+    assert.equal(hintedStatus.fields[0].valueLabels.SCHEDULED, "已安排");
+    assert.equal(
+        formatQueryValue("2026-11-24T14:00:00+08:00", "time"),
+        "14:00"
+    );
+    assert.equal(
+        formatQueryValue("SCHEDULED", "status", { SCHEDULED: "已安排" }),
+        "已安排"
+    );
+    assert.equal(formatQueryValue("toString", "status", {}), "toString");
+    assert.equal(formatQueryValue("x".repeat(720), "time"), "时间格式无效");
+    assert.equal(invalidTimeline, null);
 });
 
 test("normalizes a structured plan without trusting extra fields", () => {
@@ -241,6 +367,29 @@ test("invalid VIEW falls back to the generic query view", () => {
     assert.equal(view.degraded, true);
     assert.match(view.notice, /回退/);
     assert.equal(Object.hasOwn(view, "view"), false);
+});
+
+test("VIEW never reuses failed query payloads", () => {
+    const view = normalizeAiQueryResponse({
+        kind: "VIEW",
+        queryResults: [{
+            moduleId: "module_todo",
+            queryId: "todo.list",
+            status: "FAILED",
+            message: "读取失败"
+        }],
+        view: {
+            sourceQuery: 1,
+            layout: "table",
+            title: "非法来源",
+            rowPath: "items",
+            fields: [{ key: "title", label: "标题", format: "text" }]
+        }
+    });
+
+    assert.equal(view.degraded, true);
+    assert.equal(Object.hasOwn(view, "view"), false);
+    assert.match(view.notice, /回退/);
 });
 
 test("query responses cap display at four and degrade invalid items safely", () => {

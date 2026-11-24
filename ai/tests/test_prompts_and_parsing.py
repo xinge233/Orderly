@@ -7,7 +7,7 @@ import pytest
 from conftest import module_cards
 from orderly_ai.decisions import parse_decision, validate_decision_tools
 from orderly_ai.errors import DecisionError
-from orderly_ai.models import ToolModule
+from orderly_ai.models import QueryResultItem, ToolModule
 from orderly_ai.prompts import build_system_prompt
 
 
@@ -147,6 +147,62 @@ def test_view_parser_requires_a_structured_display_description():
             '{"kind":"VIEW","view":{"sourceQuery":1,"layout":"table",'
             '"title":"非法","fields":[]},"actions":[]}',
             ("VIEW",),
+        )
+
+
+def test_timeline_view_validates_roles_details_and_emphasis():
+    result = QueryResultItem(
+        moduleId="module_calendar",
+        queryId="calendar.agenda",
+        status="OK",
+        payload={
+            "items": [{
+                "title": "数学课",
+                "at": "2026-11-24T14:00:00+08:00",
+                "kind": "EVENT",
+                "status": "SCHEDULED",
+            }]
+        },
+        message="查询完成",
+    )
+    raw = (
+        '{"kind":"VIEW","view":{"sourceQuery":1,"layout":"timeline",'
+        '"title":"今天的安排","rowPath":"items","density":"compact",'
+        '"groupBy":"date","hideRepeatedFields":true,"emphasisFields":["title"],'
+        '"fields":[{"key":"at","label":"时间","format":"time","role":"time"},'
+        '{"key":"title","label":"标题","format":"text","role":"primary"}],'
+        '"detailFields":[{"key":"status","label":"状态","format":"status"}]}}'
+    )
+    decision = validate_decision_tools(
+        parse_decision(raw, ("VIEW",)),
+        [],
+        [result],
+    )
+    assert decision.view is not None
+    assert decision.view.layout == "timeline"
+    assert decision.view.fields[0].role == "time"
+    assert decision.view.detail_fields[0].key == "status"
+
+    empty_result = QueryResultItem(
+        moduleId="module_calendar",
+        queryId="calendar.agenda",
+        status="OK",
+        payload={"items": []},
+        message="查询完成",
+    )
+    with pytest.raises(DecisionError, match="fields 引用了不存在的字段"):
+        validate_decision_tools(
+            parse_decision(raw, ("VIEW",)),
+            [],
+            [empty_result],
+        )
+
+    missing_time = raw.replace('"role":"time"', '"role":"secondary"')
+    with pytest.raises(DecisionError, match="需要 time 字段"):
+        validate_decision_tools(
+            parse_decision(missing_time, ("VIEW",)),
+            [],
+            [result],
         )
 
 

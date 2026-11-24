@@ -56,7 +56,9 @@ def build_system_prompt(
     )
     view_rule = (
         "已收到 Query 结果且只需要调整展示时，可返回 VIEW；view 只能引用"
-        "sourceQuery、layout、title、rowPath、fields 和 emptyText，且字段必须已经存在。"
+        "已有 Query payload 字段。优先选择 2 至 4 个主字段，时间数据优先使用"
+        " timeline，按日期分组使用 groupBy=date，并可用 detailFields 收纳类型、"
+        "状态或原始标识。所有字段、角色和强调项都必须已经存在。"
         if allow_view
         else "当前禁止返回 VIEW；VIEW 只能在 Query 结果续聊阶段使用。"
     )
@@ -93,7 +95,7 @@ def build_system_prompt(
 {{"kind":"PLAN","message":"请审查计划","actions":[{{"moduleId":"module_id","actionId":"action.id","arguments":{{}}}}]}}
 {{"kind":"QUESTION","message":"需要补充信息","question":{{"prompt":"请选择目标","options":["选项 A","选项 B"]}}}}
 {{"kind":"QUERY","message":"读取只读信息","queries":[{{"moduleId":"module_id","queryId":"query.id","arguments":{{}}}}]}}
-{{"kind":"VIEW","message":"整理查询结果","view":{{"sourceQuery":1,"layout":"table","title":"查询结果","rowPath":"items","fields":[]}}}}
+{{"kind":"VIEW","message":"整理查询结果","view":{{"sourceQuery":1,"layout":"timeline","title":"今天的安排","rowPath":"items","density":"compact","groupBy":"date","hideRepeatedFields":true,"fields":[{{"key":"at","label":"时间","format":"time","role":"time"}},{{"key":"title","label":"标题","format":"text","role":"primary"}}],"detailFields":[]}}}}
 
 可用工具卡：
 {catalog}

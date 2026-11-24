@@ -41,14 +41,20 @@ export const AI_QUERY_LIMIT = 4;
 
 const AI_QUERY_RESULT_STATUSES = new Set(["OK", "FAILED", "TRUNCATED"]);
 const QUERY_PAYLOAD_SUMMARY_LIMIT = 240;
-const QUERY_VIEW_LAYOUTS = new Set(["keyValue", "list", "table", "text"]);
+const QUERY_VIEW_LAYOUTS = new Set(["keyValue", "list", "table", "text", "timeline"]);
 const QUERY_VIEW_FORMATS = new Set([
     "text",
     "status",
+    "date",
+    "time",
     "datetime",
     "number",
     "boolean"
 ]);
+const QUERY_VIEW_ROLES = new Set(["time", "primary", "secondary", "status"]);
+const QUERY_VIEW_TIME_FORMATS = new Set(["date", "time", "datetime"]);
+const QUERY_VIEW_DENSITIES = new Set(["compact", "comfortable"]);
+const QUERY_VIEW_GROUP_BY = new Set(["none", "date"]);
 const QUERY_VIEW_MAX_FIELDS = 12;
 const QUERY_FIELD_PATH = /^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/;
 
@@ -256,23 +262,49 @@ export function resolveQueryPath(source, path) {
  * @param {unknown} sourcePayload 对应 Query payload
  * @returns {object | null} 合法视图或 null
  */
-export function normalizeQueryView(rawView, sourcePayload) {
+export function normalizeQueryView(rawView, sourcePayload, displayHints = null) {
     const source = rawView && typeof rawView === "object" ? rawView : {};
+    const hints = displayHints && typeof displayHints === "object" ? displayHints : {};
     const sourceQuery = Number(source.sourceQuery);
-    const layout = String(source.layout ?? "").trim();
+    const layout = String(source.layout ?? hints.fallbackLayout ?? "").trim();
     const title = boundedQueryText(source.title, 200);
     if (!Number.isInteger(sourceQuery) || sourceQuery < 1 || sourceQuery > AI_QUERY_LIMIT
         || !QUERY_VIEW_LAYOUTS.has(layout) || !title) {
         return null;
     }
-    const rowPath = source.rowPath == null ? "" : String(source.rowPath).trim();
+    const rowPathValue = source.rowPath ?? hints.rowPath;
+    const rowPath = rowPathValue == null ? "" : String(rowPathValue).trim();
     if (rowPath && !QUERY_FIELD_PATH.test(rowPath)) {
         return null;
     }
     const rowSource = rowPath ? resolveQueryPath(sourcePayload, rowPath) : sourcePayload;
+    if (["list", "table", "timeline"].includes(layout) && !Array.isArray(rowSource)) {
+        return null;
+    }
     const sample = Array.isArray(rowSource) ? rowSource[0] : rowSource;
-    const rawFields = Array.isArray(source.fields) ? source.fields : [];
-    const fields = rawFields.slice(0, QUERY_VIEW_MAX_FIELDS).flatMap((rawField) => {
+    const rawFields = Array.isArray(source.fields)
+        ? source.fields
+        : Array.isArray(hints.fields)
+            ? hints.fields
+            : [];
+    const rawDetailFields = Array.isArray(source.detailFields)
+        ? source.detailFields
+        : Array.isArray(hints.detailFields)
+            ? hints.detailFields
+            : [];
+    if (Array.isArray(rowSource) && rowSource.length === 0
+        && (rawFields.length > 0 || rawDetailFields.length > 0)) {
+        return null;
+    }
+    const fieldHints = new Map(
+        [...(Array.isArray(hints.fields) ? hints.fields : []),
+            ...(Array.isArray(hints.detailFields) ? hints.detailFields : [])]
+            .filter((field) => field && typeof field === "object")
+            .map((field) => [String(field.key ?? "").trim(), field])
+    );
+    const normalizeFields = (rawValues) => rawValues
+        .slice(0, QUERY_VIEW_MAX_FIELDS)
+        .flatMap((rawField) => {
         const field = rawField && typeof rawField === "object" ? rawField : {};
         const key = String(field.key ?? "").trim();
         const label = boundedQueryText(field.label, 80);
@@ -284,9 +316,59 @@ export function normalizeQueryView(rawView, sourcePayload) {
             && resolveQueryPath(sample, key) === undefined) {
             return [];
         }
-        return [{ key, label, format }];
+        const hint = fieldHints.get(key) || {};
+        const rawRole = String(field.role ?? hint.role ?? "").trim();
+        if (rawRole && !QUERY_VIEW_ROLES.has(rawRole)) {
+            return [];
+        }
+        const role = QUERY_VIEW_ROLES.has(rawRole) ? rawRole : "";
+        if (role === "time" && !QUERY_VIEW_TIME_FORMATS.has(format)) {
+            return [];
+        }
+        const valueLabels = normalizeValueLabels(hint.valueLabels);
+        return [{ key, label, format, role, valueLabels }];
     });
+    const fields = normalizeFields(rawFields);
     if (rawFields.length > 0 && fields.length === 0) {
+        return null;
+    }
+    const detailFields = normalizeFields(rawDetailFields);
+    if (rawDetailFields.length > 0 && detailFields.length === 0) {
+        return null;
+    }
+    const density = String(source.density ?? hints.density ?? "comfortable").trim();
+    const groupBy = String(source.groupBy ?? hints.groupBy ?? "none").trim();
+    if (!QUERY_VIEW_DENSITIES.has(density) || !QUERY_VIEW_GROUP_BY.has(groupBy)) {
+        return null;
+    }
+    const hideRepeatedFields = typeof source.hideRepeatedFields === "boolean"
+        ? source.hideRepeatedFields
+        : hints.hideRepeatedFields === true;
+    if (source.hideRepeatedFields != null && typeof source.hideRepeatedFields !== "boolean") {
+        return null;
+    }
+    const rawEmphasis = Array.isArray(source.emphasisFields)
+        ? source.emphasisFields
+        : Array.isArray(hints.emphasisFields)
+            ? hints.emphasisFields
+            : [];
+    const availableKeys = new Set([...fields, ...detailFields].map((field) => field.key));
+    const normalizedEmphasis = rawEmphasis.map((key) => String(key).trim());
+    if (rawEmphasis.length > 2
+        || new Set(normalizedEmphasis).size !== normalizedEmphasis.length
+        || normalizedEmphasis.some((key) => !availableKeys.has(key))) {
+        return null;
+    }
+    const emphasisFields = normalizedEmphasis;
+    const hasTimeRole = fields.some((field) => field.role === "time");
+    if (["list", "table", "timeline"].includes(layout) && !rowPath) {
+        return null;
+    }
+    if (layout === "timeline"
+        && (!hasTimeRole || !fields.some((field) => field.role === "primary"))) {
+        return null;
+    }
+    if ((layout === "timeline" || groupBy === "date") && !hasTimeRole) {
         return null;
     }
     return {
@@ -295,8 +377,30 @@ export function normalizeQueryView(rawView, sourcePayload) {
         title,
         rowPath,
         fields,
-        emptyText: boundedQueryText(source.emptyText, 200) || "暂无数据"
+        detailFields,
+        emptyText: boundedQueryText(source.emptyText ?? hints.emptyText, 200) || "暂无数据",
+        density,
+        groupBy,
+        hideRepeatedFields,
+        emphasisFields
     };
+}
+
+function normalizeValueLabels(rawValue) {
+    if (!rawValue || typeof rawValue !== "object" || Array.isArray(rawValue)) {
+        return {};
+    }
+    return Object.fromEntries(
+        Object.entries(rawValue)
+            .slice(0, 64)
+            .flatMap(([key, value]) => {
+                const normalizedKey = String(key).trim().slice(0, 80);
+                const normalizedValue = boundedQueryText(value, 80);
+                return normalizedKey && normalizedValue
+                    ? [[normalizedKey, normalizedValue]]
+                    : [];
+            })
+    );
 }
 
 /**
@@ -306,21 +410,29 @@ export function normalizeQueryView(rawView, sourcePayload) {
  * @param {string} format 字段格式
  * @returns {string} 可展示文本
  */
-export function formatQueryValue(value, format = "text") {
+export function formatQueryValue(value, format = "text", valueLabels = null) {
     if (value == null || value === "") {
         return "未返回数据";
     }
     if (format === "boolean") {
         return value === true ? "是" : value === false ? "否" : String(value);
     }
-    if (format === "datetime") {
+    if (format === "status") {
+        const labels = valueLabels && typeof valueLabels === "object" ? valueLabels : {};
+        const key = String(value);
+        return Object.hasOwn(labels, key) ? labels[key] : key;
+    }
+    if (format === "date" || format === "time" || format === "datetime") {
         const parsed = Date.parse(String(value));
         if (Number.isFinite(parsed)) {
-            return new Intl.DateTimeFormat("zh-CN", {
-                dateStyle: "medium",
-                timeStyle: "short"
-            }).format(new Date(parsed));
+            const options = format === "date"
+                ? { dateStyle: "medium" }
+                : format === "time"
+                    ? { hour: "2-digit", minute: "2-digit" }
+                    : { dateStyle: "medium", timeStyle: "short" };
+            return new Intl.DateTimeFormat("zh-CN", options).format(new Date(parsed));
         }
+        return "时间格式无效";
     }
     if (typeof value === "object") {
         return summarizeQueryPayload(value);
@@ -513,12 +625,13 @@ export function normalizeAiQueryResponse(payload) {
     const status = declaredQueries.length > AI_QUERY_LIMIT && aggregateStatus === "OK"
         ? "TRUNCATED"
         : aggregateStatus;
-    const sourceResult = rawResults[Number(source.view?.sourceQuery) - 1];
-    const view = source.view
-        ? normalizeQueryView(source.view, sourceResult?.payload)
+    const viewSource = source.view && typeof source.view === "object" ? source.view : null;
+    const sourceResult = rawResults[Number(viewSource?.sourceQuery) - 1];
+    const view = viewSource && sourceResult?.status === "OK"
+        ? normalizeQueryView(viewSource, sourceResult?.payload)
         : null;
-    const invalidView = kind === "VIEW" && source.view && !view;
-    const missingView = kind === "VIEW" && !source.view;
+    const invalidView = kind === "VIEW" && viewSource && !view;
+    const missingView = kind === "VIEW" && !viewSource;
     const notice = declaredQueries.length > AI_QUERY_LIMIT
         ? "宿主返回的查询超过 4 条，界面仅展示前 4 条。"
         : !Array.isArray(source.queryResults)
@@ -535,6 +648,7 @@ export function normalizeAiQueryResponse(payload) {
         status,
         message,
         queries,
+        ...(viewSource ? { viewSource } : {}),
         ...(view ? { view } : {}),
         ...(notice ? { notice } : {})
     };

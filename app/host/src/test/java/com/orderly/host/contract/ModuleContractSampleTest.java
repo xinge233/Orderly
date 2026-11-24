@@ -36,7 +36,10 @@ class ModuleContractSampleTest {
                     .isEqualTo("list");
             assertThat(module.queries().getFirst().display().fields())
                     .extracting(QueryDisplayContract.Field::label)
-                    .containsExactly("标题", "状态");
+                    .containsExactly("标题");
+            assertThat(module.queries().getFirst().display().detailFields())
+                    .extracting(QueryDisplayContract.Field::key)
+                    .containsExactly("status");
             assertThat(module.plannerRules()).extracting(PlannerRuleContract::id).containsExactly("demo.read");
         }
     }

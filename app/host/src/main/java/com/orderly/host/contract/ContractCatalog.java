@@ -871,7 +871,7 @@ public class ContractCatalog implements AutoCloseable {
                 "fallbackLayout",
                 "查询 " + queryId + " display"
         );
-        if (!Set.of("keyValue", "list", "table", "text").contains(fallbackLayout)) {
+        if (!Set.of("keyValue", "list", "table", "text", "timeline").contains(fallbackLayout)) {
             throw new IllegalStateException(
                     "查询 " + queryId + " display.fallbackLayout 非法：" + fallbackLayout
             );
@@ -893,64 +893,186 @@ public class ContractCatalog implements AutoCloseable {
                 200,
                 "查询 " + queryId + " display"
         );
-        List<QueryDisplayContract.Field> fields = new ArrayList<>();
-        JsonNode rawFields = node.get("fields");
-        if (rawFields != null) {
-            if (!rawFields.isArray() || rawFields.size() > 12) {
+        String density = optionalTextValue(node, "density", "comfortable");
+        if (!Set.of("compact", "comfortable").contains(density)) {
+            throw new IllegalStateException(
+                    "查询 " + queryId + " display.density 非法：" + density
+            );
+        }
+        String groupBy = optionalTextValue(node, "groupBy", "none");
+        if (!Set.of("none", "date").contains(groupBy)) {
+            throw new IllegalStateException(
+                    "查询 " + queryId + " display.groupBy 非法：" + groupBy
+            );
+        }
+        JsonNode repeatedNode = node.get("hideRepeatedFields");
+        if (repeatedNode != null && !repeatedNode.isBoolean()) {
+            throw new IllegalStateException(
+                    "查询 " + queryId + " display.hideRepeatedFields 必须是布尔值"
+            );
+        }
+        boolean hideRepeatedFields = repeatedNode != null && repeatedNode.asBoolean();
+        List<QueryDisplayContract.Field> fields = parseDisplayFields(
+                node.get("fields"),
+                "查询 " + queryId + " display.fields"
+        );
+        List<QueryDisplayContract.Field> detailFields = parseDisplayFields(
+                node.get("detailFields"),
+                "查询 " + queryId + " display.detailFields"
+        );
+        List<String> emphasisFields = boundedTextArray(
+                node.get("emphasisFields"),
+                2,
+                160,
+                "查询 " + queryId + " display.emphasisFields"
+        );
+        Set<String> availableFields = new LinkedHashSet<>();
+        fields.forEach(field -> availableFields.add(field.key()));
+        detailFields.forEach(field -> availableFields.add(field.key()));
+        for (String emphasis : emphasisFields) {
+            if (!availableFields.contains(emphasis)) {
                 throw new IllegalStateException(
-                        "查询 " + queryId + " display.fields 必须是最多 12 项的数组"
+                        "查询 " + queryId + " display.emphasisFields 引用了未展示字段"
                 );
             }
-            rawFields.forEach(field -> {
-                if (!field.isObject()) {
-                    throw new IllegalStateException(
-                            "查询 " + queryId + " display.fields 项必须是对象"
-                    );
-                }
-                String key = requiredBoundedText(
-                        field,
-                        "key",
-                        160,
-                        "查询 " + queryId + " display.fields"
-                );
-                if (!key.matches("[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*")) {
-                    throw new IllegalStateException(
-                            "查询 " + queryId + " display.fields.key 只能使用点分隔字段名"
-                    );
-                }
-                String label = requiredBoundedText(
-                        field,
-                        "label",
-                        80,
-                        "查询 " + queryId + " display.fields"
-                );
-                String format = requiredTextValue(
-                        field,
-                        "format",
-                        "查询 " + queryId + " display.fields"
-                );
-                if (!Set.of("text", "status", "datetime", "number", "boolean")
-                        .contains(format)) {
-                    throw new IllegalStateException(
-                            "查询 " + queryId + " display.fields.format 非法：" + format
-                    );
-                }
-                fields.add(new QueryDisplayContract.Field(key, label, format));
-            });
+        }
+        boolean hasTimeRole = fields.stream().anyMatch(field -> "time".equals(field.role()));
+        boolean hasPrimaryRole = fields.stream()
+                .anyMatch(field -> "primary".equals(field.role()));
+        if ("timeline".equals(fallbackLayout) && (!hasTimeRole || !hasPrimaryRole)) {
+            throw new IllegalStateException(
+                    "查询 " + queryId
+                            + " display 的 timeline 布局需要 time 和 primary 字段"
+            );
+        }
+        if ("date".equals(groupBy) && !hasTimeRole) {
+            throw new IllegalStateException(
+                    "查询 " + queryId + " display 的 date 分组需要 time 字段"
+            );
         }
         return new QueryDisplayContract(
                 prompt,
                 fallbackLayout,
                 rowPath,
                 fields,
-                emptyText
+                emptyText,
+                density,
+                groupBy,
+                hideRepeatedFields,
+                detailFields,
+                emphasisFields
         );
+    }
+
+    /** 解析模块 Query 主展示字段和详情字段。 */
+    private List<QueryDisplayContract.Field> parseDisplayFields(
+            JsonNode rawFields,
+            String owner
+    ) {
+        if (rawFields == null) {
+            return List.of();
+        }
+        if (!rawFields.isArray() || rawFields.size() > 12) {
+            throw new IllegalStateException(owner + " 必须是最多 12 项的数组");
+        }
+        List<QueryDisplayContract.Field> fields = new ArrayList<>();
+        rawFields.forEach(field -> {
+            if (!field.isObject()) {
+                throw new IllegalStateException(owner + " 项必须是对象");
+            }
+            String key = requiredBoundedText(field, "key", 160, owner);
+            if (!key.matches("[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*")) {
+                throw new IllegalStateException(owner + ".key 只能使用点分隔字段名");
+            }
+            String label = requiredBoundedText(field, "label", 80, owner);
+            String format = requiredTextValue(field, "format", owner);
+            if (!Set.of("text", "status", "date", "time", "datetime", "number", "boolean")
+                    .contains(format)) {
+                throw new IllegalStateException(owner + ".format 非法：" + format);
+            }
+            String role = optionalTextValue(field, "role", null);
+            if (role != null
+                    && !Set.of("time", "primary", "secondary", "status").contains(role)) {
+                throw new IllegalStateException(owner + ".role 非法：" + role);
+            }
+            if ("time".equals(role)
+                    && !Set.of("date", "time", "datetime").contains(format)) {
+                throw new IllegalStateException(owner + ".time 角色需要日期或时间格式");
+            }
+            fields.add(new QueryDisplayContract.Field(
+                    key,
+                    label,
+                    format,
+                    role,
+                    parseValueLabels(field.get("valueLabels"), owner + ".valueLabels")
+            ));
+        });
+        return List.copyOf(fields);
+    }
+
+    /** 解析模块声明的展示值到本地化标签映射。 */
+    private Map<String, String> parseValueLabels(JsonNode node, String owner) {
+        if (node == null) {
+            return Map.of();
+        }
+        if (!node.isObject() || node.size() > 64) {
+            throw new IllegalStateException(owner + " 必须是最多 64 项的字符串映射");
+        }
+        Map<String, String> labels = new LinkedHashMap<>();
+        node.fields().forEachRemaining(entry -> {
+            String key = entry.getKey() == null ? "" : entry.getKey().trim();
+            JsonNode value = entry.getValue();
+            if (key.isEmpty() || key.length() > 80
+                    || value == null || !value.isTextual()
+                    || value.asText().isBlank() || value.asText().length() > 80) {
+                throw new IllegalStateException(owner + " 包含非法标签");
+            }
+            labels.put(key, value.asText().trim());
+        });
+        return Map.copyOf(labels);
+    }
+
+    private List<String> boundedTextArray(
+            JsonNode node,
+            int maximumItems,
+            int maximumLength,
+            String owner
+    ) {
+        if (node == null) {
+            return List.of();
+        }
+        if (!node.isArray() || node.size() > maximumItems) {
+            throw new IllegalStateException(owner + " 必须是最多 " + maximumItems + " 项的数组");
+        }
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        for (JsonNode item : node) {
+            if (!item.isTextual()) {
+                throw new IllegalStateException(owner + " 项必须是文本");
+            }
+            String value = item.asText().trim();
+            if (value.isEmpty() || value.length() > maximumLength) {
+                throw new IllegalStateException(owner + " 包含空值或超长文本");
+            }
+            values.add(value);
+        }
+        return List.copyOf(values);
     }
 
     private String requiredTextValue(JsonNode node, String field, String owner) {
         JsonNode value = node.get(field);
         if (value == null || !value.isTextual() || value.asText().isBlank()) {
             throw new IllegalStateException(owner + "." + field + " 必须是非空文本");
+        }
+        return value.asText().trim();
+    }
+
+    private String optionalTextValue(JsonNode node, String field, String fallback) {
+        JsonNode value = node == null ? null : node.get(field);
+        if (value == null) {
+            return fallback;
+        }
+        if (!value.isTextual() || value.asText().isBlank()) {
+            throw new IllegalStateException(field + " 必须是非空文本");
         }
         return value.asText().trim();
     }

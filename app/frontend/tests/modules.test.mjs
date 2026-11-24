@@ -161,6 +161,63 @@ test("business and system catalogs split without trusting business system metada
     assert.equal(catalogs.systemModules[0].system.role, "MODULE_CONTROL");
 });
 
+test("module catalog keeps query display hints for the local fallback view", () => {
+    const catalogs = normalizeModuleCatalogs(
+        {
+            modules: [{
+                moduleId: "module_calendar",
+                queries: [{
+                    id: "calendar.agenda",
+                    title: "日程",
+                    display: {
+                        prompt: "按时间展示日程",
+                        fallbackLayout: "timeline",
+                        rowPath: "items",
+                        density: "compact",
+                        groupBy: "date",
+                        hideRepeatedFields: true,
+                        fields: [{
+                            key: "startAt",
+                            label: "开始",
+                            format: "time",
+                            role: "time"
+                        }, {
+                            key: "title",
+                            label: "标题",
+                            format: "text",
+                            role: "primary"
+                        }]
+                    }
+                }]
+            }]
+        },
+        []
+    );
+
+    assert.deepEqual(
+        catalogs.businessModules[0].queries[0].display,
+        {
+            prompt: "按时间展示日程",
+            fallbackLayout: "timeline",
+            rowPath: "items",
+            density: "compact",
+            groupBy: "date",
+            hideRepeatedFields: true,
+            fields: [{
+                key: "startAt",
+                label: "开始",
+                format: "time",
+                role: "time"
+            }, {
+                key: "title",
+                label: "标题",
+                format: "text",
+                role: "primary"
+            }]
+        }
+    );
+});
+
 test("disabled business modules are filtered while system modules remain available", () => {
     const catalogs = normalizeModuleCatalogs(
         [

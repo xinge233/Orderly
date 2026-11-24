@@ -181,7 +181,7 @@
       "properties": {
         "prompt": { "type": "string", "minLength": 1, "maxLength": 1000 },
         "fallbackLayout": {
-          "enum": ["keyValue", "list", "table", "text"]
+          "enum": ["keyValue", "list", "table", "text", "timeline"]
         },
         "rowPath": { "type": "string", "minLength": 1, "maxLength": 200 },
         "fields": {
@@ -189,8 +189,67 @@
           "maxItems": 12,
           "items": { "$ref": "#/$defs/queryDisplayField" }
         },
-        "emptyText": { "type": "string", "maxLength": 200 }
-      }
+        "emptyText": { "type": "string", "maxLength": 200 },
+        "density": { "enum": ["compact", "comfortable"] },
+        "groupBy": { "enum": ["none", "date"] },
+        "hideRepeatedFields": { "type": "boolean" },
+        "detailFields": {
+          "type": "array",
+          "maxItems": 12,
+          "items": { "$ref": "#/$defs/queryDisplayField" }
+        },
+        "emphasisFields": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 160 }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "fallbackLayout": { "const": "timeline" } },
+            "required": ["fallbackLayout"]
+          },
+          "then": {
+            "required": ["fields"],
+            "properties": {
+              "fields": {
+                "allOf": [
+                  {
+                    "contains": {
+                      "required": ["role"],
+                      "properties": { "role": { "const": "time" } }
+                    }
+                  },
+                  {
+                    "contains": {
+                      "required": ["role"],
+                      "properties": { "role": { "const": "primary" } }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "groupBy": { "const": "date" } },
+            "required": ["groupBy"]
+          },
+          "then": {
+            "properties": {
+              "fields": {
+                "contains": {
+                  "required": ["role"],
+                  "properties": { "role": { "const": "time" } }
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "queryDisplayField": {
       "type": "object",
@@ -200,9 +259,34 @@
         "key": { "type": "string", "minLength": 1, "maxLength": 160 },
         "label": { "type": "string", "minLength": 1, "maxLength": 80 },
         "format": {
-          "enum": ["text", "status", "datetime", "number", "boolean"]
+          "enum": ["text", "status", "date", "time", "datetime", "number", "boolean"]
+        },
+        "role": {
+          "enum": ["time", "primary", "secondary", "status"]
+        },
+        "valueLabels": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "role": { "const": "time" } },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "format": { "enum": ["date", "time", "datetime"] }
+            }
+          }
+        }
+      ]
     },
     "plannerRule": {
       "type": "object",
