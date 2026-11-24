@@ -209,6 +209,40 @@ test("navigation rendering and the AI dock keep demo honesty visible", async () 
     assert.doesNotMatch(app, /#command-dock/);
 });
 
+test("view navigation focuses bounded headings without framing the main canvas", async () => {
+    const app = await read("../src/app.js");
+    const appCss = await read("../styles/app.css");
+    const navigate = app.slice(
+        app.indexOf("async function navigate"),
+        app.indexOf("function focusViewHeading")
+    );
+    const focusHeading = app.slice(
+        app.indexOf("function focusViewHeading"),
+        app.indexOf("function renderLoadError")
+    );
+    const renderNavigation = app.slice(
+        app.indexOf("function renderNavigation"),
+        app.indexOf("function beginNavigationDrag")
+    );
+    const historyRail = app.slice(
+        app.indexOf("function bindHistoryViewRail"),
+        app.indexOf("function syncHistoryViewRail")
+    );
+
+    assert.match(navigate, /async function navigate\(view, \{ focusView = false \} = \{\}\)/);
+    assert.match(navigate, /if \(focusView\) \{\s*focusViewHeading\(\);/);
+    assert.doesNotMatch(navigate, /main\.focus\(/);
+    assert.match(focusHeading, /main\.querySelector\("h1, h2, \[role='heading'\]"\)/);
+    assert.match(focusHeading, /heading\.setAttribute\("tabindex", "-1"\)/);
+    assert.match(focusHeading, /\(heading \?\? main\)\.focus\(\{ preventScroll: true \}\)/);
+    assert.match(renderNavigation, /navigate\(item\.id, \{ focusView: event\.detail === 0 \}\)/);
+    assert.match(historyRail, /if \(event\.detail === 0\) \{\s*focusViewHeading\(\);/);
+    assert.match(
+        appCss,
+        /\.main-content:focus-visible\s*\{\s*outline:\s*none;\s*box-shadow:\s*inset 0 3px 0 var\(--color-focus\);\s*\}/
+    );
+});
+
 test("sidebar labels stay single-line and internal count badges are never rendered", async () => {
     const app = await read("../src/app.js");
     const appCss = await read("../styles/app.css");

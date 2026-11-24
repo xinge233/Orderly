@@ -783,7 +783,7 @@ function scheduleModuleBuildPoll() {
     }, 1000);
 }
 
-async function openModuleBuild(sourceName) {
+async function openModuleBuild(sourceName, { focusView = false } = {}) {
     const entry = pendingBuildEntry(sourceName);
     if (!entry) {
         toast("该模块已不在后台构建队列中，正在刷新目录。", { error: true });
@@ -798,7 +798,7 @@ async function openModuleBuild(sourceName) {
         toast(`优先构建请求失败：${errorMessage(error)}`, { error: true });
         return;
     }
-    await navigate(buildViewId(sourceName));
+    await navigate(buildViewId(sourceName), { focusView });
     scheduleModuleBuildPoll();
 }
 
@@ -847,10 +847,16 @@ function renderModuleBuildView(sourceName) {
         entry.status === "FAILED" ? "重试并优先构建" : "优先构建此模块"
     );
     retry.type = "button";
-    retry.addEventListener("click", () => void openModuleBuild(sourceName));
+    retry.addEventListener(
+        "click",
+        (event) => void openModuleBuild(sourceName, { focusView: event.detail === 0 })
+    );
     const back = element("button", "text-button", "返回总览");
     back.type = "button";
-    back.addEventListener("click", () => void navigate("overview"));
+    back.addEventListener(
+        "click",
+        (event) => void navigate("overview", { focusView: event.detail === 0 })
+    );
     actions.append(retry, back);
     body.append(actions);
     panel.append(header, body);
@@ -1262,7 +1268,7 @@ function bindGlobalControls() {
  */
 function bindHistoryViewRail() {
     document.querySelectorAll("[data-history-view]").forEach((button) => {
-        button.addEventListener("click", () => {
+        button.addEventListener("click", (event) => {
             const view = String(button.dataset.historyView ?? "");
             if (!HISTORY_VIEWS.has(view) || state.historyView === view) {
                 return;
@@ -1271,7 +1277,9 @@ function bindHistoryViewRail() {
             syncHistoryViewRail();
             if (state.activeView === "history") {
                 renderHistory();
-                document.querySelector("#main-content")?.focus({ preventScroll: true });
+                if (event.detail === 0) {
+                    focusViewHeading();
+                }
             }
         });
     });
@@ -2157,9 +2165,9 @@ function renderNavigation(query = "") {
                     return;
                 }
                 if (item.buildSource) {
-                    void openModuleBuild(item.buildSource);
+                    void openModuleBuild(item.buildSource, { focusView: event.detail === 0 });
                 } else {
-                    void navigate(item.id);
+                    void navigate(item.id, { focusView: event.detail === 0 });
                 }
             });
             if (item.moduleId) {
@@ -2413,8 +2421,9 @@ function navigationCount(moduleId) {
  * 切换主视图。
  *
  * @param {string} view 视图名
+ * @param {{focusView?: boolean}} options 焦点配置
  */
-async function navigate(view) {
+async function navigate(view, { focusView = false } = {}) {
     state.activeView = view;
     syncHistoryViewRail();
     closeMobileNav();
@@ -2461,7 +2470,24 @@ async function navigate(view) {
     }
     main.dataset.motionState = "view-change";
     main.dataset.motionPhase = "active";
-    main.focus({ preventScroll: true });
+    if (focusView) {
+        focusViewHeading();
+    }
+}
+
+/**
+ * 将键盘导航后的焦点收窄到当前视图标题，避免整块主内容出现全屏焦点轮廓。
+ */
+function focusViewHeading() {
+    const main = document.querySelector("#main-content");
+    if (!main) {
+        return;
+    }
+    const heading = main.querySelector("h1, h2, [role='heading']");
+    if (heading && !heading.hasAttribute("tabindex")) {
+        heading.setAttribute("tabindex", "-1");
+    }
+    (heading ?? main).focus({ preventScroll: true });
 }
 
 /**

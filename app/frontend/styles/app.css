@@ -839,6 +839,12 @@ body.is-navigation-dragging * {
     padding-bottom: 150px;
 }
 
+/* 主内容只作为跳转兜底焦点；用顶部内嵌焦点条避免超高容器只露出左右轮廓。 */
+.main-content:focus-visible {
+    outline: none;
+    box-shadow: inset 0 3px 0 var(--color-focus);
+}
+
 .view-stack {
     display: grid;
     min-width: 0;
