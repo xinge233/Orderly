@@ -24,6 +24,7 @@
 | `.codex/agents/module-design-lead/AGENTS.md` | `module_design_lead` 程序模组设计师角色规范 |
 | `architecture-baseline.md` | 产品事实、阶段边界、未来目录结构和 UI 基线 |
 | `collaboration-workflow.md` | 任务流转、交接、审查、返工和完成规则 |
+| `release-runbook.md` | AI 发布预检、Dry Run、冻结、正式打包、安装验收、时间预算和止损规则 |
 | `testing/README.md` | AI 测试上下文、默认命令、证据要求和人类测试文档读取边界 |
 | `testing/records/YYYY-MM.md` | AI 按月维护的测试资产变更和真实执行结果 |
 | `templates/task-brief.md` | 主代理或 PM 的按需任务卡模板 |

@@ -9,6 +9,7 @@
 | `AGENTS.md` | 仓库常驻约束与协作入口 | 每次任务开始 |
 | `docs/agents/architecture-baseline.md` | 首版架构与产品事实的阶段投影 | 每次技术任务开始 |
 | `docs/agents/collaboration-workflow.md` | 任务、交接、门禁和返工流程 | 每次协作任务开始 |
+| `docs/agents/release-runbook.md` | AI 发布预检、冻结、打包、安装验收和止损规范 | 涉及完整版、运行包、离线源码包、安装器或发布返工时 |
 | `README.md` | 构建、启动、功能和验证入口 | 需要运行或说明应用时 |
 | `docs/agents/testing/` | AI 测试上下文、默认命令、证据要求和按月真实执行记录 | 涉及测试新增、删除、验收结论或测试规划时 |
 | `docs/测试说明与测试记录.md` | 人类维护的完整测试资产、用例明细、历史记录和验收资料 | 仅人类日常查阅；AI 仅在用户明确要求时按章节读取 |
@@ -99,7 +100,7 @@
 | 契约变更 | Schema、合法样例、非法样例、所有直接消费者 |
 | 测试新增、删除或验收 | `AGENTS.md`、`docs/agents/testing/README.md`、目标测试源码、当前月测试记录、相关构建或门禁脚本 |
 | 构建或启动问题 | `README.md`、`启动归序.cmd`、`scripts/build-plan.ps1`、`build.ps1`、`build-module-background.ps1`、`watch-module-downloads.ps1`、`start.ps1`、`target/background/` 与 `target/build-parallel-*` 中的目标日志行段 |
-| 发布包问题 | 完整版读 `package-full.ps1`、`verify-full.ps1`、`verify-full-release-pair.ps1`；轻量运行包读 `package-runtime.ps1`、`verify-runtime.ps1`；离线源码包读 `package-offline.ps1`、`verify-offline.ps1`；同时读取对应契约和目标日志行段 |
+| 发布包问题 | 先读 `docs/agents/release-runbook.md`；完整版读 `package-full.ps1`、`verify-full.ps1`、`verify-full-release-pair.ps1`；轻量运行包读 `package-runtime.ps1`、`verify-runtime.ps1`；离线源码包读 `package-offline.ps1`、`verify-offline.ps1`；同时读取对应契约和目标日志行段 |
 | 历史决策追溯 | `docs/agents/` 中相关交接文档的指定章节，按需读取 |
 历史交接文档只用于追溯事实、验证证据和已知风险，不单独构成实施授权。
 ## 上下文工具
@@ -114,7 +115,6 @@
 | 检查上下文配置 | `.\scripts\context.ps1 -Mode audit` |
 
 工具只读取 Git 跟踪文件，不接受仓库外路径、目录、未跟踪或忽略文件、重解析点、二进制和超限请求。
-
 ## 忽略目录与二进制资产
 | 路径或类型 | 处理方式 |
 |---|---|
