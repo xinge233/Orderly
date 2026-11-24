@@ -196,8 +196,52 @@ function catalogStatusLabel(status, message = "") {
         LOADING: "正在加载",
         INSTALLED: "已启用",
         RESTART_REQUIRED: "重启后生效",
+        BUILD_FAILED: "构建失败",
+        BUILD_TIMEOUT: "构建超时",
+        INSTALL_FAILED: "安装失败",
         FAILED: "安装失败"
     }[String(status ?? "").toUpperCase()] ?? text(message, "状态未知");
+}
+
+export function catalogActionState(item, status, job, capabilities = {}) {
+    const normalizedStatus = text(status, "AVAILABLE").toUpperCase();
+    const activeJob = Boolean(job) && job.terminal !== true;
+    if (normalizedStatus === "INSTALLED") {
+        return { kind: "none", label: "已启用", icon: "check", disabled: true };
+    }
+    if (normalizedStatus === "RESTART_REQUIRED") {
+        return { kind: "none", label: "重启后生效", icon: "refresh", disabled: true };
+    }
+    if (activeJob) {
+        return {
+            kind: "none",
+            label: catalogStatusLabel(normalizedStatus, job?.message),
+            icon: "download",
+            disabled: true
+        };
+    }
+    if (item?.canRetryBuild === true) {
+        return {
+            kind: "retry-build",
+            label: "重试构建",
+            icon: "refresh",
+            disabled: capabilities.retryBuild !== true
+        };
+    }
+    if (item?.canInstall === true) {
+        return {
+            kind: "install",
+            label: normalizedStatus === "AVAILABLE" ? "下载" : "重试",
+            icon: "download",
+            disabled: capabilities.install !== true
+        };
+    }
+    return {
+        kind: "none",
+        label: catalogStatusLabel(normalizedStatus),
+        icon: "download",
+        disabled: true
+    };
 }
 
 function formatBytes(bytes) {
@@ -391,8 +435,10 @@ export default async function mount(root, context) {
     }
 
     function effectiveCatalogStatus(item) {
+        const itemStatus = text(item?.status, "AVAILABLE").toUpperCase();
+        if (itemStatus === "INSTALLED") return itemStatus;
         const job = state.installJobs.get(item.moduleId);
-        return job?.status ? job.status : item.status;
+        return job?.status ? text(job.status).toUpperCase() : itemStatus;
     }
 
     function catalogJobActive(job) {
@@ -650,7 +696,16 @@ export default async function mount(root, context) {
         render();
         try {
             state.catalog = normalizeModuleCatalog(await getModuleCatalog());
+            for (const [moduleId, job] of state.installJobs) {
+                if (!job.jobId && job.terminal === true) {
+                    state.installJobs.delete(moduleId);
+                }
+            }
             state.catalog.items.forEach((item) => {
+                if (item.status === "INSTALLED") {
+                    state.installJobs.delete(item.moduleId);
+                    return;
+                }
                 if (!item.jobId) return;
                 state.installJobs.set(item.moduleId, {
                     jobId: item.jobId,
@@ -684,6 +739,9 @@ export default async function mount(root, context) {
     }
 
     async function installCatalogModule(item) {
+        if (item.status === "INSTALLED" || !item.canInstall) {
+            return;
+        }
         if (!installModule) {
             setStatus("宿主尚未接入模块安装 API", "error");
             render();
@@ -714,7 +772,7 @@ export default async function mount(root, context) {
             scheduleCatalogPoll();
         } catch (error) {
             state.installJobs.set(item.moduleId, {
-                status: "FAILED",
+                status: "INSTALL_FAILED",
                 message: runtimeMessage(error, "模块安装请求失败"),
                 terminal: true
             });
@@ -724,6 +782,9 @@ export default async function mount(root, context) {
     }
 
     async function retryCatalogBuild(item) {
+        if (item.status === "INSTALLED" || !item.canRetryBuild) {
+            return;
+        }
         if (!retryModuleBuild) {
             setStatus("宿主尚未接入模块重建 API", "error");
             render();
@@ -743,7 +804,7 @@ export default async function mount(root, context) {
             }, 1500);
         } catch (error) {
             state.installJobs.set(item.moduleId, {
-                status: "FAILED",
+                status: "BUILD_FAILED",
                 message: runtimeMessage(error, "模块重建请求失败"),
                 terminal: true
             });
@@ -1238,27 +1299,27 @@ export default async function mount(root, context) {
             `module-control-ui-catalog-state is-${status.toLowerCase()}`
         );
         stateLabel.textContent = catalogStatusLabel(status, job?.message ?? item.message);
-        const retry = item.canInstall
-            && status !== "AVAILABLE"
-            && status !== "DOWNLOADING";
-        const download = button(
-            item.canRetryBuild ? "重试构建" : retry ? "重试" : "下载",
-            "download",
-            "module-control-ui-button is-primary"
-        );
-        download.disabled = item.canRetryBuild
-            ? !retryModuleBuild || catalogJobActive(job)
-            : !installModule || !item.canInstall || catalogJobActive(job);
-        if (status === "INSTALLED") {
-            download.replaceChildren(iconNode("check", 17), make("span", "", "已启用"));
+        const actionState = catalogActionState(item, status, job, {
+            install: Boolean(installModule),
+            retryBuild: Boolean(retryModuleBuild)
+        });
+        action.append(stateLabel);
+        if (actionState.kind !== "none") {
+            const actionButton = button(
+                actionState.label,
+                actionState.icon,
+                "module-control-ui-button is-primary"
+            );
+            actionButton.disabled = actionState.disabled;
+            actionButton.addEventListener("click", () => {
+                if (actionState.kind === "retry-build") {
+                    void retryCatalogBuild(item);
+                } else if (actionState.kind === "install") {
+                    void installCatalogModule(item);
+                }
+            });
+            action.append(actionButton);
         }
-        download.addEventListener(
-            "click",
-            () => void (item.canRetryBuild
-                ? retryCatalogBuild(item)
-                : installCatalogModule(item))
-        );
-        action.append(stateLabel, download);
         row.append(moduleIcon, copy, action);
         return row;
     }

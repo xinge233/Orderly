@@ -354,7 +354,7 @@ public class ModuleDistributionService {
         );
     }
 
-    private CatalogView enrich(RemoteCatalog remote) {
+    CatalogView enrich(RemoteCatalog remote) {
         Map<String, ModuleLifecycleService.Entry> builds = lifecycle.snapshot().modules().stream()
                 .collect(java.util.stream.Collectors.toMap(
                         ModuleLifecycleService.Entry::sourceName,
@@ -375,16 +375,23 @@ public class ModuleDistributionService {
                                 ? build.status()
                                 : sourcePresent ? "SOURCE_PRESENT" : "AVAILABLE";
                     ImportInstallStatus install = currentInstall(module.moduleId());
-                    if (install != null && !"INSTALLED".equals(install.status)) {
+                    if (!loaded && install != null && !"INSTALLED".equals(install.status)) {
                         status = install.status;
                     }
-                    String message = install != null
-                            ? install.message
-                            : build != null ? build.message() : "";
+                    String message = "";
+                    if (loaded) {
+                        message = build == null ? "" : build.message();
+                    } else if (install != null) {
+                        message = install.message;
+                    } else if (build != null) {
+                        message = build.message();
+                    }
                     boolean canInstall = !loaded
                             && !sourcePresent
                             && (install == null || !install.active);
-                    boolean canRetryBuild = sourcePresent
+                    boolean canRetryBuild = backgroundBuildEnabled
+                            && !loaded
+                            && sourcePresent
                             && (build == null || "FAILED".equals(build.status()));
                     return new CatalogItem(
                             module.moduleId(),

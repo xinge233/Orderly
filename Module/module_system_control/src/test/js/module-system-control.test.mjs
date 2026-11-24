@@ -14,6 +14,7 @@ const styleUrl = new URL(
     "../../main/resources/orderly-ui/module.css",
     import.meta.url
 );
+const controlModule = await import(controlUrl.href);
 
 test("module_system_control bridge exposes the required systemAdmin surface", async () => {
     const app = await readFile(appUrl, "utf8");
@@ -79,6 +80,57 @@ test("module download opens from the toolbar and renders catalog and install sta
     assert.match(style, /\.module-control-ui-catalog\s*\{/);
     assert.match(style, /\.module-control-ui-catalog-row\s*\{/);
     assert.match(style, /\.module-control-ui-catalog-action\s*\{/);
+});
+
+test("installed catalog entries are status-only regardless of retry metadata", async () => {
+    const control = await readFile(controlUrl, "utf8");
+    const installed = controlModule.catalogActionState(
+        { canInstall: false, canRetryBuild: true },
+        "INSTALLED",
+        { status: "BUILD_FAILED", terminal: true },
+        { install: true, retryBuild: true }
+    );
+    assert.deepEqual(installed, {
+        kind: "none",
+        label: "已启用",
+        icon: "check",
+        disabled: true
+    });
+
+    const sourcePresent = controlModule.catalogActionState(
+        { canInstall: false, canRetryBuild: true },
+        "SOURCE_PRESENT",
+        null,
+        { install: true, retryBuild: true }
+    );
+    assert.equal(sourcePresent.kind, "retry-build");
+    assert.equal(sourcePresent.label, "重试构建");
+    assert.equal(sourcePresent.disabled, false);
+
+    const available = controlModule.catalogActionState(
+        { canInstall: true, canRetryBuild: false },
+        "AVAILABLE",
+        null,
+        { install: true, retryBuild: true }
+    );
+    assert.equal(available.kind, "install");
+    assert.equal(available.label, "下载");
+
+    const buildFailed = controlModule.catalogActionState(
+        { canInstall: false, canRetryBuild: false },
+        "BUILD_FAILED",
+        null,
+        {}
+    );
+    assert.equal(buildFailed.kind, "none");
+    assert.equal(buildFailed.label, "构建失败");
+
+    assert.match(control, /catalogActionState\(item, status, job,/);
+    assert.match(control, /if \(actionState\.kind !== "none"\)/);
+    assert.match(control, /item\.status === "INSTALLED" \|\| !item\.canInstall/);
+    assert.match(control, /item\.status === "INSTALLED" \|\| !item\.canRetryBuild/);
+    assert.match(control, /status: "INSTALL_FAILED"/);
+    assert.match(control, /status: "BUILD_FAILED"/);
 });
 
 test("module_system_control renders interface AI switches with locking states", async () => {
