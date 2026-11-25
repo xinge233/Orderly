@@ -328,21 +328,25 @@ public class OrderlyController {
     }
 
     /** 从模块 JAR 白名单读取模块 UI 清单、脚本或样式。 */
-    @GetMapping("/modules/{moduleId}/ui/{asset}")
+    @GetMapping("/modules/{moduleId}/ui/{*asset}")
     public ResponseEntity<byte[]> moduleUi(
             @PathVariable String moduleId,
             @PathVariable String asset
     ) {
-        ModuleUiAsset resource = catalog.readUiAsset(moduleId, asset).orElseThrow(
+        String normalizedAsset = asset != null && asset.startsWith("/")
+                ? asset.substring(1)
+                : asset;
+        ModuleUiAsset resource = catalog.readUiAsset(moduleId, normalizedAsset).orElseThrow(
                 () -> new ApiException(
                         HttpStatus.NOT_FOUND,
                         "MODULE_UI_NOT_FOUND",
-                        "模块 UI 资源不存在：" + moduleId + "/" + asset
+                        "模块 UI 资源不存在：" + moduleId + "/" + normalizedAsset
                 )
         );
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(resource.contentType()))
                 .header("Cache-Control", "no-cache")
+                .header("X-Content-Type-Options", "nosniff")
                 .body(resource.content());
     }
 

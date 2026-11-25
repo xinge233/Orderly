@@ -52,12 +52,19 @@ public class ContractCatalog implements AutoCloseable {
     private static final Set<String> SUPPORTED_TYPES = Set.of("string", "boolean", "integer");
     private static final String CONTRACT_PREFIX = "orderly-modules/";
     private static final String UI_PREFIX = "orderly-ui/";
-    private static final Map<String, String> UI_ASSETS = Map.of(
-            "module.json", "application/json",
-            "module.js", "application/javascript",
-            "module.css", "text/css"
+    private static final Pattern UI_SCRIPT = Pattern.compile(
+            "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\.js$"
+    );
+    private static final Pattern UI_STYLE = Pattern.compile(
+            "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\.css$"
+    );
+    private static final Pattern UI_ICON_ID = Pattern.compile("^[a-z][a-z0-9-]{0,63}$");
+    private static final Pattern UI_ICON_ASSET = Pattern.compile(
+            "^icons/[a-z0-9][a-z0-9._-]{0,63}\\.(?:svg|png)$"
     );
     private static final long MAX_UI_ASSET_BYTES = 2L * 1024L * 1024L;
+    private static final long MAX_UI_ICON_BYTES = 256L * 1024L;
+    private static final int MAX_UI_ICONS = 64;
 
     private volatile List<ModuleContract> modules;
     private volatile Map<String, ModuleContract> modulesById;
@@ -66,6 +73,7 @@ public class ContractCatalog implements AutoCloseable {
     private volatile Map<String, OrderlyModule> executors;
     private volatile Map<String, Path> moduleJars;
     private volatile Map<String, ModuleSettingsDefinition> settingsByModule;
+    private volatile Map<String, Map<String, String>> uiAssetsByModule;
     private volatile URLClassLoader moduleClassLoader;
     private final Path moduleDirectory;
     private final List<URLClassLoader> moduleClassLoaders;
@@ -106,8 +114,19 @@ public class ContractCatalog implements AutoCloseable {
         Map<String, PlannerRuleContract> rules = new LinkedHashMap<>();
         Map<String, Path> jarsByModule = new LinkedHashMap<>();
         Map<String, ModuleSettingsDefinition> settings = new LinkedHashMap<>();
+        Map<String, Map<String, String>> uiAssets = new LinkedHashMap<>();
         for (Path jar : jars) {
-            loadContracts(jar, objectMapper, loaded, actions, queries, rules, jarsByModule, settings);
+            loadContracts(
+                    jar,
+                    objectMapper,
+                    loaded,
+                    actions,
+                    queries,
+                    rules,
+                    jarsByModule,
+                    settings,
+                    uiAssets
+            );
         }
 
         URLClassLoader candidate = null;
@@ -155,6 +174,7 @@ public class ContractCatalog implements AutoCloseable {
         this.executors = Map.copyOf(loadedExecutors);
         this.moduleJars = Map.copyOf(jarsByModule);
         this.settingsByModule = Map.copyOf(settings);
+        this.uiAssetsByModule = Map.copyOf(uiAssets);
     }
 
     public List<ModuleContract> modules() {
@@ -318,6 +338,7 @@ public class ContractCatalog implements AutoCloseable {
         Map<String, PlannerRuleContract> rules = new LinkedHashMap<>();
         Map<String, Path> jarsByModule = new LinkedHashMap<>(moduleJars);
         Map<String, ModuleSettingsDefinition> settings = new LinkedHashMap<>(settingsByModule);
+        Map<String, Map<String, String>> uiAssets = new LinkedHashMap<>(uiAssetsByModule);
         modules.forEach(module -> module.queries().forEach(query -> queries.put(query.id(), query)));
         modules.forEach(module -> module.plannerRules().forEach(rule -> rules.put(rule.id(), rule)));
 
@@ -330,7 +351,8 @@ public class ContractCatalog implements AutoCloseable {
                 queries,
                 rules,
                 jarsByModule,
-                settings
+                settings,
+                uiAssets
         );
         List<ModuleContract> addedContracts = loaded.values().stream()
                 .filter(module -> !existingIds.contains(module.moduleId()))
@@ -396,6 +418,7 @@ public class ContractCatalog implements AutoCloseable {
                 loadedExecutors,
                 jarsByModule,
                 settings,
+                uiAssets,
                 generation
         );
     }
@@ -423,6 +446,7 @@ public class ContractCatalog implements AutoCloseable {
         executors = prepared.executors;
         moduleJars = prepared.moduleJars;
         settingsByModule = prepared.settingsByModule;
+        uiAssetsByModule = prepared.uiAssetsByModule;
         generation++;
         prepared.committed = true;
     }
@@ -446,6 +470,7 @@ public class ContractCatalog implements AutoCloseable {
         executors = prepared.previousExecutors;
         moduleJars = prepared.previousModuleJars;
         settingsByModule = prepared.previousSettings;
+        uiAssetsByModule = prepared.previousUiAssets;
         moduleClassLoaders.remove(prepared.candidateLoader);
         closeQuietly(prepared.candidateLoader);
         generation--;
@@ -459,7 +484,12 @@ public class ContractCatalog implements AutoCloseable {
      * @return 资源不存在或不属于模块时为 empty
      */
     public Optional<ModuleUiAsset> readUiAsset(String moduleId, String assetName) {
-        if (!modulesById.containsKey(moduleId) || !UI_ASSETS.containsKey(assetName)) {
+        Map<String, String> assets = uiAssetsByModule.get(moduleId);
+        if (assets == null) {
+            return Optional.empty();
+        }
+        String contentType = assets.get(assetName);
+        if (contentType == null) {
             return Optional.empty();
         }
         Path jarPath = moduleJars.get(moduleId);
@@ -471,16 +501,19 @@ public class ContractCatalog implements AutoCloseable {
             if (entry == null || entry.isDirectory()) {
                 return Optional.empty();
             }
-            if (entry.getSize() > MAX_UI_ASSET_BYTES) {
+            long limit = assetName.startsWith("icons/")
+                    ? MAX_UI_ICON_BYTES
+                    : MAX_UI_ASSET_BYTES;
+            if (entry.getSize() > limit) {
                 throw new IllegalStateException("模块 UI 资源超过大小上限：" + moduleId + "/" + assetName);
             }
             try (var stream = jar.getInputStream(entry)) {
-                byte[] content = stream.readNBytes((int) MAX_UI_ASSET_BYTES + 1);
-                if (content.length > MAX_UI_ASSET_BYTES) {
+                byte[] content = stream.readNBytes((int) limit + 1);
+                if (content.length > limit) {
                     throw new IllegalStateException("模块 UI 资源超过大小上限：" + moduleId + "/" + assetName);
                 }
                 return Optional.of(new ModuleUiAsset(
-                        UI_ASSETS.get(assetName),
+                        contentType,
                         content
                 ));
             }
@@ -490,9 +523,9 @@ public class ContractCatalog implements AutoCloseable {
     }
 
     /**
-     * 从模块 JAR 的 {@code orderly-ui/module.json} 读取并校验设置声明。
+     * 从模块 JAR 的 {@code orderly-ui/module.json} 读取设置与可发布资源。
      */
-    private ModuleSettingsDefinition readSettings(
+    private ModuleUiManifest readUiManifest(
             JarFile jar,
             String moduleId,
             ObjectMapper objectMapper
@@ -506,9 +539,78 @@ public class ContractCatalog implements AutoCloseable {
         }
         try (var stream = jar.getInputStream(manifestEntry)) {
             JsonNode manifest = objectMapper.readTree(stream);
-            return ModuleSettingsDefinition.parse(manifest.path("settings"), objectMapper);
+            ModuleSettingsDefinition settings = ModuleSettingsDefinition.parse(
+                    manifest.path("settings"),
+                    objectMapper
+            );
+            Map<String, String> assets = new LinkedHashMap<>();
+            assets.put("module.json", "application/json");
+            String script = requireUiAssetName(manifest.path("script"), UI_SCRIPT, moduleId, "script");
+            String style = requireUiAssetName(manifest.path("style"), UI_STYLE, moduleId, "style");
+            registerUiAsset(assets, script, "application/javascript", moduleId);
+            registerUiAsset(assets, style, "text/css", moduleId);
+
+            JsonNode icons = manifest.path("icons");
+            if (!icons.isMissingNode() && !icons.isNull()) {
+                if (!icons.isObject()) {
+                    throw new IllegalStateException("模块 UI icons 必须是对象：" + moduleId);
+                }
+                if (icons.size() > MAX_UI_ICONS) {
+                    throw new IllegalStateException("模块 UI icons 数量超过上限：" + moduleId);
+                }
+                icons.fields().forEachRemaining(entry -> {
+                    if (!UI_ICON_ID.matcher(entry.getKey()).matches()) {
+                        throw new IllegalStateException("模块 UI 图标 ID 非法：" + entry.getKey());
+                    }
+                    String asset = entry.getValue().isTextual()
+                            ? entry.getValue().asText()
+                            : "";
+                    if (!UI_ICON_ASSET.matcher(asset).matches()) {
+                        throw new IllegalStateException("模块 UI 图标资源路径非法：" + asset);
+                    }
+                    String contentType = asset.endsWith(".svg")
+                            ? "image/svg+xml"
+                            : "image/png";
+                    registerUiAsset(assets, asset, contentType, moduleId);
+                    JarEntry iconEntry = jar.getJarEntry(UI_PREFIX + asset);
+                    if (iconEntry == null || iconEntry.isDirectory()) {
+                        throw new IllegalStateException("模块 UI 图标资源不存在：" + moduleId + "/" + asset);
+                    }
+                    if (iconEntry.getSize() > MAX_UI_ICON_BYTES) {
+                        throw new IllegalStateException("模块 UI 图标资源超过大小上限：" + moduleId + "/" + asset);
+                    }
+                });
+            }
+            return new ModuleUiManifest(settings, Map.copyOf(assets));
         } catch (IOException exception) {
-            throw new IllegalStateException("读取模块 UI 设置声明失败：" + moduleId, exception);
+            throw new IllegalStateException("读取模块 UI 清单失败：" + moduleId, exception);
+        }
+    }
+
+    private String requireUiAssetName(
+            JsonNode node,
+            Pattern pattern,
+            String moduleId,
+            String field
+    ) {
+        String value = node.isTextual() ? node.asText() : "";
+        if (!pattern.matcher(value).matches()) {
+            throw new IllegalStateException("模块 UI " + field + " 资源名非法：" + moduleId);
+        }
+        return value;
+    }
+
+    private void registerUiAsset(
+            Map<String, String> assets,
+            String asset,
+            String contentType,
+            String moduleId
+    ) {
+        String previous = assets.putIfAbsent(asset, contentType);
+        if (previous != null && !previous.equals(contentType)) {
+            throw new IllegalStateException(
+                    "模块 UI 资源类型冲突：" + moduleId + "/" + asset
+            );
         }
     }
 
@@ -614,7 +716,8 @@ public class ContractCatalog implements AutoCloseable {
             Map<String, QueryContract> queries,
             Map<String, PlannerRuleContract> plannerRules,
             Map<String, Path> jarsByModule,
-            Map<String, ModuleSettingsDefinition> settingsByModule
+            Map<String, ModuleSettingsDefinition> settingsByModule,
+            Map<String, Map<String, String>> uiAssetsByModule
     ) {
         try (JarFile jar = new JarFile(jarPath.toFile(), false)) {
             List<JarEntry> contractEntries = jar.stream()
@@ -644,7 +747,9 @@ public class ContractCatalog implements AutoCloseable {
                 if (loaded.putIfAbsent(module.moduleId(), module) != null) {
                     throw new IllegalStateException("检测到重复模块契约：" + module.moduleId());
                 }
-                settingsByModule.put(module.moduleId(), readSettings(jar, module.moduleId(), objectMapper));
+                ModuleUiManifest uiManifest = readUiManifest(jar, module.moduleId(), objectMapper);
+                settingsByModule.put(module.moduleId(), uiManifest.settings());
+                uiAssetsByModule.put(module.moduleId(), uiManifest.assets());
                 jarsByModule.put(module.moduleId(), jarPath);
                 for (ActionContract action : module.actions()) {
                     if (actions.putIfAbsent(action.id(), action) != null) {
@@ -1312,6 +1417,13 @@ public class ContractCatalog implements AutoCloseable {
         }
     }
 
+    /** 模块 UI 清单中宿主需要发布的设置与静态资源类型。 */
+    private record ModuleUiManifest(
+            ModuleSettingsDefinition settings,
+            Map<String, String> assets
+    ) {
+    }
+
     /** 可提交或回滚的单模块追加预检结果。 */
     public static final class PreparedModule implements AutoCloseable {
         private final ContractCatalog owner;
@@ -1324,6 +1436,7 @@ public class ContractCatalog implements AutoCloseable {
         private final Map<String, OrderlyModule> executors;
         private final Map<String, Path> moduleJars;
         private final Map<String, ModuleSettingsDefinition> settingsByModule;
+        private final Map<String, Map<String, String>> uiAssetsByModule;
         private final long baselineGeneration;
 
         private final URLClassLoader previousClassLoader;
@@ -1334,6 +1447,7 @@ public class ContractCatalog implements AutoCloseable {
         private final Map<String, OrderlyModule> previousExecutors;
         private final Map<String, Path> previousModuleJars;
         private final Map<String, ModuleSettingsDefinition> previousSettings;
+        private final Map<String, Map<String, String>> previousUiAssets;
 
         private boolean committed;
         private boolean rolledBack;
@@ -1349,6 +1463,7 @@ public class ContractCatalog implements AutoCloseable {
                 Map<String, OrderlyModule> executors,
                 Map<String, Path> moduleJars,
                 Map<String, ModuleSettingsDefinition> settings,
+                Map<String, Map<String, String>> uiAssets,
                 long baselineGeneration
         ) {
             this.owner = owner;
@@ -1364,6 +1479,7 @@ public class ContractCatalog implements AutoCloseable {
             this.executors = Map.copyOf(executors);
             this.moduleJars = Map.copyOf(moduleJars);
             this.settingsByModule = Map.copyOf(settings);
+            this.uiAssetsByModule = Map.copyOf(uiAssets);
             this.baselineGeneration = baselineGeneration;
 
             this.previousClassLoader = owner.moduleClassLoader;
@@ -1374,6 +1490,7 @@ public class ContractCatalog implements AutoCloseable {
             this.previousExecutors = owner.executors;
             this.previousModuleJars = owner.moduleJars;
             this.previousSettings = owner.settingsByModule;
+            this.previousUiAssets = owner.uiAssetsByModule;
         }
 
         /** 返回本次预检新增的模块契约。 */

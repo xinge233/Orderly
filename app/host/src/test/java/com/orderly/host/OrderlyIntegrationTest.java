@@ -39,6 +39,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** 首版端到端核心链路测试。 */
@@ -208,6 +209,13 @@ class OrderlyIntegrationTest {
         mockMvc.perform(get("/api/modules/module_fs/ui/module.css"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.parseMediaType("text/css")));
+        mockMvc.perform(get("/api/modules/module_fs/ui/icons/materials.svg"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.parseMediaType("image/svg+xml")))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+        mockMvc.perform(get("/api/modules/module_fs/ui/icons/undeclared.svg"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("MODULE_UI_NOT_FOUND"));
         mockMvc.perform(get("/api/modules/module_fs/ui/../module.json"))
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/modules/module_fs/ui/unknown.js"))

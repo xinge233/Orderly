@@ -46,8 +46,12 @@ public class ModulePackageInstaller {
     private static final Pattern SAFE_ASSET = Pattern.compile(
             "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\.(?:js|css)$"
     );
+    private static final Pattern UI_ICON_ID = Pattern.compile("^[a-z][a-z0-9-]{0,63}$");
+    private static final Pattern UI_ICON_ASSET = Pattern.compile(
+            "^icons/[a-z0-9][a-z0-9._-]{0,63}\\.(?:svg|png)$"
+    );
     private static final Set<String> UI_TOP_LEVEL_FIELDS = Set.of(
-            "version", "view", "card", "examples", "settings", "script", "style"
+            "version", "view", "card", "examples", "icons", "settings", "script", "style"
     );
     private static final Set<String> UI_VIEW_FIELDS = Set.of("id", "caption", "icon");
     private static final Set<String> UI_CARD_FIELDS = Set.of(
@@ -365,6 +369,31 @@ public class ModulePackageInstaller {
                     || example.path("text").asText("").isBlank()) {
                 throw packageError("INVALID_MODULE_UI", "模块 UI example 字段非法");
             }
+        }
+        JsonNode icons = manifest.path("icons");
+        if (!icons.isMissingNode() && !icons.isNull()) {
+            if (!icons.isObject() || icons.isEmpty() || icons.size() > 64) {
+                throw packageError("INVALID_MODULE_UI", "模块 UI icons 必须是非空对象且不超过 64 项");
+            }
+            icons.fields().forEachRemaining(entry -> {
+                if (!UI_ICON_ID.matcher(entry.getKey()).matches()
+                        || !entry.getValue().isTextual()
+                        || !UI_ICON_ASSET.matcher(entry.getValue().asText()).matches()) {
+                    throw packageError("INVALID_MODULE_UI", "模块 UI 图标声明非法：" + entry.getKey());
+                }
+                Path iconFile = uiDirectory.resolve(entry.getValue().asText());
+                requireFile(iconFile);
+                if (!iconFile.normalize().startsWith(uiDirectory.normalize())) {
+                    throw packageError("INVALID_MODULE_UI", "模块 UI 图标路径越界");
+                }
+                try {
+                    if (Files.size(iconFile) > 256L * 1024L) {
+                        throw packageError("INVALID_MODULE_UI", "模块 UI 图标超过大小上限");
+                    }
+                } catch (IOException exception) {
+                    throw packageError("INVALID_MODULE_UI", "模块 UI 图标无法读取");
+                }
+            });
         }
         validateSettingsShape(manifest.path("settings"));
         ModuleSettingsDefinition.parse(manifest.path("settings"), objectMapper);

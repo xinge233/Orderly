@@ -600,6 +600,45 @@ function Publish-CandidateModules {
                     throw "模块 $($moduleDirectory.Name) 缺少自包含 UI 资源：$requiredAsset"
                 }
             }
+            $uiManifestEntry = $moduleArchive.Entries |
+                Where-Object { $_.FullName -eq "orderly-ui/module.json" } |
+                Select-Object -First 1
+            $uiReader = [System.IO.StreamReader]::new(
+                $uiManifestEntry.Open(),
+                [System.Text.UTF8Encoding]::new($false),
+                $true
+            )
+            try {
+                $uiManifest = $uiReader.ReadToEnd() | ConvertFrom-Json
+            }
+            finally {
+                $uiReader.Dispose()
+            }
+            $iconProperty = $uiManifest.PSObject.Properties["icons"]
+            if ($null -ne $iconProperty) {
+                $iconEntries = @($iconProperty.Value.PSObject.Properties)
+                if ($iconEntries.Count -eq 0 -or $iconEntries.Count -gt 64) {
+                    throw "模块 $($moduleDirectory.Name) 的 UI icons 必须为 1 到 64 项。"
+                }
+                foreach ($iconEntry in $iconEntries) {
+                    if ([string]$iconEntry.Name -notmatch '^[a-z][a-z0-9-]{0,63}$') {
+                        throw "模块 $($moduleDirectory.Name) 的图标 ID 非法：$($iconEntry.Name)"
+                    }
+                    $iconAsset = [string]$iconEntry.Value
+                    if ($iconAsset -notmatch '^icons/[a-z0-9][a-z0-9._-]{0,63}\.(?:svg|png)$') {
+                        throw "模块 $($moduleDirectory.Name) 的图标路径非法：$iconAsset"
+                    }
+                    if ($assetNames -notcontains ("orderly-ui/" + $iconAsset)) {
+                        throw "模块 $($moduleDirectory.Name) 缺少声明图标：$iconAsset"
+                    }
+                    $iconArchiveEntry = $moduleArchive.Entries |
+                        Where-Object { $_.FullName -eq ("orderly-ui/" + $iconAsset) } |
+                        Select-Object -First 1
+                    if ($iconArchiveEntry.Length -gt 256KB) {
+                        throw "模块 $($moduleDirectory.Name) 的图标超过大小上限：$iconAsset"
+                    }
+                }
+            }
             $contractEntries = @($moduleArchive.Entries | Where-Object {
                 $_.FullName -match '^orderly-modules/[^/]+\.json$'
             })

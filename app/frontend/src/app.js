@@ -17,7 +17,13 @@ import {
     normalizeAiSettings,
     validateAiSettingsDraft
 } from "./ai-settings.js";
-import { AI_ICON_OPTIONS, hydrateIcons, icon, paintAiIcon } from "./icons.js";
+import {
+    AI_ICON_OPTIONS,
+    hydrateIcons,
+    icon,
+    paintAiIcon,
+    paintModuleIcon
+} from "./icons.js";
 import {
     EVENT_ORIGIN,
     EVENT_ORIGIN_LABEL,
@@ -2217,7 +2223,15 @@ function renderNavigation(query = "") {
                 button.dataset.buildStatus = item.buildStatus;
                 button.title = `${item.caption}；${moduleBuildStatusLabel(item.buildStatus)}`;
             }
-            button.innerHTML = `<span class="nav-icon">${icon(item.icon)}</span>`;
+            const iconNode = element("span", "nav-icon");
+            paintModuleIconNode(
+                iconNode,
+                item.icon,
+                item.moduleId,
+                item.iconAssets,
+                18
+            );
+            button.append(iconNode);
             if (item.moduleId) {
                 const handle = element("span", "nav-drag-handle", "⋮");
                 handle.setAttribute("aria-hidden", "true");
@@ -2448,8 +2462,35 @@ function moduleNavigationItem(module) {
         label: module.title || module.moduleId,
         caption: ui?.view.caption ?? module.description ?? "扩展模块",
         icon: ui?.view.icon ?? "modules",
+        iconAssets: ui?.icons ?? Object.freeze({}),
         moduleId: module.moduleId
     };
+}
+
+/**
+ * 将模块图标绘制到既有容器；无模块归属时只使用框架内置图标。
+ *
+ * @param {HTMLElement} element 图标容器
+ * @param {string} iconName 清单图标 ID
+ * @param {string} [moduleId] 模块 ID
+ * @param {Readonly<Record<string, string>>} [icons] 模块本地图标映射
+ * @param {number} [size] 图标尺寸
+ * @returns {void}
+ */
+function paintModuleIconNode(
+    element,
+    iconName,
+    moduleId = "",
+    icons = Object.freeze({}),
+    size = 18
+) {
+    paintModuleIcon(element, iconName, {
+        icons,
+        assetUrl: moduleId
+            ? (asset) => api.moduleAssetUrl(moduleId, asset)
+            : null,
+        size
+    });
 }
 
 function moduleBuildNavigationItem(entry) {
@@ -2648,6 +2689,17 @@ async function mountModule(module) {
                 ),
             element,
             icon,
+            moduleIcon: (iconId, size = 18) => {
+                const node = element("span", "module-inline-icon");
+                paintModuleIconNode(
+                    node,
+                    iconId,
+                    module.moduleId,
+                    ui.icons,
+                    size
+                );
+                return node;
+            },
             toast,
             fillCommand,
             formatDate,
@@ -2957,7 +3009,13 @@ function renderModuleCards() {
         displayed.slice(0, 3).forEach((module, index) => {
             const ui = state.moduleUi[module.moduleId];
             const node = element("span", `orbit-node orbit-node--slot-${index + 1}`, "");
-            node.innerHTML = icon(ui?.view.icon ?? "modules", 22);
+            paintModuleIconNode(
+                node,
+                ui?.view.icon ?? "modules",
+                module.moduleId,
+                ui?.icons,
+                22
+            );
             orbit.append(node);
         });
     }
@@ -2996,7 +3054,13 @@ function renderModuleCards() {
         article.setAttribute("aria-label", `${card.title}，可拖动或使用按钮调整顺序`);
         const top = element("div", "surface-card__top");
         const cardIcon = element("span", "surface-card__icon");
-        cardIcon.innerHTML = icon(card.icon, 21);
+        paintModuleIconNode(
+            cardIcon,
+            card.icon,
+            module.moduleId,
+            ui?.icons,
+            21
+        );
         top.append(cardIcon, element("span", "status-chip", card.badge));
         const body = element("div");
         const metric = element("div", "surface-card__metric");

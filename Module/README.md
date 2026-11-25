@@ -13,7 +13,7 @@
    只有显式传入大于 1 的 `-MaxParallel` 才并行。默认运行模块测试，
    只有显式传入 `-SkipTests` 或使用快速启动/模块化验收路径时才跳过。
 3. 构建脚本校验模块 JAR 包含 `orderly-ui/module.json`、`orderly-ui/module.js`
-   和 `orderly-ui/module.css`。
+   和 `orderly-ui/module.css`；声明 `icons` 时还校验对应 `orderly-ui/icons/` 资源。
 4. 全部模块成功后，构建脚本才把候选 JAR 发布到 `target/orderly-modules/`；
    因此删除模块源码并重新构建后不会继续加载陈旧 JAR，模块失败也不会破坏上一套暂存。
 5. 宿主启动时扫描 `orderly.modules-dir` 指向的目录，通过 `ServiceLoader` 加载
@@ -45,7 +45,9 @@ Module/
          └─ orderly-ui/
             ├─ module.json
             ├─ module.js
-            └─ module.css
+            ├─ module.css
+            └─ icons/              # 可选模块专属单色图标
+               └─ example.svg
 ```
 
 以下内容是必需的：
@@ -57,6 +59,22 @@ Module/
 - `orderly-ui/module.json`：侧边栏、总览卡片和前端视图元数据。
 - `orderly-ui/module.js`：模块自有前端逻辑。
 - `orderly-ui/module.css`：模块自有样式。
+
+模块专属图标可选存放在 `orderly-ui/icons/`，并在 `module.json` 中登记：
+
+```json
+{
+  "icons": {
+    "materials": "icons/materials.svg"
+  },
+  "view": {
+    "icon": "materials"
+  }
+}
+```
+
+图标只允许单文件 SVG 或 PNG，单枚不超过 256 KiB。框架内置 `file`、`check`、
+`calendar`、`spark`、`route`、`modules` 等通用图标仍可直接引用，不必复制进模块。
 
 学习相关模块如果使用 `contracts/study-data.schema.json`，还必须把只读数据本体放在
 自己的 `src/main/resources/orderly-data/<moduleId>.json`，不得建立集中式学习数据目录，
@@ -357,14 +375,14 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\start.ps1 -SkipBuild
 新增模块后至少检查：
 
 - `gate.ps1` 通过，前端和模块 UI 语法有效。
-- 模块 JAR 包含 SPI 文件、契约和三个 UI 资源。
+- 模块 JAR 包含 SPI 文件、契约和三个必需 UI 资源；如声明 `icons`，还需包含对应图标。
 - 宿主 fat JAR 不包含该模块的 JAR、契约或 UI。
 - `/api/modules` 返回新模块。
 - 新模块出现在侧边栏和总览，卡片排序、拖动和键盘移动正常。
 - 声明学习数据的模块必须通过 `node scripts/validate-study-data.mjs`，并确认 JAR
   内含自己的 `orderly-data/<moduleId>.json`。资源名必须带模块 ID，因为宿主聚合
   类加载器不能让多个 JAR 共用同一个根资源路径。
-- `/api/modules/{moduleId}/ui/module.json` 及 JS/CSS 可访问。
+- `/api/modules/{moduleId}/ui/module.json`、JS/CSS 与已登记图标可访问，未登记资源返回 404。
 - 契约中声明的只读查询能够通过通用查询接口执行。
 - 业务 Action/Query 的 AI 可调用状态由宿主统一保存并默认开启；Query 开关不得影响
   模块自身查询。系统模块不参与业务接口治理，其中 `module_system_control` 只提供受控治理接口。

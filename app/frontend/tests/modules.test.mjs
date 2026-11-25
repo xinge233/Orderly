@@ -128,6 +128,36 @@ test("contract settings samples validate defaults, limits and option membership"
     );
 });
 
+test("module UI normalizes local icon assets and rejects unsafe paths", async () => {
+    const valid = normalizeModuleUi(
+        "module_demo",
+        await readJson("../../../contracts/samples/valid/module-ui-icons.json")
+    );
+    assert.deepEqual(valid.icons, {
+        materials: "icons/materials.svg"
+    });
+    assert.equal(Object.isFrozen(valid.icons), true);
+
+    await assert.rejects(
+        async () => normalizeModuleUi(
+            "module_demo",
+            await readJson("../../../contracts/samples/invalid/module-ui-icon-unsafe-asset.json")
+        ),
+        /图标签名非法/
+    );
+    assert.throws(
+        () => normalizeModuleUi("module_demo", {
+            version: 1,
+            icons: {},
+            view: { id: "demo", caption: "演示", icon: "modules" },
+            examples: [],
+            script: "module.js",
+            style: "module.css"
+        }),
+        /1 到 64 项/
+    );
+});
+
 test("business and system catalogs split without trusting business system metadata", () => {
     const catalogs = normalizeModuleCatalogs(
         {

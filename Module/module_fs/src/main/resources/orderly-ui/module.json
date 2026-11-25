@@ -1,15 +1,18 @@
 {
   "version": 1,
+  "icons": {
+    "materials": "icons/materials.svg"
+  },
   "view": {
     "id": "files",
-    "icon": "file",
+    "icon": "materials",
     "caption": "资料管理"
   },
   "card": {
     "title": "资料管理",
     "description": "按课程检索只读学习资料，并从模块自带数据读取详情。",
     "badge": "模块只读资料",
-    "icon": "file",
+    "icon": "materials",
     "queryId": "fs.materials",
     "countKey": "count",
     "unit": "份资料"

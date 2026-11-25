@@ -208,6 +208,63 @@ class ModulePackageInstallerTest {
                 .hasMessageContaining("examples");
     }
 
+    @Test
+    void acceptsDeclaredModuleLocalIconAsset() throws Exception {
+        ModulePackageInstaller installer = newInstaller();
+        Map<String, String> entries = moduleEntries(
+                "module_todo",
+                contract("module_todo", false)
+        );
+        entries.put(
+                "module_todo/src/main/resources/orderly-ui/module.json",
+                """
+                {"version":1,"icons":{"todo-local":"icons/todo-local.svg"},"view":{"id":"todo","caption":"待办","icon":"todo-local"},"examples":[],"script":"module.js","style":"module.css"}
+                """
+        );
+        entries.put(
+                "module_todo/src/main/resources/orderly-ui/icons/todo-local.svg",
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"></svg>"
+        );
+        byte[] archive = archive(entries);
+
+        Path staged = installer.stage(
+                archive,
+                "module_todo",
+                sha256(archive),
+                archive.length,
+                tempDirectory.resolve("icon-valid")
+        );
+
+        assertThat(staged.resolve("src/main/resources/orderly-ui/icons/todo-local.svg"))
+                .isRegularFile();
+    }
+
+    @Test
+    void rejectsDeclaredModuleIconWithoutAssetFile() throws Exception {
+        ModulePackageInstaller installer = newInstaller();
+        Map<String, String> entries = moduleEntries(
+                "module_todo",
+                contract("module_todo", false)
+        );
+        entries.put(
+                "module_todo/src/main/resources/orderly-ui/module.json",
+                """
+                {"version":1,"icons":{"todo-local":"icons/todo-local.svg"},"view":{"id":"todo","caption":"待办","icon":"todo-local"},"examples":[],"script":"module.js","style":"module.css"}
+                """
+        );
+        byte[] archive = archive(entries);
+
+        assertThatThrownBy(() -> installer.stage(
+                archive,
+                "module_todo",
+                sha256(archive),
+                archive.length,
+                tempDirectory.resolve("icon-missing")
+        ))
+                .isInstanceOf(ModulePackageException.class)
+                .hasMessageContaining("todo-local.svg");
+    }
+
     private byte[] moduleArchive(String moduleId, String contract) throws Exception {
         return archive(moduleEntries(moduleId, contract));
     }

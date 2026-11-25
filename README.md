@@ -262,7 +262,7 @@ POST /api/executions/{executionId}/rollback
 
 运行中刷新只允许显式追加新模块：扫描 `Module/module_*` 源码，并要求 `target/orderly-modules/` 已有对应 JAR。未构建源码返回 `MODULE_NOT_BUILT`；已有模块的源码或 JAR 更新、删除返回 `RESTART_REQUIRED`，当前运行快照保持不变。刷新接口本身不编译；模块下载链路由独立监督器调用 `build.ps1 -ModulesOnly` 完成构建后再请求刷新，不会替换或卸载已有模块。
 
-模块查询统一通过 `GET /api/modules/{moduleId}/query/{queryId}`，模块 UI 只从 JAR 内 `orderly-ui/module.json`、`module.js` 和 `module.css` 提供，资源接口为 `GET /api/modules/{moduleId}/ui/{asset}` 且只接受白名单文件名。前端按模块 UI 清单生成侧栏、总览卡片和视图；单个模块的 UI 或查询失败只影响该模块。
+模块查询统一通过 `GET /api/modules/{moduleId}/query/{queryId}`，模块 UI 只从 JAR 内 `orderly-ui/module.json`、声明的脚本与样式，以及 `icons` 白名单中的单色 SVG/PNG 提供，资源接口为 `GET /api/modules/{moduleId}/ui/{asset}`。前端按模块 UI 清单生成侧栏、总览卡片和视图；单个模块的 UI、图标或查询失败只影响该模块。
 
 学习相关只读数据由 `contracts/study-data.schema.json` 约束，并通过 `scripts/validate-study-data.mjs` 校验。公共字段声明 `ownerModule`、`readOnly: true`、来源和计数，负载按 `assistant`、`materials`、`knowledge-map`、`review` 四类校验引用完整性。数据分别位于模块自身 JAR 的模块唯一资源名下，不建立集中数据目录；模块只能调用自身声明的查询。
 

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "icons": {
+    "materials": "icons/materials.js"
+  },
+  "view": {
+    "id": "files",
+    "caption": "资料模块",
+    "icon": "materials"
+  },
+  "examples": [],
+  "script": "module.js",
+  "style": "module.css"
+}

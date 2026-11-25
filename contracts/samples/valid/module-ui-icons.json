@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "icons": {
+    "materials": "icons/materials.svg"
+  },
+  "view": {
+    "id": "files",
+    "caption": "资料模块",
+    "icon": "materials"
+  },
+  "card": {
+    "title": "资料模块",
+    "description": "展示模块自带的图标资源。",
+    "badge": "模块图标",
+    "icon": "materials",
+    "countKey": "count",
+    "unit": "项"
+  },
+  "examples": [],
+  "script": "module.js",
+  "style": "module.css"
+}

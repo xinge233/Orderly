@@ -25,6 +25,24 @@ test("invalid module UI sample rejects unsafe asset paths", async () => {
     assert.throws(() => normalizeModuleUi("module_demo", sample), /资源名非法/);
 });
 
+test("module UI sample accepts declared local SVG icons", async () => {
+    const ui = normalizeModuleUi("module_demo", await readSample("valid/module-ui-icons.json"));
+
+    assert.deepEqual(ui.icons, {
+        materials: "icons/materials.svg"
+    });
+    assert.equal(ui.view.icon, "materials");
+    assert.equal(ui.card.icon, "materials");
+});
+
+test("module UI icons reject traversal and unsupported file types", async () => {
+    const traversal = await readSample("invalid/module-ui-icon-unsafe-asset.json");
+    assert.throws(() => normalizeModuleUi("module_demo", traversal), /图标签名非法/);
+
+    const unsupported = await readSample("invalid/module-ui-icon-unsupported-type.json");
+    assert.throws(() => normalizeModuleUi("module_demo", unsupported), /图标签名非法/);
+});
+
 test("declarative settings sample normalizes every supported field type", async () => {
     const ui = normalizeModuleUi("module_demo", await readSample("valid/module-ui-settings.json"));
 

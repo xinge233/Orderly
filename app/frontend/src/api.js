@@ -285,7 +285,12 @@ export class OrderlyApi {
     }
 
     moduleAssetUrl(moduleId, asset) {
-        return `${this.#baseUrl}/api/modules/${encodeURIComponent(moduleId)}/ui/${encodeURIComponent(asset)}`;
+        const encoded = String(asset ?? "")
+            .split("/")
+            .filter(Boolean)
+            .map((segment) => encodeURIComponent(segment))
+            .join("/");
+        return `${this.#baseUrl}/api/modules/${encodeURIComponent(moduleId)}/ui/${encoded}`;
     }
 
     moduleDataUrl(moduleId, relativePath) {

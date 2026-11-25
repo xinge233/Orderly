@@ -195,6 +195,31 @@ foreach ($directory in $moduleDirectories) {
     if ([int]$ui.version -ne 1 -or [string]::IsNullOrWhiteSpace([string]$ui.view.id)) {
         throw "模块 UI 清单无效：$($directory.Name)"
     }
+    $iconProperty = $ui.PSObject.Properties["icons"]
+    if ($null -ne $iconProperty) {
+        $iconEntries = @($iconProperty.Value.PSObject.Properties)
+        if ($iconEntries.Count -eq 0 -or $iconEntries.Count -gt 64) {
+            throw "模块 UI icons 必须为 1 到 64 项：$($directory.Name)"
+        }
+        foreach ($iconEntry in $iconEntries) {
+            if ([string]$iconEntry.Name -notmatch '^[a-z][a-z0-9-]{0,63}$') {
+                throw "模块 UI 图标 ID 非法：$($directory.Name)/$($iconEntry.Name)"
+            }
+            $iconAsset = [string]$iconEntry.Value
+            if ($iconAsset -notmatch '^icons/[a-z0-9][a-z0-9._-]{0,63}\.(?:svg|png)$') {
+                throw "模块 UI 图标路径非法：$($directory.Name)/$iconAsset"
+            }
+            $iconFile = Join-Path $directory.FullName (
+                "src\main\resources\orderly-ui\" + ($iconAsset -replace '/', '\')
+            )
+            if (-not (Test-Path -LiteralPath $iconFile -PathType Leaf)) {
+                throw "模块 UI 缺少声明图标：$($directory.Name)/$iconAsset"
+            }
+            if ((Get-Item -LiteralPath $iconFile).Length -gt 256KB) {
+                throw "模块 UI 图标超过大小上限：$($directory.Name)/$iconAsset"
+            }
+        }
+    }
 
     $safeVersion = $projectVersion -replace '[^A-Za-z0-9._-]', '-'
     $fileName = "$($directory.Name)-$safeVersion-$sourceCommit.zip"

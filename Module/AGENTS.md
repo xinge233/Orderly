@@ -299,6 +299,8 @@ orderly-ui/module.css
 
 SPI 文件内容必须是 `OrderlyModule` 实现类的完整限定名。三项 `orderly-ui` 资源必须
 位于固定路径，并由该模块 JAR 发布。模块 JAR、契约和 UI 资源不得复制进宿主 fat JAR。
+模块专属图标可选放在 `orderly-ui/icons/`，并在 `module.json` 的 `icons` 中登记；
+通用框架语义图标仍引用宿主内置 ID，不要求在模块内复制。
 
 宿主通过运行时目录、`URLClassLoader` 和 `ServiceLoader` 发现模块；不得恢复
 `Module/modules.index`、手工模块清单或根 POM 固定模块列表。
@@ -315,7 +317,8 @@ export default async function mount(root, context) {
     // context.module / context.ui: 模块契约与 UI 清单
     // context.settings: 宿主校验后的模块设置
     // context.query(...): 通用只读查询
-    // context.element / context.icon: 主题一致的元素与图标
+    // context.element / context.icon: 主题一致的元素与内置图标
+    // context.moduleIcon(...): 清单 icons 声明的模块本地图标元素
     // context.toast / context.fillCommand / context.formatDate: 宿主交互辅助能力
 }
 ```
@@ -329,6 +332,9 @@ export default async function mount(root, context) {
   执行中的 Action 必须由宿主标记为“使用中”并拒绝关闭。
 - `orderly-ui/module.json` 的 `settings` 只支持 `boolean`、`integer`、`select` 和
   `text` 字段；字段值由宿主校验和持久化，模块不得自行维护第二套设置定义。
+- 模块专属单色 SVG/PNG 图标必须位于 `orderly-ui/icons/`，通过 `icons` 映射登记，
+  单个图标不超过 256 KiB；`view.icon` 与 `card.icon` 先查模块映射，再回退框架内置
+  图标。宿主只发布清单登记的资源，不得扫描整个 `orderly-ui/` 目录。
 - 不得在 `app/frontend/src/app.js` 等框架文件中增加固定视图映射。
 - UI 清单无效、资源缺失、加载失败或 Query 失败只影响该模块局部，不得拖垮框架、
   侧边栏或其他模块。

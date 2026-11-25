@@ -12,11 +12,13 @@
 
 模块 UI 的可选 `settings` 支持对象形式 `{ "fields": [...] }` 或字段数组，字段类型为 `boolean`、`integer`、`select`、`text`。宿主会拒绝重复 key、类型错误、select 默认值不在 options、重复 option value，以及 integer/text 范围非法。模块设置的当前值由 `/api/system/module-preferences` 返回，并保存在宿主单一治理 JSON 中。
 
+模块 UI 的可选 `icons` 映射用于声明模块自带单色图标，键必须是小写图标 ID，值必须是 `icons/<安全文件名>.svg` 或 `.png`。宿主只发布清单中登记且 JAR 内实际存在的图标，单枚上限 256 KiB；未声明的路径、目录穿越和任意 classpath 资源均被拒绝。未提供本地图标时，`view.icon` 与 `card.icon` 继续使用框架内置语义图标。
+
 `samples/valid/theme.json` 与 `samples/invalid/theme-*.json` 覆盖目录主题的合法清单、不支持的 `schemaVersion`、非法 id、越界样式路径、非 CSS 样式路径和不可接受的 SVG 主动内容。宿主运行时必须同时登记 `tokens.css` 与 `motion.css`，并且只能读取清单登记的资源。
 
 模块契约由各模块 JAR 内的 `orderly-modules/*.json` 提供，宿主在启动时通过统一模式聚合。动作风险、参数与确认词、只读查询和本地计划规则只允许在这些契约中声明，Java 执行器不保存第二套元数据。Query 可选声明根类型为 `object` 的 `outputSchema` 和用于布局、字段标签及空状态的 `display`；展示提示不得修改 payload 或执行动作。`GET /api/modules` 只返回业务模块；`GET /api/system-modules` 返回系统模块。查询通过通用接口 `GET /api/modules/{moduleId}/query/{queryId}` 调用，框架不包含具体业务端点。
 
-模块 UI 清单位于同一 JAR 的 `orderly-ui/module.json`，并把脚本与样式限制为同目录内的安全资源名。宿主仅通过 `GET /api/modules/{moduleId}/ui/{asset}` 提供 `module.json`、`module.js` 和 `module.css`，不接受目录穿越或任意 classpath 资源。删除业务模块源码并重新构建后，模块 JAR、契约、查询、侧栏、总览卡片和前端视图必须一起消失；零业务模块是合法状态，但系统模块 `module_system_control` 必须保留。
+模块 UI 清单位于同一 JAR 的 `orderly-ui/module.json`，并把脚本、样式与图标限制为同目录内的安全资源名。宿主仅通过 `GET /api/modules/{moduleId}/ui/{asset}` 提供 `module.json`、清单声明的脚本、样式和 `icons/` 资源，不接受目录穿越或任意 classpath 资源。删除业务模块源码并重新构建后，模块 JAR、契约、查询、图标、侧栏、总览卡片和前端视图必须一起消失；零业务模块是合法状态，但系统模块 `module_system_control` 必须保留。
 
 运行中刷新只允许显式追加新模块。新源码目录必须已有同名 JAR，宿主不会自动编译；未构建返回 `MODULE_NOT_BUILT`。已有模块更新或删除返回 `RESTART_REQUIRED`，不会替换当前运行快照。API 约定见根 README。
 

@@ -9,7 +9,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.util.Enumeration;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.jar.JarEntry;
@@ -93,6 +95,49 @@ class ContractCatalogTest {
                 .hasMessageContaining("契约与执行器不一致");
     }
 
+    @Test
+    void declaredModuleIconAssetsAreServedFromTheModuleJar() throws Exception {
+        Path directory = testDirectory("module-local-icon");
+        rewriteStagedJar(
+                directory.resolve("module_todo.jar"),
+                "orderly-ui/module.json",
+                root -> root.set(
+                        "icons",
+                        objectMapper.createObjectNode().put("todo-local", "icons/todo-local.svg")
+                ),
+                Map.of(
+                        "orderly-ui/icons/todo-local.svg",
+                        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"></svg>"
+                                .getBytes(StandardCharsets.UTF_8)
+                )
+        );
+
+        try (ContractCatalog catalog = new ContractCatalog(objectMapper, directory.toString())) {
+            ModuleUiAsset asset = catalog.readUiAsset("module_todo", "icons/todo-local.svg")
+                    .orElseThrow();
+            assertThat(asset.contentType()).isEqualTo("image/svg+xml");
+            assertThat(asset.content()).startsWith("<svg".getBytes(StandardCharsets.UTF_8));
+            assertThat(catalog.readUiAsset("module_todo", "icons/undeclared.svg")).isEmpty();
+        }
+    }
+
+    @Test
+    void declaredButMissingModuleIconFailsAtStartup() throws Exception {
+        Path directory = testDirectory("missing-module-icon");
+        rewriteStagedJar(
+                directory.resolve("module_todo.jar"),
+                "orderly-ui/module.json",
+                root -> root.set(
+                        "icons",
+                        objectMapper.createObjectNode().put("todo-local", "icons/todo-local.svg")
+                )
+        );
+
+        assertThatThrownBy(() -> new ContractCatalog(objectMapper, directory.toString()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("图标资源不存在");
+    }
+
     private Path stagedJar(String fileName) {
         String configured = System.getProperty("orderly.modules-dir");
         assertThat(configured).as("gate/build.ps1 必须先构建外部模块 JAR").isNotBlank();
@@ -113,6 +158,15 @@ class ContractCatalogTest {
             String contractFileName,
             Consumer<ObjectNode> mutation
     ) throws IOException {
+        rewriteStagedJar(destination, contractFileName, mutation, Map.of());
+    }
+
+    private void rewriteStagedJar(
+            Path destination,
+            String jsonEntrySuffix,
+            Consumer<ObjectNode> mutation,
+            Map<String, byte[]> additionalEntries
+    ) throws IOException {
         Path source = stagedJar("module_todo.jar");
         try (JarFile input = new JarFile(source.toFile(), false);
              JarOutputStream output = new JarOutputStream(Files.newOutputStream(destination))) {
@@ -123,7 +177,8 @@ class ContractCatalogTest {
                 if (!entry.isDirectory()) {
                     try (InputStream stream = input.getInputStream(entry)) {
                         byte[] bytes = stream.readAllBytes();
-                        if (entry.getName().endsWith("/" + contractFileName)) {
+                        if (entry.getName().equals(jsonEntrySuffix)
+                                || entry.getName().endsWith("/" + jsonEntrySuffix)) {
                             ObjectNode root = (ObjectNode) objectMapper.readTree(bytes);
                             mutation.accept(root);
                             bytes = objectMapper.writeValueAsBytes(root);
@@ -131,6 +186,11 @@ class ContractCatalogTest {
                         output.write(bytes);
                     }
                 }
+                output.closeEntry();
+            }
+            for (Map.Entry<String, byte[]> addition : additionalEntries.entrySet()) {
+                output.putNextEntry(new JarEntry(addition.getKey()));
+                output.write(addition.getValue());
                 output.closeEntry();
             }
         }

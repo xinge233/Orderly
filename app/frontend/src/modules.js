@@ -14,6 +14,8 @@
 const MODULE_ID = /^[a-z][a-z0-9_-]{0,63}$/;
 const VIEW_ID = /^[a-z][a-z0-9-]{0,63}$/;
 const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const MODULE_ICON_ID = /^[a-z][a-z0-9-]{0,63}$/;
+const MODULE_ICON_ASSET = /^icons\/[a-z0-9][a-z0-9._-]{0,63}\.(?:svg|png)$/;
 const SETTING_KEY = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const MODULE_SOURCE_NAME = /^module_[a-z0-9_]+$/;
 const MODULE_BUILD_STATUSES = new Set(["QUEUED", "BUILDING", "READY", "FAILED"]);
@@ -58,6 +60,39 @@ function assetName(value, extension) {
         throw new TypeError(`模块资源名非法：${name}`);
     }
     return name;
+}
+
+/**
+ * 校验模块清单声明的本地图标映射。
+ *
+ * <p>图标只允许引用模块 `orderly-ui/icons/` 下的单文件 SVG 或 PNG；映射本身不携带
+ * URL、数据 URI 或目录层级，防止清单把任意资源写入样式变量。未声明映射的模块仍可
+ * 继续使用框架内置图标 ID。</p>
+ *
+ * @param {unknown} input 原始 icons 字段
+ * @returns {Readonly<Record<string, string>>} 冻结的图标映射
+ * @throws {TypeError} 映射、图标 ID 或资源路径非法时抛出
+ */
+function normalizeModuleIcons(input) {
+    if (input == null) {
+        return Object.freeze({});
+    }
+    const source = plainObject(input);
+    if (!source) {
+        throw new TypeError("模块 icons 必须是对象");
+    }
+    const entries = Object.entries(source);
+    if (!entries.length || entries.length > 64) {
+        throw new TypeError("模块 icons 必须包含 1 到 64 项");
+    }
+    const icons = {};
+    entries.forEach(([name, asset]) => {
+        if (!MODULE_ICON_ID.test(name) || !MODULE_ICON_ASSET.test(text(asset))) {
+            throw new TypeError(`模块图标签名非法：${name}`);
+        }
+        icons[name] = text(asset);
+    });
+    return Object.freeze(icons);
 }
 
 /**
@@ -394,6 +429,7 @@ export function normalizeModuleUi(moduleId, input) {
                 label: text(item.label, "示例"),
                 text: text(item.text)
             }))),
+        icons: normalizeModuleIcons(source.icons),
         settings: normalizeModuleSettingSchema(source.settings),
         script: assetName(source.script, "js"),
         style: assetName(source.style, "css")

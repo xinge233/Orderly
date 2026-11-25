@@ -273,6 +273,10 @@ test("API client addresses module UI and generic queries", async () => {
         api.moduleAssetUrl("module demo", "module.js"),
         "/api/modules/module%20demo/ui/module.js"
     );
+    assert.equal(
+        api.moduleAssetUrl("module_fs", "icons/materials.svg"),
+        "/api/modules/module_fs/ui/icons/materials.svg"
+    );
 });
 
 test("API client addresses module data and control actions", async () => {

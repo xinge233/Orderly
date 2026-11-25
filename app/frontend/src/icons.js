@@ -48,6 +48,7 @@ export const AI_ICON_OPTIONS = Object.freeze([
 
 const AI_ICONS = new Set(AI_ICON_OPTIONS.map((item) => item.value));
 const THEME_AI_ICON_URL = /^\/api\/themes\/[a-z][a-z0-9-]{0,63}\/assets\/assets\/ai\/icons\/(?:spark|route|shield|modules)\.png$/;
+const MODULE_ICON_URL = /^(?:https?:\/\/[^/]+)?\/api\/modules\/[a-z][a-z0-9_-]{0,63}\/ui\/icons\/[a-z0-9][a-z0-9._-]{0,63}\.(?:svg|png)$/;
 
 /**
  * 将 AI 图标限制为前端内置选项；非法值统一回退星芒。
@@ -93,6 +94,68 @@ export function paintAiIcon(element, name, { url = "", size = 18 } = {}) {
     element.dataset.iconSource = "fallback";
     element.style.removeProperty("--ai-icon-image");
     element.innerHTML = icon("info", iconSize);
+}
+
+/**
+ * 解析模块图标是使用模块 JAR 资源还是框架内置图标。
+ *
+ * <p>只接受宿主生成的 `/api/modules/{id}/ui/icons/...` URL；资源缺失、路径非法或
+ * URL 构造失败时回退到同名内置图标，最终再由 {@link icon} 的未知图标兜底处理。</p>
+ *
+ * @param {unknown} name 清单中的图标 ID
+ * @param {Readonly<Record<string, string>>} [icons] 模块本地图标映射
+ * @param {(asset: string) => string} [assetUrl] 受控模块资源 URL 构造函数
+ * @returns {{kind: "asset", name: string, url: string} | {kind: "builtin", name: string}}
+ */
+export function resolveModuleIcon(name, icons = {}, assetUrl = null) {
+    const iconName = typeof name === "string" && name.trim() ? name.trim() : "modules";
+    const asset = icons && typeof icons === "object" ? icons[iconName] : "";
+    if (typeof asset === "string" && typeof assetUrl === "function") {
+        try {
+            const url = assetUrl(asset);
+            if (typeof url === "string" && MODULE_ICON_URL.test(url)) {
+                return Object.freeze({ kind: "asset", name: iconName, url });
+            }
+        } catch {
+            // 资源 URL 构造失败不应阻断导航或总览渲染。
+        }
+    }
+    return Object.freeze({ kind: "builtin", name: iconName });
+}
+
+/**
+ * 绘制模块图标，优先使用模块 JAR 中的单色 SVG/PNG mask。
+ *
+ * @param {HTMLElement} element 图标容器
+ * @param {unknown} name 清单中的图标 ID
+ * @param {{icons?: Readonly<Record<string, string>>, assetUrl?: ((asset: string) => string) | null, size?: unknown}} options 模块图标映射、资源 URL 构造与尺寸
+ * @returns {void}
+ */
+export function paintModuleIcon(
+    element,
+    name,
+    { icons = {}, assetUrl = null, size = 18 } = {}
+) {
+    if (!element) {
+        return;
+    }
+    const iconSize = Number.isFinite(Number(size))
+        ? Math.max(8, Math.min(64, Math.round(Number(size))))
+        : 18;
+    const source = resolveModuleIcon(name, icons, assetUrl);
+    element.dataset.moduleIcon = source.name;
+    element.style.setProperty("--module-icon-size", `${iconSize}px`);
+    element.classList?.remove("module-icon--asset");
+    element.style.removeProperty("--module-icon-image");
+    if (source.kind === "asset") {
+        element.dataset.iconSource = "module";
+        element.classList?.add("module-icon--asset");
+        element.style.setProperty("--module-icon-image", `url("${source.url}")`);
+        element.replaceChildren();
+        return;
+    }
+    element.dataset.iconSource = "framework";
+    element.innerHTML = icon(source.name, iconSize);
 }
 
 /**

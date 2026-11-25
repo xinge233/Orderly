@@ -90,7 +90,7 @@ docs/                       产品与协作文档
 - 本模块的工具契约、只读查询、本地计划规则和 UI 清单元数据
 - 执行器、逆操作与失败恢复
 - 模块自有数据与迁移声明
-- `orderly-ui/` 内的模块自有界面脚本、样式与可选动效
+- `orderly-ui/` 内的模块自有界面脚本、样式、可选动效和清单登记的单色图标
 - 删除模块时清理自身全部能力
 
 ### 模块禁止
@@ -106,7 +106,7 @@ docs/                       产品与协作文档
 - 宿主启动时按文件名稳定排序扫描该目录，用 `URLClassLoader` 加载外部 JAR；其父加载器共享 kernel SPI。宿主从 `orderly-modules/*.json` 读取契约，并用 `ServiceLoader.load(OrderlyModule.class, loader)` 绑定执行器。
 - 启动时必须恰好存在一个声明 `system.role=MODULE_CONTROL`、`system.protected=true` 与 `MODULE_GOVERNANCE` 能力的 `module_system_control`。`SYSTEM_SERVICE` 可以登记宿主内置系统服务，但不得声明治理能力；所有系统模块必须使用保留前缀并命中宿主内置准入清单。控制角色缺失或重复、能力不匹配、契约与执行器集合不一致、重复模块或重复动作必须阻止启动；零业务模块仍合法。
 - 业务模块与系统模块分开暴露：`GET /api/modules` 只返回业务模块并附带运行态 `enabled`，`GET /api/system-modules` 返回系统模块且恒为启用。系统模块不能通过业务启停、排序或设置接口修改；`module_system_control` 仅可暴露白名单治理查询和动作，实际执行仍由宿主专用治理服务担保。
-- 模块查询使用 `GET /api/modules/{moduleId}/query/{queryId}`；模块 UI 只从 JAR 的 `orderly-ui/` 白名单资源读取并提供给 `GET /api/modules/{moduleId}/ui/{asset}`。框架不得为具体模块增加查询、端点或视图分支。
+- 模块查询使用 `GET /api/modules/{moduleId}/query/{queryId}`；模块 UI 只从 JAR 的 `orderly-ui/` 白名单资源读取并提供给 `GET /api/modules/{moduleId}/ui/{asset}`。固定资源为 `module.json` 和清单声明的脚本、样式；模块专属图标必须由同一清单的 `icons` 登记，且只允许 `icons/*.svg|png`。框架不得为具体模块增加查询、端点或视图分支。
 - 后台渐进启动默认同时运行 2 个模块 Maven worker，可在系统设置中调整为 1-4。worker 使用隔离可写 Maven 仓库并只产出候选 JAR；状态文件写入、JAR 校验、运行时原子发布和宿主刷新必须由单一父进程串行完成。降低并发不终止已运行 worker，提高并发仅影响后续调度。首轮构建结束后由 `scripts/watch-module-downloads.ps1` 继续监督新下载模块；监督器空闲时不持有仓库构建锁，发现新源码后才调用 `build.ps1 -ModulesOnly` 并请求宿主刷新。
 - 运行中可通过固定 GitHub 分发目录安装新的业务模块源码。宿主只接受 `module_*` 且拒绝全部 `module_system_*`，先校验 HTTPS 来源、目录结构、包大小、SHA-256、ZIP 路径、必需文件和普通模块契约，再原子写入 `Module/`。后台监督器完成本地 Maven 构建后，通过 `POST /api/system/modules/refresh` 显式追加新模块；新增模块默认启用并写入治理状态。
 - 已加载模块的源码或 JAR 更新、源码删除或 JAR 删除只返回 `RESTART_REQUIRED`，不得替换、更新、热卸载或删除当前运行快照。业务模块删除请求先把源码移入 `.orderly-data/trash/modules`，停用模块并写入 `.orderly-data/module-removals.json`；宿主启动扫描在加载 JAR 前排除待移除模块，重启后再把 JAR 移入同一模块回收站。重启前允许撤销并恢复源码与启用状态，禁止物理删除。刷新单个新增模块失败必须保留旧快照，不允许用新 JAR 替换已有模块。
