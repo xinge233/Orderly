@@ -263,7 +263,8 @@ test("sidebar labels stay single-line and internal count badges are never render
     assert.doesNotMatch(appCss, /\.nav-copy small\b/);
     assert.doesNotMatch(renderNavigation, /nav-count|element\("small"/);
     assert.match(renderNavigation, /copy\.append\(element\("strong", "", item\.label\)\);/);
-    assert.match(renderNavigation, /item\.moduleId \? navigationCount\(item\.moduleId\) : null/);
+    assert.match(renderNavigation, /syncAiModuleActivity\(button, item\.moduleId\)/);
+    assert.doesNotMatch(renderNavigation, /navigationCount|countLabel/);
 });
 
 test("mobile navigation layers scrim above the AI dock and sidebar above both", async () => {

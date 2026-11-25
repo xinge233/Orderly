@@ -30,6 +30,22 @@
         }
     }
 
+    html[data-theme="moss"] .nav-ai-progress,
+    html[data-theme="moss"] .nav-ai-result {
+        transition:
+            right var(--duration-sidebar) var(--ease-out),
+            left var(--duration-sidebar) var(--ease-out),
+            opacity var(--duration-fast) var(--ease-out);
+    }
+
+    html[data-theme="moss"] .nav-ai-progress::after {
+        animation: orderly-nav-ai-progress var(--duration-ai-activity) linear infinite;
+    }
+
+    html[data-theme="moss"] .nav-ai-result[data-phase]:not(.is-leaving) {
+        animation: orderly-nav-ai-result-in var(--duration-slow) var(--ease-spring) backwards;
+    }
+
     html[data-theme="moss"] [data-motion-scope="module-card"] {
         transition:
             transform var(--duration-fast) var(--ease-out),
@@ -93,6 +109,32 @@
     @keyframes orderly-ai-status {
         to {
             opacity: 0.45;
+        }
+    }
+
+    @keyframes orderly-nav-ai-progress {
+        from {
+            transform: translateX(-120%);
+        }
+        to {
+            transform: translateX(238%);
+        }
+    }
+
+    @keyframes orderly-nav-ai-result-in {
+        0% {
+            opacity: 0;
+            transform: translateY(-50%) scale(0.68) rotate(-7deg);
+        }
+        55% {
+            opacity: 1;
+            transform: translateY(-50%) scale(1.08) rotate(3deg);
+        }
+        76% {
+            transform: translateY(-50%) scale(0.96) rotate(-1.5deg);
+        }
+        100% {
+            transform: translateY(-50%) scale(1);
         }
     }
 }

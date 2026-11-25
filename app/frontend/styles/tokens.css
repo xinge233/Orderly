@@ -78,6 +78,7 @@
         --duration-slow: 520ms;
         --duration-sidebar: 200ms;
         --duration-ai-call: 280ms;
+        --duration-ai-activity: 900ms;
         --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
         --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
     }
@@ -89,6 +90,7 @@
         --duration-slow: 150ms;
         --duration-sidebar: 110ms;
         --duration-ai-call: 180ms;
+        --duration-ai-activity: 520ms;
     }
 
     html[data-motion="none"] {
@@ -97,6 +99,7 @@
         --duration-slow: 0ms;
         --duration-sidebar: 0ms;
         --duration-ai-call: 0ms;
+        --duration-ai-activity: 0ms;
     }
 
     /* 窄屏只收紧移动工具栏，不改变桌面侧栏轨道和应用网格的桌面几何。 */

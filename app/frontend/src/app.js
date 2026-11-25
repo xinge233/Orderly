@@ -83,6 +83,10 @@ const DESKTOP_SIDEBAR_QUERY = "(min-width: 821px)";
 const SIDEBAR_POINTER_QUERY = "(min-width: 821px) and (hover: hover) and (pointer: fine)";
 const SIDEBAR_EXPAND_DELAY_MS = 40;
 const SIDEBAR_COLLAPSE_DELAY_MS = 120;
+const AI_MODULE_RESULT_HOLD_MS = 2800;
+const AI_MODULE_RESULT_EXIT_MS = 180;
+const AI_ANONYMOUS_STEP = Symbol("ai-anonymous-step");
+const aiModuleActivities = new Map();
 let settingHelpSequence = 0;
 
 const NAV_SECTIONS = Object.freeze([
@@ -235,11 +239,6 @@ let navigationDrag = null;
 let navigationHoldTimer = null;
 let suppressNavigationClickUntil = 0;
 let sidebarOrderRequestGeneration = 0;
-let sidebarCountFrame = null;
-let sidebarCountTrackingFrame = null;
-let sidebarCountTrackingHandler = null;
-let sidebarCountRefreshTimer = null;
-let sidebarCountTransitionHandler = null;
 let moduleBuildPollTimer = null;
 let moduleBuildReloadInFlight = false;
 let aiDialog = null;
@@ -418,6 +417,7 @@ async function bootstrap() {
         onAiPanelWidthChange: (aiPanelWidth) => {
             settingsStore.update({ aiPanelWidth });
         },
+        onModuleActivity: applyAiModuleActivity,
         onAiSettingsChanged: (settings) => {
             state.aiSettings = normalizeAiSettings(settings);
             state.aiSettingsError = "";
@@ -1326,11 +1326,6 @@ function bindGlobalControls() {
 
     bindDesktopSidebarControls();
     bindSidebarViewport();
-    document.querySelector(".sidebar-scroll")?.addEventListener(
-        "scroll",
-        queueSidebarCountRender,
-        { passive: true }
-    );
 
     document.addEventListener("pointermove", moveNavigationDrag, { passive: false });
     document.addEventListener("pointerup", finishNavigationDrag);
@@ -1434,7 +1429,6 @@ function bindSidebarViewport() {
     mobileViewport.addEventListener("change", (event) => {
         const sidebar = document.querySelector("#sidebar");
         if (event.matches) {
-            clearSidebarCountLayer();
             deactivateDesktopSidebar();
             if (sidebar?.contains(document.activeElement)) {
                 document.querySelector("#mobile-menu")?.focus({ preventScroll: true });
@@ -1445,10 +1439,8 @@ function bindSidebarViewport() {
         closeMobileNav({ restoreFocus: false });
         activateDesktopSidebar();
     });
-    window.addEventListener("resize", queueSidebarCountRender, { passive: true });
 
     if (mobileViewport.matches) {
-        clearSidebarCountLayer();
         deactivateDesktopSidebar();
         syncMobileSidebarAvailability();
     } else {
@@ -1466,17 +1458,12 @@ function activateDesktopSidebar() {
     setDesktopSidebarExpansion(false);
     sidebar.inert = false;
     sidebar.removeAttribute("aria-hidden");
-    queueSidebarCountRender();
 }
 
-// 切换到移动抽屉时必须同时清掉桌面侧栏的延迟、动画帧、transitionend 回调和计数层，
-// 否则窄屏会出现旧定时器继续写桌面几何状态的问题。
+// 切换到移动抽屉时必须清掉桌面侧栏的延迟和注意状态，避免旧定时器继续写桌面几何状态。
 function deactivateDesktopSidebar() {
     clearDesktopSidebarTimer();
     clearSidebarAttention();
-    cancelSidebarCountTracking();
-    cancelSidebarCountRefresh();
-    clearSidebarCountLayer();
     desktopSidebar.active = false;
     desktopSidebar.pointerInside = false;
     desktopSidebar.expanded = false;
@@ -1488,31 +1475,14 @@ function deactivateDesktopSidebar() {
     }
 }
 
-// 展开与收起共用同一个状态入口；动效关闭时立即完成计数重绘，有动效时由帧循环和
-// transitionend 双保险收尾，避免只依赖主题是否声明 transition 而导致状态悬挂。
+// 展开与收起共用同一个状态入口；模块调用状态位于导航行内部，会随侧栏裁切自然移动。
 function setDesktopSidebarExpansion(expanded) {
     const sidebar = document.querySelector("#sidebar");
     if (!sidebar || !desktopSidebar.active) {
         return;
     }
-    const wasExpanded = desktopSidebar.expanded;
-    const changed = wasExpanded !== expanded;
-    const duration = sidebarTransitionDurationMs();
     desktopSidebar.expanded = expanded;
     sidebar.classList.toggle("is-expanded", expanded);
-    if (changed) {
-        if (duration <= 0) {
-            cancelSidebarCountTracking();
-            cancelSidebarCountRefresh();
-            renderSidebarCountLayer();
-        } else if (expanded) {
-            beginSidebarCountTracking();
-        } else {
-            scheduleSidebarCountRefreshAfterCollapse();
-        }
-    } else if (expanded) {
-        queueSidebarCountRender();
-    }
     if (desktopSidebar.attentionTimer == null) {
         sidebar.dataset.motionState = expanded ? "expanded" : "collapsed";
     }
@@ -1599,315 +1569,6 @@ function clearSidebarAttention() {
     }
     window.clearTimeout(desktopSidebar.attentionTimer);
     desktopSidebar.attentionTimer = null;
-}
-
-function queueSidebarCountRender() {
-    if (sidebarCountFrame != null) {
-        return;
-    }
-    sidebarCountFrame = requestSidebarFrame(() => {
-        sidebarCountFrame = null;
-        renderSidebarCountLayer();
-    });
-}
-
-function requestSidebarFrame(callback) {
-    return window.requestAnimationFrame
-        ? window.requestAnimationFrame(callback)
-        : window.setTimeout(callback, 0);
-}
-
-function cancelSidebarFrame(frame) {
-    if (window.requestAnimationFrame) {
-        window.cancelAnimationFrame(frame);
-    } else {
-        window.clearTimeout(frame);
-    }
-}
-
-function navigationTextRect(button) {
-    const text = button.querySelector(".nav-copy strong");
-    if (!text) {
-        return null;
-    }
-    const range = document.createRange();
-    range.selectNodeContents(text);
-    const rect = range.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0 ? rect : null;
-}
-
-function clipInsetValues(clipPath) {
-    const match = /^inset\((.*)\)$/.exec(String(clipPath ?? "").trim());
-    if (!match) {
-        return [];
-    }
-    const values = [];
-    let current = "";
-    let depth = 0;
-    for (const character of match[1]) {
-        if (character === "(") {
-            depth += 1;
-        } else if (character === ")") {
-            depth = Math.max(0, depth - 1);
-        }
-        if (/\s/.test(character) && depth === 0) {
-            if (current) {
-                values.push(current);
-                current = "";
-            }
-        } else {
-            current += character;
-        }
-    }
-    if (current) {
-        values.push(current);
-    }
-    const roundIndex = values.indexOf("round");
-    return roundIndex === -1 ? values : values.slice(0, roundIndex);
-}
-
-function clipInsetLength(value, basis) {
-    if (value === "0") {
-        return 0;
-    }
-    const simple = /^(-?\d+(?:\.\d+)?)(px|%)$/.exec(value ?? "");
-    if (simple) {
-        const amount = Number(simple[1]);
-        return simple[2] === "%" ? basis * amount / 100 : amount;
-    }
-    const calc = /^calc\(\s*(\d+(?:\.\d+)?)%\s*-\s*(\d+(?:\.\d+)?)px\s*\)$/
-        .exec(value ?? "");
-    if (calc) {
-        return basis * Number(calc[1]) / 100 - Number(calc[2]);
-    }
-    return null;
-}
-
-function sidebarVisibleWidth(sidebarWidth, clipPath) {
-    const values = clipInsetValues(clipPath);
-    if (!values.length) {
-        return sidebarWidth;
-    }
-    const rightValue = values.length >= 2 ? values[1] : values[0];
-    const leftValue = values.length >= 4
-        ? values[3]
-        : values.length >= 2 ? values[1] : values[0];
-    const left = clipInsetLength(leftValue, sidebarWidth) ?? 0;
-    const right = clipInsetLength(rightValue, sidebarWidth) ?? 0;
-    return Math.max(0, Math.min(sidebarWidth, sidebarWidth - left - right));
-}
-
-function isSidebarClipTransition(event, sidebar) {
-    return event.target === sidebar && event.propertyName === "clip-path";
-}
-
-function renderSidebarCountLayer() {
-    const layer = document.querySelector("#sidebar-count-layer");
-    if (!layer) {
-        return;
-    }
-    if (!desktopSidebar.active
-        || window.matchMedia(MOBILE_NAV_QUERY).matches) {
-        layer.replaceChildren();
-        return;
-    }
-
-    const sidebar = document.querySelector("#sidebar");
-    if (!sidebar) {
-        layer.replaceChildren();
-        return;
-    }
-    const existing = new Map(
-        [...layer.querySelectorAll(".sidebar-count-bubble[data-module-id]")]
-            .map((bubble) => [bubble.dataset.moduleId, bubble])
-    );
-    const entries = [];
-    document.querySelectorAll(".nav-item--module[data-module-id]").forEach((button) => {
-        const moduleId = button.dataset.moduleId;
-        const count = navigationCount(moduleId);
-        if (count == null) {
-            return;
-        }
-        const bubble = existing.get(moduleId)
-            ?? element("span", "sidebar-count-bubble", String(count));
-        if (!existing.delete(moduleId)) {
-            layer.append(bubble);
-        }
-        if (bubble.textContent !== String(count)) {
-            bubble.textContent = String(count);
-        }
-        bubble.dataset.moduleId = moduleId;
-        entries.push({ bubble, button });
-    });
-    existing.forEach((bubble) => bubble.remove());
-
-    const sidebarRect = sidebar.getBoundingClientRect();
-    const clipPath = window.getComputedStyle(sidebar).clipPath;
-    const visibleWidth = sidebarVisibleWidth(sidebarRect.width, clipPath);
-    const railWidth = sidebarRailWidth();
-    const railRight = sidebarRect.left + railWidth;
-    const expansionProgress = Math.max(
-        0,
-        Math.min(
-            1,
-            (visibleWidth - railWidth) / Math.max(1, sidebarRect.width - railWidth)
-        )
-    );
-    const measurements = entries.map(({ bubble, button }) => {
-        const rect = button.getBoundingClientRect();
-        const textRect = navigationTextRect(button);
-        const handleRect = button.querySelector(".nav-drag-handle")
-            ?.getBoundingClientRect();
-        return {
-            bubble,
-            bubbleWidth: bubble.getBoundingClientRect().width,
-            handleRect,
-            rect,
-            textRect
-        };
-    });
-
-    measurements.forEach(({ bubble, bubbleWidth, handleRect, rect, textRect }) => {
-        if (rect.width <= 0 || rect.height <= 0) {
-            bubble.remove();
-            return;
-        }
-        const collapsedLeft = railRight + 4;
-        const expandedLeft = textRect ? textRect.right + 7 : collapsedLeft;
-        let left = collapsedLeft
-            + (expandedLeft - collapsedLeft) * expansionProgress;
-        if (handleRect?.width > 0
-            && left - 6 < handleRect.right
-            && left + bubbleWidth > handleRect.left) {
-            left = handleRect.right + 7;
-        }
-        left = Math.max(railRight + 4, left);
-        const currentVisibleRight = sidebarRect.left + visibleWidth;
-        if (sidebarCountTrackingFrame != null
-            && visibleWidth > railWidth
-            && left + bubbleWidth > currentVisibleRight) {
-            left = currentVisibleRight - bubbleWidth;
-        }
-        bubble.style.left = `${Math.round(left)}px`;
-        bubble.style.top = `${Math.round(rect.top + (rect.height / 2))}px`;
-    });
-}
-
-function clearSidebarCountLayer() {
-    document.querySelector("#sidebar-count-layer")?.replaceChildren();
-}
-
-function sidebarRailWidth() {
-    const raw = window.getComputedStyle(document.documentElement)
-        .getPropertyValue("--sidebar-width")
-        .trim();
-    const width = Number.parseFloat(raw);
-    return Number.isFinite(width) && width > 0 ? width : 72;
-}
-
-function sidebarTransitionDurationMs() {
-    const raw = window.getComputedStyle(document.documentElement)
-        .getPropertyValue("--duration-sidebar")
-        .trim();
-    const value = Number.parseFloat(raw);
-    if (!Number.isFinite(value)) {
-        return SIDEBAR_COLLAPSE_DELAY_MS;
-    }
-    return raw.endsWith("ms") ? value : value * 1000;
-}
-
-// 收起动画期间数字气泡必须跟随裁切边界移动；帧循环负责视觉平滑，transitionend
-// 与超时负责终止，防止主题未触发过渡事件或页面后台丢帧后留下永久循环。
-function scheduleSidebarCountRefreshAfterCollapse() {
-    cancelSidebarCountTracking();
-    cancelSidebarCountRefresh();
-    const sidebar = document.querySelector("#sidebar");
-    const handler = (event) => {
-        if (!isSidebarClipTransition(event, sidebar)) {
-            return;
-        }
-        finishSidebarCountTracking();
-    };
-    sidebarCountTransitionHandler = handler;
-    sidebar?.addEventListener("transitionend", handler);
-    startSidebarCountFrameLoop();
-    sidebarCountRefreshTimer = window.setTimeout(
-        finishSidebarCountTracking,
-        sidebarTransitionDurationMs() + 32
-    );
-    renderSidebarCountLayer();
-}
-
-// 展开动画从第一帧开始跟踪真实 clip-path 宽度，而不是预先假设动画时长。
-function beginSidebarCountTracking() {
-    cancelSidebarCountTracking();
-    cancelSidebarCountRefresh();
-    const sidebar = document.querySelector("#sidebar");
-    if (!desktopSidebar.active || !sidebar) {
-        return;
-    }
-
-    const finish = (event) => {
-        if (event && !isSidebarClipTransition(event, sidebar)) {
-            return;
-        }
-        finishSidebarCountTracking();
-    };
-    sidebarCountTrackingHandler = finish;
-    sidebar.addEventListener("transitionend", finish);
-    startSidebarCountFrameLoop();
-    sidebarCountRefreshTimer = window.setTimeout(
-        finishSidebarCountTracking,
-        sidebarTransitionDurationMs() + 32
-    );
-    renderSidebarCountLayer();
-}
-
-function startSidebarCountFrameLoop() {
-    const track = () => {
-        if (!desktopSidebar.active
-            || window.matchMedia(MOBILE_NAV_QUERY).matches) {
-            sidebarCountTrackingFrame = null;
-            return;
-        }
-        renderSidebarCountLayer();
-        sidebarCountTrackingFrame = requestSidebarFrame(track);
-    };
-    sidebarCountTrackingFrame = requestSidebarFrame(track);
-}
-
-function finishSidebarCountTracking() {
-    cancelSidebarCountTracking();
-    cancelSidebarCountRefresh();
-    renderSidebarCountLayer();
-}
-
-function cancelSidebarCountTracking() {
-    if (sidebarCountTrackingFrame != null) {
-        cancelSidebarFrame(sidebarCountTrackingFrame);
-        sidebarCountTrackingFrame = null;
-    }
-    if (sidebarCountTrackingHandler) {
-        document.querySelector("#sidebar")?.removeEventListener(
-            "transitionend",
-            sidebarCountTrackingHandler
-        );
-        sidebarCountTrackingHandler = null;
-    }
-}
-
-function cancelSidebarCountRefresh() {
-    if (sidebarCountRefreshTimer != null) {
-        window.clearTimeout(sidebarCountRefreshTimer);
-        sidebarCountRefreshTimer = null;
-    }
-    if (sidebarCountTransitionHandler) {
-        document.querySelector("#sidebar")?.removeEventListener(
-            "transitionend",
-            sidebarCountTransitionHandler
-        );
-        sidebarCountTransitionHandler = null;
-    }
 }
 
 /**
@@ -2203,11 +1864,9 @@ function renderNavigation(query = "") {
             );
             button.type = "button";
             button.dataset.view = item.id;
-            const count = item.moduleId ? navigationCount(item.moduleId) : null;
-            const countLabel = count == null ? "" : `，数量 ${count}`;
             button.setAttribute(
                 "aria-label",
-                `${item.label}，${item.caption}${countLabel}`
+                `${item.label}，${item.caption}`
             );
             if (state.activeView === item.id) {
                 button.setAttribute("aria-current", "page");
@@ -2247,6 +1906,9 @@ function renderNavigation(query = "") {
                 ));
             }
             button.append(copy);
+            if (item.moduleId) {
+                syncAiModuleActivity(button, item.moduleId);
+            }
             button.addEventListener("click", (event) => {
                 if (performance.now() < suppressNavigationClickUntil) {
                     event.preventDefault();
@@ -2283,7 +1945,6 @@ function renderNavigation(query = "") {
     if (!container.childElementCount) {
         container.append(element("p", "empty-state", "没有匹配的功能"));
     }
-    queueSidebarCountRender();
 }
 
 function beginNavigationDrag(event, button, moduleId) {
@@ -2512,24 +2173,151 @@ function moduleForView(view) {
         isModuleVisible(module) && moduleNavigationItem(module).id === view) ?? null;
 }
 
+function clearAiModuleActivityTimers(activity) {
+    if (activity?.resultTimer != null) {
+        window.clearTimeout(activity.resultTimer);
+        activity.resultTimer = null;
+    }
+    if (activity?.exitTimer != null) {
+        window.clearTimeout(activity.exitTimer);
+        activity.exitTimer = null;
+    }
+}
+
 /**
- * 获取动态模块导航计数。只有有限正整数才生成外置数字气泡。
+ * 将 AI 模块调用事件投影为导航行内的短时状态。
  *
- * @param {string} moduleId 业务或系统模块 id
- * @returns {number | null} 可显示数量
+ * <p>运行中状态会保留到同一模块的该步骤结束；成功或失败结果停留约三秒后移除。
+ * 同一模块并行调用时，只有全部运行中的步骤结束后才显示最终结果。</p>
+ *
+ * @param {{phase?: string, moduleId?: string, stepId?: string, status?: string}} input 调用状态
+ * @returns {void}
  */
-function navigationCount(moduleId) {
+function applyAiModuleActivity(input) {
+    const phase = String(input?.phase ?? "").trim().toLowerCase();
+    if (phase === "reset") {
+        aiModuleActivities.forEach(clearAiModuleActivityTimers);
+        aiModuleActivities.clear();
+        document.querySelectorAll(".nav-item--module[data-module-id]")
+            .forEach((button) => syncAiModuleActivity(button, button.dataset.moduleId));
+        return;
+    }
+
+    const moduleId = String(input?.moduleId ?? "").trim();
+    if (!moduleId || !["running", "success", "failure"].includes(phase)) {
+        return;
+    }
+    const activity = aiModuleActivities.get(moduleId) ?? {
+        phase: "",
+        running: new Set(),
+        resultTimer: null,
+        exitTimer: null
+    };
+    if (phase === "running") {
+        clearAiModuleActivityTimers(activity);
+        activity.running.add(
+            String(input?.stepId ?? "").trim() || AI_ANONYMOUS_STEP
+        );
+        activity.phase = "running";
+        aiModuleActivities.set(moduleId, activity);
+        refreshAiModuleActivity(moduleId);
+        return;
+    }
+
+    const stepId = String(input?.stepId ?? "").trim();
+    if (stepId) {
+        if (!activity.running.delete(stepId)) {
+            activity.running.delete(AI_ANONYMOUS_STEP);
+        }
+    } else {
+        activity.running.clear();
+    }
+    if (activity.running.size > 0) {
+        activity.phase = "running";
+        aiModuleActivities.set(moduleId, activity);
+        refreshAiModuleActivity(moduleId);
+        return;
+    }
+
+    clearAiModuleActivityTimers(activity);
+    activity.phase = phase;
+    activity.status = String(input?.status ?? "").trim().toUpperCase();
+    aiModuleActivities.set(moduleId, activity);
+    refreshAiModuleActivity(moduleId);
+    activity.resultTimer = window.setTimeout(() => {
+        activity.resultTimer = null;
+        activity.phase = "leaving";
+        refreshAiModuleActivity(moduleId);
+        activity.exitTimer = window.setTimeout(() => {
+            activity.exitTimer = null;
+            aiModuleActivities.delete(moduleId);
+            refreshAiModuleActivity(moduleId);
+        }, AI_MODULE_RESULT_EXIT_MS);
+    }, AI_MODULE_RESULT_HOLD_MS);
+}
+
+function refreshAiModuleActivity(moduleId) {
     const id = String(moduleId ?? "").trim();
     if (!id) {
-        return null;
+        return;
     }
-    const raw = state.moduleCounts[id];
-    const numeric = typeof raw === "number"
-        ? raw
-        : typeof raw === "string" && /^\d+$/.test(raw.trim())
-            ? Number(raw.trim())
-            : Number.NaN;
-    return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+    document.querySelectorAll(".nav-item--module[data-module-id]")
+        .forEach((button) => {
+            if (button.dataset.moduleId !== id) {
+                return;
+            }
+            syncAiModuleActivity(button, id);
+        });
+}
+
+/**
+ * 在模块导航行内同步 AI 调用进度或结果标记。
+ *
+ * <p>节点始终属于对应按钮，因此侧栏展开或收起时由行内布局自然跟随，不需要额外覆盖层。</p>
+ *
+ * @param {HTMLElement} button 模块导航按钮
+ * @param {string} moduleId 模块 id
+ * @returns {void}
+ */
+function syncAiModuleActivity(button, moduleId) {
+    if (!button || !moduleId) {
+        return;
+    }
+    button.querySelector(".nav-ai-progress")?.remove();
+    button.querySelector(".nav-ai-result")?.remove();
+    const activity = aiModuleActivities.get(moduleId);
+    if (!activity) {
+        button.removeAttribute("data-ai-activity");
+        return;
+    }
+    button.dataset.aiActivity = activity.phase;
+    const moduleLabel = button.querySelector(".nav-copy strong")?.textContent?.trim() || "模块";
+    if (activity.phase === "running") {
+        const progress = element("span", "nav-ai-progress");
+        progress.setAttribute("role", "progressbar");
+        progress.setAttribute("aria-label", `AI 正在调用${moduleLabel}`);
+        button.append(progress);
+        return;
+    }
+    if (!["success", "failure", "leaving"].includes(activity.phase)) {
+        return;
+    }
+    const successful = activity.phase === "success"
+        || (activity.phase === "leaving" && activity.status !== "FAILED");
+    const result = element("span", "nav-ai-result");
+    const iconNode = element("span", "nav-ai-result__icon");
+    const label = successful
+        ? `AI 调用${moduleLabel}成功`
+        : `AI 调用${moduleLabel}失败`;
+    iconNode.innerHTML = icon(successful ? "check-plain" : "close", 12);
+    result.append(iconNode, element("span", "sr-only", label));
+    result.setAttribute("role", "status");
+    result.setAttribute("aria-live", "polite");
+    result.dataset.phase = successful ? "success" : "failure";
+    if (activity.phase === "leaving") {
+        result.classList.add("is-leaving");
+    }
+    button.append(result);
 }
 
 /**
@@ -4145,7 +3933,6 @@ function openMobileNav() {
     if (!window.matchMedia(MOBILE_NAV_QUERY).matches) {
         return;
     }
-    clearSidebarCountLayer();
     const sidebar = document.querySelector(".sidebar");
     const menu = document.querySelector("#mobile-menu");
     sidebar?.classList.add("is-open");
@@ -4188,7 +3975,6 @@ function closeMobileNav({ restoreFocus = true } = {}) {
     }
     syncMobileSidebarAvailability();
     reconcileDesktopSidebar();
-    queueSidebarCountRender();
 }
 
 /**

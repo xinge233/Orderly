@@ -50,6 +50,19 @@ const AI_PANEL_MOBILE_QUERY = "(max-width: 620px)";
 const AI_POSITION_STORAGE_KEY = "orderly.ai.dock.position.v1";
 const AI_VIEWPORT_MARGIN_PX = 12;
 const AI_INVOCATION_TYPES = new Set(["STEP", "QUERY"]);
+const AI_INVOCATION_PHASES = Object.freeze({
+    STEP: Object.freeze({
+        RUNNING: "running",
+        COMPLETED: "success",
+        FAILED: "failure"
+    }),
+    QUERY: Object.freeze({
+        RUNNING: "running",
+        OK: "success",
+        TRUNCATED: "success",
+        FAILED: "failure"
+    })
+});
 const AI_INVOCATION_ORIGINS = new Set([
     EVENT_ORIGIN.AI_DIRECT,
     EVENT_ORIGIN.AI_QUERY,
@@ -67,19 +80,20 @@ function normalizeSettings(value) {
 }
 
 /**
- * 从当前 AI 回合的宿主事件中解析需要提示的模块。
+ * 从当前 AI 回合的宿主事件中解析模块调用的短时状态。
  *
- * 历史 SSE 重放、终态事件和非 AI 来源都不会通过校验；时间戳缺失时也保守忽略，
- * 避免把重连快照误当成正在进行的新调用。
+ * 历史 SSE 重放和非 AI 来源都不会通过校验；时间戳缺失时也保守忽略，避免把重连
+ * 快照误当成正在进行的新调用。
  *
  * @param {object} event 已归一化事件
  * @param {number} startedAt 当前 AI 回合开始时间
- * @returns {string} 模块 id；不应提示时为空字符串
+ * @returns {{moduleId: string, phase: string, status: string, stepId: string} | null}
+ *     模块调用状态；不应提示时为 null
  */
-export function invocationEventModuleId(event, startedAt = 0) {
+export function invocationEventActivity(event, startedAt = 0) {
     const started = Number(startedAt);
     if (!Number.isFinite(started) || started <= 0) {
-        return "";
+        return null;
     }
     const type = String(event?.type ?? "").trim().toUpperCase();
     const status = String(event?.status ?? "").trim().toUpperCase();
@@ -87,14 +101,34 @@ export function invocationEventModuleId(event, startedAt = 0) {
     const moduleId = String(event?.moduleId ?? "").trim();
     const timeValue = Number(event?.timeValue);
     if (!AI_INVOCATION_TYPES.has(type)
-        || status !== "RUNNING"
         || !AI_INVOCATION_ORIGINS.has(origin)
         || !moduleId
         || !Number.isFinite(timeValue)
         || timeValue < started) {
-        return "";
+        return null;
     }
-    return moduleId;
+    const phase = AI_INVOCATION_PHASES[type]?.[status] ?? "";
+    if (!phase) {
+        return null;
+    }
+    return Object.freeze({
+        moduleId,
+        phase,
+        status,
+        stepId: String(event?.stepId ?? "").trim()
+    });
+}
+
+/**
+ * 保留只返回进行中模块的兼容入口，供调用轨迹和高亮动画使用。
+ *
+ * @param {object} event 已归一化事件
+ * @param {number} startedAt 当前 AI 回合开始时间
+ * @returns {string} 模块 id；非进行中事件返回空字符串
+ */
+export function invocationEventModuleId(event, startedAt = 0) {
+    const activity = invocationEventActivity(event, startedAt);
+    return activity?.phase === "running" ? activity.moduleId : "";
 }
 
 /**
@@ -446,6 +480,7 @@ export function executionCompletedModules(execution) {
  * @param {(settings: object) => void} [options.onAiSettingsChanged] 回传已归一化设置
  * @param {() => number} [options.getAiPanelWidth] 读取持久化的面板宽度
  * @param {(width: number) => void} [options.onAiPanelWidthChange] 保存面板宽度
+ * @param {(activity: object) => void} [options.onModuleActivity] 同步侧栏模块调用状态
  * @param {(execution: object | null) => void} [options.onExecutionFinished] 通知框架刷新受影响模块
  * @param {(message: string, options?: {error?: boolean}) => void} [options.onNotice] 显示框架级提示
  * @returns {{
@@ -479,6 +514,7 @@ export function mountAiDialog({
     onAiSettingsChanged = () => {},
     getAiPanelWidth = () => AI_PANEL_WIDTH_LIMITS.default,
     onAiPanelWidthChange = () => {},
+    onModuleActivity = () => {},
     onExecutionFinished = () => {},
     onNotice = () => {}
 }) {
@@ -609,6 +645,7 @@ export function mountAiDialog({
         dialog.invocationSeen.clear();
         dialog.invocationChain = Promise.resolve();
         clearInvocationLayer();
+        onModuleActivity({ phase: "reset" });
     }
 
     function beginInvocationTracking() {
@@ -627,8 +664,8 @@ export function mountAiDialog({
     }
 
     function handleInvocationEvent(event) {
-        const moduleId = invocationEventModuleId(event, dialog.invocationStartedAt);
-        if (!moduleId) {
+        const activity = invocationEventActivity(event, dialog.invocationStartedAt);
+        if (!activity) {
             return false;
         }
         const key = event?.sequence != null
@@ -646,7 +683,10 @@ export function mountAiDialog({
             return false;
         }
         dialog.invocationSeen.add(key);
-        enqueueInvocation(moduleId);
+        onModuleActivity(activity);
+        if (activity.phase === "running") {
+            enqueueInvocation(activity.moduleId);
+        }
         return true;
     }
 

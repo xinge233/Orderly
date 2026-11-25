@@ -69,10 +69,6 @@ test("desktop sidebar is a fixed 272px overlay revealed by clip-path", async () 
     assert.match(collapsedRule, /background-repeat:\s*no-repeat;/);
     assert.doesNotMatch(desktopCss, /\.sidebar::(?:before|after)/);
     assert.doesNotMatch(appCss, /\.app-shell\s*\{[^}]*--sidebar-expanded-width/s);
-    assert.match(
-        app,
-        /return Number\.isFinite\(width\) && width > 0 \? width : 72;/
-    );
 });
 
 test("collapsed desktop rows keep complete icon bases without clipped row chrome", async () => {
@@ -166,12 +162,6 @@ test("desktop sidebar geometry stays fixed while hover and selection stay compac
         "function renderNavigation",
         "function beginNavigationDrag"
     );
-    const countRule = between(
-        app,
-        "function navigationCount",
-        "async function navigate"
-    );
-
     const expandedRule = between(
         desktopCss,
         ".sidebar.is-expanded {",
@@ -244,10 +234,10 @@ test("desktop sidebar geometry stays fixed while hover and selection stay compac
         /\.nav-item\.is-active \.nav-icon\s*\{\s*background:\s*var\(--color-accent-soft\);/
     );
     assert.match(renderNavigation, /button\.setAttribute\(\s*"aria-label"/);
-    assert.match(renderNavigation, /`\$\{item\.label\}，\$\{item\.caption\}\$\{countLabel\}`/);
+    assert.match(renderNavigation, /`\$\{item\.label\}，\$\{item\.caption\}`/);
     assert.doesNotMatch(renderNavigation, /nav-count|nav-copy small|element\("small"/);
-    assert.match(countRule, /Number\.isInteger\(numeric\) && numeric > 0/);
-    assert.match(countRule, /\^\\d\+\$/);
+    assert.match(renderNavigation, /syncAiModuleActivity\(button, item\.moduleId\)/);
+    assert.doesNotMatch(renderNavigation, /navigationCount|countLabel/);
     assert.doesNotMatch(html, /<small>外观、动效与系统<\/small>/);
     assert.doesNotMatch(html, /id="health-label"|id="health-detail"|class="status-dot"/);
     assert.match(html, /aria-label="搜索功能"/);
@@ -413,164 +403,47 @@ test("mobile drawer keeps its width, inert/ARIA behavior and is isolated from de
     assert.match(mobileOpen, /data-motion-state", "open"/);
 });
 
-test("module counts interpolate with parsed clip width through expansion and collapse", async () => {
+test("AI module feedback stays inline and follows sidebar expansion", async () => {
     const html = await read("../index.html");
     const app = await read("../src/app.js");
     const appCss = await read("../styles/app.css");
-    const renderCounts = between(
-        app,
-        "function renderSidebarCountLayer",
-        "function clearSidebarCountLayer"
-    );
-    const textAnchor = between(
-        app,
-        "function navigationTextRect",
-        "function clipInsetValues"
-    );
-    const clipParser = between(
-        app,
-        "function clipInsetValues",
-        "function isSidebarClipTransition"
-    );
-    const expansionState = between(
-        app,
-        "function setDesktopSidebarExpansion",
-        "function renderSidebarCountLayer"
-    );
     const renderNavigation = between(
         app,
         "function renderNavigation",
         "function beginNavigationDrag"
     );
-    const countRule = between(app, "function navigationCount", "async function navigate");
+    const activity = between(
+        app,
+        "function applyAiModuleActivity",
+        "async function navigate"
+    );
 
-    assert.ok(
-        html.indexOf('id="sidebar-count-layer"')
-        > html.indexOf('class="app-shell"')
-    );
-    assert.ok(
-        html.indexOf('id="sidebar-count-layer"')
-        < html.indexOf('class="ai-dock"')
-    );
+    assert.doesNotMatch(html, /sidebar-count-layer|sidebar-count-bubble/);
+    assert.doesNotMatch(appCss, /sidebar-count-layer|sidebar-count-bubble/);
+    assert.match(appCss, /\.nav-ai-progress\s*\{[\s\S]*?height:\s*2px;/);
+    assert.match(appCss, /\.nav-ai-result\s*\{[\s\S]*?border-radius:\s*50%;/);
     assert.match(
-        html,
-        /id="sidebar-count-layer" aria-hidden="true"><\/div>/
+        appCss,
+        /\.sidebar:not\(\.is-expanded\) \.nav-ai-progress\s*\{[\s\S]*?right:\s*calc\(100% - var\(--sidebar-width\) \+ var\(--space-4\)\);/
     );
     assert.match(
         appCss,
-        /\.sidebar-count-layer\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*25;[\s\S]*?pointer-events:\s*none;/
+        /\.sidebar:not\(\.is-expanded\) \.nav-ai-result\s*\{[\s\S]*?right:\s*calc\(100% - var\(--sidebar-width\) \+ var\(--space-4\)\);/
     );
-    assert.match(
-        appCss,
-        /\.sidebar-count-bubble\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?border-radius:\s*var\(--radius-xs\);[\s\S]*?pointer-events:\s*none;/
-    );
-    assert.match(
-        appCss,
-        /\.sidebar-count-bubble::before\s*\{[\s\S]*?left:\s*-6px;[\s\S]*?clip-path:\s*polygon\(100% 0,\s*100% 100%,\s*0 50%\);/
-    );
-    assert.match(renderCounts, /\.nav-item--module\[data-module-id\]/);
-    assert.match(renderCounts, /button\.getBoundingClientRect\(\)/);
-    assert.match(renderCounts, /window\.getComputedStyle\(sidebar\)\.clipPath/);
-    assert.match(renderCounts, /sidebarVisibleWidth\(sidebarRect\.width, clipPath\)/);
-    assert.match(renderCounts, /const railRight = sidebarRect\.left \+ railWidth;/);
-    assert.match(renderCounts, /const expansionProgress = Math\.max/);
-    assert.match(renderCounts, /const collapsedLeft = railRight \+ 4;/);
-    assert.match(renderCounts, /const expandedLeft = textRect \? textRect\.right \+ 7 : collapsedLeft;/);
-    assert.match(
-        renderCounts,
-        /let left = collapsedLeft\s*\+ \(expandedLeft - collapsedLeft\) \* expansionProgress;/
-    );
-    assert.match(clipParser, /function clipInsetValues/);
-    assert.match(clipParser, /function sidebarVisibleWidth/);
-    assert.match(clipParser, /const rightValue = values\.length >= 2 \? values\[1\] : values\[0\];/);
-    assert.match(clipParser, /return Math\.max\(0, Math\.min\(sidebarWidth, sidebarWidth - left - right\)\);/);
-    assert.match(renderCounts, /const existing = new Map/);
-    assert.match(renderCounts, /existing\.get\(moduleId\)[\s\S]*?element\("span", "sidebar-count-bubble"/);
-    assert.match(textAnchor, /button\.querySelector\("\.nav-copy strong"\)/);
-    assert.match(textAnchor, /const range = document\.createRange\(\);/);
-    assert.match(textAnchor, /range\.selectNodeContents\(text\);/);
-    assert.match(textAnchor, /range\.getBoundingClientRect\(\)/);
-    assert.match(renderCounts, /const textRect = navigationTextRect\(button\);/);
-    assert.match(
-        renderCounts,
-        /left - 6 < handleRect\.right[\s\S]*?left \+ bubbleWidth > handleRect\.left[\s\S]*?left = handleRect\.right \+ 7;/
-    );
-    assert.match(
-        renderCounts,
-        /left = Math\.max\(railRight \+ 4, left\);[\s\S]*?const currentVisibleRight = sidebarRect\.left \+ visibleWidth;[\s\S]*?sidebarCountTrackingFrame != null[\s\S]*?visibleWidth > railWidth[\s\S]*?left \+ bubbleWidth > currentVisibleRight[\s\S]*?left = currentVisibleRight - bubbleWidth;/
-    );
-    assert.doesNotMatch(renderCounts, /querySelector\("\.nav-copy"\)\?\.getBoundingClientRect\(\)/);
-    const measurementsAt = renderCounts.indexOf("const measurements = entries.map");
-    const handleAvoidanceAt = renderCounts.indexOf("left = handleRect.right + 7;");
-    const clipClampAt = renderCounts.indexOf("left = currentVisibleRight - bubbleWidth;");
-    const styleWriteAt = renderCounts.indexOf("bubble.style.left");
-    assert.ok(measurementsAt >= 0);
-    assert.ok(handleAvoidanceAt > measurementsAt);
-    assert.ok(clipClampAt > handleAvoidanceAt);
-    assert.ok(styleWriteAt > measurementsAt);
-    assert.ok(styleWriteAt > clipClampAt);
-    assert.doesNotMatch(
-        renderCounts.slice(measurementsAt, styleWriteAt),
-        /bubble\.style\s*=/
-    );
-    assert.match(
-        renderCounts,
-        /element\("span", "sidebar-count-bubble", String\(count\)\)/
-    );
-    assert.doesNotMatch(renderCounts, /item\.label|module\.title|card\.unit|caption/);
-    assert.doesNotMatch(
-        renderCounts,
-        /desktopSidebar\.active\s*\|\|\s*desktopSidebar\.expanded/
-    );
-    assert.match(countRule, /typeof raw === "number"/);
-    assert.match(countRule, /\^\\d\+\$/);
-    assert.match(countRule, /Number\.isInteger\(numeric\) && numeric > 0/);
-    assert.match(app, /#sidebar-count-layer"\)\?\.replaceChildren\(\)/);
-    assert.match(app, /function scheduleSidebarCountRefreshAfterCollapse/);
-    assert.match(app, /function beginSidebarCountTracking/);
-    assert.match(app, /function finishSidebarCountTracking/);
-    assert.match(app, /function cancelSidebarCountTracking/);
-    assert.match(app, /sidebarCountTrackingFrame = requestSidebarFrame\(track\)/);
-    assert.match(
-        app,
-        /function startSidebarCountFrameLoop\(\)\s*\{\s*const track = \(\) => \{[\s\S]*?renderSidebarCountLayer\(\);[\s\S]*?sidebarCountTrackingFrame = requestSidebarFrame\(track\);/
-    );
-    assert.match(app, /event\.propertyName === "clip-path"/);
-    assert.equal(
-        (app.match(/if \([^\n]*isSidebarClipTransition\(event, sidebar\)/g) ?? []).length,
-        2
-    );
-    assert.equal(
-        (app.match(/addEventListener\("transitionend", (?:handler|finish)\)/g) ?? []).length,
-        2
-    );
-    assert.match(
-        app,
-        /function beginSidebarCountTracking\(\)\s*\{\s*cancelSidebarCountTracking\(\);\s*cancelSidebarCountRefresh\(\);/
-    );
-    assert.match(
-        app,
-        /function scheduleSidebarCountRefreshAfterCollapse\(\)\s*\{\s*cancelSidebarCountTracking\(\);\s*cancelSidebarCountRefresh\(\);/
-    );
-    assert.doesNotMatch(
-        between(
-            app,
-            "function scheduleSidebarCountRefreshAfterCollapse",
-            "function beginSidebarCountTracking"
-        ),
-        /clearSidebarCountLayer/
-    );
-    assert.match(
-        expansionState,
-        /if \(duration <= 0\) \{\s*cancelSidebarCountTracking\(\);\s*cancelSidebarCountRefresh\(\);\s*renderSidebarCountLayer\(\);/
-    );
-    assert.match(
-        expansionState,
-        /else if \(expanded\) \{\s*beginSidebarCountTracking\(\);\s*\} else \{\s*scheduleSidebarCountRefreshAfterCollapse\(\);/
-    );
-    assert.match(app, /addEventListener\(\s*"scroll",\s*queueSidebarCountRender/s);
-    assert.match(app, /addEventListener\("resize", queueSidebarCountRender/);
-    assert.match(renderNavigation, /queueSidebarCountRender\(\);/);
+    assert.match(appCss, /\.nav-ai-result\[data-phase="success"\]/);
+    assert.match(appCss, /\.nav-ai-result\[data-phase="failure"\]/);
+    assert.match(appCss, /\.nav-ai-result\.is-leaving\s*\{\s*opacity:\s*0;/);
+    assert.match(renderNavigation, /syncAiModuleActivity\(button, item\.moduleId\)/);
+    assert.doesNotMatch(renderNavigation, /navigationCount|countLabel/);
+    assert.match(activity, /activity\.running\.add/);
+    assert.match(activity, /activity\.running\.size > 0/);
+    assert.match(activity, /activity\.running\.delete\(AI_ANONYMOUS_STEP\)/);
+    assert.match(app, /const AI_ANONYMOUS_STEP = Symbol\("ai-anonymous-step"\)/);
+    assert.match(activity, /AI_MODULE_RESULT_HOLD_MS/);
+    assert.match(activity, /AI_MODULE_RESULT_EXIT_MS/);
+    assert.match(activity, /role", "progressbar"/);
+    assert.match(activity, /icon\(successful \? "check-plain" : "close", 12\)/);
+    assert.match(activity, /result\.setAttribute\("role", "status"\)/);
 });
 
 test("desktop sidebar motion is clip-path-only and mobile keeps transform", async () => {
@@ -601,7 +474,7 @@ test("desktop sidebar motion is clip-path-only and mobile keeps transform", asyn
     assert.doesNotMatch(tokens, /prefers-reduced-motion/);
     assert.match(tokens, /@layer orderly\.safety/);
     assert.match(tokens, /transition: none !important/);
-    for (const id of ["paper", "moss", "night"]) {
+    for (const id of ["paper", "moss", "night", "study"]) {
         const motion = await read(`../../../themes/${id}/motion.css`);
         assert.match(motion, /^@layer orderly\.theme \{/);
         assert.match(
@@ -624,6 +497,14 @@ test("desktop sidebar motion is clip-path-only and mobile keeps transform", asyn
         assert.match(
             motion,
             /@media \(max-width: 820px\)\s*\{[\s\S]*?transition:\s*transform var\(--duration-normal\) var\(--ease-out\);/
+        );
+        assert.match(
+            motion,
+            /\.nav-ai-progress::after\s*\{[\s\S]*?animation:[\s\S]*?var\(--duration-ai-activity\)/
+        );
+        assert.match(
+            motion,
+            /\.nav-ai-result\[data-phase\]:not\(\.is-leaving\)\s*\{[\s\S]*?animation:[\s\S]*?var\(--duration-slow\)/
         );
     }
 });

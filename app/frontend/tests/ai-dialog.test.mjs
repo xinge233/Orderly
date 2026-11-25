@@ -8,6 +8,7 @@ import {
     executionFailureMessage,
     executionSucceeded,
     higherAiRisk,
+    invocationEventActivity,
     invocationEventModuleId,
     resolveAiPanelResizeWidth,
     resolveAiSnapPosition,
@@ -338,6 +339,47 @@ test("AI invocation events animate only current module calls", () => {
         ""
     );
     assert.equal(invocationEventModuleId(base, 0), "");
+
+    assert.deepEqual(
+        invocationEventActivity(
+            { ...base, type: "STEP", origin: "AI_DIRECT" },
+            startedAt
+        ),
+        {
+            moduleId: "module_todo",
+            phase: "running",
+            status: "RUNNING",
+            stepId: ""
+        }
+    );
+    assert.equal(
+        invocationEventActivity(
+            { ...base, type: "STEP", origin: "AI_DIRECT", stepId: "q1", status: "COMPLETED" },
+            startedAt
+        )?.phase,
+        "success"
+    );
+    assert.equal(
+        invocationEventActivity(
+            { ...base, type: "STEP", origin: "AI_PLAN", stepId: "q1", status: "FAILED" },
+            startedAt
+        )?.phase,
+        "failure"
+    );
+    assert.equal(
+        invocationEventActivity(
+            { ...base, type: "QUERY", origin: "AI_QUERY", stepId: "q1", status: "OK" },
+            startedAt
+        )?.phase,
+        "success"
+    );
+    assert.equal(
+        invocationEventActivity(
+            { ...base, type: "QUERY", origin: "AI_QUERY", stepId: "q1", status: "TRUNCATED" },
+            startedAt
+        )?.phase,
+        "success"
+    );
 });
 
 test("framework events are routed to the active AI invocation tracker", async () => {
@@ -347,6 +389,8 @@ test("framework events are routed to the active AI invocation tracker", async ()
     assert.match(component, /handleInvocationEvent/);
     assert.match(component, /dialog\.invocationChain\.then/);
     assert.match(component, /dialog\.invocationSeen\.has\(key\)/);
+    assert.match(component, /onModuleActivity\(activity\)/);
+    assert.match(component, /onModuleActivity\(\{ phase: "reset" \}\)/);
     assert.match(app, /aiDialog\?\.handleInvocationEvent\?\.\(event\)/);
 });
 
