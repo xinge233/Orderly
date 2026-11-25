@@ -1,6 +1,5 @@
 package com.orderly.host.desktop;
 
-import java.awt.Desktop;
 import java.awt.GraphicsEnvironment;
 import java.io.IOException;
 import java.net.URI;
@@ -32,7 +31,12 @@ public final class PackagedLauncher {
     static final String APP_HOME_PROPERTY = "orderly.app.home";
     static final String HTTP_PORT_ENV = "ORDERLY_HTTP_PORT";
     static final int DEFAULT_HTTP_PORT = 8080;
+    static final String DESKTOP_HOST_RELATIVE_PATH =
+            "app/desktop/runtime/OrderlyWebView2Host.exe";
+    static final String WEBVIEW2_RUNTIME_RELATIVE_PATH = "webview2-runtime";
     private static final Duration STARTUP_TIMEOUT = Duration.ofSeconds(90);
+    private static final Duration SHUTDOWN_TIMEOUT = Duration.ofSeconds(90);
+    private static final String SHUTDOWN_ACTION_HEADER = "X-Orderly-Action";
 
     private PackagedLauncher() {
     }
@@ -62,7 +66,7 @@ public final class PackagedLauncher {
         )) {
             FileLock lock = lockChannel.tryLock();
             if (lock == null) {
-                openBrowser(httpPort());
+                activateExistingDesktop(appHome, dataRoot);
                 return;
             }
             try {
@@ -96,7 +100,8 @@ public final class PackagedLauncher {
     private static void run(Path appHome, Path dataRoot, Path launcherLog) throws Exception {
         int port = httpPort();
         if (isHostHealthy(port)) {
-            openBrowser(port);
+            Process desktop = startDesktopHost(appHome, dataRoot, port);
+            desktop.waitFor();
             return;
         }
 
@@ -146,8 +151,12 @@ public final class PackagedLauncher {
         ));
 
         Process process = builder.start();
+        Process[] processTree = new Process[] { process, null };
         Runtime.getRuntime().addShutdownHook(new Thread(
-                () -> terminateProcessTree(process),
+                () -> {
+                    terminateProcessTree(processTree[1]);
+                    terminateProcessTree(processTree[0]);
+                },
                 "orderly-launcher-shutdown"
         ));
 
@@ -157,8 +166,29 @@ public final class PackagedLauncher {
                     "本地宿主未在 90 秒内就绪。诊断日志：" + launcherLog.getParent()
             );
         }
-        openBrowser(port);
-        int exitCode = process.waitFor();
+        Process desktop = startDesktopHost(appHome, dataRoot, port);
+        processTree[1] = desktop;
+        int desktopExitCode = desktop.waitFor();
+        if (process.isAlive()) {
+            requestHostShutdown(port);
+        }
+        if (!process.waitFor(SHUTDOWN_TIMEOUT.toSeconds(), TimeUnit.SECONDS)) {
+            terminateProcessTree(desktop);
+            terminateProcessTree(process);
+            throw new IllegalStateException(
+                    "桌面窗口关闭后本地服务未在 "
+                            + SHUTDOWN_TIMEOUT.toSeconds()
+                            + " 秒内退出。诊断日志："
+                            + launcherLog.getParent()
+            );
+        }
+        int exitCode = process.exitValue();
+        if (desktopExitCode != 0) {
+            throw new IllegalStateException(
+                    "WebView2 桌面窗口异常退出，退出码：" + desktopExitCode
+                            + "；诊断日志：" + launcherLog.getParent()
+            );
+        }
         if (exitCode != 0) {
             throw new IllegalStateException(
                     "归序启动脚本退出码：" + exitCode + "；诊断日志：" + launcherLog.getParent()
@@ -193,6 +223,28 @@ public final class PackagedLauncher {
         arguments.add(mavenRepository.toString());
         arguments.add("-Port");
         arguments.add(Integer.toString(port));
+        return List.copyOf(arguments);
+    }
+
+    static List<String> buildDesktopHostArguments(
+            Path desktopHost,
+            Path dataRoot,
+            Path runtimeFolder,
+            int port,
+            boolean fixedRuntime
+    ) {
+        List<String> arguments = new ArrayList<>();
+        arguments.add(desktopHost.toString());
+        arguments.add("--url");
+        arguments.add("http://127.0.0.1:" + port + "/");
+        arguments.add("--data-root");
+        arguments.add(dataRoot.toString());
+        arguments.add("--mode");
+        arguments.add("packaged");
+        if (fixedRuntime) {
+            arguments.add("--runtime-folder");
+            arguments.add(runtimeFolder.toString());
+        }
         return List.copyOf(arguments);
     }
 
@@ -284,20 +336,98 @@ public final class PackagedLauncher {
         }
     }
 
-    private static void openBrowser(int port) {
-        URI uri = URI.create("http://127.0.0.1:" + port + "/");
-        try {
-            if (Desktop.isDesktopSupported()) {
-                Desktop.getDesktop().browse(uri);
-                return;
-            }
-        } catch (IOException | UnsupportedOperationException exception) {
-            // 回退到 Windows 注册的 URL 处理器。
+    private static Process startDesktopHost(Path appHome, Path dataRoot, int port)
+            throws IOException {
+        Path desktopHost = appHome.resolve(DESKTOP_HOST_RELATIVE_PATH).normalize();
+        requireFile(desktopHost, "WebView2 桌面宿主");
+        Path fixedRuntime = appHome.resolve(WEBVIEW2_RUNTIME_RELATIVE_PATH).normalize();
+        boolean useFixedRuntime = Files.isRegularFile(
+                fixedRuntime.resolve("msedgewebview2.exe")
+        );
+        List<String> arguments = buildDesktopHostArguments(
+                desktopHost,
+                dataRoot,
+                fixedRuntime,
+                port,
+                useFixedRuntime
+        );
+        ProcessBuilder builder = new ProcessBuilder(arguments);
+        builder.directory(appHome.toFile());
+        Map<String, String> environment = builder.environment();
+        environment.put("ORDERLY_DATA_DIR", dataRoot.toString());
+        environment.put("ORDERLY_HTTP_PORT", Integer.toString(port));
+        Path logs = dataRoot.resolve("logs");
+        Files.createDirectories(logs);
+        builder.redirectOutput(ProcessBuilder.Redirect.appendTo(
+                logs.resolve("desktop.out.log").toFile()
+        ));
+        builder.redirectError(ProcessBuilder.Redirect.appendTo(
+                logs.resolve("desktop.err.log").toFile()
+        ));
+        return builder.start();
+    }
+
+    private static void activateExistingDesktop(Path appHome, Path dataRoot) {
+        Path desktopHost = appHome.resolve(DESKTOP_HOST_RELATIVE_PATH).normalize();
+        if (!Files.isRegularFile(desktopHost)) {
+            showMessage("归序已在运行，但 WebView2 桌面宿主不存在。");
+            return;
         }
         try {
-            new ProcessBuilder("rundll32.exe", "url.dll,FileProtocolHandler", uri.toString()).start();
-        } catch (IOException ignored) {
-            // 启动日志已经可诊断；浏览器打开失败不终止本地服务。
+            Process process = new ProcessBuilder(
+                    desktopHost.toString(),
+                    "--activate",
+                    "--data-root",
+                    dataRoot.toString()
+            ).directory(appHome.toFile()).start();
+            if (!process.waitFor(10, TimeUnit.SECONDS) || process.exitValue() != 0) {
+                showMessage("归序已在运行，但无法激活现有窗口。");
+            }
+        } catch (IOException exception) {
+            showMessage("归序已在运行，但无法激活现有窗口。");
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            showMessage("归序已在运行，但激活现有窗口被中断。");
+        }
+    }
+
+    private static void showMessage(String message) {
+        if (GraphicsEnvironment.isHeadless()) {
+            return;
+        }
+        try {
+            JOptionPane.showMessageDialog(
+                    null,
+                    message,
+                    "归序 Orderly",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+        } catch (RuntimeException ignored) {
+            // 启动日志保留诊断信息。
+        }
+    }
+
+    private static boolean requestHostShutdown(int port) {
+        try {
+            URI uri = URI.create("http://127.0.0.1:" + port + "/api/system/shutdown");
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(2))
+                    .build();
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder(uri)
+                    .timeout(Duration.ofSeconds(5))
+                    .header(SHUTDOWN_ACTION_HEADER, "shutdown")
+                    .POST(java.net.http.HttpRequest.BodyPublishers.noBody())
+                    .build();
+            java.net.http.HttpResponse<Void> response = client.send(
+                    request,
+                    java.net.http.HttpResponse.BodyHandlers.discarding()
+            );
+            return response.statusCode() == 200 || response.statusCode() == 202;
+        } catch (IOException | InterruptedException exception) {
+            if (exception instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return false;
         }
     }
 

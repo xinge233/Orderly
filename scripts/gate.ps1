@@ -703,6 +703,11 @@ try {
         throw "学习数据契约校验失败，退出码：$LASTEXITCODE"
     }
 
+    & (Join-Path $PSScriptRoot "test-webview2-host.ps1")
+    if ($LASTEXITCODE -ne 0) {
+        throw "WebView2 宿主构建或自检失败，退出码：$LASTEXITCODE"
+    }
+
     # 以下 rg 扫描遵循同一退出语义：0 表示命中禁止模式，1 表示干净，其他值表示扫描工具本身异常。
     $forbiddenDelete = & rg -n --glob '*.java' 'Files\.delete|deleteIfExists' app Module
     if ($LASTEXITCODE -eq 0) {

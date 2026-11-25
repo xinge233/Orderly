@@ -16,13 +16,13 @@
 - AI Query：模型可选择模块已声明且允许 AI 调用的只读 Query，最多 4 条，由 Java 校验并执行。查询原始结果始终返回本地界面，并在受控大小上限内自动回传模型用于展示或后续决策；不提供可修改的发送开关。
 - 中央控制：风险分级、服务端确认、路径边界、快照、持久化执行记录、事件时间线和逆序回滚。
 - 本地界面：动态模块侧栏与总览、彼此独立的可持久化卡片和侧边栏排序、默认时间线且可切换摘要的历史记录、设置弹窗；旧版计划功能启用后恢复计划界面，独立的可拖动 AI 对话 Dock 始终可用。
-- Windows 完整版：正式应用包含 Java 运行时、完整 JDK 21、Maven、本地仓库、AI 可执行文件和模块源码。终端用户不需要自行安装 JDK、Python 或 Maven；只需单独提供真实模型 API Key。
+- Windows 完整版：正式应用包含 Java 运行时、完整 JDK 21、Maven、本地仓库、AI 可执行文件、WebView2 宿主和模块源码，并通过 WebView2 原生窗口显示界面。终端用户不需要自行安装 JDK、Python 或 Maven；只需系统具备 WebView2 Runtime 并单独提供真实模型 API Key。
 
 ## 启动
 
 ### Windows 完整版
 
-普通用户使用 GitHub Release 中的 `Orderly-0.1.0.exe` 安装器，或解压 `Orderly-0.1.0-full-app.zip` 后双击 `Orderly.exe`。安装器为当前用户安装，不需要管理员权限，也不需要安装 JDK、Python 或 Maven。完整版使用系统自带的 Windows PowerShell 5.1 作为启动编排层，其余构建和运行工具均来自应用目录。
+普通用户使用 GitHub Release 中的 `Orderly-0.1.0.exe` 安装器，或解压 `Orderly-0.1.0-full-app.zip` 后双击 `Orderly.exe`。安装器为当前用户安装，不需要管理员权限，也不需要安装 JDK、Python 或 Maven。完整版使用系统自带的 Windows PowerShell 5.1 作为启动编排层，界面由随包 WebView2 宿主承载。
 
 完整版运行时数据默认写入 `%LOCALAPPDATA%\Orderly\data`，包括工作区、回收站、执行记录、模块治理和日志。模块源码与运行 JAR 保留在安装目录；jpackage 的当前用户安装目录对该用户可写，因此设置界面中的模块下载、源码安装和本地 Maven 构建仍可工作。可通过 `ORDERLY_DATA_DIR` 把应用数据改到另一个专用目录。
 
@@ -70,7 +70,7 @@
 
 `gate.ps1`、`start.ps1`、`modularity.ps1` 与 `verify-offline.ps1` 接受相同的 `-MaxParallel` 并只透传给 `build.ps1`，不复制并行调度逻辑。`gate.ps1`、`start.ps1` 与 `modularity.ps1` 也透传 `-Offline`、`-MavenRepository`。`start.ps1 -MavenOffline` 只让 Maven 使用仓库根目录下的 `maven-repository` 严格离线构建，Python 环境仍由 `ensure-env.ps1` 正常准备；`-Offline` 则进一步要求直接复用现有 `ai/.venv`，不会联网准备 Python 环境。离线范围只覆盖 Maven 构建，不代表 Python、Node 或整个应用已经支持离线安装。
 
-Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配的 `127.0.0.1` 临时端口和随机 Bearer Token。打开 <http://127.0.0.1:8080/>。后台模式先等待 Java 健康检查，再启动模块构建；Python 环境准备与 AI 服务启动同时进行，不会阻塞框架首屏。宿主或 AI 服务异常退出时，启动脚本会清理本次启动的子进程。后台日志与模块状态分别位于 `target/background/`、`target/module-build-status.json` 和 `target/module-build-priority.json`。
+Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配的 `127.0.0.1` 临时端口和随机 Bearer Token。源码开发可打开 <http://127.0.0.1:8080/>；Windows 完整版在健康检查通过后打开 WebView2 窗口。后台模式先等待 Java 健康检查，再启动模块构建；Python 环境准备与 AI 服务启动同时进行，不会阻塞框架首屏。宿主或 AI 服务异常退出时，启动脚本会清理本次启动的子进程。后台日志与模块状态分别位于 `target/background/`、`target/module-build-status.json` 和 `target/module-build-priority.json`。
 
 侧边栏底部的“退出归序”会在二次确认后停止 Java 宿主、AI 服务和后台模块构建。Action 或计划执行期间禁止退出；退出后重新运行 `启动归序.cmd` 即可恢复，未完成的模块构建会重新进入后台队列。
 
@@ -113,6 +113,7 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 ```powershell
 .\scripts\doc-gate.ps1
 .\scripts\gate.ps1
+.\scripts\test-webview2-host.ps1
 .\scripts\modularity.ps1
 .\scripts\test-build-parallel.ps1
 .\scripts\test-build-plan.ps1
@@ -194,6 +195,7 @@ DOCX 结构校验不判断文字内容和页面排版。实际修改 DOCX 内容
 - `app/host/`：授权、校验、调度、快照、回滚、事件、HTTP/SSE 外壳和 Python AI IPC 网关，不实现具体业务或模型调用。
 - `ai/`：唯一的 Python AI 实现，负责模型配置与临时 Key、模型请求、提示词、会话、`ACTIONS / PLAN / QUERY / QUESTION / VIEW` 解析和 Query 展示整理；不持有文件权限或执行能力。
 - `app/frontend/`：静态本地界面。
+- `app/desktop/`：Windows WebView2 显示外壳，只加载本机回环界面；不持有文件权限，不直接执行 Action。
 - `Module/module_fs/`、`module_todo/`、`module_calendar/`：各自携带契约、查询、计划规则、执行器、逆操作和 `orderly-ui/` 资源；构建脚本会自动发现新的 `Module/module_*`。模块规范见 `Module/AGENTS.md`。
 - `Module/module_study_assistant/`、`module_study_map/`、`module_study_review/`：只读学习界面参考模块，每个模块从自身 JAR 的 `orderly-data/<moduleId>.json` 返回数据，不包含动作或跨模块读取。
 - `Module/module_system_control/`：唯一的受保护控制模块，只提供模块治理入口，不作为业务模块出现在 `/api/modules`。

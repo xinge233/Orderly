@@ -780,16 +780,33 @@ try {
     foreach ($artifact in @(Get-RequiredProperty $thirdPartyManifest "artifacts" "third-party-artifacts.json")) {
         $artifactPath = [string](Get-RequiredProperty $artifact "path" "third-party artifacts")
         Assert-UniqueRelativePath $artifactPath $thirdPartySeen "第三方制品路径"
-        if (-not $artifactPath.StartsWith(
+        $isMavenArtifact = $artifactPath.StartsWith(
                 "maven-repository/",
                 [System.StringComparison]::Ordinal
-            ) -or
-                $artifactPath.StartsWith(
-                    "maven-repository/com/orderly/",
-                    [System.StringComparison]::Ordinal
-                ) -or
-                $artifactPath -notmatch '\.(?:jar|pom)$') {
+            ) -and
+            -not $artifactPath.StartsWith(
+                "maven-repository/com/orderly/",
+                [System.StringComparison]::Ordinal
+            ) -and
+            $artifactPath -match '\.(?:jar|pom)$'
+        $isWebView2Artifact = $artifactPath.StartsWith(
+            "app/desktop/webview2-sdk/",
+            [System.StringComparison]::Ordinal
+        )
+        if (-not $isMavenArtifact -and -not $isWebView2Artifact) {
             throw "第三方制品路径无效：$artifactPath"
+        }
+        if ($isMavenArtifact -and
+            ($artifactPath.StartsWith(
+                "maven-repository/com/orderly/",
+                [System.StringComparison]::Ordinal
+            ) -or
+                $artifactPath -notmatch '\.(?:jar|pom)$')) {
+            throw "第三方 Maven 制品路径无效：$artifactPath"
+        }
+        if ($isWebView2Artifact -and $artifactPath -notmatch
+                '\.(?:dll|txt|md)$') {
+            throw "第三方 WebView2 制品路径无效：$artifactPath"
         }
         $artifactFullPath = Get-PackagePath $artifactPath $verificationRoot "第三方制品"
         if (-not (Test-Path -LiteralPath $artifactFullPath -PathType Leaf)) {
@@ -806,16 +823,24 @@ try {
             throw "第三方制品哈希或许可状态无效：$artifactPath"
         }
     }
-    $actualThirdPartySet = @(Get-TreeFiles $repositoryPath | ForEach-Object {
-        $repositoryRelativePath = Get-RelativePathFromRoot $_.FullName $repositoryPath
-        if (-not $repositoryRelativePath.StartsWith(
-                "com/orderly/",
-                [System.StringComparison]::Ordinal
-            ) -and
-                $repositoryRelativePath -match '\.(?:jar|pom)$') {
-            ("maven-repository/" + $repositoryRelativePath).ToLowerInvariant()
-        }
-    } | Where-Object { $null -ne $_ } | Sort-Object)
+    $actualThirdPartySet = @(
+        @(Get-TreeFiles $repositoryPath | ForEach-Object {
+            $repositoryRelativePath = Get-RelativePathFromRoot $_.FullName $repositoryPath
+            if (-not $repositoryRelativePath.StartsWith(
+                    "com/orderly/",
+                    [System.StringComparison]::Ordinal
+                ) -and
+                    $repositoryRelativePath -match '\.(?:jar|pom)$') {
+                ("maven-repository/" + $repositoryRelativePath).ToLowerInvariant()
+            }
+        }) +
+        @(Get-TreeFiles (Join-Path $verificationRoot "app\desktop\webview2-sdk") |
+            ForEach-Object {
+                Get-RelativePathFromRoot $_.FullName $verificationRoot
+            } |
+            Where-Object { $_ -match '\.(?:dll|txt|md)$' } |
+            ForEach-Object { $_.ToLowerInvariant() })
+    ) | Where-Object { $null -ne $_ } | Sort-Object
     $expectedThirdPartySet = @($thirdPartySeen.Keys | Sort-Object)
     if (($actualThirdPartySet -join "|") -ne ($expectedThirdPartySet -join "|")) {
         $missing = @($expectedThirdPartySet | Where-Object { $actualThirdPartySet -notcontains $_ })

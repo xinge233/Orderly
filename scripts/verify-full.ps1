@@ -103,6 +103,71 @@ function Wait-AiProxy {
     throw "完整版 AI 服务代理未在 45 秒内就绪：$BaseUrl/api/ai/settings"
 }
 
+function Get-InstalledWebView2Version {
+    $clientId = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    $paths = @(
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$clientId",
+        "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$clientId",
+        "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$clientId"
+    )
+    foreach ($path in $paths) {
+        $entry = Get-ItemProperty -LiteralPath $path -ErrorAction SilentlyContinue
+        if ($entry -and -not [string]::IsNullOrWhiteSpace([string]$entry.pv)) {
+            return [string]$entry.pv
+        }
+    }
+    return $null
+}
+
+function Wait-DesktopHost {
+    param(
+        [Parameter(Mandatory = $true)][string]$DataRoot,
+        [Parameter(Mandatory = $true)][string]$AppRoot
+    )
+    $hostPath = Join-Path $AppRoot "app\desktop\runtime\OrderlyWebView2Host.exe"
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $match = @(Get-CimInstance Win32_Process -Filter "Name='OrderlyWebView2Host.exe'" |
+            Where-Object {
+                $_.ExecutablePath -and
+                $_.ExecutablePath.Equals(
+                    $hostPath,
+                    [System.StringComparison]::OrdinalIgnoreCase
+                ) -and
+                $_.CommandLine -and
+                $_.CommandLine.IndexOf(
+                    $DataRoot,
+                    [System.StringComparison]::OrdinalIgnoreCase
+                ) -ge 0
+            })
+        if ($match.Count -gt 0) {
+            return
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    throw "WebView2 桌面宿主未在 30 秒内启动。"
+}
+
+function Wait-WebView2RuntimeProcess {
+    param([Parameter(Mandatory = $true)][string]$DataRoot)
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $match = @(Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" |
+            Where-Object {
+                $_.CommandLine -and
+                $_.CommandLine.IndexOf(
+                    $DataRoot,
+                    [System.StringComparison]::OrdinalIgnoreCase
+                ) -ge 0
+            })
+        if ($match.Count -gt 0) {
+            return
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    throw "WebView2 Runtime 进程未在 30 秒内启动。"
+}
+
 $appRoot = [System.IO.Path]::GetFullPath($AppDirectory)
 if (-not (Test-Path -LiteralPath $appRoot -PathType Container)) {
     throw "完整版应用目录不存在：$appRoot"
@@ -118,6 +183,10 @@ foreach ($required in @(
     "toolchains\jdk\bin\javac.exe",
     "toolchains\maven\bin\mvn.cmd",
     "ai\orderly-ai.exe",
+    "app\desktop\runtime\OrderlyWebView2Host.exe",
+    "app\desktop\runtime\Microsoft.Web.WebView2.Core.dll",
+    "app\desktop\runtime\Microsoft.Web.WebView2.WinForms.dll",
+    "app\desktop\runtime\WebView2Loader.dll",
     "scripts\start.ps1",
     "target\build-manifest.json",
     "target\orderly-modules"
@@ -130,7 +199,7 @@ foreach ($required in @(
 $manifest = Get-Content -Raw -Encoding UTF8 -LiteralPath (
     Join-Path $appRoot "full-runtime-manifest.json"
 ) | ConvertFrom-Json
-if ([int]$manifest.schemaVersion -ne 1 -or
+if ([int]$manifest.schemaVersion -ne 2 -or
         [string]$manifest.packageType -ne "orderly-full-windows" -or
         [int]$manifest.jdkMajor -ne 21 -or
         [string]$manifest.launchMode -ne "packaged") {
@@ -139,6 +208,7 @@ if ([int]$manifest.schemaVersion -ne 1 -or
 foreach ($artifact in @(
     $manifest.hostJar,
     $manifest.desktopLauncher,
+    $manifest.desktopHost,
     $manifest.aiExecutable
 ) + @($manifest.modules)) {
     $relative = [string]$artifact.path
@@ -157,6 +227,27 @@ foreach ($artifact in @(
     $expectedHash = [string]$artifact.sha256
     if ((Get-OrderlySha256 $fullPath) -ne $expectedHash.ToLowerInvariant()) {
         throw "完整版清单工件哈希不符：$relative"
+    }
+}
+
+$runtimeMode = [string]$manifest.webView2Runtime.mode
+$runtimeVersion = [string]$manifest.webView2Runtime.version
+if (($runtimeMode -ne "evergreen" -and $runtimeMode -ne "fixed") -or
+        [string]::IsNullOrWhiteSpace($runtimeVersion)) {
+    throw "完整版 WebView2 Runtime 清单无效。"
+}
+if ($runtimeMode -eq "fixed") {
+    $runtimeRelative = [string]$manifest.webView2Runtime.path
+    Assert-SafeRelativePath $runtimeRelative
+    $runtimeRoot = Join-Path $appRoot $runtimeRelative.Replace("/", "\")
+    if (-not (Test-Path -LiteralPath (Join-Path $runtimeRoot "msedgewebview2.exe") -PathType Leaf)) {
+        throw "完整版固定 WebView2 Runtime 不完整：$runtimeRelative"
+    }
+}
+else {
+    $installedVersion = Get-InstalledWebView2Version
+    if ([string]::IsNullOrWhiteSpace($installedVersion)) {
+        throw "当前系统未安装完整版清单要求的 Evergreen WebView2 Runtime。"
     }
 }
 
@@ -206,7 +297,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if ($SkipLaunch) {
-    Write-Host "完整版结构验证通过：清单、哈希、JDK、Maven 和 AI 可执行文件均有效。"
+Write-Host "完整版结构验证通过：清单、哈希、WebView2、JDK、Maven 和 AI 可执行文件均有效。"
     exit 0
 }
 
@@ -237,6 +328,8 @@ try {
         -PassThru
     Wait-HostHealth -BaseUrl $baseUrl -Process $process
     Wait-AiProxy -BaseUrl $baseUrl
+    Wait-DesktopHost -DataRoot $verificationRoot -AppRoot $appRoot
+    Wait-WebView2RuntimeProcess -DataRoot $verificationRoot
     $businessModules = @(
         (Invoke-RestMethod -Uri "$baseUrl/api/modules" -TimeoutSec 5) |
             ForEach-Object { $_ }
@@ -277,8 +370,18 @@ try {
         Where-Object {
             $_.ProcessId -notin $excludedPids -and
             $_.CommandLine -and
-            $_.CommandLine.IndexOf($appRoot, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and
-            @("Orderly.exe", "java.exe", "powershell.exe", "pwsh.exe", "cmd.exe", "orderly-ai.exe") -contains $_.Name
+            ($_.CommandLine.IndexOf($appRoot, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+                $_.CommandLine.IndexOf($verificationRoot, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -and
+            @(
+                "Orderly.exe",
+                "java.exe",
+                "powershell.exe",
+                "pwsh.exe",
+                "cmd.exe",
+                "orderly-ai.exe",
+                "OrderlyWebView2Host.exe",
+                "msedgewebview2.exe"
+            ) -contains $_.Name
         })
     if ($remaining.Count -gt 0) {
         throw "完整版退出后仍有进程引用应用目录：$($remaining.ProcessId -join ',')"
@@ -294,4 +397,4 @@ finally {
     $env:PATH = $previousPath
 }
 
-Write-Host "完整版验证通过：无外部 JDK/Python/Maven 的启动、AI 代理、模块、主题和退出链路均有效。"
+Write-Host "完整版验证通过：WebView2 窗口、AI 代理、模块、主题和退出链路均有效。"

@@ -20,6 +20,7 @@
 | 前端 Node 测试 | `app/frontend/tests` | 框架状态、API、布局和交互逻辑 |
 | 模块 Node 测试 | `Module/*/src/test/js` | 模块自有 UI 和 JavaScript，文件名 `*.test.mjs` |
 | 宿主 JS 契约测试 | `app/host/src/test/js` | 模块 UI、学习数据等跨端契约 |
+| WebView2 宿主测试 | `scripts/test-webview2-host.ps1` | C# 宿主编译、参数、导航白名单、单实例身份和运行依赖自检 |
 | 契约样例 | `contracts/samples/valid`、`contracts/samples/invalid` | 合法与非法样例 |
 | 系统验收 | `scripts` | 门禁、模块化、烟测、构建和离线包验证 |
 
@@ -50,6 +51,12 @@ try {
 finally {
     Pop-Location
 }
+```
+
+WebView2 宿主测试：
+
+```powershell
+.\scripts\test-webview2-host.ps1
 ```
 
 Python 测试：

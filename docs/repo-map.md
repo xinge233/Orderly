@@ -20,7 +20,7 @@
 |---|---|
 | `app/kernel/` | 模块 SPI、风险等级、调用与结果等跨端基础类型 |
 | `app/host/` | 模块加载、计划、授权、执行、快照、回滚、事件与 HTTP/SSE 外壳 |
-| `app/frontend/` | 本地静态界面、前端状态、设置和交互测试 |
+| `app/frontend/`、`app/desktop/` | 本地静态界面、WebView2 显示宿主、导航安全、窗口生命周期和固定 SDK 二进制 |
 | `Module/` | 自包含业务模块与宿主内置 `module_system_*` 受保护模块 |
 | `contracts/` | 计划、模块、模块 UI、主题和学习数据的契约与样例 |
 | `ai/` | Python 3.14 + FastAPI AI 服务、提示词、模型接入、会话、Query 选择和评测；凭据不进入仓库 |
@@ -49,8 +49,7 @@
 
 | 区域 | 优先入口 |
 |---|---|
-| 宿主生命周期与完整版入口 | `app/host/src/main/java/com/orderly/host/OrderlyHostApplication.java`；桌面启动器为 `desktop/PackagedLauncher.java` |
-| HTTP API | `app/host/src/main/java/com/orderly/host/api/OrderlyController.java` |
+| 宿主生命周期与 HTTP API | `app/host/src/main/java/com/orderly/host/OrderlyHostApplication.java`、`api/OrderlyController.java`；桌面启动器为 `desktop/PackagedLauncher.java` |
 | 计划服务 | `app/host/src/main/java/com/orderly/host/plan/PlanService.java` |
 | 本地规则计划器 | `app/host/src/main/java/com/orderly/host/planner/LocalRulePlanner.java` |
 | 执行与回滚 | `app/host/src/main/java/com/orderly/host/execution/ExecutionService.java` |
@@ -64,9 +63,9 @@
 | 存活与诊断健康检查 | `app/host/src/main/java/com/orderly/host/api/OrderlyController.java` |
 | 模块治理与分发 | `app/host/src/main/java/com/orderly/host/modulecontrol/`；下载校验入口为 `ModuleDistributionService.java`、`ModulePackageInstaller.java` |
 | 主题目录 | `app/host/src/main/java/com/orderly/host/theme/` |
-| 前端页面 | `app/frontend/index.html` |
-| 前端状态与交互 | `app/frontend/src/app.js`、`ai-dialog.js`、`ai-settings.js`、`modules.js`、`settings.js` |
+| 前端页面与交互 | `app/frontend/index.html`、`src/app.js`、`ai-dialog.js`、`ai-settings.js`、`modules.js`、`settings.js` |
 | 前端样式 | `app/frontend/styles/app.css`、`tokens.css` |
+| WebView2 宿主与 SDK | `app/desktop/webview2-host/src/Program.cs`、`MainForm.cs`、`webview2-sdk/` |
 
 ## 契约入口
 
@@ -139,6 +138,7 @@
 | 完整门禁 | `.\scripts\gate.ps1` |
 | 模块化验收 | `.\scripts\modularity.ps1` |
 | 构建与分层启动 | `.\scripts\build.ps1 -MaxParallel 3` 或 `.\scripts\test-build-parallel.ps1`；分层启动用 `.\scripts\start.ps1 -BackgroundModules` 先启动控制模块与宿主，再按默认两路、可调 1-4 的队列并行构建并由单线程发布业务模块 |
+| WebView2 宿主 | 构建用 `.\scripts\build-webview2-host.ps1`；自检用 `.\scripts\test-webview2-host.ps1` |
 | 构建检测、运行包与完整版 | `test-build-plan.ps1` 与 `build-plan.ps1` 校验输入；`package-runtime.ps1`、`verify-runtime.ps1` 处理轻量包；`package-full.ps1 -OutputDirectory <目录>` 和 `verify-full.ps1` 处理内置 JDK、Maven、AI 的完整版 |
 | 离线源码包 | 生成用 `.\scripts\package-offline.ps1`，脏快照加 `-AllowDirtySnapshot`；验证用 `.\scripts\verify-offline.ps1 <zip>` |
 | 启动 | 开发路径用 `.\scripts\start.ps1 -BackgroundModules`；预构建运行包执行 `.\启动归序.cmd` 后直接校验运行清单并启动；离线源码包使用包内 `maven-repository` 和后台模块队列 |

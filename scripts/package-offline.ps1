@@ -605,6 +605,18 @@ foreach ($repositoryFile in @(Get-TreeFiles $repositoryDestination)) {
         }
     }
 }
+$webView2SdkRoot = Join-Path $releaseRoot "app\desktop\webview2-sdk"
+if (Test-Path -LiteralPath $webView2SdkRoot -PathType Container) {
+    foreach ($sdkFile in @(Get-TreeFiles $webView2SdkRoot | Sort-Object FullName)) {
+        $packageRelativePath = Get-RelativePathFromRoot $sdkFile.FullName $releaseRoot
+        $thirdPartyArtifacts += [ordered]@{
+            path = $packageRelativePath
+            size = [long]$sdkFile.Length
+            sha256 = Get-Sha256 $sdkFile.FullName
+            licenseStatus = "NOT_DETERMINED"
+        }
+    }
+}
 
 $manifest = [ordered]@{
     schemaVersion = 1
@@ -624,7 +636,7 @@ Write-JsonFile (Join-Path $releaseRoot "maven-manifest.json") $manifest
 
 $thirdPartyManifest = [ordered]@{
     schemaVersion = 1
-    scope = "Maven repository artifacts captured by the full online warm build"
+    scope = "Maven repository artifacts and the pinned WebView2 SDK captured by the full online warm build"
     licenseConclusion = "NOT_DETERMINED"
     warning = "This inventory is not a license review or legal conclusion. License files and artifact metadata have not been verified."
     artifacts = @($thirdPartyArtifacts | Sort-Object { $_.path })
@@ -636,10 +648,10 @@ $licenseRisk = @'
 
 Status: **NOT_DETERMINED**
 
-This offline source package contains a Maven repository snapshot captured during a full build.
-The included `third-party-artifacts.json` lists captured third-party JAR and POM files with sizes
-and SHA-256 hashes. It does not establish license compatibility, attribution completeness, or
-redistribution rights.
+This offline source package contains a Maven repository snapshot captured during a full build
+and the pinned Microsoft WebView2 SDK files. The included `third-party-artifacts.json` lists
+captured third-party files with sizes and SHA-256 hashes. It does not establish license
+compatibility, attribution completeness, or redistribution rights.
 
 No license conclusion has been made. Review the artifact licenses, notices, transitive
 dependencies, and distribution obligations before publishing or redistributing this package.

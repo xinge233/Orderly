@@ -8,6 +8,7 @@
 #   -MavenRepository 指定内置共享 Maven 仓库，默认 .m2-repository。
 #   -JdkHome 指定要随包分发的完整 JDK 21。
 #   -MavenHome 指定要随包分发的 Maven 3.9+ 目录。
+#   -WebView2RuntimeDirectory 指定随包分发的 Fixed Version WebView2 Runtime；省略时使用已安装 Evergreen Runtime。
 #   -SkipTests 只允许明确的快速打包；默认执行 Java/Maven 测试。
 #   -SkipInstaller 只生成应用目录和 ZIP，不调用需要 WiX 的 jpackage EXE 安装器。
 #   -WixHome 指定 WiX Toolset 3.x 根目录或其 bin 目录；未指定时自动发现。
@@ -24,6 +25,7 @@ param(
     [string]$MavenRepository,
     [string]$JdkHome = $env:JAVA_HOME,
     [string]$MavenHome,
+    [string]$WebView2RuntimeDirectory,
     [string]$WixHome,
     [switch]$SkipTests,
     [switch]$SkipInstaller,
@@ -113,6 +115,22 @@ function Copy-TrackedSource {
         [System.IO.Directory]::CreateDirectory((Split-Path -Parent $destinationPath)) | Out-Null
         Copy-Item -LiteralPath $source -Destination $destinationPath -Force
     }
+}
+
+function Get-InstalledWebView2Version {
+    $clientId = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    $paths = @(
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$clientId",
+        "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$clientId",
+        "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$clientId"
+    )
+    foreach ($path in $paths) {
+        $entry = Get-ItemProperty -LiteralPath $path -ErrorAction SilentlyContinue
+        if ($entry -and -not [string]::IsNullOrWhiteSpace([string]$entry.pv)) {
+            return [string]$entry.pv
+        }
+    }
+    return $null
 }
 
 function Get-GitSourceTreeSha256 {
@@ -329,6 +347,37 @@ if (-not (Test-Path -LiteralPath $aiExecutable -PathType Leaf)) {
     throw "AI 可执行文件不存在：$aiExecutable"
 }
 
+$desktopHostBuildRoot = [string](& (Join-Path $PSScriptRoot "build-webview2-host.ps1"))
+if ([string]::IsNullOrWhiteSpace($desktopHostBuildRoot)) {
+    throw "WebView2 桌面宿主构建未返回输出目录。"
+}
+$desktopHostBuildRoot = [System.IO.Path]::GetFullPath($desktopHostBuildRoot)
+$desktopHostExecutable = Join-Path $desktopHostBuildRoot "OrderlyWebView2Host.exe"
+if (-not (Test-Path -LiteralPath $desktopHostExecutable -PathType Leaf)) {
+    throw "WebView2 桌面宿主不存在：$desktopHostExecutable"
+}
+
+$webView2RuntimeMode = "evergreen"
+$webView2RuntimeVersion = $null
+$webView2RuntimeSource = $null
+if (-not [string]::IsNullOrWhiteSpace($WebView2RuntimeDirectory)) {
+    $webView2RuntimeSource = [System.IO.Path]::GetFullPath($WebView2RuntimeDirectory)
+    $runtimeExecutable = Join-Path $webView2RuntimeSource "msedgewebview2.exe"
+    if (-not (Test-Path -LiteralPath $runtimeExecutable -PathType Leaf)) {
+        throw "WebView2RuntimeDirectory 缺少 msedgewebview2.exe：$webView2RuntimeSource"
+    }
+    $webView2RuntimeMode = "fixed"
+    $webView2RuntimeVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo(
+        $runtimeExecutable
+    ).FileVersion
+}
+else {
+    $webView2RuntimeVersion = Get-InstalledWebView2Version
+    if ([string]::IsNullOrWhiteSpace($webView2RuntimeVersion)) {
+        throw "未找到 WebView2 Runtime。请安装 Evergreen Runtime，或通过 -WebView2RuntimeDirectory 指定 Fixed Version Runtime。"
+    }
+}
+
 $buildManifestPath = Join-Path $targetRoot "build-manifest.json"
 $buildManifest = Read-OrderlyBuildManifest $buildManifestPath
 if ($null -eq $buildManifest) {
@@ -379,12 +428,16 @@ $appTarget = Join-Path $appRoot "target"
 Copy-Item -LiteralPath $buildManifestPath -Destination (Join-Path $appTarget "build-manifest.json") -Force
 Copy-Tree (Join-Path $targetRoot "orderly-modules") (Join-Path $appRoot "target\orderly-modules")
 Copy-Tree $aiDist (Join-Path $appRoot "ai")
+Copy-Tree $desktopHostBuildRoot (Join-Path $appRoot "app\desktop\runtime")
+if ($webView2RuntimeMode -eq "fixed") {
+    Copy-Tree $webView2RuntimeSource (Join-Path $appRoot "webview2-runtime")
+}
 Copy-Tree $jdkPath (Join-Path $appRoot "toolchains\jdk")
 Copy-Tree $mavenPath (Join-Path $appRoot "toolchains\maven")
 Copy-Tree $mavenRepositoryPath (Join-Path $appRoot "maven-repository")
 
 $runtimeManifest = [ordered]@{
-    schemaVersion = 1
+    schemaVersion = 2
     packageType = "orderly-full-windows"
     projectVersion = $projectVersion
     gitCommit = $gitState.Commit
@@ -402,6 +455,16 @@ $runtimeManifest = [ordered]@{
         path = "app/" + (Split-Path -Leaf $launcherJar)
         size = [long](Get-Item -LiteralPath (Join-Path $appRoot "app\$(Split-Path -Leaf $launcherJar)")).Length
         sha256 = Get-OrderlySha256 (Join-Path $appRoot "app\$(Split-Path -Leaf $launcherJar)")
+    }
+    desktopHost = [ordered]@{
+        path = "app/desktop/runtime/OrderlyWebView2Host.exe"
+        size = [long](Get-Item -LiteralPath (Join-Path $appRoot "app\desktop\runtime\OrderlyWebView2Host.exe")).Length
+        sha256 = Get-OrderlySha256 (Join-Path $appRoot "app\desktop\runtime\OrderlyWebView2Host.exe")
+    }
+    webView2Runtime = [ordered]@{
+        mode = $webView2RuntimeMode
+        version = [string]$webView2RuntimeVersion
+        path = $(if ($webView2RuntimeMode -eq "fixed") { "webview2-runtime" } else { $null })
     }
     aiExecutable = [ordered]@{
         path = "ai/orderly-ai.exe"
@@ -424,7 +487,7 @@ Write-JsonFile (Join-Path $appRoot "full-runtime-manifest.json") $runtimeManifes
 $readme = @"
 # 归序 Orderly 完整版
 
-双击 Orderly.exe 启动。安装目录包含 Java 运行时、完整 JDK、Maven、本地仓库和 AI 可执行文件。
+双击 Orderly.exe 启动 WebView2 桌面窗口。安装目录包含 Java 运行时、完整 JDK、Maven、本地仓库、AI 可执行文件和 WebView2 宿主。
 用户不需要安装 JDK、Python 或 Maven。
 
 工作区、执行记录和回收站写入：

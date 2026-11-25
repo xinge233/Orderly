@@ -27,7 +27,7 @@
 允许创建或修改：
 
 - `AGENTS.md`、`.codex/agents/*.toml`、`docs/agents/**/*.md`
-- `app/kernel/**`、`app/host/**`、`app/frontend/**`
+- `app/kernel/**`、`app/host/**`、`app/frontend/**`、`app/desktop/**`
 - `Module/module_fs/**`、`Module/module_todo/**`、`Module/module_calendar/**` 及其同级自包含模块目录
 - `contracts/**`、`themes/**`、`scripts/**`
 - `ai/**`：Python AI 服务、运行提示词、工具卡、模型参数、会话和评测基线；凭据不得进入仓库
@@ -86,6 +86,7 @@
 
 ```text
 app/          前端外壳与 Java 模块宿主
+  desktop/    Windows WebView2 显示宿主
 Module/       自包含业务模块；V7 使用该大小写
 themes/       主题取值，不包含界面结构
 contracts/    计划、接口与工具契约，是跨端唯一真相源
@@ -104,6 +105,7 @@ docs/         产品资料与协作文档
 当前与后续实现必须遵守的依赖方向：
 
 - `app/` 负责模块注册、授权判定、Action/计划执行调度、持久化记录、快照回滚、事件记录和统一外观底座。
+- `app/desktop/` 只提供 Windows WebView2 显示窗口和窗口生命周期；不实现业务能力，不访问工作区，不成为第二套执行入口。
 - `app/` 不包含具体业务能力，不直接实现文件、待办或日程操作。
 - `Module/` 内每个模块自包含工具契约、执行器、逆操作、界面与动效声明。
 - 模块不得自行判定授权、直接打开数据库或绕过宿主访问文件系统。
@@ -216,8 +218,10 @@ docs/         产品资料与协作文档
 - 删除操作只能进入项目回收站，禁止物理删除。
 - 授权、确认、快照、持久化记录和回滚必须由框架统一担保，模块不得绕过。
 - AI 设置、模型请求、会话和结构化决策由 Python AI 服务统一实现；Java 只代理 `/api/ai/*` 并执行最终校验。独立 AI 计划确认和 `AI_PLAN` 来源仍由 Java 宿主管理；API Key 不得进入仓库、命令行、日志、响应、浏览器存储或普通配置文件。
+- Windows 完整版由 `app/desktop/**` 的 WebView2 原生宿主显示本地界面。WebView2 只访问当前 `127.0.0.1` 运行端口，不持有文件权限，不提供 JavaScript 原生桥，也不得绕过 Java 宿主执行 Action、读取业务状态或直接访问工作区。
 - Python 与 Java 的 IPC 必须只监听 `127.0.0.1`，使用每次运行随机 Bearer Token，并设置连接、请求和总回合超时；Python 不可用或响应非法时不得回退到 Java AI 或本地规则。
 - 前端样式不得硬编码颜色、字体或动效时长，必须引用语义变量。
+- WebView2 导航必须限制在当前回环 origin；外部链接只交系统浏览器，下载、外部拖入和权限请求默认拒绝。
 - AI 默认不得读取或修改 `docs/测试说明与测试记录.md`。只有用户明确要求查阅时，才能按指定章节或行段有界读取。
 - 每次新增、重命名或删除测试方法、测试文件、测试脚本、契约测试样例或端到端验收场景时，必须在同一变更中更新 `docs/agents/testing/records/YYYY-MM.md`，记录文件或用例、覆盖行为、执行命令、实际结果和未验证项；仅添加测试代码而未更新记录视为任务未完成。
 - 纯文档变更在变更集非空、分类可信且全部为小写 `.md` 或 `.docx` 时，最低验证为只读的 `.\scripts\doc-gate.ps1`，可跳过 Maven、Node 和 Python 测试；DOCX 必须通过 OOXML 包结构、必需部件、路径安全和 XML 完整性检查，实际修改内容或排版时还必须渲染受影响页面并核对版式，结构校验不能替代视觉验收。`AGENTS.md`、`.codex/agents/**` 角色卡和其他文档均不得绕过该门禁。空变更集、其他文件类型、混合变更或分类不确定必须执行完整 `.\scripts\gate.ps1`。

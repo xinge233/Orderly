@@ -70,4 +70,30 @@ class PackagedLauncherTest {
                 .startsWith("D:\\Orderly\\toolchains\\jdk\\bin;D:\\Orderly\\toolchains\\maven\\bin;")
                 .endsWith("C:\\Windows\\System32");
     }
+
+    @Test
+    void desktopHostReceivesOnlyLoopbackUrlDataRootAndRuntimeMode() {
+        Path appHome = Path.of("D:", "Orderly", "installed");
+        Path dataRoot = Path.of("C:", "Users", "tester", "AppData", "Local", "Orderly", "data");
+        List<String> arguments = PackagedLauncher.buildDesktopHostArguments(
+                appHome.resolve("app").resolve("desktop").resolve("runtime")
+                        .resolve("OrderlyWebView2Host.exe"),
+                dataRoot,
+                appHome.resolve("webview2-runtime"),
+                18080,
+                true
+        );
+
+        assertThat(arguments).containsSubsequence(
+                "--url",
+                "http://127.0.0.1:18080/",
+                "--data-root",
+                dataRoot.toString(),
+                "--mode",
+                "packaged",
+                "--runtime-folder",
+                appHome.resolve("webview2-runtime").toString()
+        );
+        assertThat(arguments).noneMatch(argument -> argument.contains("API_KEY"));
+    }
 }

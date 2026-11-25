@@ -68,6 +68,7 @@ AI 必须显式区分以下状态：
 - 当前分支、HEAD、目标远端和项目版本一致。
 - 工作区无未提交源码变更；如果存在无关用户改动，先停止并报告。
 - `pom.xml`、Python 包版本、完整版清单、安装器 `--app-version` 和离线包版本一致。
+- WebView2 官方 SDK、WebView2 Runtime 模式与版本、C# 宿主源码和许可证文件完整。
 - 发布脚本使用的 JDK、Maven、Wix、Python 和 PyInstaller 路径真实存在。
 - 发布排除项覆盖 `.git`、`.workbuddy`、`target`、`.m2-repository`、日志、PID、缓存、虚拟环境、凭据和 jpackage 私有元数据。
 - 源码文件排序规则在 Windows 大小写不敏感文件系统上稳定；中文路径不会因排序导致完整版和源码包指纹不一致。
@@ -136,6 +137,9 @@ AI 必须验证：
 - 业务模块、系统模块和主题数量的预期值来自当前 manifest，不得机械假设永远为 6/1/5。
 - AI 代理在正式超时窗口内就绪；不得在宿主刚存活时立即断言 AI 服务失败。
 - `/api/system/shutdown` 后启动器退出码为 0。
+- 完整版启动后出现 WebView2 窗口，页面来自当前 `127.0.0.1` origin，没有打开默认浏览器。
+- 关闭 WebView2 窗口后 `OrderlyWebView2Host.exe`、`msedgewebview2.exe`、Java、Python 和后台构建进程均退出。
+- GitHub Actions 只验证能够自动化的结构、进程和接口；真实窗口显示、焦点、缩放和关闭交互必须在交互式 Windows 桌面完成人工验收并记录。
 - 卸载后安装目录和卸载项被清除。
 - 独立数据目录和保留标记文件仍存在。
 - 卸载后没有引用安装目录的残留进程。

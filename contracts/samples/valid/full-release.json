@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "packageType": "orderly-full-windows",
   "projectVersion": "0.1.0",
   "gitCommit": "0123456789abcdef0123456789abcdef01234567",
@@ -17,6 +17,16 @@
     "path": "app/orderly-host-0.1.0-launcher.jar",
     "size": 512,
     "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "desktopHost": {
+    "path": "app/desktop/runtime/OrderlyWebView2Host.exe",
+    "size": 4096,
+    "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "webView2Runtime": {
+    "mode": "evergreen",
+    "version": "158.0.4370.33",
+    "path": null
   },
   "aiExecutable": {
     "path": "ai/orderly-ai.exe",

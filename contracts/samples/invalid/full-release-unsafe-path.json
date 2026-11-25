@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "packageType": "orderly-full-windows",
   "projectVersion": "0.1.0",
   "gitCommit": "0123456789abcdef0123456789abcdef01234567",

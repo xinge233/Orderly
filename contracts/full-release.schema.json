@@ -16,12 +16,14 @@
     "dataRootPolicy",
     "hostJar",
     "desktopLauncher",
+    "desktopHost",
+    "webView2Runtime",
     "aiExecutable",
     "modules"
   ],
   "properties": {
     "schemaVersion": {
-      "const": 1
+      "const": 2
     },
     "packageType": {
       "const": "orderly-full-windows"
@@ -56,6 +58,33 @@
     },
     "desktopLauncher": {
       "$ref": "#/$defs/artifact"
+    },
+    "desktopHost": {
+      "$ref": "#/$defs/artifact"
+    },
+    "webView2Runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "version", "path"],
+      "properties": {
+        "mode": {
+          "enum": ["evergreen", "fixed"]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/relativePath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
     },
     "aiExecutable": {
       "$ref": "#/$defs/artifact"
