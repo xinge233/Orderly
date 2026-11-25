@@ -470,6 +470,7 @@ try {
         "contracts\ai-service-turn-request.schema.json",
         "contracts\ai-service-decision.schema.json",
         "contracts\ai-query-continuation-request.schema.json",
+        "contracts\codegen-generate-request.schema.json",
         "contracts\build-settings.schema.json",
         "contracts\build-manifest.schema.json",
         "contracts\host-shutdown-response.schema.json",
@@ -546,6 +547,9 @@ try {
         @{ Schema = "contracts\ai-service-decision.schema.json"; Sample = "contracts\samples\invalid\ai-service-decision-timeline-missing-time.json"; Expected = $false },
         @{ Schema = "contracts\ai-query-continuation-request.schema.json"; Sample = "contracts\samples\valid\ai-query-continuation-request.json"; Expected = $true },
         @{ Schema = "contracts\ai-query-continuation-request.schema.json"; Sample = "contracts\samples\invalid\ai-query-continuation-request-failed-payload.json"; Expected = $false },
+        @{ Schema = "contracts\codegen-generate-request.schema.json"; Sample = "contracts\samples\valid\codegen-generate-request-module.json"; Expected = $true },
+        @{ Schema = "contracts\codegen-generate-request.schema.json"; Sample = "contracts\samples\valid\codegen-generate-request-motion.json"; Expected = $true },
+        @{ Schema = "contracts\codegen-generate-request.schema.json"; Sample = "contracts\samples\invalid\codegen-generate-request-system-module.json"; Expected = $false },
         @{ Schema = "contracts\build-settings.schema.json"; Sample = "contracts\samples\valid\build-settings.json"; Expected = $true },
         @{ Schema = "contracts\build-settings.schema.json"; Sample = "contracts\samples\invalid\build-settings-invalid-concurrency.json"; Expected = $false },
         @{ Schema = "contracts\build-manifest.schema.json"; Sample = "contracts\samples\valid\build-manifest.json"; Expected = $true },
@@ -636,6 +640,18 @@ try {
         }
     } finally {
         Pop-Location
+    }
+
+    $codegenRoot = Join-Path $repoRoot "Module\module_system_codegen"
+    & $python -m compileall -q `
+        (Join-Path $codegenRoot "ai") `
+        (Join-Path $codegenRoot "src\test\python")
+    if ($LASTEXITCODE -ne 0) {
+        throw "模块生成器 Python 语法检查失败，退出码：$LASTEXITCODE"
+    }
+    & $python -m pytest -q (Join-Path $codegenRoot "src\test\python")
+    if ($LASTEXITCODE -ne 0) {
+        throw "模块生成器 Python 测试失败，退出码：$LASTEXITCODE"
     }
 
     $buildArguments = @{}

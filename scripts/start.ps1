@@ -81,6 +81,25 @@ else {
     $candidate
 }
 
+# 模块生成器的 Python AI 由 Java 宿主按需启动；优先使用准备后的本地虚拟环境。
+# 该变量只传递解释器路径，不包含模型凭据。
+if ([string]::IsNullOrWhiteSpace($env:ORDERLY_PYTHON_EXECUTABLE)) {
+    $modulePython = Join-Path $repoRoot "ai\.venv\Scripts\python.exe"
+    if (-not (Test-Path -LiteralPath $modulePython -PathType Leaf)) {
+        $pythonCommand = Get-Command python -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($pythonCommand) {
+            $modulePython = $pythonCommand.Source
+        }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($modulePython)) {
+        $env:ORDERLY_PYTHON_EXECUTABLE = $modulePython
+    }
+}
+if (-not [string]::IsNullOrWhiteSpace($aiExecutablePath)) {
+    $env:ORDERLY_AI_EXECUTABLE = $aiExecutablePath
+}
+
 function Invoke-NativeCapture {
     param(
         [Parameter(Mandatory = $true)]

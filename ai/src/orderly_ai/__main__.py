@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import os
+import runpy
+import sys
 
 import uvicorn
 
@@ -27,7 +29,18 @@ def main() -> None:
         type=int,
         default=int(os.environ.get("ORDERLY_AI_PORT", "8091")),
     )
+    parser.add_argument(
+        "--module-script",
+        default="",
+        help="Run a trusted module-local AI script as a one-shot process.",
+    )
     args = parser.parse_args()
+    if args.module_script:
+        script = os.path.abspath(args.module_script)
+        if not os.path.isfile(script):
+            parser.error("--module-script 必须指向现有脚本")
+        runpy.run_path(script, run_name="__main__")
+        return
     if not 1 <= args.port <= 65535:
         parser.error("--port 必须在 1 到 65535 之间")
     if not os.environ.get("ORDERLY_AI_IPC_TOKEN"):

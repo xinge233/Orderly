@@ -47,6 +47,14 @@ def test_health_is_public_and_other_endpoints_fail_closed(make_client):
         ),
         ("DELETE", "/v1/settings", None),
         ("POST", "/v1/settings/test", None),
+        (
+            "POST",
+            "/v1/model/complete",
+            {
+                "systemPrompt": "只返回 JSON。",
+                "messages": [{"role": "user", "content": "生成候选"}],
+            },
+        ),
         ("POST", "/v1/turns", turn_body()),
         (
             "POST",
@@ -285,6 +293,33 @@ def test_settings_connection_test_uses_current_memory_key(make_client, provider)
     assert response.json() == {"ok": True, "message": "模型连接成功"}
     assert provider.test_calls == 1
     assert "connection-secret" not in response.text
+
+
+def test_generic_model_completion_uses_memory_config_without_secret_echo(
+    make_client,
+    provider,
+):
+    client = make_client()
+    secret = "module-codegen-secret"
+    configure_settings(client, api_key=secret)
+    provider.responses.append('{"steps":[]}')
+
+    response = client.post(
+        "/v1/model/complete",
+        headers=AUTH_HEADERS,
+        json={
+            "systemPrompt": "只输出 JSON 对象。",
+            "messages": [{"role": "user", "content": "生成一个候选"}],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"content": '{"steps":[]}'}
+    assert len(provider.calls) == 1
+    assert provider.calls[0].messages == [
+        {"role": "user", "content": "生成一个候选"}
+    ]
+    assert secret not in response.text
 
 
 def test_response_decision_has_no_internal_null_fields():

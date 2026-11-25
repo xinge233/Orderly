@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/codegen-generate-request.schema.json",
+  "title": "Orderly code generation request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mode",
+    "prompt",
+    "targetModuleId",
+    "motionTarget",
+    "themeId",
+    "moduleCatalog",
+    "motionScopes"
+  ],
+  "properties": {
+    "mode": { "enum": ["module", "motion"] },
+    "prompt": { "type": "string", "minLength": 1, "maxLength": 8000 },
+    "targetModuleId": {
+      "type": "string",
+      "pattern": "^(?:|module_(?!system_)[a-z0-9_]+)$"
+    },
+    "motionTarget": {
+      "enum": ["", "framework", "module"]
+    },
+    "themeId": {
+      "type": "string",
+      "pattern": "^(?:|[a-z][a-z0-9_-]{0,63})$"
+    },
+    "moduleCatalog": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "type": "object" }
+    },
+    "motionScopes": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["scope", "state", "phase"],
+        "properties": {
+          "scope": {
+            "type": "string",
+            "pattern": "^[a-z0-9_-]{1,80}$"
+          },
+          "state": { "type": "string", "maxLength": 80 },
+          "phase": { "type": "string", "maxLength": 80 }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "mode": { "const": "module" } },
+        "required": ["mode"]
+      },
+      "then": {
+        "properties": {
+          "motionTarget": { "const": "" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": { "const": "motion" },
+          "motionTarget": { "const": "module" }
+        },
+        "required": ["mode", "motionTarget"]
+      },
+      "then": {
+        "properties": {
+          "targetModuleId": { "pattern": "^module_(?!system_)[a-z0-9_]+$" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": { "const": "motion" },
+          "motionTarget": { "const": "framework" }
+        },
+        "required": ["mode", "motionTarget"]
+      },
+      "then": {
+        "properties": {
+          "targetModuleId": { "const": "" }
+        }
+      }
+    }
+  ]
+}

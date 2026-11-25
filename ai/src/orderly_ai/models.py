@@ -88,6 +88,44 @@ class ConnectionTestView(CamelModel):
     message: str
 
 
+class ModelMessage(CamelModel):
+    """通用模型补全请求中的单条消息。"""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        use_enum_values=True,
+        extra="forbid",
+    )
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=200_000)
+
+
+class ModelCompletionRequest(CamelModel):
+    """受控通用补全请求。
+
+    该端点只复用当前进程内存中的模型配置，不执行 Action、不访问文件，也不
+    维护业务会话。系统提示词与模块提示词由调用方提供，根 AI 服务不保存它们。
+    """
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        use_enum_values=True,
+        extra="forbid",
+    )
+
+    system_prompt: str = Field(min_length=1, max_length=100_000)
+    messages: list[ModelMessage] = Field(min_length=1, max_length=8)
+
+
+class ModelCompletionView(CamelModel):
+    """通用补全结果；只返回模型文本，不包含凭据或上游响应元数据。"""
+
+    content: str
+
+
 class ParameterCard(CamelModel):
     """宿主提供的参数说明；额外元数据被忽略以减少模型适配耦合。"""
 

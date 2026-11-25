@@ -674,8 +674,7 @@ function Publish-CandidateModules {
                         throw "模块 $($moduleDirectory.Name) 的 system 元数据必须声明受保护系统角色。"
                     }
                     $capabilities = @($system.capabilities)
-                    if ($capabilities.Count -eq 0 -or
-                            @($capabilities | Where-Object {
+                    if (@($capabilities | Where-Object {
                                 [string]$_ -notin @("MODULE_GOVERNANCE")
                             }).Count -gt 0) {
                         throw "模块 $($moduleDirectory.Name) 声明了不支持的系统能力。"
@@ -683,6 +682,10 @@ function Publish-CandidateModules {
                     if ($system.role -eq "MODULE_CONTROL" -and
                             $capabilities -notcontains "MODULE_GOVERNANCE") {
                         throw "MODULE_CONTROL 必须声明 MODULE_GOVERNANCE 能力。"
+                    }
+                    if ($system.role -eq "SYSTEM_SERVICE" -and
+                            $capabilities -contains "MODULE_GOVERNANCE") {
+                        throw "SYSTEM_SERVICE 不能声明 MODULE_GOVERNANCE 能力。"
                     }
                     $systemModuleDirectories += $moduleDirectory.Name
                 }

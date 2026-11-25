@@ -1,0 +1,14 @@
+{
+  "moduleId": "module_system_codegen",
+  "title": "模块与动效生成器",
+  "description": "通过模块目录内专属 Python AI 生成候选模块与动效，并在隔离镜像宿主中审查、构建、应用和逐步回滚。",
+  "order": 10001,
+  "actions": [],
+  "queries": [],
+  "plannerRules": [],
+  "system": {
+    "role": "SYSTEM_SERVICE",
+    "protected": true,
+    "capabilities": []
+  }
+}

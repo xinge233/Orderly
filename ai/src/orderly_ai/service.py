@@ -28,6 +28,8 @@ from .errors import (
 from .models import (
     ConnectionTestView,
     Decision,
+    ModelCompletionRequest,
+    ModelCompletionView,
     ProviderConfig,
     QueryResultsRequest,
     SettingsPutRequest,
@@ -129,6 +131,36 @@ class AIService:
         except ProviderError as exc:
             raise provider_unavailable() from exc
         return ConnectionTestView(ok=True, message="模型连接成功")
+
+    async def complete_model(
+        self,
+        request: ModelCompletionRequest,
+    ) -> ModelCompletionView:
+        """使用当前内存模型配置完成一次无状态文本请求。
+
+        该入口供系统模块自己的 Python AI 编排使用。提示词、输出结构和模块
+        文件提案由模块目录持有，根 AI 只提供通用模型传输与凭据隔离。
+        """
+        config = self.settings.require_configured()
+        before_version = config.version
+        try:
+            content = await self.provider.complete(
+                config,
+                request.system_prompt,
+                [
+                    message.model_dump(by_alias=True)
+                    for message in request.messages
+                ],
+            )
+        except ProviderError as exc:
+            raise provider_unavailable() from exc
+        if self.settings.snapshot().version != before_version:
+            raise ServiceError(
+                409,
+                "AI_SETTINGS_CHANGED",
+                "AI 设置已变更，本次请求未执行；请重新提交。",
+            )
+        return ModelCompletionView(content=content)
 
     async def turn(self, request: TurnRequest) -> Decision:
         """处理首轮目标并允许模型在有界范围内提出 Query。"""

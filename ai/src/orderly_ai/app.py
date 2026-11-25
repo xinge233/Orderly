@@ -23,6 +23,8 @@ from .models import (
     ConnectionTestView,
     Decision,
     ErrorView,
+    ModelCompletionRequest,
+    ModelCompletionView,
     QueryResultsRequest,
     SettingsPutRequest,
     SettingsView,
@@ -187,6 +189,17 @@ def create_app(
     async def test_settings() -> ConnectionTestView:
         """使用当前内存 Key 发起最小 Provider 连通性测试。"""
         return await ai_service.test_connection()
+
+    @app.post(
+        "/v1/model/complete",
+        response_model=ModelCompletionView,
+        dependencies=protected,
+    )
+    async def complete_model(
+        request: ModelCompletionRequest,
+    ) -> ModelCompletionView:
+        """执行无状态通用补全；业务提示词与文件能力不在根 AI 内。"""
+        return await ai_service.complete_model(request)
 
     @app.post(
         "/v1/turns",

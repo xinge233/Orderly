@@ -1,0 +1,15 @@
+{
+  "mode": "motion",
+  "prompt": "让侧边栏展开更克制。",
+  "targetModuleId": "",
+  "motionTarget": "framework",
+  "themeId": "paper",
+  "moduleCatalog": [],
+  "motionScopes": [
+    {
+      "scope": "sidebar",
+      "state": "expanded",
+      "phase": "settled"
+    }
+  ]
+}

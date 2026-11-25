@@ -15,6 +15,7 @@ import java.util.Set;
 public final class SystemModulePolicy {
 
     public static final String SYSTEM_MODULE_PREFIX = "module_system_";
+    public static final String CODEGEN_MODULE_ID = "module_system_codegen";
     public static final String LEGACY_CONTROL_MODULE_ID = "module_control";
 
     public static final String LEGACY_ACTION_SET_MODULE_ENABLED =
@@ -33,6 +34,11 @@ public final class SystemModulePolicy {
             new BuiltInSystemModule(
                     ModuleSystemMetadata.CONTROL_ROLE,
                     Set.of(ModuleSystemMetadata.CAPABILITY_MODULE_GOVERNANCE)
+            ),
+            CODEGEN_MODULE_ID,
+            new BuiltInSystemModule(
+                    ModuleSystemMetadata.SERVICE_ROLE,
+                    Set.of()
             )
     );
 

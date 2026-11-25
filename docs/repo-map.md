@@ -1,7 +1,5 @@
 # 仓库地图
-
 本文件是 Orderly 的轻量导航入口，只记录仓库入口、职责、读取路由、生成目录、二进制资产和验证命令。产品事实、规则和实现细节仍以各自主文件为准。
-
 ## 入口
 
 | 入口 | 用途 | 何时读取 |
@@ -34,6 +32,7 @@
 | 目录 | 入口职责 |
 |---|---|
 | `Module/module_system_control/` | 唯一控制模块；模块启停、顺序和设置治理 |
+| `Module/module_system_codegen/` | 受保护模块与动效生成器；UI、模块专属 Python 提案、步骤回滚、镜像预览入口 |
 | `Module/module_fs/` | 沙箱文件查询、写动作、回收站与资料视图 |
 | `Module/module_todo/` | 待办查询与创建 |
 | `Module/module_calendar/` | 日程查询与时间修改 |
@@ -62,6 +61,7 @@
 | 模块运行时 | `app/host/src/main/java/com/orderly/host/runtime/ModuleBootstrap.java` |
 | 存活与诊断健康检查 | `app/host/src/main/java/com/orderly/host/api/OrderlyController.java` |
 | 模块治理与分发 | `app/host/src/main/java/com/orderly/host/modulecontrol/`；下载校验入口为 `ModuleDistributionService.java`、`ModulePackageInstaller.java` |
+| 模块与动效生成 | `app/host/src/main/java/com/orderly/host/codegen/`；模块提示词与提案器为 `Module/module_system_codegen/ai/codegen_agent.py` |
 | 主题目录 | `app/host/src/main/java/com/orderly/host/theme/` |
 | 前端页面与交互 | `app/frontend/index.html`、`src/app.js`、`ai-dialog.js`、`ai-settings.js`、`modules.js`、`settings.js` |
 | 前端样式 | `app/frontend/styles/app.css`、`tokens.css` |
@@ -79,6 +79,7 @@
 | `contracts/ai-turn-response.schema.json` | ACTIONS、PLAN、QUERY、QUESTION、VIEW 响应 |
 | `contracts/ai-service-turn-request.schema.json` | Java 到 Python AI 服务的版本化 IPC 请求 |
 | `contracts/ai-query-continuation-request.schema.json` | Query 结果回传 Python 的受控续聊请求 |
+| `contracts/codegen-generate-request.schema.json` | 生成器模块/动效请求、目标与挂点范围 |
 | `contracts/ai-service-decision.schema.json` | Python 到 Java 的受控决策响应 |
 | `contracts/module.schema.json`、`module-ui.schema.json`、`module-catalog.schema.json`、`module-removal.schema.json` | 模块 JAR、模块 UI、GitHub 分发与删除生命周期契约 |
 | `contracts/theme.schema.json` | 宿主主题加载与主题样例 |
@@ -156,5 +157,4 @@
 | 新增契约或样例目录 | 更新契约入口与消费者 |
 | 新增生成目录或二进制资产 | 更新忽略目录与二进制资产表 |
 | 验证命令或测试资产变化 | 更新验证命令表；AI 新增、重命名或删除测试时更新 `docs/agents/testing/records/YYYY-MM.md`，人类完整测试资料由人类按需维护 |
-
 维护本文件时只写导航事实，不复制源码、完整规则、日志、交接正文或产品策划全文。

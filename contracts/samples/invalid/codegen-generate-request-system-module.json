@@ -1,0 +1,9 @@
+{
+  "mode": "module",
+  "prompt": "修改系统控制模块。",
+  "targetModuleId": "module_system_control",
+  "motionTarget": "",
+  "themeId": "paper",
+  "moduleCatalog": [],
+  "motionScopes": []
+}

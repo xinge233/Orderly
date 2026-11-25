@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "view": {
+    "id": "module-system-codegen",
+    "caption": "模块与动效生成",
+    "icon": "spark"
+  },
+  "examples": [],
+  "script": "module.js",
+  "style": "module.css"
+}

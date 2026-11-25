@@ -2454,6 +2454,20 @@ async function mountModule(module) {
         const baseContext = {
             module,
             ui,
+            moduleCatalog: state.modules.map((entry) => ({ ...entry })),
+            themeCatalog: state.themes.map((entry) => ({ ...entry })),
+            listMotionScopes: () => [...document.querySelectorAll("[data-motion-scope]")]
+                .map((node) => ({
+                    scope: node.getAttribute("data-motion-scope") ?? "",
+                    state: node.getAttribute("data-motion-state") ?? "",
+                    phase: node.getAttribute("data-motion-phase") ?? ""
+                }))
+                .filter((entry, index, entries) =>
+                    entry.scope
+                    && entries.findIndex((candidate) =>
+                        candidate.scope === entry.scope
+                        && candidate.state === entry.state
+                        && candidate.phase === entry.phase) === index),
             query: (queryId, parameters = {}) => api.queryModule(
                 module.moduleId,
                 queryId,

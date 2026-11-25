@@ -31,5 +31,27 @@ namespace Orderly.Desktop
                 ))
                 && !Allows(candidate, origin);
         }
+
+        public static bool AllowsPreview(Uri candidate, Uri origin)
+        {
+            return candidate != null
+                && origin != null
+                && String.Equals(
+                    candidate.Scheme,
+                    Uri.UriSchemeHttp,
+                    StringComparison.OrdinalIgnoreCase
+                )
+                && String.Equals(
+                    candidate.Host,
+                    "127.0.0.1",
+                    StringComparison.Ordinal
+                )
+                && candidate.Port > 0
+                && candidate.Port != origin.Port
+                && String.Equals(candidate.AbsolutePath, "/", StringComparison.Ordinal)
+                && String.IsNullOrEmpty(candidate.UserInfo)
+                && String.IsNullOrEmpty(candidate.Query)
+                && String.IsNullOrEmpty(candidate.Fragment);
+        }
     }
 }

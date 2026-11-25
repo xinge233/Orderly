@@ -52,6 +52,30 @@ namespace Orderly.Desktop
                     ),
                     "external origin rejected"
                 );
+                Check(
+                    failures,
+                    NavigationPolicy.AllowsPreview(
+                        new Uri("http://127.0.0.1:18081/"),
+                        options.Url
+                    ),
+                    "loopback preview origin accepted in a separate window"
+                );
+                Check(
+                    failures,
+                    !NavigationPolicy.AllowsPreview(
+                        new Uri("http://localhost:18081/"),
+                        options.Url
+                    ),
+                    "preview host must be literal loopback"
+                );
+                Check(
+                    failures,
+                    !NavigationPolicy.AllowsPreview(
+                        new Uri("http://127.0.0.1:18081/path"),
+                        options.Url
+                    ),
+                    "preview path restricted to application root"
+                );
                 Reject(failures, "https://127.0.0.1:18080/");
                 Reject(failures, "http://localhost:18080/");
                 Reject(failures, "file:///C:/Windows/win.ini");

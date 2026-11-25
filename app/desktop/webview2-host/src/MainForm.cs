@@ -143,6 +143,12 @@ namespace Orderly.Desktop
             {
                 webView.CoreWebView2.Navigate(target.AbsoluteUri);
             }
+            else if (e.IsUserInitiated
+                && NavigationPolicy.AllowsPreview(target, options.Url))
+            {
+                PreviewWindow preview = new PreviewWindow(options, target);
+                preview.Show(this);
+            }
             else if (e.IsUserInitiated)
             {
                 OpenExternal(target);

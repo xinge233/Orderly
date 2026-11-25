@@ -97,7 +97,7 @@ class OrderlyIntegrationTest {
                 .doesNotHaveDuplicates();
         assertThat(catalog.systemModules())
                 .extracting(module -> module.moduleId())
-                .containsExactly("module_system_control");
+                .containsExactly("module_system_control", "module_system_codegen");
 
         mockMvc.perform(get("/api/health"))
                 .andExpect(status().isOk())
@@ -112,9 +112,12 @@ class OrderlyIntegrationTest {
                 .andExpect(jsonPath("$").isArray());
         mockMvc.perform(get("/api/system-modules"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].moduleId").value("module_system_control"))
                 .andExpect(jsonPath("$[0].system.role").value("MODULE_CONTROL"))
+                .andExpect(jsonPath("$[1].moduleId").value("module_system_codegen"))
+                .andExpect(jsonPath("$[1].system.role").value("SYSTEM_SERVICE"))
+                .andExpect(jsonPath("$[1].system.capabilities").isEmpty())
                 .andExpect(jsonPath("$[0].enabled").value(true));
         mockMvc.perform(get("/api/themes"))
                 .andExpect(status().isOk())
@@ -229,6 +232,28 @@ class OrderlyIntegrationTest {
         mockMvc.perform(get("/api/todos")).andExpect(status().isNotFound());
         mockMvc.perform(get("/api/calendar")).andExpect(status().isNotFound());
         mockMvc.perform(get("/api/trash")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void codegenRoutesRequireExplicitLocalActions() throws Exception {
+        mockMvc.perform(get("/api/codegen/sessions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
+        mockMvc.perform(post("/api/codegen/sessions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "mode": "module",
+                                  "prompt": "创建一个演示模块",
+                                  "targetModuleId": "",
+                                  "motionTarget": "",
+                                  "themeId": "paper",
+                                  "moduleCatalog": [],
+                                  "motionScopes": []
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CODEGEN_ACTION_REQUIRED"));
     }
 
     @Test
