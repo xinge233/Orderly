@@ -7,24 +7,28 @@
     position: relative;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
-    width: 100%;
-    height: clamp(43rem, calc(100dvh - 7rem), 58rem);
-    min-height: 0;
-    margin-inline: auto;
+    width: calc(
+        100%
+        + clamp(var(--space-6), 4vw, var(--space-12))
+        + clamp(var(--space-6), 4vw, var(--space-12))
+    );
+    height: max(46rem, calc(100dvh - 3rem));
+    min-height: 46rem;
+    margin-inline: calc(0px - clamp(var(--space-6), 4vw, var(--space-12)));
     overflow: hidden;
     contain: layout paint;
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
-    box-shadow: var(--shadow-card);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
 }
 
 .module-codegen-ui-header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: var(--space-4);
-    padding: var(--space-5) var(--space-6) var(--space-4);
+    padding: 0 var(--space-4) var(--space-4);
     border-bottom: 1px solid var(--color-line);
 }
 
@@ -80,11 +84,11 @@
 .module-codegen-ui-tabs {
     display: inline-flex;
     flex: none;
-    gap: 2px;
-    padding: 2px;
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-muted);
+    gap: var(--space-1);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
 }
 
 .module-codegen-ui-tab {
@@ -92,9 +96,10 @@
     align-items: center;
     gap: var(--space-2);
     min-height: 2.4rem;
-    padding: 0 var(--space-4);
+    padding: 0 var(--space-3);
     border: 0;
-    border-radius: var(--radius-sm);
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
     background: transparent;
     color: var(--color-text-soft);
     font: inherit;
@@ -104,26 +109,29 @@
 }
 
 .module-codegen-ui-tab[aria-selected="true"] {
-    background: var(--color-surface-raised);
+    border-bottom-color: var(--color-accent);
+    background: transparent;
     color: var(--color-text);
-    box-shadow: var(--shadow-sm);
+    box-shadow: none;
 }
 
 .module-codegen-ui-layout {
     display: grid;
     min-width: 0;
     min-height: 0;
-    grid-template-columns: minmax(0, 1.25fr) minmax(23rem, 0.95fr);
-    gap: var(--space-4);
-    padding: var(--space-5) var(--space-6) var(--space-6);
+    grid-template-columns: minmax(0, 1.55fr) minmax(22rem, 0.85fr);
+    gap: var(--space-6);
+    padding: var(--space-5) var(--space-4) 0;
 }
 
 .module-codegen-ui-layout.is-module-workspace {
-    grid-template-columns: minmax(17rem, 0.72fr) minmax(0, 1.8fr) minmax(16rem, 0.68fr);
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(19rem, 0.72fr) minmax(0, 2fr) minmax(18rem, 0.78fr);
+    grid-template-rows: minmax(0, 1fr) minmax(10rem, 0.42fr);
     grid-template-areas:
         "left preview history"
         "prompt prompt history";
+    gap: var(--space-4) 0;
+    padding-top: var(--space-5);
 }
 
 .module-codegen-ui-module-left {
@@ -131,22 +139,27 @@
     z-index: 4;
     display: grid;
     grid-area: left;
-    grid-template-rows: 3.1rem minmax(0, 1fr);
-    gap: var(--space-3);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: var(--space-4);
     min-width: 0;
     min-height: 0;
 }
 
 .module-codegen-ui-layout.is-module-workspace > .module-codegen-ui-preview-panel {
     grid-area: preview;
+    border-inline: 1px solid var(--color-line);
+    padding-inline: var(--space-5);
 }
 
 .module-codegen-ui-layout.is-module-workspace > .module-codegen-ui-revision-panel {
     grid-area: history;
+    padding-left: var(--space-5);
 }
 
 .module-codegen-ui-layout.is-module-workspace > .module-codegen-ui-module-prompt-panel {
     grid-area: prompt;
+    border-inline: 1px solid var(--color-line);
+    padding-inline: var(--space-5);
 }
 
 .module-codegen-ui-composer,
@@ -159,9 +172,9 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-raised);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
 }
 
 .module-codegen-ui-composer {
@@ -189,9 +202,9 @@
     justify-content: space-between;
     gap: var(--space-3);
     min-height: 3.1rem;
-    padding: 0 var(--space-4);
+    padding: 0 0 var(--space-2);
     border-bottom: 1px solid var(--color-line);
-    background: var(--color-surface-muted);
+    background: transparent;
 }
 
 .module-codegen-ui-composer-title {
@@ -238,7 +251,7 @@
     flex: 1;
     flex-direction: column;
     gap: var(--space-4);
-    padding: var(--space-4);
+    padding: var(--space-4) 0 0;
 }
 
 .module-codegen-ui-editor {
@@ -349,7 +362,7 @@
     padding: var(--space-1);
     border: 1px solid var(--color-line);
     border-radius: var(--radius-sm);
-    background: var(--color-surface-muted);
+    background: transparent;
     scrollbar-color: var(--color-line-strong) transparent;
     scrollbar-width: thin;
 }
@@ -429,7 +442,7 @@
     flex: 1;
     place-items: center;
     overflow: hidden;
-    padding: var(--space-4);
+    padding: var(--space-4) 0;
     container-type: size;
 }
 
@@ -442,7 +455,7 @@
     min-height: 0;
     grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.38fr);
     gap: var(--space-3);
-    padding: var(--space-4);
+    padding: var(--space-3) 0 0;
 }
 
 .module-codegen-ui-module-prompt-body > .module-codegen-ui-prompt {
@@ -480,7 +493,7 @@
     width: 100%;
     border: 1px solid var(--color-line);
     border-radius: var(--radius-sm);
-    background: var(--color-surface-muted);
+    background: transparent;
     color: var(--color-text);
     font: inherit;
     font-size: 0.92rem;
@@ -642,8 +655,10 @@
     display: grid;
     min-width: 0;
     min-height: 0;
-    grid-template-rows: auto minmax(0, 1.1fr) minmax(10rem, 0.8fr);
-    gap: var(--space-3);
+    grid-template-rows: minmax(0, 1.15fr) minmax(9rem, 0.72fr) minmax(12rem, 1fr);
+    gap: var(--space-5);
+    border-left: 1px solid var(--color-line);
+    padding-left: var(--space-5);
 }
 
 .module-codegen-ui-thumb,
@@ -654,8 +669,8 @@
     aspect-ratio: 16 / 9;
     overflow: hidden;
     border: 1px solid var(--color-line);
-    border-radius: var(--radius-md);
-    background-color: var(--color-surface-muted);
+    border-radius: var(--radius-sm);
+    background-color: transparent;
     background-image: radial-gradient(circle, var(--color-line) 1px, transparent 1px);
     background-size: 0.8rem 0.8rem;
     color: var(--color-text);
@@ -824,16 +839,18 @@
     flex: 1;
     flex-direction: column;
     gap: var(--space-1);
-    padding: var(--space-2);
+    padding: var(--space-3) 0 0;
 }
 
 .module-codegen-ui-build-summary {
     display: grid;
     gap: 2px;
     padding: var(--space-2);
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface-muted);
+    border: 0;
+    border-left: 2px solid var(--color-accent);
+    border-radius: 0;
+    background: transparent;
+    padding-left: var(--space-3);
 }
 
 .module-codegen-ui-build-summary strong {
@@ -870,9 +887,10 @@
     gap: var(--space-1);
     align-items: center;
     padding: var(--space-2);
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface-raised);
+    border: 0;
+    border-bottom: 1px solid var(--color-line);
+    border-radius: 0;
+    background: transparent;
 }
 
 .module-codegen-ui-step-copy {
@@ -1043,7 +1061,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-1);
-    padding: var(--space-3);
+    padding: var(--space-2) 0 0;
 }
 
 .module-codegen-ui-hook-chip {
@@ -1084,11 +1102,16 @@
 
 @media (max-width: 980px) {
     .module-codegen-ui-shell {
-        width: 100%;
+        width: calc(
+            100%
+            + clamp(var(--space-6), 4vw, var(--space-12))
+            + clamp(var(--space-6), 4vw, var(--space-12))
+        );
         height: auto;
-        min-height: auto;
+        min-height: 0;
         aspect-ratio: auto;
         contain: none;
+        margin-inline: calc(0px - clamp(var(--space-6), 4vw, var(--space-12)));
     }
 
     .module-codegen-ui-layout {
@@ -1103,12 +1126,25 @@
             "preview"
             "prompt"
             "history";
-        padding: var(--space-4);
+        gap: var(--space-5);
+        padding-top: var(--space-4);
+    }
+
+    .module-codegen-ui-layout.is-module-workspace > .module-codegen-ui-preview-panel,
+    .module-codegen-ui-layout.is-module-workspace > .module-codegen-ui-module-prompt-panel,
+    .module-codegen-ui-layout.is-module-workspace > .module-codegen-ui-revision-panel {
+        border: 0;
+        padding-inline: 0;
+        padding-left: 0;
     }
 
     .module-codegen-ui-module-left {
-        grid-template-rows: 3.1rem minmax(18rem, auto);
+        grid-template-rows: auto minmax(16rem, 26rem);
         gap: var(--space-3);
+    }
+
+    .module-codegen-ui-interface-panel {
+        max-height: 26rem;
     }
 
     .module-codegen-ui-preview-panel-body {
@@ -1129,6 +1165,9 @@
 
     .module-codegen-ui-side {
         grid-template-rows: auto auto auto;
+        gap: var(--space-5);
+        border-left: 0;
+        padding-left: 0;
     }
 
     .module-codegen-ui-editor.is-motion {
@@ -1137,9 +1176,9 @@
         grid-template-rows: auto;
     }
 
-    .module-codegen-ui-target-field,
-    .module-codegen-ui-theme-field,
-    .module-codegen-ui-prompt {
+    .module-codegen-ui-editor.is-motion > .module-codegen-ui-target-field,
+    .module-codegen-ui-editor.is-motion > .module-codegen-ui-theme-field,
+    .module-codegen-ui-editor.is-motion > .module-codegen-ui-prompt {
         grid-area: auto;
     }
 }
@@ -1147,7 +1186,7 @@
 @media (max-width: 680px) {
     .module-codegen-ui-header {
         display: grid;
-        padding: var(--space-4);
+        padding-bottom: var(--space-3);
     }
 
     .module-codegen-ui-header-actions {
@@ -1169,7 +1208,7 @@
     }
 
     .module-codegen-ui-layout {
-        padding: var(--space-3);
+        padding-top: var(--space-3);
     }
 
     .module-codegen-ui-editor {

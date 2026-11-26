@@ -113,8 +113,13 @@ test("system service delegates generation to the protected host API", async () =
     assert.match(style, /\.module-codegen-ui-picker\s*\{/);
     assert.match(style, /\.module-codegen-ui-step-row\s*\{/);
     const shellRule = style.match(/\.module-codegen-ui-shell\s*\{([^}]*)\}/)?.[1] ?? "";
-    assert.match(shellRule, /width:\s*100%/);
-    assert.match(shellRule, /height:\s*clamp\(43rem,\s*calc\(100dvh - 7rem\),\s*58rem\)/);
+    assert.match(shellRule, /width:\s*calc\(/);
+    assert.match(shellRule, /height:\s*max\(46rem,\s*calc\(100dvh - 3rem\)\)/);
+    assert.doesNotMatch(shellRule, /height:\s*clamp/);
+    assert.match(shellRule, /border:\s*0/);
+    assert.match(shellRule, /border-radius:\s*0/);
+    assert.match(shellRule, /background:\s*transparent/);
+    assert.match(shellRule, /box-shadow:\s*none/);
     assert.doesNotMatch(shellRule, /aspect-ratio/);
     assert.match(
         style,
@@ -131,6 +136,14 @@ test("system service delegates generation to the protected host API", async () =
     assert.match(
         style,
         /\.module-codegen-ui-layout\.is-module-workspace\s*\{[^}]*grid-template-areas:\s*"left preview history"\s*"prompt prompt history"/s
+    );
+    assert.match(
+        style,
+        /\.module-codegen-ui-layout\.is-module-workspace > \.module-codegen-ui-preview-panel\s*\{[^}]*border-inline:\s*1px solid var\(--color-line\)/s
+    );
+    assert.match(
+        style,
+        /\.module-codegen-ui-editor\.is-motion > \.module-codegen-ui-target-field,[\s\S]*?grid-area:\s*auto/s
     );
     assert.match(
         style,
