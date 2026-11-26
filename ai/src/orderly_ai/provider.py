@@ -37,6 +37,7 @@ class OpenAICompatibleProvider:
         config: ProviderConfig,
         system_prompt: str,
         messages: Sequence[dict[str, str]],
+        timeout_seconds: float | None = None,
     ) -> str:
         """完成一次非流式模型调用并提取文本内容。
 
@@ -66,7 +67,7 @@ class OpenAICompatibleProvider:
         try:
             # 禁止跟随重定向，防止 Bearer Key 被转发到配置之外的地址。
             async with httpx.AsyncClient(
-                timeout=self._timeout_seconds,
+                timeout=timeout_seconds or self._timeout_seconds,
                 follow_redirects=False,
                 transport=self._transport,
             ) as client:

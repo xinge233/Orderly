@@ -129,7 +129,7 @@ class AIService:
         try:
             await self.provider.test(config)
         except ProviderError as exc:
-            raise provider_unavailable() from exc
+            raise provider_unavailable(exc) from exc
         return ConnectionTestView(ok=True, message="模型连接成功")
 
     async def complete_model(
@@ -151,9 +151,10 @@ class AIService:
                     message.model_dump(by_alias=True)
                     for message in request.messages
                 ],
+                timeout_seconds=request.timeout_seconds,
             )
         except ProviderError as exc:
-            raise provider_unavailable() from exc
+            raise provider_unavailable(exc) from exc
         if self.settings.snapshot().version != before_version:
             raise ServiceError(
                 409,
@@ -392,7 +393,7 @@ class AIService:
                         "模型输出连续两次不符合受控决策契约"
                     ) from second_failure
         except ProviderError as exc:
-            raise provider_unavailable() from exc
+            raise provider_unavailable(exc) from exc
 
     @staticmethod
     def _allowed_kinds(

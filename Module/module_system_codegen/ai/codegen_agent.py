@@ -122,6 +122,23 @@ Module mode requirements:
   actions must set confirmationRequired true. Do not declare aiCallable.
 - Module code must use only the public OrderlyModule/ModuleRuntime SPI. Do not import
   another business module or read arbitrary filesystem paths.
+- The Java class must implement exactly these public methods:
+  moduleId(), query(String, Map<String,String>, ModuleRuntime),
+  prepareSnapshot(ModuleInvocation, ModuleRuntime),
+  execute(ModuleInvocation, ModuleRuntime), and
+  rollback(ModuleInvocation, Map<String,Object>, Map<String,Object>, ModuleRuntime).
+- src/main/resources/orderly-ui/module.js is an ES module and must contain a top-level
+  default export such as `export default async function mount(root, context) { ... }`.
+  Do not emit an IIFE, Node export, registerView call, or global OrderlyModules registry.
+- src/main/resources/orderly-ui/module.json must use this exact version-1 shape:
+  {"version":1,"view":{"id":"lowercase-view-id","icon":"spark","caption":"标题"},
+  "card":{"title":"标题","description":"只读摘要","badge":"只读","icon":"spark",
+  "queryId":"query.id"},"settings":[],"examples":[],"script":"module.js",
+  "style":"module.css"}. Do not use schemaVersion, moduleId, entry, styles, or views.
+- Every Query in the module contract must have id, title, description, parameters, and a
+  JSON Schema outputSchema. The first UI card queryId must match an implemented Query.
+- pom.xml must use the repository parent, dependency com.orderly:orderly-kernel with
+  version ${project.version}, and artifactId equal to moduleId.
 - UI CSS must use semantic variables and no raw color literals or fixed motion duration.
 - If the request changes framework behavior or requires privileges, keep that out of the
   module and explain the limitation in summary.
@@ -169,6 +186,7 @@ def _complete(*, system_prompt: str, user_content: str) -> str:
         {
             "systemPrompt": system_prompt,
             "messages": [{"role": "user", "content": user_content}],
+            "timeoutSeconds": 90,
         },
         ensure_ascii=False,
         separators=(",", ":"),
@@ -184,7 +202,7 @@ def _complete(*, system_prompt: str, user_content: str) -> str:
         },
     )
     try:
-        with request.urlopen(req, timeout=75) as response:
+        with request.urlopen(req, timeout=95) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except error.HTTPError as exc:
         message = f"model service returned HTTP {exc.code}"

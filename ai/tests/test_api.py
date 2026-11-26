@@ -282,6 +282,26 @@ def test_provider_and_validation_errors_have_stable_shape(make_client, provider)
     assert "provider-secret" not in unavailable.text
 
 
+def test_provider_http_status_is_preserved_without_echoing_secret(
+    make_client,
+    provider,
+):
+    client = make_client()
+    configure_settings(client, api_key="provider-secret")
+    provider.responses.append(ProviderError("模型服务返回 HTTP 401。"))
+
+    unavailable = client.post(
+        "/v1/turns",
+        headers=AUTH_HEADERS,
+        json=turn_body(),
+    )
+
+    assert unavailable.status_code == 502
+    assert unavailable.json()["code"] == "AI_PROVIDER_UNAVAILABLE"
+    assert unavailable.json()["message"] == "模型服务返回 HTTP 401。"
+    assert "provider-secret" not in unavailable.text
+
+
 def test_settings_connection_test_uses_current_memory_key(make_client, provider):
     client = make_client()
     configure_settings(client, api_key="connection-secret")
@@ -310,6 +330,7 @@ def test_generic_model_completion_uses_memory_config_without_secret_echo(
         json={
             "systemPrompt": "只输出 JSON 对象。",
             "messages": [{"role": "user", "content": "生成一个候选"}],
+            "timeoutSeconds": 80,
         },
     )
 
@@ -319,6 +340,7 @@ def test_generic_model_completion_uses_memory_config_without_secret_echo(
     assert provider.calls[0].messages == [
         {"role": "user", "content": "生成一个候选"}
     ]
+    assert provider.calls[0].timeout_seconds == 80
     assert secret not in response.text
 
 

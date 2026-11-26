@@ -238,6 +238,9 @@ public class CodegenService {
             ));
         }
         ensureProposalComplete(mode, resolved, moduleId, workspace);
+        if ("module".equals(mode)) {
+            normalizeGeneratedModule(workspace, moduleId, steps);
+        }
         Map<String, Object> interfaces = extractInterfaces(workspace);
         String now = Instant.now().toString();
         CodegenSession session = new CodegenSession(
@@ -1063,25 +1066,404 @@ public class CodegenService {
     private void patchParentRelativePath(Path pom) {
         try {
             String text = Files.readString(pom, StandardCharsets.UTF_8);
-            String rootPom = repositoryRoot.resolve("pom.xml").toString();
-            Matcher matcher = Pattern.compile(
-                    "(?s)(<relativePath>).*?(</relativePath>)"
-            ).matcher(text);
-            if (!matcher.find()) {
-                throw new IllegalStateException("候选 pom.xml 缺少 parent.relativePath");
-            }
             Files.writeString(
                     pom,
-                    matcher.replaceFirst(
-                            Matcher.quoteReplacement(
-                                    "<relativePath>" + rootPom + "</relativePath>"
-                            )
-                    ),
+                    normalizeGeneratedPom(text),
                     StandardCharsets.UTF_8
             );
         } catch (IOException exception) {
             throw new IllegalStateException("准备候选 Maven 父工程路径失败", exception);
         }
+    }
+
+    private String normalizeGeneratedPom(String pom) {
+        return normalizeGeneratedPom(
+                pom,
+                repositoryRoot.resolve("pom.xml").toString()
+        );
+    }
+
+    private String normalizeGeneratedPom(String pom, String parentPath) {
+        try {
+            ParentCoordinates coordinates = parentCoordinates(
+                    Files.readString(
+                            repositoryRoot.resolve("pom.xml"),
+                            StandardCharsets.UTF_8
+                    )
+            );
+            return ensureKernelDependencyVersion(
+                    ensureParentRelativePath(pom, parentPath, coordinates)
+            );
+        } catch (IOException exception) {
+            throw new IllegalStateException("读取仓库根 pom.xml 失败", exception);
+        }
+    }
+
+    private void normalizeGeneratedModule(
+            Path workspace,
+            String moduleId,
+            List<CodegenStep> steps
+    ) {
+        Path pom = workspace.resolve("pom.xml");
+        if (Files.isRegularFile(pom, LinkOption.NOFOLLOW_LINKS)) {
+            String normalizedPom = ensureModuleArtifactId(
+                    normalizeGeneratedPom(readText(pom), "../../pom.xml"),
+                    moduleId
+            );
+            writeText(pom, normalizedPom);
+            replaceStepContent(steps, "pom.xml", normalizedPom);
+        }
+
+        Path manifest = workspace.resolve(MODULE_RESOURCE_ROOT + "orderly-ui/module.json");
+        if (Files.isRegularFile(manifest, LinkOption.NOFOLLOW_LINKS)) {
+            try {
+                String normalizedManifest = normalizeModuleUiManifest(
+                        readText(manifest),
+                        moduleId,
+                        firstContractQueryId(workspace)
+                );
+                writeText(manifest, normalizedManifest);
+                replaceStepContent(
+                        steps,
+                        MODULE_RESOURCE_ROOT + "orderly-ui/module.json",
+                        normalizedManifest
+                );
+            } catch (IllegalArgumentException | IOException exception) {
+                throw invalidProposal(
+                        "候选模块 UI 清单不合格：" + safeMessage(exception)
+                );
+            }
+        }
+
+        Path script = workspace.resolve(MODULE_RESOURCE_ROOT + "orderly-ui/module.js");
+        if (Files.isRegularFile(script, LinkOption.NOFOLLOW_LINKS)) {
+            try {
+                requireDefaultModuleExport(readText(script));
+            } catch (IllegalArgumentException exception) {
+                throw invalidProposal("候选模块 UI 脚本不合格：" + exception.getMessage());
+            }
+        }
+    }
+
+    private void replaceStepContent(
+            List<CodegenStep> steps,
+            String path,
+            String content
+    ) {
+        for (int index = 0; index < steps.size(); index++) {
+            CodegenStep step = steps.get(index);
+            if (path.equals(step.path())) {
+                steps.set(index, step.withAfterContent(content));
+                return;
+            }
+        }
+    }
+
+    private String firstContractQueryId(Path workspace) {
+        Path directory = workspace.resolve("src/main/resources/orderly-modules");
+        if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
+            return "";
+        }
+        try (Stream<Path> files = Files.list(directory)) {
+            Optional<Path> contract = files
+                    .filter(path -> path.getFileName().toString().endsWith(".json"))
+                    .filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+                    .findFirst();
+            if (contract.isEmpty()) {
+                return "";
+            }
+            JsonNode root = objectMapper.readTree(readText(contract.orElseThrow()));
+            JsonNode query = root.path("queries").path(0);
+            return textValue(query.path("id"));
+        } catch (IOException exception) {
+            throw invalidProposal("无法读取候选模块契约中的 Query");
+        }
+    }
+
+    static String normalizeModuleUiManifest(
+            String content,
+            String moduleId,
+            String fallbackQueryId
+    ) throws IOException {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode root = mapper.readTree(content);
+        if (root == null || !root.isObject()) {
+            throw new IllegalArgumentException("module.json 必须是 JSON 对象");
+        }
+        JsonNode view = root.path("view").isObject() ? root.path("view") : root;
+
+        String viewId = textValue(view.path("id"));
+        if (viewId.isBlank()) {
+            viewId = textValue(root.path("id"));
+        }
+        if (viewId.isBlank()) {
+            viewId = derivedViewId(moduleId);
+        }
+        if (!viewId.matches("[a-z][a-z0-9-]{0,63}")) {
+            throw new IllegalArgumentException("view.id 非法：" + viewId);
+        }
+
+        String caption = firstText(
+                textValue(view.path("caption")),
+                textValue(view.path("title")),
+                textValue(root.path("title")),
+                moduleId
+        );
+        String icon = firstText(
+                textValue(view.path("icon")),
+                "spark"
+        );
+        String script = uiAssetName(root, "script", "entry", "js");
+        String style = uiAssetName(root, "style", "styles", "css");
+
+        Map<String, Object> normalized = new LinkedHashMap<>();
+        normalized.put("version", 1);
+        normalized.put("view", Map.of(
+                "id", viewId,
+                "caption", caption,
+                "icon", icon
+        ));
+
+        JsonNode rawCard = root.path("card");
+        Map<String, Object> card = new LinkedHashMap<>();
+        if (rawCard.isObject() || !fallbackQueryId.isBlank()) {
+            card.put("title", firstText(
+                    textValue(rawCard.path("title")),
+                    caption
+            ));
+            card.put("description", firstText(
+                    textValue(rawCard.path("description")),
+                    textValue(root.path("description")),
+                    "由模块提供的数据摘要。"
+            ));
+            card.put("badge", firstText(
+                    textValue(rawCard.path("badge")),
+                    "模块数据"
+            ));
+            card.put("icon", firstText(
+                    textValue(rawCard.path("icon")),
+                    icon
+            ));
+            card.put(
+                    "queryId",
+                    firstText(
+                            textValue(rawCard.path("queryId")),
+                            fallbackQueryId
+                    )
+            );
+        }
+        normalized.put("card", card.isEmpty() ? null : Map.copyOf(card));
+        normalized.put(
+                "examples",
+                root.path("examples").isArray()
+                        ? root.path("examples").deepCopy()
+                        : List.of()
+        );
+        normalized.put(
+                "settings",
+                root.path("settings").isArray()
+                        ? root.path("settings").deepCopy()
+                        : List.of()
+        );
+        if (root.path("icons").isObject()) {
+            normalized.put("icons", root.path("icons").deepCopy());
+        }
+        normalized.put("script", script);
+        normalized.put("style", style);
+        return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(normalized)
+                + System.lineSeparator();
+    }
+
+    static String requireDefaultModuleExport(String script) {
+        if (!Pattern.compile("(?m)^\\s*export\\s+default\\s+")
+                .matcher(script)
+                .find()) {
+            throw new IllegalArgumentException(
+                    "module.js 必须包含顶层 `export default` 挂载函数"
+            );
+        }
+        return script;
+    }
+
+    private static String uiAssetName(
+            JsonNode root,
+            String primary,
+            String legacy,
+            String extension
+    ) {
+        String value = textValue(root.path(primary));
+        if (value.isBlank() && "styles".equals(legacy)) {
+            JsonNode styles = root.path(legacy);
+            if (styles.isArray() && !styles.isEmpty()) {
+                value = textValue(styles.get(0));
+            }
+        } else if (value.isBlank()) {
+            value = textValue(root.path(legacy));
+        }
+        if (value.isBlank()) {
+            value = "module." + extension;
+        }
+        if (!value.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+                || !value.toLowerCase(java.util.Locale.ROOT)
+                .endsWith("." + extension)) {
+            throw new IllegalArgumentException(
+                    extension + " 资源名非法：" + value
+            );
+        }
+        return value;
+    }
+
+    private static String derivedViewId(String moduleId) {
+        String value = moduleId.startsWith("module_")
+                ? moduleId.substring("module_".length())
+                : moduleId;
+        value = value.toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("[^a-z0-9-]+", "-")
+                .replaceAll("-+", "-")
+                .replaceAll("^-|-$", "");
+        if (value.isBlank()) {
+            return "generated-module";
+        }
+        if (!Character.isLetter(value.charAt(0))) {
+            value = "view-" + value;
+        }
+        return value.substring(0, Math.min(value.length(), 64));
+    }
+
+    private static String textValue(JsonNode node) {
+        return node != null && node.isTextual() ? node.asText().trim() : "";
+    }
+
+    private static String firstText(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    static String ensureParentRelativePath(
+            String pom,
+            String rootPom,
+            ParentCoordinates coordinates
+    ) {
+        Matcher parent = Pattern.compile(
+                "(?s)<parent\\b[^>]*>.*?</parent>"
+        ).matcher(pom);
+        if (!parent.find()) {
+            throw new IllegalStateException("候选 pom.xml 缺少 parent 定义");
+        }
+        String normalizedParent = "<parent>"
+                + System.lineSeparator()
+                + "    <groupId>" + xmlEscape(coordinates.groupId()) + "</groupId>"
+                + System.lineSeparator()
+                + "    <artifactId>" + xmlEscape(coordinates.artifactId()) + "</artifactId>"
+                + System.lineSeparator()
+                + "    <version>" + xmlEscape(coordinates.version()) + "</version>"
+                + System.lineSeparator()
+                + "    <relativePath>" + xmlEscape(rootPom) + "</relativePath>"
+                + System.lineSeparator()
+                + "</parent>";
+        return pom.substring(0, parent.start())
+                + normalizedParent
+                + pom.substring(parent.end());
+    }
+
+    static String ensureKernelDependencyVersion(String pom) {
+        Matcher dependency = Pattern.compile(
+                "(?s)<dependency\\b[^>]*>.*?</dependency>"
+        ).matcher(pom);
+        while (dependency.find()) {
+            String body = dependency.group();
+            if (!elementValue(body, "groupId").equals("com.orderly")
+                    || !elementValue(body, "artifactId").equals("orderly-kernel")) {
+                continue;
+            }
+            Matcher version = Pattern.compile(
+                    "(?s)<version\\b[^>]*>.*?</version>"
+            ).matcher(body);
+            String normalized = version.find()
+                    ? version.replaceFirst(Matcher.quoteReplacement(
+                            "<version>${project.version}</version>"
+                    ))
+                    : body.replace(
+                            elementTag(body, "artifactId"),
+                            elementTag(body, "artifactId")
+                                    + System.lineSeparator()
+                                    + "            <version>${project.version}</version>"
+                    );
+            return pom.substring(0, dependency.start())
+                    + normalized
+                    + pom.substring(dependency.end());
+        }
+        throw new IllegalStateException(
+                "候选 pom.xml 缺少 com.orderly:orderly-kernel 依赖"
+        );
+    }
+
+    static String ensureModuleArtifactId(String pom, String moduleId) {
+        Matcher parent = Pattern.compile(
+                "(?s)<parent\\b[^>]*>.*?</parent>"
+        ).matcher(pom);
+        int searchStart = parent.find() ? parent.end() : 0;
+        int dependencies = pom.indexOf("<dependencies", searchStart);
+        Matcher artifact = Pattern.compile(
+                "(?s)<artifactId\\b[^>]*>[^<]*</artifactId>"
+        ).matcher(pom);
+        if (!artifact.find(searchStart)
+                || (dependencies >= 0 && artifact.start() > dependencies)) {
+            throw new IllegalStateException("候选 pom.xml 缺少模块 artifactId");
+        }
+        return pom.substring(0, artifact.start())
+                + "<artifactId>" + xmlEscape(moduleId) + "</artifactId>"
+                + pom.substring(artifact.end());
+    }
+
+    private static String elementValue(String xml, String element) {
+        Matcher matcher = Pattern.compile(
+                "(?s)<" + Pattern.quote(element) + "\\b[^>]*>([^<]*)</"
+                        + Pattern.quote(element) + ">"
+        ).matcher(xml);
+        return matcher.find() ? matcher.group(1).trim() : "";
+    }
+
+    private static String elementTag(String xml, String element) {
+        Matcher matcher = Pattern.compile(
+                "(?s)<" + Pattern.quote(element) + "\\b[^>]*>.*?</"
+                        + Pattern.quote(element) + ">"
+        ).matcher(xml);
+        if (!matcher.find()) {
+            throw new IllegalStateException("候选 pom.xml 缺少 " + element);
+        }
+        return matcher.group();
+    }
+
+    static ParentCoordinates parentCoordinates(String rootPom) {
+        String withoutParent = Pattern.compile(
+                "(?s)<parent\\b[^>]*>.*?</parent>"
+        ).matcher(rootPom).replaceFirst("");
+        return new ParentCoordinates(
+                topLevelValue(withoutParent, "groupId"),
+                topLevelValue(withoutParent, "artifactId"),
+                topLevelValue(withoutParent, "version")
+        );
+    }
+
+    private static String topLevelValue(String pom, String element) {
+        String value = elementValue(pom, element);
+        if (value.isBlank()) {
+            throw new IllegalStateException("根 pom.xml 缺少 " + element);
+        }
+        return value;
+    }
+
+    private static String xmlEscape(String value) {
+        return value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&apos;");
     }
 
     private String mavenExecutable() {
@@ -1235,12 +1617,14 @@ public class CodegenService {
         }
     }
 
-    private String hashTree(Path rootDirectory) {
+    static String hashTree(Path rootDirectory) {
         MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");
+            Path buildOutput = rootDirectory.resolve("target").normalize();
             try (Stream<Path> paths = Files.walk(rootDirectory)) {
                 paths.filter(path -> !path.equals(rootDirectory))
+                        .filter(path -> !path.normalize().startsWith(buildOutput))
                         .sorted(Comparator.comparing(path ->
                                 rootDirectory.relativize(path).toString()
                         ))
@@ -1537,7 +1921,7 @@ public class CodegenService {
         return value.length() <= maximum ? value : value.substring(value.length() - maximum);
     }
 
-    private String safeMessage(RuntimeException exception) {
+    private String safeMessage(Throwable exception) {
         String message = exception.getMessage();
         return message == null || message.isBlank()
                 ? "候选构建失败"
@@ -1571,6 +1955,9 @@ public class CodegenService {
             String themeId,
             Path sourceRoot
     ) {
+    }
+
+    record ParentCoordinates(String groupId, String artifactId, String version) {
     }
 
     /** Generate request assembled by the module UI. */
@@ -1680,7 +2067,7 @@ public class CodegenService {
                     steps,
                     interfaces,
                     build,
-                    preview,
+                    new PreviewState("STOPPED", "", ""),
                     versionId,
                     reuseNote,
                     createdAt,
@@ -1744,6 +2131,19 @@ public class CodegenService {
                     existedBefore,
                     beforeContent,
                     afterContent
+            );
+        }
+
+        private CodegenStep withAfterContent(String nextAfterContent) {
+            return new CodegenStep(
+                    stepId,
+                    index,
+                    title,
+                    path,
+                    status,
+                    existedBefore,
+                    beforeContent,
+                    nextAfterContent
             );
         }
     }

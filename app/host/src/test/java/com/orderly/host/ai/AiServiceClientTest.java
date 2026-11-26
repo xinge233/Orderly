@@ -142,6 +142,25 @@ class AiServiceClientTest {
     }
 
     @Test
+    void preservesSafeProviderHttpStatusFromPython() throws Exception {
+        try (Server server = Server.start(exchange -> writeJson(
+                exchange,
+                502,
+                "{\"code\":\"AI_PROVIDER_UNAVAILABLE\","
+                        + "\"message\":\"模型服务返回 HTTP 401。\"}"
+        ))) {
+            AiServiceClient client = client(server.url(), "");
+
+            assertThatThrownBy(client::testSettings)
+                    .isInstanceOfSatisfying(ApiException.class, exception -> {
+                        assertThat(exception.status().value()).isEqualTo(502);
+                        assertThat(exception.code()).isEqualTo("AI_PROVIDER_UNAVAILABLE");
+                        assertThat(exception.getMessage()).isEqualTo("模型服务返回 HTTP 401。");
+                    });
+        }
+    }
+
+    @Test
     void rejectsMalformedOrOversizedDecisionResponses() throws Exception {
         AtomicReference<String> response = new AtomicReference<>(
                 "{\"kind\":\"QUERY\",\"conversationId\":\"c1\",\"queries\":["

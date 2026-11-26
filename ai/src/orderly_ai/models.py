@@ -118,6 +118,7 @@ class ModelCompletionRequest(CamelModel):
 
     system_prompt: str = Field(min_length=1, max_length=100_000)
     messages: list[ModelMessage] = Field(min_length=1, max_length=8)
+    timeout_seconds: float = Field(default=45.0, ge=5.0, le=90.0)
 
 
 class ModelCompletionView(CamelModel):

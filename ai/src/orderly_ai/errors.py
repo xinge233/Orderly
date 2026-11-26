@@ -42,10 +42,22 @@ def invalid_response(message: str) -> ServiceError:
     return ServiceError(502, "AI_INVALID_RESPONSE", message)
 
 
-def provider_unavailable() -> ServiceError:
-    """把各类 Provider 故障折叠为不泄露细节的稳定错误。"""
+def provider_unavailable(error: ProviderError | None = None) -> ServiceError:
+    """把 Provider 故障映射为不含凭据或上游正文的稳定错误。"""
+    message = "模型服务暂时不可用，请稍后重试。"
+    detail = str(error).strip() if error is not None else ""
+    if detail.startswith("模型服务返回 HTTP ") and detail.endswith("。"):
+        status = detail.removeprefix("模型服务返回 HTTP ").removesuffix("。")
+        if status.isdigit() and len(status) == 3:
+            message = f"模型服务返回 HTTP {status}。"
+    elif detail in {
+        "无法连接模型服务。",
+        "模型服务返回无法解析的响应。",
+        "模型服务返回空内容。",
+    }:
+        message = detail
     return ServiceError(
         502,
         "AI_PROVIDER_UNAVAILABLE",
-        "模型服务暂时不可用，请稍后重试。",
+        message,
     )

@@ -460,6 +460,15 @@ public class AiServiceClient {
         if (statusCode == 502 && "AI_INVALID_RESPONSE".equals(code)) {
             return invalidResponse("AI service 返回了非法决策");
         }
+        if (statusCode == 502 && "AI_PROVIDER_UNAVAILABLE".equals(code)) {
+            return new ApiException(
+                    HttpStatus.BAD_GATEWAY,
+                    code,
+                    blank(message)
+                            ? "模型服务暂时不可用，请稍后重试。"
+                            : message
+            );
+        }
         HttpStatus status = HttpStatus.resolve(statusCode);
         if (status != null && status.is4xxClientError()
                 && !blank(code) && code.matches("[A-Z0-9_]{1,80}")) {

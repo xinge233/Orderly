@@ -83,5 +83,9 @@ def test_prompts_use_packaged_maven_resource_paths():
 
     assert "src/main/resources/orderly-ui/module.json" in module_prompt
     assert "Never use root-level" in module_prompt
+    assert "export default async function mount" in module_prompt
+    assert '"version":1' in module_prompt
+    assert "Do not use schemaVersion" in module_prompt
+    assert "JSON Schema outputSchema" in module_prompt
     assert "src/main/resources/orderly-ui/module.js" in motion_prompt
     assert "src/main/resources/orderly-ui/module.json" in motion_prompt

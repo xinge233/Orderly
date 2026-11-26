@@ -21,6 +21,7 @@ class ProviderCall:
     config: ProviderConfig
     system_prompt: str
     messages: list[dict[str, str]]
+    timeout_seconds: float | None = None
 
 
 @dataclass
@@ -34,12 +35,14 @@ class FakeProvider:
         config: ProviderConfig,
         system_prompt: str,
         messages: Sequence[dict[str, str]],
+        timeout_seconds: float | None = None,
     ) -> str:
         self.calls.append(
             ProviderCall(
                 config=config,
                 system_prompt=system_prompt,
                 messages=[dict(message) for message in messages],
+                timeout_seconds=timeout_seconds,
             )
         )
         if not self.responses:
