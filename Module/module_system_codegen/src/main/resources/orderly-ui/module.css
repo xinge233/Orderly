@@ -111,7 +111,39 @@
     padding: var(--space-5) var(--space-6) var(--space-6);
 }
 
+.module-codegen-ui-layout.is-module-workspace {
+    grid-template-columns: minmax(17rem, 0.72fr) minmax(0, 1.8fr) minmax(16rem, 0.68fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+        "left preview history"
+        "prompt prompt history";
+}
+
+.module-codegen-ui-module-left {
+    display: grid;
+    grid-area: left;
+    grid-template-rows: minmax(11rem, 0.36fr) minmax(0, 1fr);
+    gap: var(--space-3);
+    min-width: 0;
+    min-height: 0;
+}
+
+.module-codegen-ui-layout.is-module-workspace > .module-codegen-ui-preview-panel {
+    grid-area: preview;
+}
+
+.module-codegen-ui-layout.is-module-workspace > .module-codegen-ui-revision-panel {
+    grid-area: history;
+}
+
+.module-codegen-ui-layout.is-module-workspace > .module-codegen-ui-module-prompt-panel {
+    grid-area: prompt;
+}
+
 .module-codegen-ui-composer,
+.module-codegen-ui-target-panel,
+.module-codegen-ui-preview-panel,
+.module-codegen-ui-module-prompt-panel,
 .module-codegen-ui-interface-panel,
 .module-codegen-ui-revision-panel,
 .module-codegen-ui-motion-summary {
@@ -124,6 +156,13 @@
 }
 
 .module-codegen-ui-composer {
+    display: flex;
+    flex-direction: column;
+}
+
+.module-codegen-ui-target-panel,
+.module-codegen-ui-preview-panel,
+.module-codegen-ui-module-prompt-panel {
     display: flex;
     flex-direction: column;
 }
@@ -196,12 +235,6 @@
     gap: var(--space-3);
 }
 
-.module-codegen-ui-editor.is-module {
-    grid-template-areas:
-        "target prompt"
-        "model model";
-}
-
 .module-codegen-ui-editor.is-motion {
     grid-template-areas:
         "target theme"
@@ -228,12 +261,32 @@
 }
 
 .module-codegen-ui-target-field {
-    grid-area: target;
     grid-template-rows: auto minmax(0, 1fr);
     align-content: stretch;
 }
 
+.module-codegen-ui-editor > .module-codegen-ui-target-field {
+    grid-area: target;
+}
+
+.module-codegen-ui-target-panel-body {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    padding: var(--space-2);
+}
+
+.module-codegen-ui-target-panel-body > .module-codegen-ui-target-field {
+    min-height: 0;
+    flex: 1;
+    grid-template-rows: minmax(0, 1fr);
+}
+
 .module-codegen-ui-theme-field {
+    min-width: 0;
+}
+
+.module-codegen-ui-editor > .module-codegen-ui-theme-field {
     grid-area: theme;
 }
 
@@ -313,14 +366,71 @@
 }
 
 .module-codegen-ui-prompt {
-    grid-area: prompt;
     min-height: 0;
     grid-template-rows: auto minmax(0, 1fr);
 }
 
+.module-codegen-ui-editor > .module-codegen-ui-prompt {
+    grid-area: prompt;
+}
+
+.module-codegen-ui-preview-panel-body {
+    display: grid;
+    min-height: 0;
+    flex: 1;
+    place-items: center;
+    overflow: hidden;
+    padding: var(--space-4);
+    container-type: size;
+}
+
+.module-codegen-ui-preview-panel-body .module-codegen-ui-thumb {
+    width: min(100%, calc(100cqh * 16 / 9));
+}
+
+.module-codegen-ui-module-prompt-body {
+    display: grid;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.38fr);
+    gap: var(--space-3);
+    padding: var(--space-4);
+}
+
+.module-codegen-ui-module-prompt-body > .module-codegen-ui-prompt {
+    min-height: 0;
+}
+
+.module-codegen-ui-module-prompt-panel .module-codegen-ui-textarea {
+    height: 100%;
+    min-height: 6rem;
+    max-height: 8.5rem;
+}
+
+.module-codegen-ui-module-prompt-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.module-codegen-ui-module-prompt-controls > * {
+    min-width: 0;
+}
+
+.module-codegen-ui-module-prompt-controls .module-codegen-ui-composer-foot {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    margin-top: 0;
+    align-items: flex-end;
+}
+
 .module-codegen-ui-model-field {
-    grid-area: model;
     gap: var(--space-1);
+}
+
+.module-codegen-ui-editor > .module-codegen-ui-model-field {
+    grid-area: model;
 }
 
 .module-codegen-ui-model-head {
@@ -912,11 +1022,42 @@
         grid-template-columns: minmax(0, 1fr);
     }
 
+    .module-codegen-ui-layout.is-module-workspace {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto;
+        grid-template-areas:
+            "left"
+            "preview"
+            "prompt"
+            "history";
+        padding: var(--space-4);
+    }
+
+    .module-codegen-ui-module-left {
+        grid-template-rows: minmax(12rem, auto) minmax(18rem, auto);
+        gap: var(--space-3);
+    }
+
+    .module-codegen-ui-preview-panel-body {
+        min-height: 18rem;
+    }
+
+    .module-codegen-ui-module-prompt-body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .module-codegen-ui-module-prompt-panel .module-codegen-ui-textarea {
+        max-height: none;
+    }
+
+    .module-codegen-ui-layout.is-module-workspace > .module-codegen-ui-revision-panel {
+        min-height: 18rem;
+    }
+
     .module-codegen-ui-side {
         grid-template-rows: auto auto auto;
     }
 
-    .module-codegen-ui-editor.is-module,
     .module-codegen-ui-editor.is-motion {
         grid-template-areas: none;
         grid-template-columns: minmax(0, 1fr);

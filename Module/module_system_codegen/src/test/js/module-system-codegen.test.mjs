@@ -96,7 +96,8 @@ test("system service delegates generation to the protected host API", async () =
     assert.match(source, /apply-codegen-version/);
     assert.match(source, /rollback-codegen-step/);
     assert.match(source, /框架动效复用公共挂点/);
-    assert.match(source, /module-codegen-ui-editor is-module/);
+    assert.match(source, /module-codegen-ui-layout is-module-workspace/);
+    assert.match(source, /module-codegen-ui-module-prompt-panel/);
     assert.match(source, /module-codegen-ui-editor is-motion/);
     assert.match(style, /aspect-ratio:\s*16\s*\/\s*9/);
     assert.match(style, /\.module-codegen-ui-picker\s*\{/);
@@ -117,6 +118,16 @@ test("system service delegates generation to the protected host API", async () =
         style,
         /\.module-codegen-ui-editor\.is-motion\s*\{[^}]*grid-template-rows:\s*minmax\(12rem,\s*0\.85fr\)\s*minmax\(10rem,\s*1\.15fr\)\s*auto/s
     );
+    assert.match(
+        style,
+        /\.module-codegen-ui-layout\.is-module-workspace\s*\{[^}]*grid-template-areas:\s*"left preview history"\s*"prompt prompt history"/s
+    );
+    assert.match(
+        style,
+        /\.module-codegen-ui-preview-panel-body\s*\{[^}]*container-type:\s*size/s
+    );
+    assert.match(style, /\.module-codegen-ui-editor > \.module-codegen-ui-prompt/);
+    assert.match(style, /\.module-codegen-ui-editor > \.module-codegen-ui-model-field/);
     assert.doesNotMatch(style, /#[0-9a-fA-F]{3,8}\b/);
 });
 

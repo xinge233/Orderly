@@ -426,9 +426,9 @@ export default async function mount(root, context) {
         return tabs;
     }
 
-    function buildModulePicker() {
+    function buildModulePicker(label = "生成目标") {
         const wrapper = make("div", "module-codegen-ui-field module-codegen-ui-target-field");
-        wrapper.append(make("span", "module-codegen-ui-label", "生成目标"));
+        if (label) wrapper.append(make("span", "module-codegen-ui-label", label));
         const list = make("div", "module-codegen-ui-picker");
         list.setAttribute("role", "listbox");
         list.setAttribute("aria-label", "模块生成目标");
@@ -496,52 +496,18 @@ export default async function mount(root, context) {
         return field;
     }
 
-    function buildModuleComposer() {
-        const composer = make("section", "module-codegen-ui-composer");
-        const head = make("header", "module-codegen-ui-composer-head");
-        const title = make("div", "module-codegen-ui-composer-title");
+    function buildModuleTargetPanel() {
+        const panel = make("section", "module-codegen-ui-target-panel");
+        const head = make("header", "module-codegen-ui-panel-head");
         const selected = selectedModule();
-        title.append(
-            make("h2", "", "模块生成"),
-            make("span", "", selected?.moduleId ?? "新建模块")
-        );
         head.append(
-            title,
-            make(
-                "span",
-                `module-codegen-ui-badge${state.session?.buildStatus === "READY" ? " is-ready" : ""}`,
-                state.session ? state.session.buildStatus : "等待生成"
-            )
+            make("strong", "", "修改对象"),
+            make("span", "", selected?.title ?? "新建模块")
         );
-
-        const body = make("div", "module-codegen-ui-composer-body");
-        const editor = make("div", "module-codegen-ui-editor is-module");
-        editor.append(
-            buildModulePicker(),
-            buildPrompt(
-                "需求描述",
-                state.modulePrompt,
-                "描述模块功能、接口、风险确认和界面要求",
-                (value) => { state.modulePrompt = value; }
-            ),
-            buildModelField()
-        );
-        body.append(editor);
-
-        const foot = make("footer", "module-codegen-ui-composer-foot");
-        const note = make("span", "module-codegen-ui-note");
-        note.append(
-            icon("shield", 15),
-            make("span", "", "模块专属 AI 代码将保存在目标模块目录。")
-        );
-        const generate = button("生成候选", "spark", "module-codegen-ui-button is-primary");
-        generate.disabled = state.busy;
-        generate.title = "调用模块专属 Python AI 生成候选文件与构建步骤";
-        generate.addEventListener("click", () => generate("module"));
-        foot.append(note, generate);
-        body.append(foot);
-        composer.append(head, body);
-        return composer;
+        const body = make("div", "module-codegen-ui-target-panel-body");
+        body.append(buildModulePicker(""));
+        panel.append(head, body);
+        return panel;
     }
 
     function buildInterfacePanel() {
@@ -716,10 +682,82 @@ export default async function mount(root, context) {
         return panel;
     }
 
-    function buildModuleSide() {
-        const side = make("aside", "module-codegen-ui-side");
-        side.append(buildModulePreview(), buildInterfacePanel(), buildRevisionPanel());
-        return side;
+    function buildModulePreviewPanel() {
+        const module = selectedModule();
+        const panel = make("section", "module-codegen-ui-preview-panel");
+        const head = make("header", "module-codegen-ui-panel-head");
+        head.append(
+            make("strong", "", "预览"),
+            make(
+                "span",
+                "",
+                state.session?.previewStatus === "READY"
+                    ? `${state.session.moduleId} · 镜像已就绪`
+                    : module ? "生成后可打开候选镜像" : "新建模块预览"
+            )
+        );
+        const body = make("div", "module-codegen-ui-preview-panel-body");
+        body.append(buildModulePreview());
+        panel.append(head, body);
+        return panel;
+    }
+
+    function buildModulePromptPanel() {
+        const panel = make("section", "module-codegen-ui-module-prompt-panel");
+        const head = make("header", "module-codegen-ui-composer-head");
+        const title = make("div", "module-codegen-ui-composer-title");
+        const selected = selectedModule();
+        title.append(
+            make("h2", "", "生成需求"),
+            make("span", "", selected?.title ?? "新建模块")
+        );
+        head.append(
+            title,
+            make(
+                "span",
+                `module-codegen-ui-badge${state.session?.buildStatus === "READY" ? " is-ready" : ""}`,
+                state.session ? state.session.buildStatus : "等待生成"
+            )
+        );
+
+        const body = make("div", "module-codegen-ui-module-prompt-body");
+        body.append(buildPrompt(
+            "需求描述",
+            state.modulePrompt,
+            "描述模块功能、接口、风险确认和界面要求",
+            (value) => { state.modulePrompt = value; }
+        ));
+
+        const controls = make("div", "module-codegen-ui-module-prompt-controls");
+        controls.append(buildModelField());
+        const actions = make("footer", "module-codegen-ui-composer-foot");
+        const note = make("span", "module-codegen-ui-note");
+        note.append(
+            icon("shield", 15),
+            make("span", "", "模块专属 AI 代码将保存在目标模块目录。")
+        );
+        const generate = button("生成候选", "spark", "module-codegen-ui-button is-primary");
+        generate.disabled = state.busy;
+        generate.title = "调用模块专属 Python AI 生成候选文件与构建步骤";
+        generate.addEventListener("click", () => generate("module"));
+        actions.append(note, generate);
+        controls.append(actions);
+        body.append(controls);
+        panel.append(head, body);
+        return panel;
+    }
+
+    function buildModuleWorkspace() {
+        const workspace = make("div", "module-codegen-ui-layout is-module-workspace");
+        const left = make("div", "module-codegen-ui-module-left");
+        left.append(buildModuleTargetPanel(), buildInterfacePanel());
+        workspace.append(
+            left,
+            buildModulePreviewPanel(),
+            buildRevisionPanel(),
+            buildModulePromptPanel()
+        );
+        return workspace;
     }
 
     function buildMotionPicker() {
@@ -920,10 +958,11 @@ export default async function mount(root, context) {
         );
         header.append(heading, buildTabs());
 
-        const layout = make("div", "module-codegen-ui-layout");
+        let layout;
         if (state.mode === "module") {
-            layout.append(buildModuleComposer(), buildModuleSide());
+            layout = buildModuleWorkspace();
         } else {
+            layout = make("div", "module-codegen-ui-layout is-motion-workspace");
             layout.append(buildMotionComposer(), buildMotionSide());
         }
         shell.append(header, layout);
