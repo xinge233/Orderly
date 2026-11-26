@@ -427,7 +427,7 @@ export default async function mount(root, context) {
     }
 
     function buildModulePicker() {
-        const wrapper = make("div", "module-codegen-ui-field");
+        const wrapper = make("div", "module-codegen-ui-field module-codegen-ui-target-field");
         wrapper.append(make("span", "module-codegen-ui-label", "生成目标"));
         const list = make("div", "module-codegen-ui-picker");
         list.setAttribute("role", "listbox");
@@ -515,7 +515,7 @@ export default async function mount(root, context) {
         );
 
         const body = make("div", "module-codegen-ui-composer-body");
-        const editor = make("div", "module-codegen-ui-editor");
+        const editor = make("div", "module-codegen-ui-editor is-module");
         editor.append(
             buildModulePicker(),
             buildPrompt(
@@ -723,7 +723,7 @@ export default async function mount(root, context) {
     }
 
     function buildMotionPicker() {
-        const wrapper = make("div", "module-codegen-ui-field");
+        const wrapper = make("div", "module-codegen-ui-field module-codegen-ui-target-field");
         wrapper.append(make("span", "module-codegen-ui-label", "修改目标"));
         const list = make("div", "module-codegen-ui-picker");
         list.setAttribute("role", "listbox");
@@ -760,7 +760,7 @@ export default async function mount(root, context) {
     }
 
     function buildThemeSelect() {
-        const field = make("label", "module-codegen-ui-field");
+        const field = make("label", "module-codegen-ui-field module-codegen-ui-theme-field");
         field.append(make("span", "module-codegen-ui-label", "目标主题"));
         const select = make("select", "module-codegen-ui-select");
         themes.forEach((theme) => {
@@ -822,7 +822,7 @@ export default async function mount(root, context) {
         );
 
         const body = make("div", "module-codegen-ui-composer-body");
-        const editor = make("div", "module-codegen-ui-editor");
+        const editor = make("div", "module-codegen-ui-editor is-motion");
         editor.append(
             buildMotionPicker(),
             buildThemeSelect(),

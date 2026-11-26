@@ -7,13 +7,12 @@
     position: relative;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
-    width: min(100%, calc((100vh - 4rem) * 16 / 9));
-    height: auto;
+    width: 100%;
+    height: clamp(43rem, calc(100dvh - 7rem), 58rem);
     min-height: 0;
-    aspect-ratio: 16 / 9;
     margin-inline: auto;
     overflow: hidden;
-    contain: size layout paint;
+    contain: layout paint;
     border: 1px solid var(--color-line);
     border-radius: var(--radius-lg);
     background: var(--color-surface);
@@ -47,14 +46,14 @@
 }
 
 .module-codegen-ui-heading h1 {
-    font-size: 1.45rem;
+    font-size: 1.85rem;
     font-weight: 700;
     letter-spacing: 0;
 }
 
 .module-codegen-ui-eyebrow {
     color: var(--color-accent-strong);
-    font-size: 0.68rem;
+    font-size: 0.75rem;
     font-weight: 800;
     letter-spacing: 0.08em;
 }
@@ -85,14 +84,15 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    min-height: 2rem;
-    padding: 0 var(--space-3);
+    min-height: 2.4rem;
+    padding: 0 var(--space-4);
     border: 0;
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--color-text-soft);
     font: inherit;
-    font-size: 0.78rem;
+    font-size: 0.9rem;
+    font-weight: 700;
     cursor: pointer;
 }
 
@@ -106,9 +106,9 @@
     display: grid;
     min-width: 0;
     min-height: 0;
-    grid-template-columns: minmax(0, 1.35fr) minmax(21rem, 1fr);
+    grid-template-columns: minmax(0, 1.25fr) minmax(23rem, 0.95fr);
     gap: var(--space-4);
-    padding: var(--space-4) var(--space-6) var(--space-6);
+    padding: var(--space-5) var(--space-6) var(--space-6);
 }
 
 .module-codegen-ui-composer,
@@ -134,7 +134,7 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    min-height: 2.65rem;
+    min-height: 3.1rem;
     padding: 0 var(--space-4);
     border-bottom: 1px solid var(--color-line);
     background: var(--color-surface-muted);
@@ -148,14 +148,14 @@
 }
 
 .module-codegen-ui-composer-title h2 {
-    font-size: 0.9rem;
+    font-size: 1.02rem;
     font-weight: 700;
 }
 
 .module-codegen-ui-composer-title span {
     overflow: hidden;
     color: var(--color-text-soft);
-    font-size: 0.72rem;
+    font-size: 0.82rem;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -164,12 +164,12 @@
 .module-codegen-ui-risk {
     display: inline-flex;
     align-items: center;
-    min-height: 1.4rem;
+    min-height: 1.65rem;
     padding: 0 var(--space-2);
     border-radius: 999px;
     background: var(--color-warning-soft);
     color: var(--color-warning);
-    font-size: 0.65rem;
+    font-size: 0.72rem;
     white-space: nowrap;
 }
 
@@ -192,7 +192,26 @@
     min-height: 0;
     flex: 1;
     grid-template-columns: minmax(12rem, 0.78fr) minmax(0, 1.22fr);
+    grid-template-rows: minmax(0, 1fr) auto;
     gap: var(--space-3);
+}
+
+.module-codegen-ui-editor.is-module {
+    grid-template-areas:
+        "target prompt"
+        "model model";
+}
+
+.module-codegen-ui-editor.is-motion {
+    grid-template-areas:
+        "target theme"
+        "prompt prompt"
+        "model model";
+    grid-template-columns: minmax(14rem, 0.8fr) minmax(11rem, 0.65fr);
+    grid-template-rows:
+        minmax(12rem, 0.85fr)
+        minmax(10rem, 1.15fr)
+        auto;
 }
 
 .module-codegen-ui-field {
@@ -204,14 +223,24 @@
 
 .module-codegen-ui-label {
     color: var(--color-text-soft);
-    font-size: 0.74rem;
+    font-size: 0.82rem;
     font-weight: 700;
+}
+
+.module-codegen-ui-target-field {
+    grid-area: target;
+    grid-template-rows: auto minmax(0, 1fr);
+    align-content: stretch;
+}
+
+.module-codegen-ui-theme-field {
+    grid-area: theme;
 }
 
 .module-codegen-ui-picker {
     display: flex;
     min-height: 0;
-    height: 100%;
+    height: auto;
     flex-direction: column;
     gap: var(--space-1);
     overflow-y: auto;
@@ -226,10 +255,10 @@
 .module-codegen-ui-picker-item {
     display: grid;
     flex: 0 0 auto;
-    grid-template-columns: 1.65rem minmax(0, 1fr);
+    grid-template-columns: 1.85rem minmax(0, 1fr);
     gap: var(--space-2);
     align-items: center;
-    min-height: 2.7rem;
+    min-height: 3.05rem;
     padding: var(--space-1) var(--space-2);
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
@@ -254,8 +283,8 @@
 }
 
 .module-codegen-ui-picker-icon {
-    width: 1.65rem;
-    height: 1.65rem;
+    width: 1.85rem;
+    height: 1.85rem;
     border-radius: var(--radius-sm);
     background: var(--color-surface-raised);
 }
@@ -275,20 +304,22 @@
 
 .module-codegen-ui-picker-copy strong {
     color: currentColor;
-    font-size: 0.72rem;
+    font-size: 0.82rem;
     font-weight: 700;
 }
 
 .module-codegen-ui-picker-copy span {
-    font-size: 0.64rem;
+    font-size: 0.72rem;
 }
 
 .module-codegen-ui-prompt {
+    grid-area: prompt;
     min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
 }
 
 .module-codegen-ui-model-field {
-    grid-column: 1 / -1;
+    grid-area: model;
     gap: var(--space-1);
 }
 
@@ -302,7 +333,7 @@
 .module-codegen-ui-model-state {
     overflow: hidden;
     color: var(--color-text-soft);
-    font-size: 0.64rem;
+    font-size: 0.72rem;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -316,11 +347,11 @@
     background: var(--color-surface-muted);
     color: var(--color-text);
     font: inherit;
-    font-size: 0.78rem;
+    font-size: 0.92rem;
 }
 
 .module-codegen-ui-textarea {
-    min-height: 10rem;
+    min-height: 11rem;
     flex: 1;
     padding: var(--space-3);
     resize: none;
@@ -328,12 +359,12 @@
 }
 
 .module-codegen-ui-select {
-    min-height: 2.25rem;
+    min-height: 2.5rem;
     padding: 0 var(--space-2);
 }
 
 .module-codegen-ui-input {
-    min-height: 2.25rem;
+    min-height: 2.5rem;
     padding: 0 var(--space-3);
 }
 
@@ -362,7 +393,7 @@
     align-items: center;
     gap: var(--space-2);
     min-width: 0;
-    font-size: 0.68rem;
+    font-size: 0.78rem;
 }
 
 .module-codegen-ui-note span {
@@ -376,14 +407,14 @@
     align-items: center;
     justify-content: center;
     gap: var(--space-2);
-    min-height: 2.25rem;
-    padding: 0 var(--space-3);
+    min-height: 2.5rem;
+    padding: 0 var(--space-4);
     border: 1px solid var(--color-line);
     border-radius: var(--radius-sm);
     background: var(--color-surface-raised);
     color: var(--color-text);
     font: inherit;
-    font-size: 0.74rem;
+    font-size: 0.84rem;
     font-weight: 700;
     white-space: nowrap;
     cursor: pointer;
@@ -396,15 +427,15 @@
 }
 
 .module-codegen-ui-button.is-small {
-    min-height: 1.9rem;
-    padding: 0 var(--space-2);
-    font-size: 0.68rem;
+    min-height: 2.15rem;
+    padding: 0 var(--space-3);
+    font-size: 0.76rem;
 }
 
 .module-codegen-ui-icon-button {
     display: inline-grid;
-    width: 1.85rem;
-    height: 1.85rem;
+    width: 2.15rem;
+    height: 2.15rem;
     place-items: center;
     padding: 0;
     border: 1px solid var(--color-line);
@@ -428,7 +459,7 @@
     display: grid;
     min-width: 0;
     min-height: 0;
-    grid-template-rows: auto minmax(0, 1.1fr) minmax(6rem, 0.62fr);
+    grid-template-rows: auto minmax(0, 1.1fr) minmax(10rem, 0.8fr);
     gap: var(--space-3);
 }
 
@@ -515,7 +546,7 @@
     border: 1px solid var(--color-line);
     border-radius: var(--radius-sm);
     background: var(--color-surface-raised);
-    font-size: 0.62rem;
+    font-size: 0.72rem;
 }
 
 .module-codegen-ui-interface-panel,
@@ -526,16 +557,17 @@
 }
 
 .module-codegen-ui-panel-head strong {
-    font-size: 0.78rem;
+    font-size: 0.92rem;
 }
 
 .module-codegen-ui-panel-head span {
-    font-size: 0.66rem;
+    font-size: 0.76rem;
 }
 
 .module-codegen-ui-interface-list,
 .module-codegen-ui-revision-body,
 .module-codegen-ui-hook-list {
+    flex: 1;
     min-height: 0;
     overflow-y: auto;
 }
@@ -545,7 +577,7 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--space-2);
     align-items: center;
-    min-height: 2.65rem;
+    min-height: 3.1rem;
     padding: var(--space-2) var(--space-3);
     border-bottom: 1px solid var(--color-line);
 }
@@ -569,11 +601,11 @@
 
 .module-codegen-ui-interface-copy strong {
     font-family: "Cascadia Code", Consolas, monospace;
-    font-size: 0.68rem;
+    font-size: 0.78rem;
 }
 
 .module-codegen-ui-interface-copy span {
-    font-size: 0.61rem;
+    font-size: 0.7rem;
 }
 
 .module-codegen-ui-risk {
@@ -596,15 +628,19 @@
 .module-codegen-ui-empty-small {
     padding: var(--space-3);
     color: var(--color-text-soft);
-    font-size: 0.7rem;
-    line-height: 1.55;
+    font-size: 0.82rem;
+    line-height: 1.6;
 }
 
 .module-codegen-ui-empty-small {
-    font-size: 0.64rem;
+    font-size: 0.75rem;
 }
 
 .module-codegen-ui-revision-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-1);
     padding: var(--space-2);
 }
 
@@ -618,14 +654,14 @@
 }
 
 .module-codegen-ui-build-summary strong {
-    font-size: 0.7rem;
+    font-size: 0.8rem;
 }
 
 .module-codegen-ui-build-summary span,
 .module-codegen-ui-build-summary small {
     overflow: hidden;
     color: var(--color-text-soft);
-    font-size: 0.64rem;
+    font-size: 0.72rem;
     line-height: 1.45;
     text-overflow: ellipsis;
 }
@@ -639,8 +675,9 @@
 
 .module-codegen-ui-step-list {
     display: grid;
+    flex: 1;
     gap: var(--space-1);
-    max-height: 13rem;
+    min-height: 0;
     overflow-y: auto;
 }
 
@@ -669,12 +706,12 @@
 }
 
 .module-codegen-ui-step-copy strong {
-    font-size: 0.67rem;
+    font-size: 0.76rem;
 }
 
 .module-codegen-ui-step-copy span {
     color: var(--color-text-soft);
-    font-size: 0.58rem;
+    font-size: 0.68rem;
 }
 
 .module-codegen-ui-step-status {
@@ -682,7 +719,7 @@
     border-radius: 999px;
     background: var(--color-accent-soft);
     color: var(--color-accent-strong);
-    font-size: 0.55rem;
+    font-size: 0.64rem;
     white-space: nowrap;
 }
 
@@ -709,7 +746,7 @@
     border: 1px solid var(--color-line);
     border-radius: 999px;
     color: var(--color-text-soft);
-    font-size: 0.56rem;
+    font-size: 0.65rem;
 }
 
 .module-codegen-ui-revision-body .module-codegen-ui-empty,
@@ -768,15 +805,15 @@
     position: absolute;
     display: inline-flex;
     align-items: center;
-    max-width: 8rem;
-    min-height: 1.2rem;
+    max-width: 9rem;
+    min-height: 1.35rem;
     padding: 0 var(--space-1);
     overflow: hidden;
     border: 1px solid var(--color-accent);
     border-radius: 3px;
     background: var(--color-surface-raised);
     color: var(--color-accent-strong);
-    font-size: 0.55rem;
+    font-size: 0.64rem;
     text-overflow: ellipsis;
     white-space: nowrap;
     pointer-events: none;
@@ -835,7 +872,7 @@
     border: 1px solid var(--color-line);
     border-radius: 999px;
     background: var(--color-surface-muted);
-    font-size: 0.61rem;
+    font-size: 0.7rem;
 }
 
 .module-codegen-ui-hook-chip strong {
@@ -858,13 +895,14 @@
     border-radius: var(--radius-sm);
     background: var(--color-surface-raised);
     color: var(--color-text-soft);
-    font-size: 0.68rem;
+    font-size: 0.78rem;
     box-shadow: var(--shadow-sm);
 }
 
 @media (max-width: 980px) {
     .module-codegen-ui-shell {
         width: 100%;
+        height: auto;
         min-height: auto;
         aspect-ratio: auto;
         contain: none;
@@ -876,6 +914,20 @@
 
     .module-codegen-ui-side {
         grid-template-rows: auto auto auto;
+    }
+
+    .module-codegen-ui-editor.is-module,
+    .module-codegen-ui-editor.is-motion {
+        grid-template-areas: none;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto;
+    }
+
+    .module-codegen-ui-target-field,
+    .module-codegen-ui-theme-field,
+    .module-codegen-ui-prompt,
+    .module-codegen-ui-model-field {
+        grid-area: auto;
     }
 }
 
