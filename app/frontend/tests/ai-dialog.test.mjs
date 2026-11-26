@@ -518,7 +518,7 @@ test("launcher surface morphs into the composer and reuses its icon in Generate"
     assert.match(dialog, /id="ai-send-icon"/);
     assert.match(dialog, /id="ai-launcher-icon" data-ai-icon="spark"/);
     assert.doesNotMatch(dialog, /id="ai-launcher-icon"[^>]*data-icon=/);
-    assert.match(dialog, /<span>生成<\/span>/);
+    assert.match(dialog, /<span>确认<\/span>/);
     assert.match(
         css,
         /\.ai-dock\[data-composer="open"\] \.ai-launcher\s*\{[\s\S]*?width:\s*var\(--ai-composer-current-width\);[\s\S]*?height:\s*var\(--ai-composer-height\);[\s\S]*?border-radius:\s*var\(--ai-composer-radius\);/
@@ -537,6 +537,21 @@ test("launcher surface morphs into the composer and reuses its icon in Generate"
     assert.match(component, /nodes\.launcher\.animate\(/);
     assert.match(component, /nodes\.launcherIcon\.animate\(/);
     assert.match(component, /dock\.dataset\.morph = expanded \? "opening" : "closing"/);
+});
+
+test("AI dock confirms the API key before enabling generation feedback", async () => {
+    const html = await read("../index.html");
+    const component = await read("../src/ai-dialog.js");
+    const dialog = html.slice(
+        html.indexOf('class="ai-dock"'),
+        html.indexOf('class="ai-call-layer"')
+    );
+
+    assert.match(dialog, /<span>确认<\/span>/);
+    assert.match(component, /configured \? "生成" : "确认"/);
+    assert.match(component, /configured\s*\?\s*"API 已确认"\s*:\s*"输入 API Key 后确认"/);
+    assert.match(component, /API Key 已确认；DeepSeek 连接测试成功，可以开始生成。/);
+    assert.match(component, /configured \? "生成 AI 结果" : "确认 API Key"/);
 });
 
 test("theme AI icon images use a recolorable mask with generic fallback", async () => {

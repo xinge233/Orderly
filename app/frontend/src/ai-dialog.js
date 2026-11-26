@@ -1047,14 +1047,20 @@ export function mountAiDialog({
         nodes.inlineKey.hidden = configured;
         nodes.composerInput.hidden = !configured;
         if (nodes.demoBadgeFull) {
-            nodes.demoBadgeFull.textContent = configured ? "AI 已接入" : "输入 API Key";
+            nodes.demoBadgeFull.textContent = configured
+                ? "API 已确认"
+                : "输入 API Key 后确认";
         }
         if (nodes.demoBadgeCompact) {
-            nodes.demoBadgeCompact.textContent = configured ? "已接入" : "接入 AI";
+            nodes.demoBadgeCompact.textContent = configured ? "已确认" : "确认 API";
         }
         if (nodes.composerSend.lastElementChild) {
-            nodes.composerSend.lastElementChild.textContent = configured ? "生成" : "接入";
+            nodes.composerSend.lastElementChild.textContent = configured ? "生成" : "确认";
         }
+        nodes.composerSend.setAttribute(
+            "aria-label",
+            configured ? "生成 AI 结果" : "确认 API Key"
+        );
 
         nodes.launcher.dataset.status = running
             ? "running"
@@ -2226,6 +2232,7 @@ export function mountAiDialog({
                 throw new Error(test.message || "模型连接测试失败");
             }
             dialog.settings = normalizeSettings(saved);
+            dialog.error = "";
             onAiSettingsChanged(saved);
             nodes.inlineKey.value = "";
             dialog.busy = false;
@@ -2235,7 +2242,7 @@ export function mountAiDialog({
                 panelOpen: false,
                 focus: nodes.composerInput
             });
-            onNotice("DeepSeek 已临时接入；API Key 只保存在当前进程。");
+            onNotice("API Key 已确认；DeepSeek 连接测试成功，可以开始生成。");
         } catch (error) {
             try {
                 const cleared = await clearAiSettings();
