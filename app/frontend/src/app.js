@@ -2502,6 +2502,7 @@ async function mountModule(module) {
                 );
                 return node;
             },
+            openSettings: (section = "") => openSettings(section),
             toast,
             fillCommand,
             formatDate,
@@ -3994,14 +3995,19 @@ function closeMobileNav({ restoreFocus = true } = {}) {
 /**
  * 打开设置。
  */
-function openSettings() {
+function openSettings(section = "") {
     const dialog = document.querySelector("#settings-dialog");
+    if (["appearance", "ai", "system"].includes(section)) {
+        state.settingsSection = section;
+    }
     if (dialog && !dialog.open) {
         renderSettings();
         dialog.dataset.motionState = "open";
         dialog.dataset.motionPhase = "active";
         dialog.showModal();
         reconcileDesktopSidebar();
+    } else if (dialog?.open && section) {
+        renderSettings();
     }
 }
 

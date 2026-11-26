@@ -28,6 +28,13 @@
     border-bottom: 1px solid var(--color-line);
 }
 
+.module-codegen-ui-header-actions {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-3);
+}
+
 .module-codegen-ui-heading {
     display: grid;
     gap: var(--space-1);
@@ -120,9 +127,11 @@
 }
 
 .module-codegen-ui-module-left {
+    position: relative;
+    z-index: 4;
     display: grid;
     grid-area: left;
-    grid-template-rows: minmax(11rem, 0.36fr) minmax(0, 1fr);
+    grid-template-rows: 3.1rem minmax(0, 1fr);
     gap: var(--space-3);
     min-width: 0;
     min-height: 0;
@@ -165,6 +174,12 @@
 .module-codegen-ui-module-prompt-panel {
     display: flex;
     flex-direction: column;
+}
+
+.module-codegen-ui-target-panel {
+    position: relative;
+    z-index: 8;
+    overflow: visible;
 }
 
 .module-codegen-ui-composer-head,
@@ -238,13 +253,11 @@
 .module-codegen-ui-editor.is-motion {
     grid-template-areas:
         "target theme"
-        "prompt prompt"
-        "model model";
+        "prompt prompt";
     grid-template-columns: minmax(14rem, 0.8fr) minmax(11rem, 0.65fr);
     grid-template-rows:
         minmax(12rem, 0.85fr)
-        minmax(10rem, 1.15fr)
-        auto;
+        minmax(10rem, 1.15fr);
 }
 
 .module-codegen-ui-field {
@@ -270,16 +283,52 @@
 }
 
 .module-codegen-ui-target-panel-body {
+    position: absolute;
+    z-index: 20;
+    top: calc(3.1rem + var(--space-1));
+    right: var(--space-2);
+    left: var(--space-2);
     display: flex;
-    min-height: 0;
-    flex: 1;
-    padding: var(--space-2);
+    max-height: min(22rem, 52vh);
+    overflow: hidden;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-raised);
+    box-shadow: var(--shadow-card);
+    padding: var(--space-1);
 }
 
 .module-codegen-ui-target-panel-body > .module-codegen-ui-target-field {
     min-height: 0;
     flex: 1;
     grid-template-rows: minmax(0, 1fr);
+}
+
+.module-codegen-ui-target-trigger {
+    display: inline-flex;
+    min-height: 2.25rem;
+    align-items: center;
+    gap: var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    padding: 0 var(--space-2);
+    color: var(--color-text-soft);
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.module-codegen-ui-target-trigger:hover {
+    border-color: var(--color-line);
+    background: var(--color-surface-muted);
+    color: var(--color-text);
+}
+
+.module-codegen-ui-target-chevron {
+    color: var(--color-accent-strong);
+    font-size: 0.9rem;
 }
 
 .module-codegen-ui-theme-field {
@@ -407,9 +456,9 @@
 }
 
 .module-codegen-ui-module-prompt-controls {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
     gap: var(--space-2);
     min-width: 0;
 }
@@ -423,29 +472,6 @@
     grid-template-columns: minmax(0, 1fr) auto;
     margin-top: 0;
     align-items: flex-end;
-}
-
-.module-codegen-ui-model-field {
-    gap: var(--space-1);
-}
-
-.module-codegen-ui-editor > .module-codegen-ui-model-field {
-    grid-area: model;
-}
-
-.module-codegen-ui-model-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-}
-
-.module-codegen-ui-model-state {
-    overflow: hidden;
-    color: var(--color-text-soft);
-    font-size: 0.72rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .module-codegen-ui-textarea,
@@ -476,6 +502,53 @@
 .module-codegen-ui-input {
     min-height: 2.5rem;
     padding: 0 var(--space-3);
+}
+
+.module-codegen-ui-api-dialog {
+    width: min(30rem, calc(100vw - 2rem));
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    padding: 0;
+    box-shadow: var(--shadow-card);
+}
+
+.module-codegen-ui-api-dialog::backdrop {
+    background: color-mix(in srgb, var(--color-overlay) 34%, transparent);
+    backdrop-filter: blur(8px);
+}
+
+.module-codegen-ui-api-dialog-form {
+    display: grid;
+    gap: var(--space-4);
+    padding: var(--space-5);
+}
+
+.module-codegen-ui-api-dialog-form h2,
+.module-codegen-ui-api-dialog-form p {
+    margin: 0;
+}
+
+.module-codegen-ui-api-dialog-form h2 {
+    font-size: 1.15rem;
+}
+
+.module-codegen-ui-api-dialog-copy {
+    color: var(--color-text-soft);
+    font-size: 0.82rem;
+    line-height: 1.6;
+}
+
+.module-codegen-ui-api-dialog-error {
+    color: var(--color-danger);
+    font-size: 0.78rem;
+}
+
+.module-codegen-ui-api-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
 }
 
 .module-codegen-ui-textarea:focus-visible,
@@ -684,7 +757,7 @@
 
 .module-codegen-ui-interface-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-2);
     align-items: center;
     min-height: 3.1rem;
@@ -1034,7 +1107,7 @@
     }
 
     .module-codegen-ui-module-left {
-        grid-template-rows: minmax(12rem, auto) minmax(18rem, auto);
+        grid-template-rows: 3.1rem minmax(18rem, auto);
         gap: var(--space-3);
     }
 
@@ -1066,8 +1139,7 @@
 
     .module-codegen-ui-target-field,
     .module-codegen-ui-theme-field,
-    .module-codegen-ui-prompt,
-    .module-codegen-ui-model-field {
+    .module-codegen-ui-prompt {
         grid-area: auto;
     }
 }
@@ -1076,6 +1148,15 @@
     .module-codegen-ui-header {
         display: grid;
         padding: var(--space-4);
+    }
+
+    .module-codegen-ui-header-actions {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .module-codegen-ui-header-actions > .module-codegen-ui-button {
+        width: auto;
     }
 
     .module-codegen-ui-tabs {

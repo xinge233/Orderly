@@ -99,6 +99,16 @@ test("system service delegates generation to the protected host API", async () =
     assert.match(source, /module-codegen-ui-layout is-module-workspace/);
     assert.match(source, /module-codegen-ui-module-prompt-panel/);
     assert.match(source, /module-codegen-ui-editor is-motion/);
+    assert.match(source, /module-codegen-ui-target-trigger/);
+    assert.match(source, /function openApiDialog/);
+    assert.match(source, /dialog\.showModal\(\)/);
+    assert.match(source, /context\.openSettings\("ai"\)/);
+    assert.match(source, /generateButton\.addEventListener\("click", \(\) => generate\("module"\)\)/);
+    assert.match(source, /generateButton\.addEventListener\("click", \(\) => generate\("motion"\)\)/);
+    assert.doesNotMatch(source, /state\.apiKey/);
+    assert.doesNotMatch(source, /buildModelField/);
+    assert.doesNotMatch(source, /const generate = button/);
+    assert.doesNotMatch(source, /risk\.textContent/);
     assert.match(style, /aspect-ratio:\s*16\s*\/\s*9/);
     assert.match(style, /\.module-codegen-ui-picker\s*\{/);
     assert.match(style, /\.module-codegen-ui-step-row\s*\{/);
@@ -116,7 +126,7 @@ test("system service delegates generation to the protected host API", async () =
     );
     assert.match(
         style,
-        /\.module-codegen-ui-editor\.is-motion\s*\{[^}]*grid-template-rows:\s*minmax\(12rem,\s*0\.85fr\)\s*minmax\(10rem,\s*1\.15fr\)\s*auto/s
+        /\.module-codegen-ui-editor\.is-motion\s*\{[^}]*grid-template-rows:\s*minmax\(12rem,\s*0\.85fr\)\s*minmax\(10rem,\s*1\.15fr\)/s
     );
     assert.match(
         style,
@@ -126,8 +136,16 @@ test("system service delegates generation to the protected host API", async () =
         style,
         /\.module-codegen-ui-preview-panel-body\s*\{[^}]*container-type:\s*size/s
     );
+    assert.match(
+        style,
+        /\.module-codegen-ui-target-panel-body\s*\{[^}]*position:\s*absolute/s
+    );
+    assert.match(
+        style,
+        /\.module-codegen-ui-api-dialog\s*\{[^}]*background:\s*var\(--color-surface-raised\)/s
+    );
     assert.match(style, /\.module-codegen-ui-editor > \.module-codegen-ui-prompt/);
-    assert.match(style, /\.module-codegen-ui-editor > \.module-codegen-ui-model-field/);
+    assert.doesNotMatch(style, /\.module-codegen-ui-model-field/);
     assert.doesNotMatch(style, /#[0-9a-fA-F]{3,8}\b/);
 });
 
@@ -170,4 +188,7 @@ test("framework mount context exposes read-only module, theme and motion catalog
     assert.match(app, /themeCatalog:\s*state\.themes\.map/);
     assert.match(app, /listMotionScopes:\s*\(\)\s*=>/);
     assert.match(app, /querySelectorAll\("\[data-motion-scope\]"\)/);
+    assert.match(app, /openSettings:\s*\(section = ""\)\s*=>\s*openSettings\(section\)/);
+    assert.match(app, /function openSettings\(section = ""\)/);
+    assert.match(app, /state\.settingsSection = section/);
 });

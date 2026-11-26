@@ -129,9 +129,9 @@ export default async function mount(root, context) {
         status: "",
         session: null,
         busy: false,
-        apiKey: "",
         modelConfigured: false,
-        modelLabel: "正在读取模型配置"
+        moduleTargetExpanded: false,
+        pendingGenerationKind: ""
     };
 
     function icon(name, size = 17) {
@@ -190,38 +190,95 @@ export default async function mount(root, context) {
         try {
             const settings = await request("/api/ai/settings");
             state.modelConfigured = settings?.configured === true;
-            state.modelLabel = state.modelConfigured
-                ? `${text(settings.model, "已配置模型")} · 已就绪`
-                : "未配置模型";
         } catch {
             state.modelConfigured = false;
-            state.modelLabel = "AI 服务状态不可用";
         }
-        render();
     }
 
     async function ensureModelConfigured() {
-        if (state.apiKey.trim()) {
-            const settings = await request("/api/ai/settings", {
-                method: "PUT",
-                body: {
-                    mode: "DEEPSEEK",
-                    apiKey: state.apiKey.trim()
-                }
-            });
-            state.apiKey = "";
-            state.modelConfigured = settings?.configured === true;
-            state.modelLabel = `${text(settings?.model, "DeepSeek")} · 本次运行已配置`;
-            return;
-        }
         const settings = await request("/api/ai/settings");
         state.modelConfigured = settings?.configured === true;
-        state.modelLabel = state.modelConfigured
-            ? `${text(settings.model, "已配置模型")} · 已就绪`
-            : "未配置模型";
-        if (!state.modelConfigured) {
-            throw new Error("请先在设置中配置模型，或在生成器内临时输入 API Key。");
-        }
+        return state.modelConfigured;
+    }
+
+    function openApiDialog(kind) {
+        root.querySelector(".module-codegen-ui-api-dialog")?.remove();
+        state.pendingGenerationKind = kind;
+        const dialog = make("dialog", "module-codegen-ui-api-dialog");
+        dialog.setAttribute("aria-labelledby", "module-codegen-api-title");
+        const form = make("form", "module-codegen-ui-api-dialog-form");
+        const title = make("h2", "", "配置 API");
+        title.id = "module-codegen-api-title";
+        const description = make(
+            "p",
+            "module-codegen-ui-api-dialog-copy",
+            "首次生成需要 DeepSeek API Key；凭据只发送到本机 AI 服务。"
+        );
+        const field = make("label", "module-codegen-ui-field");
+        field.append(make("span", "module-codegen-ui-label", "API Key"));
+        const input = make("input", "module-codegen-ui-input");
+        input.type = "password";
+        input.autocomplete = "off";
+        input.spellcheck = false;
+        input.placeholder = "输入 DeepSeek API Key";
+        field.append(input);
+        const error = make("p", "module-codegen-ui-api-dialog-error");
+        error.setAttribute("role", "alert");
+        error.hidden = true;
+        const actions = make("footer", "module-codegen-ui-api-dialog-actions");
+        const cancel = make("button", "module-codegen-ui-button", "取消");
+        cancel.type = "button";
+        const submit = make("button", "module-codegen-ui-button is-primary", "保存并继续");
+        submit.type = "submit";
+        actions.append(cancel, submit);
+        form.append(title, description, field, error, actions);
+        dialog.append(form);
+
+        const cleanup = () => {
+            input.value = "";
+            dialog.remove();
+        };
+        cancel.addEventListener("click", () => dialog.close());
+        dialog.addEventListener("click", (event) => {
+            if (event.target === dialog) dialog.close();
+        });
+        dialog.addEventListener("close", cleanup, { once: true });
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const apiKey = input.value.trim();
+            if (!apiKey) {
+                error.textContent = "请输入 API Key。";
+                error.hidden = false;
+                input.focus();
+                return;
+            }
+            submit.disabled = true;
+            cancel.disabled = true;
+            error.hidden = true;
+            try {
+                const settings = await request("/api/ai/settings", {
+                    method: "PUT",
+                    body: { mode: "DEEPSEEK", apiKey }
+                });
+                input.value = "";
+                state.modelConfigured = settings?.configured === true;
+                const pendingKind = state.pendingGenerationKind;
+                state.pendingGenerationKind = "";
+                dialog.close();
+                if (pendingKind) {
+                    await startGeneration(pendingKind);
+                }
+            } catch (requestError) {
+                error.textContent = requestError.message;
+                error.hidden = false;
+                submit.disabled = false;
+                cancel.disabled = false;
+                input.focus();
+            }
+        });
+        root.append(dialog);
+        dialog.showModal();
+        input.focus();
     }
 
     function applySession(payload) {
@@ -266,18 +323,13 @@ export default async function mount(root, context) {
         }, 900);
     }
 
-    async function generate(kind) {
-        if (state.busy) return;
+    async function startGeneration(kind) {
         const prompt = text(kind === "module" ? state.modulePrompt : state.motionPrompt);
-        if (!prompt) {
-            setStatus("请先输入生成需求。");
-            return;
-        }
+        if (!prompt || state.busy) return;
         state.busy = true;
         state.status = "正在生成候选步骤…";
         render();
         try {
-            await ensureModelConfigured();
             const payload = await request("/api/codegen/sessions", {
                 method: "POST",
                 action: "generate-codegen",
@@ -301,6 +353,31 @@ export default async function mount(root, context) {
             if (state.session?.sessionId) pollSession(state.session.sessionId);
         } catch (error) {
             state.busy = false;
+            state.status = error.message;
+            render();
+        }
+    }
+
+    async function generate(kind) {
+        if (state.busy) return;
+        const prompt = text(kind === "module" ? state.modulePrompt : state.motionPrompt);
+        if (!prompt) {
+            setStatus("请先输入生成需求。");
+            return;
+        }
+        state.status = "正在检查模型配置…";
+        render();
+        try {
+            const configured = await ensureModelConfigured();
+            if (!configured) {
+                state.status = "";
+                render();
+                openApiDialog(kind);
+                return;
+            }
+            state.status = "";
+            await startGeneration(kind);
+        } catch (error) {
             state.status = error.message;
             render();
         }
@@ -448,6 +525,7 @@ export default async function mount(root, context) {
             item.append(iconNode, copy);
             item.addEventListener("click", () => {
                 state.moduleTarget = id;
+                state.moduleTargetExpanded = false;
                 state.status = "";
                 render();
             });
@@ -476,37 +554,30 @@ export default async function mount(root, context) {
         return field;
     }
 
-    function buildModelField() {
-        const field = make("label", "module-codegen-ui-field module-codegen-ui-model-field");
-        const head = make("span", "module-codegen-ui-model-head");
-        head.append(
-            make("span", "module-codegen-ui-label", "模型"),
-            make("span", "module-codegen-ui-model-state", state.modelLabel)
-        );
-        const input = make("input", "module-codegen-ui-input");
-        input.type = "password";
-        input.autocomplete = "off";
-        input.spellcheck = false;
-        input.placeholder = state.modelConfigured
-            ? "使用已配置模型；也可临时输入新的 API Key"
-            : "临时输入 DeepSeek API Key";
-        input.value = state.apiKey;
-        input.addEventListener("input", () => { state.apiKey = input.value; });
-        field.append(head, input);
-        return field;
-    }
-
     function buildModuleTargetPanel() {
         const panel = make("section", "module-codegen-ui-target-panel");
         const head = make("header", "module-codegen-ui-panel-head");
         const selected = selectedModule();
-        head.append(
-            make("strong", "", "修改对象"),
-            make("span", "", selected?.title ?? "新建模块")
+        const trigger = make("button", "module-codegen-ui-target-trigger");
+        trigger.type = "button";
+        trigger.setAttribute("aria-expanded", String(state.moduleTargetExpanded));
+        trigger.setAttribute("aria-controls", "module-codegen-target-menu");
+        trigger.append(
+            make("span", "", selected?.title ?? "新建模块"),
+            make("span", "module-codegen-ui-target-chevron", state.moduleTargetExpanded ? "⌃" : "⌄")
         );
-        const body = make("div", "module-codegen-ui-target-panel-body");
-        body.append(buildModulePicker(""));
-        panel.append(head, body);
+        trigger.addEventListener("click", () => {
+            state.moduleTargetExpanded = !state.moduleTargetExpanded;
+            render();
+        });
+        head.append(make("strong", "", "修改对象"), trigger);
+        panel.append(head);
+        if (state.moduleTargetExpanded) {
+            const body = make("div", "module-codegen-ui-target-panel-body");
+            body.id = "module-codegen-target-menu";
+            body.append(buildModulePicker(""));
+            panel.append(body);
+        }
         return panel;
     }
 
@@ -547,9 +618,7 @@ export default async function mount(root, context) {
                     make("strong", "", row.id),
                     make("span", "", `${row.kind} · ${row.title} · ${row.detail}`)
                 );
-                const risk = make("span", `module-codegen-ui-risk is-${row.risk.toLowerCase()}`);
-                risk.textContent = row.risk;
-                item.append(copy, risk);
+                item.append(copy);
                 list.append(item);
             });
         }
@@ -729,18 +798,21 @@ export default async function mount(root, context) {
         ));
 
         const controls = make("div", "module-codegen-ui-module-prompt-controls");
-        controls.append(buildModelField());
         const actions = make("footer", "module-codegen-ui-composer-foot");
         const note = make("span", "module-codegen-ui-note");
         note.append(
             icon("shield", 15),
             make("span", "", "模块专属 AI 代码将保存在目标模块目录。")
         );
-        const generate = button("生成候选", "spark", "module-codegen-ui-button is-primary");
-        generate.disabled = state.busy;
-        generate.title = "调用模块专属 Python AI 生成候选文件与构建步骤";
-        generate.addEventListener("click", () => generate("module"));
-        actions.append(note, generate);
+        const generateButton = button(
+            "生成候选",
+            "spark",
+            "module-codegen-ui-button is-primary"
+        );
+        generateButton.disabled = state.busy;
+        generateButton.title = "调用模块专属 Python AI 生成候选文件与构建步骤";
+        generateButton.addEventListener("click", () => generate("module"));
+        actions.append(note, generateButton);
         controls.append(actions);
         body.append(controls);
         panel.append(head, body);
@@ -869,8 +941,7 @@ export default async function mount(root, context) {
                 state.motionPrompt,
                 "描述进入、切换、反馈和关闭动效时的表现",
                 (value) => { state.motionPrompt = value; }
-            ),
-            buildModelField()
+            )
         );
         body.append(editor);
         const foot = make("footer", "module-codegen-ui-composer-foot");
@@ -879,11 +950,15 @@ export default async function mount(root, context) {
             icon("route", 15),
             make("span", "", "框架动效复用公共挂点；模块动效只能增加本模块挂点。")
         );
-        const generate = button("生成动效候选", "spark", "module-codegen-ui-button is-primary");
-        generate.disabled = state.busy;
-        generate.title = "调用模块专属 Python AI 生成动效候选";
-        generate.addEventListener("click", () => generate("motion"));
-        foot.append(note, generate);
+        const generateButton = button(
+            "生成动效候选",
+            "spark",
+            "module-codegen-ui-button is-primary"
+        );
+        generateButton.disabled = state.busy;
+        generateButton.title = "调用模块专属 Python AI 生成动效候选";
+        generateButton.addEventListener("click", () => generate("motion"));
+        foot.append(note, generateButton);
         body.append(foot);
         composer.append(head, body);
         return composer;
@@ -944,6 +1019,20 @@ export default async function mount(root, context) {
         return side;
     }
 
+    function buildHeaderActions() {
+        const actions = make("div", "module-codegen-ui-header-actions");
+        const settings = button(
+            "模组设置",
+            "settings",
+            "module-codegen-ui-button is-small"
+        );
+        settings.disabled = typeof context.openSettings !== "function";
+        settings.title = "打开 AI 接入设置";
+        settings.addEventListener("click", () => context.openSettings("ai"));
+        actions.append(settings, buildTabs());
+        return actions;
+    }
+
     function render() {
         const shell = make("section", "module-codegen-ui-shell");
         const header = make("header", "module-codegen-ui-header");
@@ -956,7 +1045,7 @@ export default async function mount(root, context) {
                     ? "描述要生成或修改的模块。"
                     : "描述框架或模块需要呈现的动效。")
         );
-        header.append(heading, buildTabs());
+        header.append(heading, buildHeaderActions());
 
         let layout;
         if (state.mode === "module") {
@@ -975,6 +1064,22 @@ export default async function mount(root, context) {
         root.replaceChildren(shell);
     }
 
+    root.addEventListener("pointerdown", (event) => {
+        if (!state.moduleTargetExpanded) return;
+        const target = event.target;
+        if (target && typeof target.closest === "function"
+                && target.closest(".module-codegen-ui-target-panel")) {
+            return;
+        }
+        state.moduleTargetExpanded = false;
+        render();
+    });
+    root.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && state.moduleTargetExpanded) {
+            state.moduleTargetExpanded = false;
+            render();
+        }
+    });
     render();
     refreshModelState();
 }
