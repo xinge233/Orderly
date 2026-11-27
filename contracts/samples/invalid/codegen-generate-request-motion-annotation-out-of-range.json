@@ -1,0 +1,19 @@
+{
+  "mode": "motion",
+  "prompt": "修改标注区域。",
+  "targetModuleId": "module_study_assistant",
+  "motionTarget": "module",
+  "themeId": "paper",
+  "moduleCatalog": [],
+  "motionScopes": [],
+  "motionAnnotations": [
+    {
+      "annotationId": "annotation-1",
+      "kind": "rect",
+      "points": [
+        [-0.2, 0.3],
+        [1.4, 0.8]
+      ]
+    }
+  ]
+}

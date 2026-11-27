@@ -13,6 +13,8 @@ function listOf(value) {
     return Array.isArray(value) ? value : [];
 }
 
+const MOTION_PREVIEW_CHANNEL = "orderly-motion-preview";
+
 function moduleIsBusiness(module) {
     return module?.source !== "system" && !module?.system;
 }
@@ -278,6 +280,15 @@ export default async function mount(root, context) {
         motionGenerating: false,
         selectedMotionHook: "",
         motionPreviewFocus: "overview",
+        motionAnnotationTool: "rect",
+        motionAnnotations: [],
+        motionAnnotationText: "",
+        motionAnnotationSequence: 0,
+        motionPreviewNodes: [],
+        motionPreviewReady: false,
+        motionPreviewRequestId: 0,
+        motionPreviewOrigin: "",
+        motionPreviewListenerBound: false,
         motionProgressExpanded: false,
         motionSideMode: "modify",
         motionVersions: [],
@@ -566,7 +577,18 @@ export default async function mount(root, context) {
                         : "",
                     themeId: state.themeId,
                     moduleCatalog: context.moduleCatalog ?? [],
-                    motionScopes: currentMotionScopes()
+                    motionScopes: currentMotionScopes(),
+                    motionNodes: state.motionPreviewNodes,
+                    motionAnnotations: state.motionAnnotations.map((annotation) => ({
+                        annotationId: annotation.annotationId,
+                        kind: annotation.kind,
+                        points: annotation.points,
+                        text: annotation.text,
+                        targetNode: annotation.targetNode,
+                        selector: annotation.selector,
+                        sourceHint: annotation.sourceHint,
+                        nodes: annotation.nodes
+                    }))
                 }
             });
             applySession(payload);
@@ -838,6 +860,7 @@ export default async function mount(root, context) {
                 state.motionTargetExpanded = false;
                 state.motionPreviewFocus = "overview";
                 state.selectedMotionHook = "";
+                resetMotionAnnotations();
                 state.motionSideMode = "modify";
                 state.motionVersions = [];
                 state.motionVersionsError = "";
@@ -1263,6 +1286,7 @@ export default async function mount(root, context) {
         state.motionTargetExpanded = false;
         state.selectedMotionHook = "";
         state.motionPreviewFocus = "overview";
+        resetMotionAnnotations();
         state.motionVersions = [];
         state.motionVersionsError = "";
         state.status = "";
@@ -1315,6 +1339,15 @@ export default async function mount(root, context) {
                 : [],
             currentHooks: values
         });
+    }
+
+    function resetMotionAnnotations() {
+        state.motionAnnotations = [];
+        state.motionAnnotationText = "";
+        state.motionAnnotationSequence = 0;
+        state.motionPreviewNodes = [];
+        state.motionPreviewReady = false;
+        state.motionPreviewOrigin = "";
     }
 
     function selectedMotionHook(scopes = currentMotionScopes()) {
@@ -1697,32 +1730,395 @@ export default async function mount(root, context) {
         return surface;
     }
 
+    function motionPreviewUrl() {
+        const raw = text(state.session?.previewUrl);
+        if (!raw || state.session?.previewStatus !== "READY") return "";
+        try {
+            const url = new URL(raw);
+            url.searchParams.set("motionEditor", "1");
+            url.searchParams.set("motionPreviewSession", state.session?.sessionId ?? "");
+            if (state.motionTarget !== "framework") {
+                url.searchParams.set("motionPreviewModule", state.motionTarget);
+            }
+            return url.toString();
+        } catch {
+            return "";
+        }
+    }
+
+    function postMotionPreview(payload) {
+        const frame = root.querySelector("[data-motion-preview-frame]");
+        if (!frame?.contentWindow || !state.motionPreviewOrigin) return;
+        frame.contentWindow.postMessage({
+            channel: MOTION_PREVIEW_CHANNEL,
+            sessionId: state.session?.sessionId ?? "",
+            ...payload
+        }, state.motionPreviewOrigin);
+    }
+
+    function ensureMotionPreviewListener() {
+        if (state.motionPreviewListenerBound) return;
+        state.motionPreviewListenerBound = true;
+        globalThis.addEventListener("message", (event) => {
+            if (!root.isConnected) return;
+            if (event.origin !== state.motionPreviewOrigin) return;
+            const payload = event.data;
+            if (!payload || payload.channel !== MOTION_PREVIEW_CHANNEL) return;
+            if (payload.sessionId !== (state.session?.sessionId ?? "")) return;
+            if (payload.type === "ready" || payload.type === "nodes") {
+                state.motionPreviewNodes = listOf(payload.nodes).slice(0, 120);
+                state.motionPreviewReady = true;
+                const canvas = root.querySelector(".module-codegen-ui-annotation-canvas");
+                if (canvas) drawMotionAnnotations(canvas);
+                return;
+            }
+            if (payload.type === "region-result") {
+                const annotation = state.motionAnnotations.find(
+                    (entry) => entry.annotationId === payload.annotationId
+                );
+                if (!annotation) return;
+                annotation.nodes = listOf(payload.nodes).slice(0, 8);
+                const first = annotation.nodes[0];
+                annotation.targetNode = text(first?.node);
+                annotation.selector = text(first?.selector);
+                annotation.sourceHint = text(first?.sourceHint);
+                const canvas = root.querySelector(".module-codegen-ui-annotation-canvas");
+                if (canvas) drawMotionAnnotations(canvas);
+                return;
+            }
+            if (payload.type === "select" && payload.node) {
+                const selected = payload.node;
+                state.motionAnnotationSequence += 1;
+                if (state.motionAnnotations.length >= 16) {
+                    notify("一次最多添加 16 条标注。", { error: true });
+                    return;
+                }
+                const rect = selected.rect ?? {};
+                const x = Number(rect.x) + Number(rect.width) / 2;
+                const y = Number(rect.y) + Number(rect.height) / 2;
+                state.motionAnnotations.push({
+                    annotationId: `annotation-${state.motionAnnotationSequence}`,
+                    kind: "text",
+                    points: [[clamp01(x), clamp01(y)]],
+                    text: text(state.motionAnnotationText, "选中此元素"),
+                    targetNode: text(selected.node),
+                    selector: text(selected.selector),
+                    sourceHint: text(selected.sourceHint),
+                    nodes: [selected]
+                });
+                root.querySelectorAll("[data-annotation-action]").forEach((action) => {
+                    action.disabled = false;
+                });
+                const canvas = root.querySelector(".module-codegen-ui-annotation-canvas");
+                if (canvas) drawMotionAnnotations(canvas);
+            }
+        });
+    }
+
+    function clamp01(value) {
+        return Math.min(1, Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0));
+    }
+
+    function annotationColor() {
+        const canvas = root.querySelector(".module-codegen-ui-annotation-canvas");
+        if (!canvas) return "CanvasText";
+        return globalThis.getComputedStyle(canvas)
+            .getPropertyValue("--color-accent")
+            .trim() || "CanvasText";
+    }
+
+    function drawMotionAnnotations(canvas, draft = null) {
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const scale = globalThis.devicePixelRatio || 1;
+        canvas.width = Math.max(1, Math.round(rect.width * scale));
+        canvas.height = Math.max(1, Math.round(rect.height * scale));
+        const context = canvas.getContext("2d");
+        if (!context) return;
+        context.setTransform(scale, 0, 0, scale, 0, 0);
+        context.clearRect(0, 0, rect.width, rect.height);
+        context.strokeStyle = annotationColor();
+        context.fillStyle = annotationColor();
+        context.lineWidth = 2;
+        context.lineCap = "round";
+        context.lineJoin = "round";
+        const paint = (annotation) => {
+            const points = listOf(annotation?.points);
+            if (!points.length) return;
+            const px = (point) => Number(point?.[0]) * rect.width;
+            const py = (point) => Number(point?.[1]) * rect.height;
+            if (annotation.kind === "rect" && points.length >= 2) {
+                const left = Math.min(px(points[0]), px(points[1]));
+                const top = Math.min(py(points[0]), py(points[1]));
+                const width = Math.abs(px(points[1]) - px(points[0]));
+                const height = Math.abs(py(points[1]) - py(points[0]));
+                context.strokeRect(left, top, width, height);
+                return;
+            }
+            if (annotation.kind === "text") {
+                context.beginPath();
+                context.arc(px(points[0]), py(points[0]), 5, 0, Math.PI * 2);
+                context.fill();
+                return;
+            }
+            context.beginPath();
+            points.forEach((point, index) => {
+                if (index === 0) context.moveTo(px(point), py(point));
+                else context.lineTo(px(point), py(point));
+            });
+            context.stroke();
+            if (annotation.kind === "arrow" && points.length >= 2) {
+                const last = points[points.length - 1];
+                const previous = points[points.length - 2];
+                const angle = Math.atan2(py(last) - py(previous), px(last) - px(previous));
+                const length = 11;
+                context.beginPath();
+                context.moveTo(px(last), py(last));
+                context.lineTo(
+                    px(last) - length * Math.cos(angle - Math.PI / 6),
+                    py(last) - length * Math.sin(angle - Math.PI / 6)
+                );
+                context.moveTo(px(last), py(last));
+                context.lineTo(
+                    px(last) - length * Math.cos(angle + Math.PI / 6),
+                    py(last) - length * Math.sin(angle + Math.PI / 6)
+                );
+                context.stroke();
+            }
+        };
+        state.motionAnnotations.forEach(paint);
+        if (draft) paint(draft);
+        root.querySelectorAll("[data-motion-preview-status]").forEach((node) => {
+            const main = node.dataset.motionPreviewStatus === "main";
+            node.textContent = `${main ? "真实模块界面" : "真实标注预览"} · ${
+                state.motionPreviewNodes.length
+            } 个可识别元素 · ${state.motionAnnotations.length} 条标注`;
+        });
+    }
+
+    function buildMotionAnnotationToolbar() {
+        const toolbar = make("div", "module-codegen-ui-annotation-toolbar");
+        toolbar.setAttribute("role", "toolbar");
+        toolbar.setAttribute("aria-label", "动效标注工具");
+        const canvas = () => root.querySelector(".module-codegen-ui-annotation-canvas");
+        const updateTools = () => {
+            toolbar.querySelectorAll(".module-codegen-ui-annotation-tool").forEach((item) => {
+                const selected = item.dataset.annotationTool === state.motionAnnotationTool;
+                item.classList.toggle("is-selected", selected);
+                item.setAttribute("aria-pressed", String(selected));
+            });
+            canvas()?.classList.toggle("is-browse", state.motionAnnotationTool === "browse");
+        };
+        const updateActions = () => {
+            toolbar.querySelector("[data-annotation-action='undo']").disabled =
+                !state.motionAnnotations.length;
+            toolbar.querySelector("[data-annotation-action='clear']").disabled =
+                !state.motionAnnotations.length;
+        };
+        [
+            ["browse", "浏览"],
+            ["rect", "方框"],
+            ["arrow", "箭头"],
+            ["pen", "画笔"],
+            ["text", "文字"]
+        ].forEach(([tool, label]) => {
+            const item = button(label, "", "module-codegen-ui-annotation-tool");
+            item.dataset.annotationTool = tool;
+            item.setAttribute("aria-pressed", String(state.motionAnnotationTool === tool));
+            if (state.motionAnnotationTool === tool) item.classList.add("is-selected");
+            item.addEventListener("click", () => {
+                state.motionAnnotationTool = tool;
+                postMotionPreview({ type: "mode", mode: tool === "browse" ? "interact" : "select" });
+                updateTools();
+                drawMotionAnnotations(canvas());
+            });
+            toolbar.append(item);
+        });
+        const note = make("input", "module-codegen-ui-annotation-note");
+        note.value = state.motionAnnotationText;
+        note.placeholder = "可补充标注说明";
+        note.setAttribute("aria-label", "标注说明");
+        note.addEventListener("input", () => {
+            state.motionAnnotationText = note.value;
+        });
+        const undo = button("撤销", "", "module-codegen-ui-annotation-action");
+        undo.dataset.annotationAction = "undo";
+        undo.disabled = !state.motionAnnotations.length;
+        undo.addEventListener("click", () => {
+            state.motionAnnotations.pop();
+            updateActions();
+            drawMotionAnnotations(canvas());
+        });
+        const clear = button("清空", "", "module-codegen-ui-annotation-action");
+        clear.dataset.annotationAction = "clear";
+        clear.disabled = !state.motionAnnotations.length;
+        clear.addEventListener("click", () => {
+            state.motionAnnotations = [];
+            postMotionPreview({ type: "highlight", selector: "" });
+            updateActions();
+            drawMotionAnnotations(canvas());
+        });
+        toolbar.append(note, undo, clear);
+        globalThis.queueMicrotask(() => {
+            updateTools();
+            updateActions();
+        });
+        return toolbar;
+    }
+
+    function buildLiveMotionSurface(compact = false) {
+        const url = motionPreviewUrl();
+        if (!url) {
+            const fallback = make("div", "module-codegen-ui-live-preview-empty");
+            fallback.append(
+                make("strong", "", "真实预览尚未启动"),
+                make("span", "", "构建成功后启动镜像预览，即可直接识别真实界面节点。")
+            );
+            if (state.session?.buildStatus === "READY") {
+                const start = button("启动真实预览", "route", "module-codegen-ui-button is-small");
+                start.disabled = state.busy;
+                start.addEventListener("click", () => startPreview());
+                fallback.append(start);
+            }
+            return fallback;
+        }
+        ensureMotionPreviewListener();
+        state.motionPreviewOrigin = new URL(url).origin;
+        const wrapper = make(
+            "div",
+            `module-codegen-ui-live-preview${compact ? " is-compact" : ""}`
+        );
+        const frame = make("iframe", "module-codegen-ui-live-preview-frame");
+        frame.dataset.motionPreviewFrame = "";
+        frame.title = "真实模块动效预览";
+        frame.src = url;
+        frame.loading = "eager";
+        frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
+        const canvas = make("canvas", "module-codegen-ui-annotation-canvas");
+        canvas.tabIndex = 0;
+        canvas.setAttribute(
+            "aria-label",
+            "动效标注画布，选择方框、箭头、画笔或文字工具后在预览上绘制"
+        );
+        if (state.motionAnnotationTool === "browse") canvas.classList.add("is-browse");
+        let draft = null;
+        const localPoint = (event) => {
+            const rect = canvas.getBoundingClientRect();
+            return [
+                clamp01((event.clientX - rect.left) / Math.max(1, rect.width)),
+                clamp01((event.clientY - rect.top) / Math.max(1, rect.height))
+            ];
+        };
+        canvas.addEventListener("pointerdown", (event) => {
+            if (state.motionAnnotationTool === "browse") return;
+            event.preventDefault();
+            canvas.setPointerCapture(event.pointerId);
+            const point = localPoint(event);
+            draft = {
+                kind: state.motionAnnotationTool,
+                points: state.motionAnnotationTool === "rect" || state.motionAnnotationTool === "arrow"
+                    ? [point, point]
+                    : [point]
+            };
+            drawMotionAnnotations(canvas, draft);
+        });
+        canvas.addEventListener("pointermove", (event) => {
+            if (!draft) return;
+            const point = localPoint(event);
+            if (draft.kind === "rect" || draft.kind === "arrow") {
+                draft.points = [draft.points[0], point];
+            } else {
+                draft.points.push(point);
+                if (draft.points.length > 128) draft.points.shift();
+            }
+            drawMotionAnnotations(canvas, draft);
+        });
+        const finish = (event) => {
+            if (!draft) return;
+            event.preventDefault();
+            const finished = draft;
+            draft = null;
+            if (state.motionAnnotations.length >= 16) {
+                notify("一次最多添加 16 条标注。", { error: true });
+                drawMotionAnnotations(canvas);
+                return;
+            }
+            state.motionAnnotationSequence += 1;
+            const annotation = {
+                annotationId: `annotation-${state.motionAnnotationSequence}`,
+                kind: finished.kind,
+                points: finished.points,
+                text: text(state.motionAnnotationText),
+                targetNode: "",
+                selector: "",
+                sourceHint: "",
+                nodes: []
+            };
+            state.motionAnnotations.push(annotation);
+            root.querySelectorAll("[data-annotation-action]").forEach((action) => {
+                action.disabled = false;
+            });
+            state.motionPreviewRequestId += 1;
+            postMotionPreview({
+                type: "region",
+                requestId: state.motionPreviewRequestId,
+                annotationId: annotation.annotationId,
+                points: annotation.points
+            });
+            drawMotionAnnotations(canvas);
+        };
+        canvas.addEventListener("pointerup", finish);
+        canvas.addEventListener("pointercancel", finish);
+        const resize = () => drawMotionAnnotations(canvas);
+        globalThis.queueMicrotask(resize);
+        if (typeof ResizeObserver === "function") {
+            new ResizeObserver(resize).observe(wrapper);
+        }
+        frame.addEventListener("load", () => {
+            postMotionPreview({ type: "mode", mode: "select" });
+            postMotionPreview({ type: "scan", requestId: ++state.motionPreviewRequestId });
+            drawMotionAnnotations(canvas);
+        });
+        wrapper.append(frame, canvas);
+        if (!compact) wrapper.append(buildMotionAnnotationToolbar());
+        return wrapper;
+    }
+
     function buildMotionPreviewPane(kind) {
         const isMain = kind === "interface1";
         const panel = make(
             "section",
             `module-codegen-ui-motion-preview-pane ${isMain ? "is-main" : "is-mini"}`
         );
-        const head = make("header", "module-codegen-ui-motion-panel-head");
-        head.append(
-            make("strong", "", isMain ? "界面 1" : "界面 2"),
-            make(
-                "span",
-                "",
-                isMain ? "整个界面的结构化预览" : "选中挂点的局部放大"
-            )
+        const liveMain = isMain && (
+            Boolean(motionPreviewUrl())
+            || state.session?.buildStatus === "READY"
         );
+        const head = make("header", "module-codegen-ui-motion-panel-head");
+        const status = make(
+            "span",
+            "",
+            liveMain
+                ? `${isMain ? "真实模块界面" : "真实标注预览"} · ${
+                    state.motionPreviewNodes.length
+                } 个可识别元素 · ${state.motionAnnotations.length} 条标注`
+                : isMain ? "整个界面的结构化预览" : "选中挂点的局部放大"
+        );
+        status.dataset.motionPreviewStatus = isMain ? "main" : "mini";
+        head.append(make("strong", "", isMain ? "界面 1" : "界面 2"), status);
         const previewIsDetail = isMain
             ? state.motionPreviewFocus === "detail"
             : state.motionPreviewFocus === "overview";
-        const surface = previewIsDetail
-            ? buildMotionDetailSurface(!isMain)
-            : buildMotionOverviewSurface(!isMain);
+        const surface = liveMain
+            ? buildLiveMotionSurface(false)
+            : previewIsDetail
+                ? buildMotionDetailSurface(!isMain)
+                : buildMotionOverviewSurface(!isMain);
         if (isMain) {
             panel.append(head, surface);
         } else {
             const swap = make("div", "module-codegen-ui-motion-swap");
-            const canSwap = Boolean(selectedMotionHook());
+            const canSwap = Boolean(selectedMotionHook()) || state.motionAnnotations.length > 0;
             swap.setAttribute("role", "button");
             swap.setAttribute("tabindex", canSwap ? "0" : "-1");
             swap.setAttribute("aria-disabled", String(!canSwap));

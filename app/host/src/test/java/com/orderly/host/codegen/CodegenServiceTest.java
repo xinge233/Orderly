@@ -25,6 +25,65 @@ class CodegenServiceTest {
     Path tempDir;
 
     @Test
+    void generateRequestKeepsMotionAnnotationsAndNodeCatalog() {
+        List<Map<String, Object>> nodes = List.of(Map.of(
+                "node", "motion-node-1",
+                "tag", "article",
+                "selector", "[data-orderly-motion-node=\"motion-node-1\"]",
+                "sourceHint", "module.js:182"
+        ));
+        List<Map<String, Object>> annotations = List.of(Map.of(
+                "annotationId", "annotation-1",
+                "kind", "rect",
+                "points", List.of(List.of(0.1, 0.2), List.of(0.4, 0.5)),
+                "nodes", nodes
+        ));
+
+        CodegenService.GenerateRequest request = new CodegenService.GenerateRequest(
+                "motion",
+                "move selected card",
+                "module_demo",
+                "module",
+                "paper",
+                List.of(),
+                List.of(),
+                nodes,
+                annotations
+        );
+
+        assertThat(request.motionNodes()).containsExactlyElementsOf(nodes);
+        assertThat(request.motionAnnotations()).containsExactlyElementsOf(annotations);
+    }
+
+    @Test
+    void rejectsMotionAnnotationCoordinatesOutsideNormalizedViewport() throws Exception {
+        TestContext context = contextWithTheme();
+        CodegenService service = service(
+                context,
+                mock(CodegenProposalRunner.class),
+                mock(CodegenPreviewService.class)
+        );
+
+        assertThatThrownBy(() -> service.generate(new CodegenService.GenerateRequest(
+                "motion",
+                "move selected area",
+                "",
+                "framework",
+                "paper",
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(Map.of(
+                        "annotationId", "annotation-1",
+                        "kind", "rect",
+                        "points", List.of(List.of(-0.1, 0.2), List.of(0.4, 0.5))
+                ))
+        )))
+                .isInstanceOf(com.orderly.host.api.ApiException.class)
+                .hasMessageContaining("坐标必须位于 0 至 1");
+    }
+
+    @Test
     void rollsBackSelectedStepAndAllLaterSteps() throws Exception {
         TestContext context = contextWithTheme();
         CodegenProposalRunner runner = mock(CodegenProposalRunner.class);
@@ -242,6 +301,8 @@ class CodegenServiceTest {
                 "",
                 "paper",
                 List.of(),
+                List.of(),
+                List.of(),
                 List.of()
         )))
                 .isInstanceOf(com.orderly.host.api.ApiException.class)
@@ -277,6 +338,8 @@ class CodegenServiceTest {
                 "",
                 "paper",
                 List.of(),
+                List.of(),
+                List.of(),
                 List.of()
         )))
                 .isInstanceOf(com.orderly.host.api.ApiException.class)
@@ -310,6 +373,8 @@ class CodegenServiceTest {
                 "",
                 "",
                 "paper",
+                List.of(),
+                List.of(),
                 List.of(),
                 List.of()
         )))
@@ -599,7 +664,9 @@ class CodegenServiceTest {
                 motionTarget,
                 themeId,
                 List.of(),
-                List.of(Map.of("scope", "sidebar", "state", "expanded"))
+                List.of(Map.of("scope", "sidebar", "state", "expanded")),
+                List.of(),
+                List.of()
         );
     }
 

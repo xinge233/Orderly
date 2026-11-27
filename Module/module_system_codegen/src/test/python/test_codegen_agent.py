@@ -90,3 +90,43 @@ def test_prompts_use_packaged_maven_resource_paths():
     assert "outputSchema" in module_prompt
     assert "src/main/resources/orderly-ui/module.js" in motion_prompt
     assert "src/main/resources/orderly-ui/module.json" in motion_prompt
+    assert "motionAnnotations" in motion_prompt
+    assert "sourceHint" in motion_prompt
+
+
+def test_normalizes_motion_nodes_and_annotations_with_bounds():
+    agent = load_agent()
+    nodes = agent._motion_nodes([
+        {
+            "node": "motion-node-1",
+            "tag": "article",
+            "selector": '[data-orderly-motion-node="motion-node-1"]',
+            "classes": "study-card",
+            "text": "复习第三章",
+            "sourceHint": "module.js:182",
+            "overlap": 0.82,
+        },
+        {"node": "", "tag": "section"},
+    ])
+    annotations = agent._motion_annotations([
+        {
+            "annotationId": "annotation-1",
+            "kind": "rect",
+            "points": [[-1, 0.4], [1.2, 0.8]],
+            "text": "任务卡片",
+            "nodes": nodes,
+        }
+    ])
+
+    assert nodes[0]["node"] == "motion-node-1"
+    assert nodes[0]["overlap"] == 0.82
+    assert annotations[0]["annotationId"] == "annotation-1"
+    assert annotations[0]["points"] == [[0.0, 0.4], [1.0, 0.8]]
+    assert annotations[0]["nodes"][0]["sourceHint"] == "module.js:182"
+
+
+def test_rejects_invalid_motion_annotation_without_points():
+    agent = load_agent()
+    assert agent._motion_annotations([
+        {"annotationId": "bad", "kind": "rect", "points": []}
+    ]) == []

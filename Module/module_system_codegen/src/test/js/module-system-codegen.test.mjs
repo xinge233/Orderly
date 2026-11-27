@@ -113,6 +113,10 @@ test("system service delegates generation to the protected host API", async () =
     assert.match(source, /module-codegen-ui-motion-progress/);
     assert.match(source, /module-codegen-ui-motion-side-tabs/);
     assert.match(source, /module-codegen-ui-motion-rollback-panel/);
+    assert.match(source, /module-codegen-ui-live-preview-frame/);
+    assert.match(source, /module-codegen-ui-annotation-canvas/);
+    assert.match(source, /motionAnnotations: state\.motionAnnotations/);
+    assert.match(source, /MOTION_PREVIEW_CHANNEL/);
     assert.match(source, /\/api\/codegen\/versions/);
     assert.match(source, /rollbackMotionVersion/);
     assert.match(source, /input\.placeholder = "请输入 API"/);
@@ -128,6 +132,8 @@ test("system service delegates generation to the protected host API", async () =
     assert.match(style, /\.module-codegen-ui-picker\s*\{/);
     assert.match(style, /\.module-codegen-ui-step-row\s*\{/);
     assert.match(style, /\.module-codegen-ui-preview-link\s*\{[^}]*text-decoration:\s*none/s);
+    assert.match(style, /\.module-codegen-ui-live-preview\s*\{/);
+    assert.match(style, /\.module-codegen-ui-annotation-toolbar\s*\{/);
     assert.match(style, /\.module-codegen-ui-thumb:disabled,[^}]*opacity:\s*0\.64/s);
     const shellRule = style.match(/\.module-codegen-ui-shell\s*\{([^}]*)\}/)?.[1] ?? "";
     assert.match(shellRule, /width:\s*min\(/);
@@ -475,6 +481,10 @@ test("framework mount context exposes read-only module, theme and motion catalog
     assert.match(app, /listMotionScopes:\s*\(\)\s*=>/);
     assert.match(app, /querySelectorAll\("\[data-motion-scope\]"\)/);
     assert.match(app, /openSettings:\s*\(section = ""\)\s*=>\s*openSettings\(section\)/);
+    assert.match(app, /function startMotionPreviewBridge/);
+    assert.match(app, /function motionPreviewRequest/);
+    assert.match(app, /motionPreviewMode\(\) \? motionTracedElement : element/);
+    assert.match(app, /data-orderly-motion-node/);
     assert.match(app, /function openSettings\(section = ""\)/);
     assert.match(app, /state\.settingsSection = section/);
 });

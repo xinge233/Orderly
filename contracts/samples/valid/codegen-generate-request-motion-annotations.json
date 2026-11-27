@@ -1,0 +1,53 @@
+{
+  "mode": "motion",
+  "prompt": "让标注区域中的任务卡片进入时平滑淡入。",
+  "targetModuleId": "module_study_assistant",
+  "motionTarget": "module",
+  "themeId": "paper",
+  "moduleCatalog": [],
+  "motionScopes": [],
+  "motionNodes": [
+    {
+      "node": "motion-node-1",
+      "selector": "[data-orderly-motion-node=\"motion-node-1\"]",
+      "tag": "article",
+      "role": "listitem",
+      "classes": "study-card",
+      "text": "复习第三章",
+      "sourceHint": "module.js:182",
+      "overlap": 0.82,
+      "rect": {
+        "x": 0.2,
+        "y": 0.3,
+        "width": 0.28,
+        "height": 0.16
+      }
+    }
+  ],
+  "motionAnnotations": [
+    {
+      "annotationId": "annotation-1",
+      "kind": "rect",
+      "points": [
+        [0.18, 0.28],
+        [0.5, 0.48]
+      ],
+      "text": "整张任务卡片",
+      "targetNode": "motion-node-1",
+      "selector": "[data-orderly-motion-node=\"motion-node-1\"]",
+      "sourceHint": "module.js:182",
+      "nodes": [
+        {
+          "node": "motion-node-1",
+          "selector": "[data-orderly-motion-node=\"motion-node-1\"]",
+          "tag": "article",
+          "role": "listitem",
+          "classes": "study-card",
+          "text": "复习第三章",
+          "sourceHint": "module.js:182",
+          "overlap": 0.82
+        }
+      ]
+    }
+  ]
+}

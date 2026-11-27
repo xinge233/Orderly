@@ -178,6 +178,11 @@ public class CodegenService {
         payload.put("files", currentFiles);
         payload.put("catalog", request.moduleCatalog() == null ? List.of() : request.moduleCatalog());
         payload.put("motionScopes", request.motionScopes() == null ? List.of() : request.motionScopes());
+        payload.put("motionNodes", request.motionNodes() == null ? List.of() : request.motionNodes());
+        payload.put(
+                "motionAnnotations",
+                request.motionAnnotations() == null ? List.of() : request.motionAnnotations()
+        );
 
         JsonNode proposal = proposalRunner.propose(payload);
         String moduleId = proposal.path("moduleId").asText("");
@@ -767,6 +772,101 @@ public class CodegenService {
         if (prompt.isBlank() || prompt.length() > 8000) {
             throw invalidRequest("prompt 必须包含 1 至 8000 个字符");
         }
+        validateMotionNodes(request.motionNodes());
+        validateMotionAnnotations(request.motionAnnotations());
+    }
+
+    private void validateMotionNodes(List<Map<String, Object>> nodes) {
+        if (nodes == null) return;
+        if (nodes.size() > 120) {
+            throw invalidRequest("motionNodes 不能超过 120 项");
+        }
+        Set<String> ids = new LinkedHashSet<>();
+        for (Map<String, Object> node : nodes) {
+            String id = trim(stringValue(node.get("node")));
+            if (!id.matches("^[a-z0-9_-]{1,80}$") || !ids.add(id)) {
+                throw invalidRequest("motionNodes 包含非法或重复 node");
+            }
+            if (!trim(stringValue(node.get("tag"))).matches("^[a-z][a-z0-9-]{0,32}$")) {
+                throw invalidRequest("motionNodes 包含非法 tag");
+            }
+            requireBoundedText(node.get("selector"), 300, "motionNodes.selector");
+            requireBoundedText(node.get("role"), 40, "motionNodes.role");
+            requireBoundedText(node.get("classes"), 240, "motionNodes.classes");
+            requireBoundedText(node.get("text"), 160, "motionNodes.text");
+            requireBoundedText(node.get("sourceHint"), 300, "motionNodes.sourceHint");
+        }
+    }
+
+    private void validateMotionAnnotations(List<Map<String, Object>> annotations) {
+        if (annotations == null) return;
+        if (annotations.size() > 16) {
+            throw invalidRequest("motionAnnotations 不能超过 16 项");
+        }
+        Set<String> ids = new LinkedHashSet<>();
+        for (Map<String, Object> annotation : annotations) {
+            String id = trim(stringValue(annotation.get("annotationId")));
+            if (!id.matches("^annotation-[0-9]{1,4}$") || !ids.add(id)) {
+                throw invalidRequest("motionAnnotations 包含非法或重复 annotationId");
+            }
+            String kind = trim(stringValue(annotation.get("kind")));
+            if (!Set.of("rect", "arrow", "pen", "text").contains(kind)) {
+                throw invalidRequest("motionAnnotations.kind 非法");
+            }
+            Object rawPoints = annotation.get("points");
+            if (!(rawPoints instanceof List<?> points)) {
+                throw invalidRequest("motionAnnotations.points 必须是数组");
+            }
+            if (points.isEmpty() || points.size() > 128) {
+                throw invalidRequest("motionAnnotations.points 数量必须在 1 至 128 之间");
+            }
+            for (Object rawPoint : points) {
+                if (!(rawPoint instanceof List<?> point) || point.size() != 2) {
+                    throw invalidRequest("motionAnnotations.points 项必须包含两个坐标");
+                }
+                validateCoordinate(point.get(0));
+                validateCoordinate(point.get(1));
+            }
+            requireBoundedText(annotation.get("text"), 200, "motionAnnotations.text");
+            requireBoundedText(annotation.get("targetNode"), 80, "motionAnnotations.targetNode");
+            requireBoundedText(annotation.get("selector"), 300, "motionAnnotations.selector");
+            requireBoundedText(annotation.get("sourceHint"), 300, "motionAnnotations.sourceHint");
+            Object rawNodes = annotation.get("nodes");
+            if (rawNodes instanceof List<?> nestedNodes) {
+                if (nestedNodes.size() > 8) {
+                    throw invalidRequest("motionAnnotations.nodes 不能超过 8 项");
+                }
+                validateMotionNodes(nestedNodes.stream()
+                        .filter(Map.class::isInstance)
+                        .map(value -> {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> mapped = (Map<String, Object>) value;
+                            return mapped;
+                        })
+                        .toList());
+            }
+        }
+    }
+
+    private void validateCoordinate(Object value) {
+        if (!(value instanceof Number number)) {
+            throw invalidRequest("motionAnnotations 坐标必须是数字");
+        }
+        double coordinate = number.doubleValue();
+        if (!Double.isFinite(coordinate) || coordinate < 0 || coordinate > 1) {
+            throw invalidRequest("motionAnnotations 坐标必须位于 0 至 1");
+        }
+    }
+
+    private void requireBoundedText(Object value, int limit, String field) {
+        if (value == null) return;
+        if (!(value instanceof String textValue) || textValue.length() > limit) {
+            throw invalidRequest(field + " 不是有效文本或超过长度限制");
+        }
+    }
+
+    private String stringValue(Object value) {
+        return value instanceof String textValue ? textValue : "";
     }
 
     private Target resolveTarget(
@@ -1968,11 +2068,17 @@ public class CodegenService {
             String motionTarget,
             String themeId,
             List<Map<String, Object>> moduleCatalog,
-            List<Map<String, Object>> motionScopes
+            List<Map<String, Object>> motionScopes,
+            List<Map<String, Object>> motionNodes,
+            List<Map<String, Object>> motionAnnotations
     ) {
         public GenerateRequest {
             moduleCatalog = moduleCatalog == null ? List.of() : List.copyOf(moduleCatalog);
             motionScopes = motionScopes == null ? List.of() : List.copyOf(motionScopes);
+            motionNodes = motionNodes == null ? List.of() : List.copyOf(motionNodes);
+            motionAnnotations = motionAnnotations == null
+                    ? List.of()
+                    : List.copyOf(motionAnnotations);
         }
     }
 
