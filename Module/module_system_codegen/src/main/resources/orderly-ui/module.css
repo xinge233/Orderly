@@ -1318,6 +1318,14 @@
     border-radius: 0;
 }
 
+.module-codegen-ui-motion-swap > .module-codegen-ui-live-preview {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+}
+
 .module-codegen-ui-preview-app {
     position: absolute;
     inset: var(--space-4);
@@ -2437,7 +2445,8 @@
 [data-motion="none"] .module-codegen-ui-motion-progress,
 [data-motion="none"] .module-codegen-ui-motion-progress-details,
 [data-motion="none"] .module-codegen-ui-motion-side-tab,
-[data-motion="none"] .module-codegen-ui-rollback-version-card {
+[data-motion="none"] .module-codegen-ui-rollback-version-card,
+[data-motion="none"] .module-codegen-ui-live-preview-frame {
     transition: none;
 }
 
@@ -2466,6 +2475,52 @@
     height: 100%;
     border: 0;
     background: var(--color-canvas);
+    transform-origin: 0 0;
+}
+
+.module-codegen-ui-live-preview.is-detail .module-codegen-ui-live-preview-frame {
+    transition: transform var(--duration-normal) var(--ease-out);
+    will-change: transform;
+}
+
+.module-codegen-ui-live-preview.is-passive .module-codegen-ui-live-preview-frame,
+.module-codegen-ui-live-preview.is-passive .module-codegen-ui-annotation-canvas {
+    pointer-events: none;
+}
+
+.module-codegen-ui-live-preview-detail-empty,
+.module-codegen-ui-live-preview-detail-caption {
+    position: absolute;
+    z-index: 3;
+    left: var(--space-2);
+    right: var(--space-2);
+    display: flex;
+    min-height: 1.8rem;
+    align-items: center;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--color-surface-raised) 92%, transparent);
+    color: var(--color-text-soft);
+    font-size: 0.8rem;
+    pointer-events: none;
+}
+
+.module-codegen-ui-live-preview-detail-empty {
+    top: 50%;
+    justify-content: center;
+    transform: translateY(-50%);
+}
+
+.module-codegen-ui-live-preview-detail-empty[hidden] {
+    display: none;
+}
+
+.module-codegen-ui-live-preview-detail-caption {
+    bottom: var(--space-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .module-codegen-ui-annotation-canvas {

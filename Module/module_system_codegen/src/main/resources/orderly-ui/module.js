@@ -236,6 +236,97 @@ export function motionComposerMode({ configured = false, generating = false } = 
     return generating ? "progress" : "prompt";
 }
 
+function motionPreviewLoopback(url) {
+    return url.protocol === "http:"
+        && (url.hostname === "127.0.0.1" || url.hostname === "localhost");
+}
+
+export function motionPreviewSource({
+    session = null,
+    motionTarget = "",
+    moduleIds = [],
+    appOrigin = ""
+} = {}) {
+    const target = text(motionTarget, "framework");
+    if (target !== "framework" && !listOf(moduleIds).includes(target)) {
+        return { kind: "unavailable", label: "目标模块不可预览", url: "" };
+    }
+
+    const decorate = (base, kind) => {
+        try {
+            const url = new URL(base);
+            if (!motionPreviewLoopback(url)) {
+                return null;
+            }
+            url.searchParams.set("motionEditor", "1");
+            url.searchParams.set("motionPreviewSession", text(session?.sessionId));
+            if (target === "framework") {
+                url.searchParams.delete("motionPreviewModule");
+            } else {
+                url.searchParams.set("motionPreviewModule", target);
+            }
+            return {
+                kind,
+                label: kind === "candidate" ? "候选真实界面" : "当前真实界面",
+                url: url.toString()
+            };
+        } catch {
+            return null;
+        }
+    };
+
+    const candidateUrl = text(session?.previewUrl);
+    if (session?.previewStatus === "READY" && candidateUrl) {
+        const candidate = decorate(candidateUrl, "candidate");
+        if (candidate) return candidate;
+    }
+
+    try {
+        const current = decorate(new URL("/", text(appOrigin)).toString(), "current");
+        if (current) return current;
+    } catch {
+        // 调用方会收到明确的不可预览状态，而不是伪造本地地址。
+    }
+    return { kind: "unavailable", label: "当前界面不可预览", url: "" };
+}
+
+export function motionPreviewTransform(
+    rect = null,
+    width = 0,
+    height = 0,
+    outputWidth = width,
+    outputHeight = height
+) {
+    const viewportWidth = Number(width);
+    const viewportHeight = Number(height);
+    const targetWidth = Number(outputWidth);
+    const targetHeight = Number(outputHeight);
+    const x = Number(rect?.x);
+    const y = Number(rect?.y);
+    const nodeWidth = Number(rect?.width);
+    const nodeHeight = Number(rect?.height);
+    if (!(viewportWidth > 0)
+            || !(viewportHeight > 0)
+            || !(targetWidth > 0)
+            || !(targetHeight > 0)
+            || ![x, y, nodeWidth, nodeHeight].every(Number.isFinite)
+            || nodeWidth <= 0
+            || nodeHeight <= 0) {
+        return { scale: 1, translateX: 0, translateY: 0 };
+    }
+
+    const scale = Math.min(
+        3.2,
+        0.82 * targetWidth / (nodeWidth * viewportWidth),
+        0.82 * targetHeight / (nodeHeight * viewportHeight)
+    );
+    return {
+        scale,
+        translateX: targetWidth / 2 - (x + nodeWidth / 2) * viewportWidth * scale,
+        translateY: targetHeight / 2 - (y + nodeHeight / 2) * viewportHeight * scale
+    };
+}
+
 function sessionTimestamp(value) {
     const parsed = Date.parse(text(value));
     return Number.isFinite(parsed) ? parsed : 0;
@@ -286,6 +377,9 @@ export default async function mount(root, context) {
         motionAnnotationSequence: 0,
         motionPreviewNodes: [],
         motionPreviewReady: false,
+        selectedMotionNode: "",
+        motionPreviewSourceKind: "",
+        motionPreviewToken: "",
         motionPreviewRequestId: 0,
         motionPreviewOrigin: "",
         motionPreviewListenerBound: false,
@@ -1347,6 +1441,9 @@ export default async function mount(root, context) {
         state.motionAnnotationSequence = 0;
         state.motionPreviewNodes = [];
         state.motionPreviewReady = false;
+        state.selectedMotionNode = "";
+        state.motionPreviewSourceKind = "";
+        state.motionPreviewToken = "";
         state.motionPreviewOrigin = "";
     }
 
@@ -1730,28 +1827,118 @@ export default async function mount(root, context) {
         return surface;
     }
 
-    function motionPreviewUrl() {
-        const raw = text(state.session?.previewUrl);
-        if (!raw || state.session?.previewStatus !== "READY") return "";
-        try {
-            const url = new URL(raw);
-            url.searchParams.set("motionEditor", "1");
-            url.searchParams.set("motionPreviewSession", state.session?.sessionId ?? "");
-            if (state.motionTarget !== "framework") {
-                url.searchParams.set("motionPreviewModule", state.motionTarget);
-            }
-            return url.toString();
-        } catch {
-            return "";
+    function motionPreviewSessionId() {
+        const sessionId = text(state.session?.sessionId);
+        if (sessionId) return sessionId;
+        if (!state.motionPreviewToken) {
+            const randomId = globalThis.crypto?.randomUUID?.();
+            state.motionPreviewToken = `preview-${randomId ?? `${Date.now()}-${state.motionPreviewRequestId}`}`;
         }
+        return state.motionPreviewToken;
     }
 
-    function postMotionPreview(payload) {
-        const frame = root.querySelector("[data-motion-preview-frame]");
+    function currentMotionPreviewSource() {
+        const source = motionPreviewSource({
+            session: {
+                ...(state.session ?? {}),
+                sessionId: motionPreviewSessionId()
+            },
+            motionTarget: state.motionTarget,
+            moduleIds: modules.map((module) => module.moduleId),
+            appOrigin: globalThis.location?.origin ?? ""
+        });
+        state.motionPreviewSourceKind = source.kind;
+        return source;
+    }
+
+    function selectedMotionPreviewNode() {
+        const byId = state.motionPreviewNodes.find(
+            (node) => node.node === state.selectedMotionNode
+        );
+        if (byId) return byId;
+        const fromAnnotation = state.motionAnnotations
+            .flatMap((annotation) => listOf(annotation.nodes))
+            .find((node) => node?.node && node?.rect);
+        if (fromAnnotation) {
+            state.selectedMotionNode = fromAnnotation.node;
+            return fromAnnotation;
+        }
+        const withRect = state.motionPreviewNodes.filter((node) => node?.rect);
+        const inViewport = withRect.filter((node) =>
+            Number(node.rect.width) <= 0.98
+            && Number(node.rect.height) <= 0.95
+        );
+        const preferredTags = ["article", "button", "input", "h1", "section"];
+        const preferred = inViewport
+            .map((node, index) => ({
+                node,
+                index,
+                priority: preferredTags.indexOf(node.tag)
+            }))
+            .filter((entry) => entry.priority >= 0)
+            .sort((left, right) =>
+                Number(Boolean(right.node.sourceHint)) - Number(Boolean(left.node.sourceHint))
+                || left.priority - right.priority
+                || left.index - right.index
+            )[0]?.node;
+        const fallback = preferred
+            ?? inViewport.find((node) => node.sourceHint)
+            ?? inViewport[0]
+            ?? withRect[0]
+            ?? null;
+        state.selectedMotionNode = fallback?.node ?? "";
+        return fallback;
+    }
+
+    function updateMotionDetailZoom(target = null) {
+        const wrappers = target
+            ? [target]
+            : [...root.querySelectorAll("[data-motion-preview-detail]")];
+        const selected = selectedMotionPreviewNode();
+        const sourceFrame = root.querySelector('[data-motion-preview-frame="main"]');
+        const sourceWidth = sourceFrame?.clientWidth || 0;
+        const sourceHeight = sourceFrame?.clientHeight || 0;
+        wrappers.forEach((wrapper) => {
+            const frame = wrapper.querySelector("[data-motion-preview-frame]");
+            if (!frame) return;
+            const transform = motionPreviewTransform(
+                selected?.rect,
+                sourceWidth || wrapper.clientWidth,
+                sourceHeight || wrapper.clientHeight,
+                wrapper.clientWidth,
+                wrapper.clientHeight
+            );
+            frame.style.width = `${sourceWidth || wrapper.clientWidth}px`;
+            frame.style.height = `${sourceHeight || wrapper.clientHeight}px`;
+            frame.style.transform = `translate(${transform.translateX}px, ${transform.translateY}px) scale(${transform.scale})`;
+            wrapper.dataset.motionDetailNode = selected?.node ?? "";
+            const empty = wrapper.querySelector("[data-motion-detail-empty]");
+            if (empty) empty.hidden = Boolean(selected);
+            const caption = wrapper.querySelector("[data-motion-detail-caption]");
+            if (caption) {
+                caption.textContent = selected
+                    ? `${selected.tag ?? "元素"} · ${selected.sourceHint || selected.selector || selected.node}`
+                    : "正在读取真实界面节点";
+            }
+        });
+    }
+
+    function syncMotionPreviewSelection() {
+        const selector = text(selectedMotionPreviewNode()?.selector);
+        ["main", "detail"].forEach((target) => {
+            postMotionPreview({ type: "highlight", selector }, target);
+        });
+        updateMotionDetailZoom();
+    }
+
+    function postMotionPreview(payload, target = "main") {
+        const frame = root.querySelector(
+            `[data-motion-preview-frame="${CSS.escape(target)}"]`
+        );
         if (!frame?.contentWindow || !state.motionPreviewOrigin) return;
         frame.contentWindow.postMessage({
             channel: MOTION_PREVIEW_CHANNEL,
-            sessionId: state.session?.sessionId ?? "",
+            sessionId: motionPreviewSessionId(),
             ...payload
         }, state.motionPreviewOrigin);
     }
@@ -1764,15 +1951,23 @@ export default async function mount(root, context) {
             if (event.origin !== state.motionPreviewOrigin) return;
             const payload = event.data;
             if (!payload || payload.channel !== MOTION_PREVIEW_CHANNEL) return;
-            if (payload.sessionId !== (state.session?.sessionId ?? "")) return;
+            if (payload.sessionId !== motionPreviewSessionId()) return;
+            const mainWindow = root.querySelector(
+                '[data-motion-preview-frame="main"]'
+            )?.contentWindow;
+            const fromMain = Boolean(mainWindow && event.source === mainWindow);
             if (payload.type === "ready" || payload.type === "nodes") {
+                if (!fromMain) return;
                 state.motionPreviewNodes = listOf(payload.nodes).slice(0, 120);
                 state.motionPreviewReady = true;
+                selectedMotionPreviewNode();
                 const canvas = root.querySelector(".module-codegen-ui-annotation-canvas");
                 if (canvas) drawMotionAnnotations(canvas);
+                syncMotionPreviewSelection();
                 return;
             }
             if (payload.type === "region-result") {
+                if (!fromMain) return;
                 const annotation = state.motionAnnotations.find(
                     (entry) => entry.annotationId === payload.annotationId
                 );
@@ -1782,12 +1977,16 @@ export default async function mount(root, context) {
                 annotation.targetNode = text(first?.node);
                 annotation.selector = text(first?.selector);
                 annotation.sourceHint = text(first?.sourceHint);
+                state.selectedMotionNode = annotation.targetNode;
                 const canvas = root.querySelector(".module-codegen-ui-annotation-canvas");
                 if (canvas) drawMotionAnnotations(canvas);
+                syncMotionPreviewSelection();
                 return;
             }
             if (payload.type === "select" && payload.node) {
+                if (!fromMain) return;
                 const selected = payload.node;
+                state.selectedMotionNode = text(selected.node);
                 state.motionAnnotationSequence += 1;
                 if (state.motionAnnotations.length >= 16) {
                     notify("一次最多添加 16 条标注。", { error: true });
@@ -1811,6 +2010,7 @@ export default async function mount(root, context) {
                 });
                 const canvas = root.querySelector(".module-codegen-ui-annotation-canvas");
                 if (canvas) drawMotionAnnotations(canvas);
+                syncMotionPreviewSelection();
             }
         });
     }
@@ -1889,8 +2089,11 @@ export default async function mount(root, context) {
         state.motionAnnotations.forEach(paint);
         if (draft) paint(draft);
         root.querySelectorAll("[data-motion-preview-status]").forEach((node) => {
+            const label = state.motionPreviewSourceKind === "candidate"
+                ? "候选真实界面"
+                : "当前真实界面";
             const main = node.dataset.motionPreviewStatus === "main";
-            node.textContent = `${main ? "真实模块界面" : "真实标注预览"} · ${
+            node.textContent = `${label}${main ? "" : " · 局部"} · ${
                 state.motionPreviewNodes.length
             } 个可识别元素 · ${state.motionAnnotations.length} 条标注`;
         });
@@ -1966,13 +2169,18 @@ export default async function mount(root, context) {
         return toolbar;
     }
 
-    function buildLiveMotionSurface(compact = false) {
-        const url = motionPreviewUrl();
+    function buildLiveMotionSurface({
+        compact = false,
+        detailed = false,
+        target = "main"
+    } = {}) {
+        const source = currentMotionPreviewSource();
+        const url = source.url;
         if (!url) {
             const fallback = make("div", "module-codegen-ui-live-preview-empty");
             fallback.append(
-                make("strong", "", "真实预览尚未启动"),
-                make("span", "", "构建成功后启动镜像预览，即可直接识别真实界面节点。")
+                make("strong", "", source.label),
+                make("span", "", "请选择可用业务模块，或检查当前回环宿主是否仍在运行。")
             );
             if (state.session?.buildStatus === "READY") {
                 const start = button("启动真实预览", "route", "module-codegen-ui-button is-small");
@@ -1986,101 +2194,134 @@ export default async function mount(root, context) {
         state.motionPreviewOrigin = new URL(url).origin;
         const wrapper = make(
             "div",
-            `module-codegen-ui-live-preview${compact ? " is-compact" : ""}`
+            `module-codegen-ui-live-preview${compact ? " is-compact" : ""}${
+                detailed ? " is-detail" : ""
+            }${compact || detailed ? " is-passive" : ""}`
         );
+        wrapper.dataset.motionPreviewSource = source.kind;
+        if (detailed) wrapper.dataset.motionPreviewDetail = "";
         const frame = make("iframe", "module-codegen-ui-live-preview-frame");
-        frame.dataset.motionPreviewFrame = "";
-        frame.title = "真实模块动效预览";
+        frame.dataset.motionPreviewFrame = target;
+        frame.title = detailed ? "真实界面局部放大" : "真实模块动效预览";
         frame.src = url;
-        frame.loading = "eager";
+        frame.loading = compact ? "lazy" : "eager";
+        frame.tabIndex = compact || detailed ? -1 : 0;
         frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
-        const canvas = make("canvas", "module-codegen-ui-annotation-canvas");
-        canvas.tabIndex = 0;
-        canvas.setAttribute(
-            "aria-label",
-            "动效标注画布，选择方框、箭头、画笔或文字工具后在预览上绘制"
-        );
-        if (state.motionAnnotationTool === "browse") canvas.classList.add("is-browse");
-        let draft = null;
-        const localPoint = (event) => {
-            const rect = canvas.getBoundingClientRect();
-            return [
-                clamp01((event.clientX - rect.left) / Math.max(1, rect.width)),
-                clamp01((event.clientY - rect.top) / Math.max(1, rect.height))
-            ];
-        };
-        canvas.addEventListener("pointerdown", (event) => {
-            if (state.motionAnnotationTool === "browse") return;
-            event.preventDefault();
-            canvas.setPointerCapture(event.pointerId);
-            const point = localPoint(event);
-            draft = {
-                kind: state.motionAnnotationTool,
-                points: state.motionAnnotationTool === "rect" || state.motionAnnotationTool === "arrow"
-                    ? [point, point]
-                    : [point]
+        wrapper.append(frame);
+        if (detailed) {
+            const empty = make(
+                "span",
+                "module-codegen-ui-live-preview-detail-empty",
+                "正在读取真实界面节点"
+            );
+            empty.dataset.motionDetailEmpty = "";
+            const caption = make("span", "module-codegen-ui-live-preview-detail-caption");
+            caption.dataset.motionDetailCaption = "";
+            wrapper.append(empty, caption);
+        } else {
+            const canvas = make("canvas", "module-codegen-ui-annotation-canvas");
+            canvas.tabIndex = 0;
+            canvas.setAttribute(
+                "aria-label",
+                "动效标注画布，选择方框、箭头、画笔或文字工具后在预览上绘制"
+            );
+            if (state.motionAnnotationTool === "browse") canvas.classList.add("is-browse");
+            let draft = null;
+            const localPoint = (event) => {
+                const rect = canvas.getBoundingClientRect();
+                return [
+                    clamp01((event.clientX - rect.left) / Math.max(1, rect.width)),
+                    clamp01((event.clientY - rect.top) / Math.max(1, rect.height))
+                ];
             };
-            drawMotionAnnotations(canvas, draft);
-        });
-        canvas.addEventListener("pointermove", (event) => {
-            if (!draft) return;
-            const point = localPoint(event);
-            if (draft.kind === "rect" || draft.kind === "arrow") {
-                draft.points = [draft.points[0], point];
-            } else {
-                draft.points.push(point);
-                if (draft.points.length > 128) draft.points.shift();
-            }
-            drawMotionAnnotations(canvas, draft);
-        });
-        const finish = (event) => {
-            if (!draft) return;
-            event.preventDefault();
-            const finished = draft;
-            draft = null;
-            if (state.motionAnnotations.length >= 16) {
-                notify("一次最多添加 16 条标注。", { error: true });
+            canvas.addEventListener("pointerdown", (event) => {
+                if (state.motionAnnotationTool === "browse") return;
+                event.preventDefault();
+                canvas.setPointerCapture(event.pointerId);
+                const point = localPoint(event);
+                draft = {
+                    kind: state.motionAnnotationTool,
+                    points: state.motionAnnotationTool === "rect"
+                            || state.motionAnnotationTool === "arrow"
+                        ? [point, point]
+                        : [point]
+                };
+                drawMotionAnnotations(canvas, draft);
+            });
+            canvas.addEventListener("pointermove", (event) => {
+                if (!draft) return;
+                const point = localPoint(event);
+                if (draft.kind === "rect" || draft.kind === "arrow") {
+                    draft.points = [draft.points[0], point];
+                } else {
+                    draft.points.push(point);
+                    if (draft.points.length > 128) draft.points.shift();
+                }
+                drawMotionAnnotations(canvas, draft);
+            });
+            const finish = (event) => {
+                if (!draft) return;
+                event.preventDefault();
+                const finished = draft;
+                draft = null;
+                if (state.motionAnnotations.length >= 16) {
+                    notify("一次最多添加 16 条标注。", { error: true });
+                    drawMotionAnnotations(canvas);
+                    return;
+                }
+                state.motionAnnotationSequence += 1;
+                const annotation = {
+                    annotationId: `annotation-${state.motionAnnotationSequence}`,
+                    kind: finished.kind,
+                    points: finished.points,
+                    text: text(state.motionAnnotationText),
+                    targetNode: "",
+                    selector: "",
+                    sourceHint: "",
+                    nodes: []
+                };
+                state.motionAnnotations.push(annotation);
+                root.querySelectorAll("[data-annotation-action]").forEach((action) => {
+                    action.disabled = false;
+                });
+                state.motionPreviewRequestId += 1;
+                postMotionPreview({
+                    type: "region",
+                    requestId: state.motionPreviewRequestId,
+                    annotationId: annotation.annotationId,
+                    points: annotation.points
+                });
                 drawMotionAnnotations(canvas);
-                return;
-            }
-            state.motionAnnotationSequence += 1;
-            const annotation = {
-                annotationId: `annotation-${state.motionAnnotationSequence}`,
-                kind: finished.kind,
-                points: finished.points,
-                text: text(state.motionAnnotationText),
-                targetNode: "",
-                selector: "",
-                sourceHint: "",
-                nodes: []
             };
-            state.motionAnnotations.push(annotation);
-            root.querySelectorAll("[data-annotation-action]").forEach((action) => {
-                action.disabled = false;
-            });
-            state.motionPreviewRequestId += 1;
-            postMotionPreview({
-                type: "region",
-                requestId: state.motionPreviewRequestId,
-                annotationId: annotation.annotationId,
-                points: annotation.points
-            });
-            drawMotionAnnotations(canvas);
+            canvas.addEventListener("pointerup", finish);
+            canvas.addEventListener("pointercancel", finish);
+            wrapper.append(canvas);
+        }
+        if (!compact && !detailed) wrapper.append(buildMotionAnnotationToolbar());
+        const resize = () => {
+            if (detailed) updateMotionDetailZoom(wrapper);
+            else drawMotionAnnotations(wrapper.querySelector(".module-codegen-ui-annotation-canvas"));
         };
-        canvas.addEventListener("pointerup", finish);
-        canvas.addEventListener("pointercancel", finish);
-        const resize = () => drawMotionAnnotations(canvas);
         globalThis.queueMicrotask(resize);
+        globalThis.requestAnimationFrame?.(() => {
+            resize();
+            globalThis.requestAnimationFrame?.(resize);
+        });
         if (typeof ResizeObserver === "function") {
             new ResizeObserver(resize).observe(wrapper);
         }
         frame.addEventListener("load", () => {
-            postMotionPreview({ type: "mode", mode: "select" });
-            postMotionPreview({ type: "scan", requestId: ++state.motionPreviewRequestId });
-            drawMotionAnnotations(canvas);
+            postMotionPreview({
+                type: "mode",
+                mode: target === "main" && !detailed ? "select" : "interact"
+            }, target);
+            postMotionPreview({
+                type: "scan",
+                requestId: ++state.motionPreviewRequestId
+            }, target);
+            syncMotionPreviewSelection();
+            resize();
         });
-        wrapper.append(frame, canvas);
-        if (!compact) wrapper.append(buildMotionAnnotationToolbar());
         return wrapper;
     }
 
@@ -2090,27 +2331,32 @@ export default async function mount(root, context) {
             "section",
             `module-codegen-ui-motion-preview-pane ${isMain ? "is-main" : "is-mini"}`
         );
-        const liveMain = isMain && (
-            Boolean(motionPreviewUrl())
-            || state.session?.buildStatus === "READY"
-        );
+        const source = currentMotionPreviewSource();
+        const live = Boolean(source.url);
         const head = make("header", "module-codegen-ui-motion-panel-head");
+        const sourceLabel = source.kind === "candidate"
+            ? "候选真实界面"
+            : source.kind === "current" ? "当前真实界面" : "真实界面不可用";
         const status = make(
             "span",
             "",
-            liveMain
-                ? `${isMain ? "真实模块界面" : "真实标注预览"} · ${
+            live
+                ? `${sourceLabel} · ${
                     state.motionPreviewNodes.length
                 } 个可识别元素 · ${state.motionAnnotations.length} 条标注`
-                : isMain ? "整个界面的结构化预览" : "选中挂点的局部放大"
+                : source.label
         );
         status.dataset.motionPreviewStatus = isMain ? "main" : "mini";
         head.append(make("strong", "", isMain ? "界面 1" : "界面 2"), status);
         const previewIsDetail = isMain
             ? state.motionPreviewFocus === "detail"
             : state.motionPreviewFocus === "overview";
-        const surface = liveMain
-            ? buildLiveMotionSurface(false)
+        const surface = live
+            ? buildLiveMotionSurface({
+                compact: !isMain,
+                detailed: previewIsDetail,
+                target: isMain ? "main" : "detail"
+            })
             : previewIsDetail
                 ? buildMotionDetailSurface(!isMain)
                 : buildMotionOverviewSurface(!isMain);
@@ -2118,7 +2364,9 @@ export default async function mount(root, context) {
             panel.append(head, surface);
         } else {
             const swap = make("div", "module-codegen-ui-motion-swap");
-            const canSwap = Boolean(selectedMotionHook()) || state.motionAnnotations.length > 0;
+            const canSwap = live
+                || Boolean(selectedMotionHook())
+                || state.motionAnnotations.length > 0;
             swap.setAttribute("role", "button");
             swap.setAttribute("tabindex", canSwap ? "0" : "-1");
             swap.setAttribute("aria-disabled", String(!canSwap));
@@ -2126,7 +2374,7 @@ export default async function mount(root, context) {
             swap.append(surface, make(
                 "span",
                 "module-codegen-ui-motion-swap-hint",
-                canSwap ? "点击与界面 1 互换" : "选择挂点后可互换"
+                canSwap ? "点击与界面 1 互换" : "真实预览不可用"
             ));
             if (canSwap) {
                 swap.addEventListener("click", toggleMotionPreviewFocus);

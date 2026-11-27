@@ -115,6 +115,8 @@ test("system service delegates generation to the protected host API", async () =
     assert.match(source, /module-codegen-ui-motion-rollback-panel/);
     assert.match(source, /module-codegen-ui-live-preview-frame/);
     assert.match(source, /module-codegen-ui-annotation-canvas/);
+    assert.match(source, /motionPreviewSource/);
+    assert.match(source, /data-motion-preview-detail/);
     assert.match(source, /motionAnnotations: state\.motionAnnotations/);
     assert.match(source, /MOTION_PREVIEW_CHANNEL/);
     assert.match(source, /\/api\/codegen\/versions/);
@@ -133,6 +135,7 @@ test("system service delegates generation to the protected host API", async () =
     assert.match(style, /\.module-codegen-ui-step-row\s*\{/);
     assert.match(style, /\.module-codegen-ui-preview-link\s*\{[^}]*text-decoration:\s*none/s);
     assert.match(style, /\.module-codegen-ui-live-preview\s*\{/);
+    assert.match(style, /\.module-codegen-ui-live-preview\.is-detail\s+\.module-codegen-ui-live-preview-frame\s*\{/);
     assert.match(style, /\.module-codegen-ui-annotation-toolbar\s*\{/);
     assert.match(style, /\.module-codegen-ui-thumb:disabled,[^}]*opacity:\s*0\.64/s);
     const shellRule = style.match(/\.module-codegen-ui-shell\s*\{([^}]*)\}/)?.[1] ?? "";
@@ -398,6 +401,79 @@ test("motion composer prioritizes API entry before prompt and progress", () => {
         configured: true,
         generating: true
     }), "progress");
+});
+
+test("motion preview prefers a ready candidate and otherwise uses the running loopback UI", () => {
+    const session = {
+        sessionId: "motion-session",
+        previewStatus: "READY",
+        previewUrl: "http://127.0.0.1:18084/"
+    };
+    const candidate = codegenModule.motionPreviewSource({
+        session,
+        motionTarget: "module_todo",
+        moduleIds: ["module_todo"],
+        appOrigin: "http://127.0.0.1:8080"
+    });
+    const candidateUrl = new URL(candidate.url);
+    assert.equal(candidate.kind, "candidate");
+    assert.equal(candidateUrl.origin, "http://127.0.0.1:18084");
+    assert.equal(candidateUrl.searchParams.get("motionEditor"), "1");
+    assert.equal(candidateUrl.searchParams.get("motionPreviewModule"), "module_todo");
+    assert.equal(candidateUrl.searchParams.get("motionPreviewSession"), "motion-session");
+
+    const current = codegenModule.motionPreviewSource({
+        session: {
+            sessionId: "rolled-back-session",
+            previewStatus: "STOPPED",
+            previewUrl: ""
+        },
+        motionTarget: "module_todo",
+        moduleIds: ["module_todo"],
+        appOrigin: "http://127.0.0.1:8080"
+    });
+    const currentUrl = new URL(current.url);
+    assert.equal(current.kind, "current");
+    assert.equal(currentUrl.origin, "http://127.0.0.1:8080");
+    assert.equal(currentUrl.searchParams.get("motionPreviewModule"), "module_todo");
+    assert.equal(currentUrl.searchParams.get("motionPreviewSession"), "rolled-back-session");
+});
+
+test("motion preview rejects missing modules and centers a bounded detail zoom", () => {
+    assert.equal(codegenModule.motionPreviewSource({
+        session: null,
+        motionTarget: "module_missing",
+        moduleIds: ["module_todo"],
+        appOrigin: "http://127.0.0.1:8080"
+    }).kind, "unavailable");
+
+    assert.deepEqual(
+        codegenModule.motionPreviewTransform({
+            x: 0.4,
+            y: 0.45,
+            width: 0.2,
+            height: 0.1
+        }, 800, 400),
+        {
+            scale: 3.2,
+            translateX: -880,
+            translateY: -440
+        }
+    );
+    assert.deepEqual(codegenModule.motionPreviewTransform(null, 800, 400), {
+        scale: 1,
+        translateX: 0,
+        translateY: 0
+    });
+    const compact = codegenModule.motionPreviewTransform({
+        x: 0.0085,
+        y: 0.0152,
+        width: 0.9721,
+        height: 0.5152
+    }, 1404, 787, 448, 224);
+    assert.ok(compact.scale > 0.2 && compact.scale < 0.4);
+    assert.ok(compact.translateX > 0 && compact.translateX < 100);
+    assert.ok(compact.translateY > 0 && compact.translateY < 100);
 });
 
 test("motion version history filters the active target and keeps rollback source", () => {
