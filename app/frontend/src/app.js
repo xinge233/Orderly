@@ -589,6 +589,7 @@ async function bootstrap() {
         onNotice: (message, options) => toast(message, options)
     });
     bindSettingsDialog();
+    const previewRequest = motionPreviewRequest();
 
     // 目录、偏好、主题、功能开关和 AI 状态彼此独立；使用 allSettled 隔离失败来源，
     // 避免一个可选能力不可用拖垮整个本地工作台。
@@ -678,7 +679,11 @@ async function bootstrap() {
         renderSettings();
     }
 
-    connectEventStream();
+    // 动效预览通常会在同一页面叠加两个 iframe；预览进程不占长连接，避免浏览器
+    // 用完全部同源 HTTP 连接后让初始化请求和真实模块资源排队。
+    if (!previewRequest) {
+        connectEventStream();
+    }
     try {
         const [health, events] = await Promise.all([
             api.health(),
@@ -720,7 +725,6 @@ async function bootstrap() {
         });
     }
 
-    const previewRequest = motionPreviewRequest();
     if (previewRequest) {
         document.body.classList.add("motion-preview-mode");
         const previewModule = state.modules.find(
@@ -735,7 +739,9 @@ async function bootstrap() {
     } else {
         void navigate("overview");
     }
-    scheduleModuleBuildPoll();
+    if (!previewRequest) {
+        scheduleModuleBuildPoll();
+    }
 }
 
 /**
