@@ -9,8 +9,8 @@ import java.util.Map;
  * 宿主 {@code ModuleRuntime} 执行；本对象本身不移动文件。</p>
  *
  * @param id 条目 ID
- * @param originalPath 原工作区相对路径
- * @param storedPath 回收站相对存储路径
+ * @param originalPath 工作区相对路径，或 {@code <rootId>:<相对路径>} 形式的授权根内路径
+ * @param storedPath 回收站相对存储路径，或 {@code volume:<卷>/<相对路径>} 形式的跨卷位置
  * @param name 原始名称
  * @param deletedAt 删除时间
  */

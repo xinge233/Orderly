@@ -1,74 +1,106 @@
 {
   "moduleId": "module_fs",
-  "title": "资料管理",
-  "description": "浏览课程资料，并在应用自管沙箱内通过受控计划创建、移动和回收文件。",
+  "title": "文件管理器",
+  "description": "浏览用户显式授权的本地目录，执行受控读取、写入、移动、默认应用打开和项目回收站操作。",
   "order": 10,
   "actions": [
     {
-      "id": "fs.list",
-      "title": "列出目录",
-      "description": "只读列出工作区目录内容。",
-      "risk": "READ_ONLY",
-      "confirmationRequired": false,
+      "id": "fs.mkdir",
+      "title": "创建目录",
+      "description": "在已授权文件根内创建目录。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
       "parameters": [
-        { "name": "path", "type": "string", "required": false, "description": "工作区相对路径" }
+        { "name": "rootId", "type": "string", "required": false, "description": "授权根 ID；缺省使用应用工作区" },
+        { "name": "path", "type": "string", "required": true, "description": "根内相对目录路径" }
       ],
       "outputSchema": {
         "type": "object",
-        "required": ["path", "entries"],
+        "required": ["rootId", "path"],
         "properties": {
-          "path": { "type": "string" },
-          "entries": {
-            "type": "array",
-            "items": { "type": "object" }
-          }
+          "rootId": { "type": "string" },
+          "path": { "type": "string" }
         }
       }
     },
     {
-      "id": "fs.mkdir",
-      "title": "创建目录",
-      "description": "在工作区创建目录。",
+      "id": "fs.write",
+      "title": "写入文本文件",
+      "description": "在授权根内新建或覆盖普通文本文件；覆盖前由宿主把旧文件移入项目回收站。",
       "risk": "WRITE",
       "confirmationRequired": true,
       "parameters": [
-        { "name": "path", "type": "string", "required": true, "description": "新目录相对路径" }
+        { "name": "rootId", "type": "string", "required": false, "description": "授权根 ID；缺省使用应用工作区" },
+        { "name": "path", "type": "string", "required": true, "description": "根内相对文件路径" },
+        { "name": "content", "type": "string", "required": true, "description": "UTF-8 文本内容" },
+        { "name": "overwrite", "type": "boolean", "required": false, "description": "是否允许覆盖已有普通文件" }
       ],
       "outputSchema": {
         "type": "object",
-        "required": ["path"],
+        "required": ["rootId", "path", "size"],
         "properties": {
-          "path": { "type": "string" }
+          "rootId": { "type": "string" },
+          "path": { "type": "string" },
+          "size": { "type": "integer" },
+          "backupId": { "type": "string" }
+        }
+      }
+    },
+    {
+      "id": "fs.upload",
+      "title": "上传二进制文件",
+      "description": "把 64 MiB 以内的文件写入授权根；覆盖前进入项目回收站。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "rootId", "type": "string", "required": false, "description": "授权根 ID；缺省使用应用工作区" },
+        { "name": "path", "type": "string", "required": true, "description": "根内相对目标路径" },
+        { "name": "uploadPath", "type": "string", "required": true, "description": "宿主暂存路径" },
+        { "name": "overwrite", "type": "boolean", "required": false, "description": "是否允许覆盖已有普通文件" }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["rootId", "path", "size"],
+        "properties": {
+          "rootId": { "type": "string" },
+          "path": { "type": "string" },
+          "size": { "type": "integer" },
+          "backupId": { "type": "string" }
         }
       }
     },
     {
       "id": "fs.move",
       "title": "移动或重命名",
-      "description": "在工作区内移动或重命名文件。",
+      "description": "在授权根内或两个授权根之间移动普通文件和目录，拒绝覆盖目标。",
       "risk": "WRITE",
       "confirmationRequired": true,
       "parameters": [
-        { "name": "source", "type": "string", "required": true, "description": "源相对路径" },
-        { "name": "target", "type": "string", "required": true, "description": "目标相对路径" }
+        { "name": "sourceRootId", "type": "string", "required": false, "description": "源授权根 ID；缺省使用应用工作区" },
+        { "name": "source", "type": "string", "required": true, "description": "源根内相对路径" },
+        { "name": "targetRootId", "type": "string", "required": false, "description": "目标授权根 ID；缺省使用应用工作区" },
+        { "name": "target", "type": "string", "required": true, "description": "目标根内相对路径" }
       ],
       "outputSchema": {
         "type": "object",
-        "required": ["source", "target"],
+        "required": ["sourceRootId", "source", "targetRootId", "target"],
         "properties": {
+          "sourceRootId": { "type": "string" },
           "source": { "type": "string" },
+          "targetRootId": { "type": "string" },
           "target": { "type": "string" }
         }
       }
     },
     {
       "id": "fs.trash",
-      "title": "移入回收站",
-      "description": "将对象移入项目回收站，不执行物理删除。",
+      "title": "移入项目回收站",
+      "description": "把授权根对象移入同卷项目回收站，不执行物理删除。",
       "risk": "DELETE",
       "confirmationRequired": true,
       "parameters": [
-        { "name": "path", "type": "string", "required": true, "description": "待移入回收站的相对路径" }
+        { "name": "rootId", "type": "string", "required": false, "description": "授权根 ID；缺省使用应用工作区" },
+        { "name": "path", "type": "string", "required": true, "description": "根内相对路径" }
       ],
       "outputSchema": {
         "type": "object",
@@ -81,7 +113,7 @@
     {
       "id": "fs.restore",
       "title": "从回收站恢复",
-      "description": "按回收站条目恢复原对象。",
+      "description": "按回收站条目恢复原对象；原位置存在时拒绝覆盖。",
       "risk": "WRITE",
       "confirmationRequired": true,
       "parameters": [
@@ -94,20 +126,81 @@
           "path": { "type": "string" }
         }
       }
+    },
+    {
+      "id": "fs.open",
+      "title": "使用默认应用打开",
+      "description": "通过操作系统默认应用打开授权根内普通文件；外部应用行为不受 Orderly 担保。",
+      "risk": "READ_ONLY",
+      "confirmationRequired": false,
+      "parameters": [
+        { "name": "rootId", "type": "string", "required": false, "description": "授权根 ID；缺省使用应用工作区" },
+        { "name": "path", "type": "string", "required": true, "description": "根内相对路径" }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["rootId", "path", "opened"],
+        "properties": {
+          "rootId": { "type": "string" },
+          "path": { "type": "string" },
+          "opened": { "type": "boolean" }
+        }
+      }
     }
   ],
   "queries": [
     {
+      "id": "fs.roots",
+      "title": "已授权文件根",
+      "description": "只读列出用户显式授权的本地文件根及其能力。",
+      "parameters": [],
+      "outputSchema": {
+        "type": "object",
+        "required": ["roots", "count"],
+        "properties": {
+          "roots": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "label", "read", "write", "delete"],
+              "properties": {
+                "id": { "type": "string" },
+                "label": { "type": "string" },
+                "read": { "type": "boolean" },
+                "write": { "type": "boolean" },
+                "delete": { "type": "boolean" }
+              }
+            }
+          },
+          "count": { "type": "integer" }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示用户已授权的本地文件根名称和能力；没有文件根时显示空状态。",
+        "fallbackLayout": "list",
+        "rowPath": "roots",
+        "fields": [
+          { "key": "label", "label": "文件根", "format": "text" },
+          { "key": "read", "label": "读取", "format": "boolean" },
+          { "key": "write", "label": "写入", "format": "boolean" },
+          { "key": "delete", "label": "回收站", "format": "boolean" }
+        ],
+        "emptyText": "尚未授权本地文件根"
+      }
+    },
+    {
       "id": "fs.list",
       "title": "列出目录",
-      "description": "只读列出工作区目录内容。",
+      "description": "只读列出授权根目录的直接子项。",
       "parameters": [
-        { "name": "path", "type": "string", "required": false, "description": "工作区相对路径" }
+        { "name": "rootId", "type": "string", "required": false, "description": "授权根 ID；缺省使用应用工作区" },
+        { "name": "path", "type": "string", "required": false, "description": "根内相对目录路径" }
       ],
       "outputSchema": {
         "type": "object",
-        "required": ["path", "entries", "count"],
+        "required": ["rootId", "path", "entries", "count"],
         "properties": {
+          "rootId": { "type": "string" },
           "path": { "type": "string" },
           "entries": {
             "type": "array",
@@ -127,7 +220,7 @@
         }
       },
       "display": {
-        "prompt": "以列表展示目录中的条目名称、类型、大小和修改时间；目录为空时显示空状态。",
+        "prompt": "以列表展示目录条目名称、类型、大小和修改时间，不展示宿主机绝对路径。",
         "fallbackLayout": "list",
         "rowPath": "entries",
         "fields": [
@@ -136,125 +229,43 @@
           { "key": "size", "label": "大小", "format": "number" },
           { "key": "modifiedAt", "label": "修改时间", "format": "datetime" }
         ],
-        "emptyText": "暂无目录条目"
+        "emptyText": "目录为空"
       }
     },
     {
-      "id": "fs.materials",
-      "title": "资料目录",
-      "description": "只读读取模块 classpath 内的课程与学习资料。",
-      "parameters": [],
+      "id": "fs.readGrantedText",
+      "title": "读取已授权文本",
+      "description": "凭本机用户签发的短时令牌分页读取文本，不接收或返回文件绝对路径。",
+      "parameters": [
+        { "name": "token", "type": "string", "required": true, "description": "短时读取令牌" },
+        { "name": "offset", "type": "integer", "required": false, "description": "字符偏移" },
+        { "name": "maxChars", "type": "integer", "required": false, "description": "本次最多字符数" }
+      ],
       "outputSchema": {
         "type": "object",
-        "required": [
-          "schemaVersion",
-          "kind",
-          "ownerModule",
-          "readOnly",
-          "title",
-          "description",
-          "sources",
-          "count",
-          "payload"
-        ],
+        "required": ["content", "offset", "nextOffset", "size", "eof", "encoding"],
         "properties": {
-          "schemaVersion": { "type": "integer" },
-          "kind": { "type": "string" },
-          "ownerModule": { "type": "string" },
-          "readOnly": { "type": "boolean" },
-          "title": { "type": "string" },
-          "description": { "type": "string" },
-          "sources": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": ["id", "label", "kind", "location"],
-              "properties": {
-                "id": { "type": "string" },
-                "label": { "type": "string" },
-                "kind": { "type": "string" },
-                "location": { "type": "string" }
-              }
-            }
-          },
-          "count": { "type": "integer" },
-          "payload": {
-            "type": "object",
-            "required": ["courses", "materials"],
-            "properties": {
-              "courses": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "required": ["id", "title", "code", "description"],
-                  "properties": {
-                    "id": { "type": "string" },
-                    "title": { "type": "string" },
-                    "code": { "type": "string" },
-                    "description": { "type": "string" }
-                  }
-                }
-              },
-              "materials": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "required": [
-                    "id",
-                    "title",
-                    "courseId",
-                    "chapter",
-                    "format",
-                    "status",
-                    "sourceId",
-                    "excerpt",
-                    "cards"
-                  ],
-                  "properties": {
-                    "id": { "type": "string" },
-                    "title": { "type": "string" },
-                    "courseId": { "type": "string" },
-                    "chapter": { "type": "string" },
-                    "format": { "type": "string" },
-                    "status": { "type": "string" },
-                    "sourceId": { "type": "string" },
-                    "excerpt": { "type": "string" },
-                    "cards": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "required": ["id", "title", "summary"],
-                        "properties": {
-                          "id": { "type": "string" },
-                          "title": { "type": "string" },
-                          "summary": { "type": "string" }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
+          "content": { "type": "string" },
+          "offset": { "type": "integer" },
+          "nextOffset": { "type": "integer" },
+          "size": { "type": "integer" },
+          "eof": { "type": "boolean" },
+          "encoding": { "type": "string" }
         }
       },
       "display": {
-        "prompt": "以列表展示资料标题、课程、格式和整理状态；没有资料时显示空状态。",
-        "fallbackLayout": "list",
-        "rowPath": "payload.materials",
+        "prompt": "以文本布局展示已授权文件内容；仅整理已有内容，不修改文件。",
+        "fallbackLayout": "text",
         "fields": [
-          { "key": "title", "label": "资料", "format": "text" },
-          { "key": "courseId", "label": "课程", "format": "text" },
-          { "key": "format", "label": "格式", "format": "text" },
-          { "key": "status", "label": "状态", "format": "status" }
+          { "key": "content", "label": "文件内容", "format": "text" }
         ],
-        "emptyText": "暂无课程资料"
+        "emptyText": "文件内容为空"
       }
     },
     {
       "id": "fs.summary",
-      "title": "文件摘要",
-      "description": "读取工作区根目录的条目数量和摘要。",
+      "title": "工作区摘要",
+      "description": "只读返回应用工作区根目录条目。",
       "parameters": [],
       "outputSchema": {
         "type": "object",
@@ -279,7 +290,7 @@
         }
       },
       "display": {
-        "prompt": "以列表展示工作区根目录的条目名称、类型、大小和修改时间；根目录为空时显示空状态。",
+        "prompt": "以列表展示工作区根目录条目名称、类型、大小和修改时间。",
         "fallbackLayout": "list",
         "rowPath": "entries",
         "fields": [
@@ -318,7 +329,7 @@
         }
       },
       "display": {
-        "prompt": "以列表展示回收站条目的名称、原位置和删除时间；回收站为空时显示空状态。",
+        "prompt": "以列表展示回收站文件名、原路径和删除时间；没有条目时显示空状态。",
         "fallbackLayout": "list",
         "rowPath": "entries",
         "fields": [
@@ -326,7 +337,53 @@
           { "key": "originalPath", "label": "原位置", "format": "text" },
           { "key": "deletedAt", "label": "删除时间", "format": "datetime" }
         ],
-        "emptyText": "回收站暂无条目"
+        "emptyText": "项目回收站为空"
+      }
+    },
+    {
+      "id": "fs.materials",
+      "title": "资料目录",
+      "description": "只读读取模块 classpath 内的课程与学习资料。",
+      "parameters": [],
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "schemaVersion",
+          "kind",
+          "ownerModule",
+          "readOnly",
+          "title",
+          "description",
+          "sources",
+          "count",
+          "payload"
+        ],
+        "properties": {
+          "schemaVersion": { "type": "integer" },
+          "kind": { "type": "string" },
+          "ownerModule": { "type": "string" },
+          "readOnly": { "type": "boolean" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "sources": {
+            "type": "array",
+            "items": { "type": "object" }
+          },
+          "count": { "type": "integer" },
+          "payload": { "type": "object" }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示资料标题、课程、格式和整理状态；没有资料时显示空状态。",
+        "fallbackLayout": "list",
+        "rowPath": "payload.materials",
+        "fields": [
+          { "key": "title", "label": "资料", "format": "text" },
+          { "key": "courseId", "label": "课程", "format": "text" },
+          { "key": "format", "label": "格式", "format": "text" },
+          { "key": "status", "label": "状态", "format": "status" }
+        ],
+        "emptyText": "暂无课程资料"
       }
     }
   ],

@@ -1,45 +1,85 @@
 /**
- * 资料管理只读视图。
+ * 文件管理器视图。
  *
- * 职责：按课程、关键词和资料详情组织模块 JAR 自带的学习资料，并提供命令输入入口。
- * 依赖：orderly-ui/module.json 声明视图与示例；唯一数据查询为 fs.materials；
- * 宿主 mount context 提供 module、ui、element、icon、query、fillCommand 与可选 toast。
- * 隔离：查询、契约校验或局部渲染失败只替换资料目录与详情区，不触发文件变更。
+ * 所有真实文件访问经模块 Query/Action 和宿主运行时完成。界面只持有根 ID、根内相对
+ * 路径和短时读取令牌，不自行拼接绝对路径，也不把文件内容写入本地存储。
  */
+
+const TEXT_EXTENSIONS = new Set([
+    "txt", "md", "json", "jsonl", "csv", "tsv", "log", "xml", "yaml", "yml",
+    "html", "htm", "css", "js", "mjs", "cjs", "ts", "tsx", "jsx", "java",
+    "py", "ps1", "cmd", "bat", "sh", "sql", "ini", "toml"
+]);
 
 function text(value, fallback = "") {
     return typeof value === "string" && value.trim() ? value : fallback;
 }
 
-function normalize(value) {
-    // 统一全半角与大小写后再比较，使中文、英文和课程编码搜索行为一致。
+function joinPath(parent, name) {
+    const parts = [parent, name]
+        .flatMap((value) => String(value ?? "").split(/[\\/]+/))
+        .filter(Boolean);
+    return parts.join("/");
+}
+
+function parentPath(path) {
+    const parts = String(path ?? "").split("/").filter(Boolean);
+    parts.pop();
+    return parts.join("/");
+}
+
+function extensionOf(name) {
+    const value = String(name ?? "");
+    const dot = value.lastIndexOf(".");
+    return dot < 0 ? "" : value.slice(dot + 1).toLowerCase();
+}
+
+function isTextEntry(entry) {
+    return entry && !entry.directory && TEXT_EXTENSIONS.has(extensionOf(entry.name));
+}
+
+const READABLE_DOCUMENT_EXTENSIONS = new Set([
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    "png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp"
+]);
+
+function isReadableEntry(entry) {
+    return isTextEntry(entry)
+        || (entry && !entry.directory && READABLE_DOCUMENT_EXTENSIONS.has(extensionOf(entry.name)));
+}
+
+function formatSize(size) {
+    const value = Number(size);
+    if (!Number.isFinite(value) || value < 0) return "—";
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+    return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+function formatTime(value) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("zh-CN");
+}
+
+function normalizeText(value) {
     return String(value ?? "").normalize("NFKC").toLocaleLowerCase("zh-CN");
 }
 
-function statusTone(status) {
-    if (status === "已整理") return "safe";
-    if (status === "待复核") return "warning";
-    return "reference";
-}
-
-/**
- * 挂载资料管理视图。
- *
- * @param {HTMLElement} root 框架分配的模块视图根节点。
- * @param {object} context 宿主 mount context；module 提供模块身份，query 只读取 fs.materials。
- * @returns {Promise<void>} 首次资料查询和局部渲染完成后结束。
- */
 export default async function mount(root, context) {
     const make = context.element;
     const state = {
-        payload: null,
-        courses: [],
-        materials: [],
-        courseById: new Map(),
-        sourceById: new Map(),
-        activeCourse: "all",
+        roots: [],
+        activeRootId: "",
+        path: "",
+        entries: [],
+        selectedPath: "",
         search: "",
-        selectedId: null
+        mode: "files",
+        trash: [],
+        preview: null,
+        previewLoading: false,
+        requestVersion: 0
     };
 
     function iconNode(name, size = 18, className = "") {
@@ -48,489 +88,824 @@ export default async function mount(root, context) {
         return node;
     }
 
-    function notifyPending(feature) {
-        context.toast?.(`${feature}尚未接入，未产生任何变更`);
+    function button(label, iconName, variant = "") {
+        const node = make("button", ["fs-ui-button", variant].filter(Boolean).join(" "));
+        node.type = "button";
+        if (iconName) node.append(iconNode(iconName));
+        node.append(make("span", "", label));
+        return node;
     }
 
-    function createButton(label, iconName, variant = "") {
-        const button = make(
-            "button",
-            ["fs-ui-button", variant].filter(Boolean).join(" ")
-        );
-        button.type = "button";
-        button.append(iconNode(iconName, 18), make("span", "", label));
-        return button;
+    function iconButton(label, iconName) {
+        const node = make("button", "fs-ui-icon-button");
+        node.type = "button";
+        node.title = label;
+        node.setAttribute("aria-label", label);
+        node.append(iconNode(iconName, 18));
+        return node;
     }
 
-    function createPendingButton(label, iconName) {
-        // 未接入能力保留可理解的禁用说明和提示，不伪造上传、历史整理或 AI 处理结果。
-        const button = make("button", "fs-ui-button fs-ui-button--secondary");
-        button.type = "button";
-        const copy = make("span", "fs-ui-button__copy");
-        copy.append(
-            make("span", "", label),
-            make("small", "fs-ui-button__note", "尚未接入")
-        );
-        button.append(iconNode(iconName, 18), copy);
-        button.addEventListener("click", () => notifyPending(label));
-        return button;
+    function notify(message, error = false) {
+        context.toast?.(message, error ? { error: true } : undefined);
+    }
+
+    function fail(error) {
+        notify(error?.message || "文件操作失败", true);
     }
 
     const panel = make("section", "fs-ui");
-    const titleId = "fs-ui-materials-title";
+    const titleId = "fs-ui-title";
     panel.setAttribute("aria-labelledby", titleId);
 
     const header = make("header", "fs-ui-header");
     const heading = make("div", "fs-ui-heading");
-    const headingIcon = iconNode("file", 26, "fs-ui-heading__icon");
     const headingCopy = make("div");
-    const title = make("h1", "", "资料管理");
+    const title = make("h1", "", "文件管理器");
     title.id = titleId;
     headingCopy.append(
-        make("p", "fs-ui-eyebrow", "MATERIALS LIBRARY"),
+        make("p", "fs-ui-eyebrow", "LOCAL FILES"),
         title,
-        make(
-            "p",
-            "fs-ui-muted",
-            "按课程浏览、检索和阅读模块自带的只读学习资料。"
-        )
+        make("p", "fs-ui-muted", "用户授权目录、受控写入、项目回收站与本地文件摘要。")
     );
-    heading.append(headingIcon, headingCopy);
+    heading.append(iconNode("folder", 26, "fs-ui-heading__icon"), headingCopy);
 
     const headerActions = make("div", "fs-ui-header__actions");
-    const uploadButton = createPendingButton("上传文件", "file");
-    const historyButton = createPendingButton("历史任务", "history");
-    const commandButton = createButton(
-        "输入整理指令",
-        "spark",
-        "fs-ui-button--primary"
-    );
-    commandButton.addEventListener("click", () => {
-        context.fillCommand(
-            context.ui.examples?.[0]?.text || "创建目录 课程归档"
-        );
-    });
-    headerActions.append(uploadButton, historyButton, commandButton);
+    const authButton = button("授权目录", "shield", "fs-ui-button--primary");
+    const refreshButton = iconButton("刷新当前目录", "refresh");
+    headerActions.append(refreshButton, authButton);
     header.append(heading, headerActions);
 
-    const notice = make("p", "fs-ui-notice");
+    const notice = make("div", "fs-ui-notice");
     notice.append(
-        iconNode("info", 18, "fs-ui-notice__icon"),
+        iconNode("shield", 18, "fs-ui-notice__icon"),
         make(
             "span",
             "",
-            "资料数据只来自 fs.materials；当前仅连接本地规则计划器，未连接外部模型。"
+            "文件根由本机用户显式授权；系统目录禁止写入和删除；删除只进入项目回收站。"
         )
     );
 
-    const controls = make("section", "fs-ui-controls");
-    controls.setAttribute("aria-label", "资料检索与课程筛选");
-    const searchLabel = make("label", "fs-ui-search");
-    const searchInput = make("input");
-    searchInput.type = "search";
-    searchInput.placeholder = "搜索资料、章节、格式或课程";
-    searchInput.autocomplete = "off";
-    searchInput.setAttribute("aria-label", "搜索资料");
-    searchLabel.append(
-        iconNode("search", 19, "fs-ui-search__icon"),
-        searchInput
-    );
-    const chips = make("div", "fs-ui-chips");
-    chips.setAttribute("aria-label", "课程筛选");
-    controls.append(searchLabel, chips);
+    const authForm = make("form", "fs-ui-auth");
+    authForm.hidden = true;
+    const authTitle = make("h2", "", "授权本地目录");
+    const authPath = make("input");
+    authPath.placeholder = "例如 D:\\资料";
+    authPath.setAttribute("aria-label", "本地绝对目录");
+    const authLabel = make("input");
+    authLabel.placeholder = "显示名称，可留空";
+    authLabel.setAttribute("aria-label", "文件根显示名称");
+    const authWrite = make("input");
+    authWrite.type = "checkbox";
+    const authDelete = make("input");
+    authDelete.type = "checkbox";
+    const authLegend = make("div", "fs-ui-auth__capabilities");
+    const writeLabel = make("label", "fs-ui-check");
+    writeLabel.append(authWrite, make("span", "", "允许写入普通文件"));
+    const deleteLabel = make("label", "fs-ui-check");
+    deleteLabel.append(authDelete, make("span", "", "允许移入项目回收站"));
+    authLegend.append(writeLabel, deleteLabel);
+    const authActions = make("div", "fs-ui-auth__actions");
+    const cancelAuth = button("取消", "close", "fs-ui-button--secondary");
+    const submitAuth = button("确认授权", "check", "fs-ui-button--primary");
+    submitAuth.type = "submit";
+    authActions.append(cancelAuth, submitAuth);
+    authForm.append(authTitle, authPath, authLabel, authLegend, authActions);
 
-    const main = make("div", "fs-ui-main");
-    const catalog = make("section", "fs-ui-catalog");
-    const catalogTitleId = "fs-ui-catalog-title";
-    catalog.setAttribute("aria-labelledby", catalogTitleId);
-    const catalogHeader = make("header", "fs-ui-catalog__header");
-    const catalogTitle = make("h2", "", "资料目录");
-    catalogTitle.id = catalogTitleId;
-    const resultCount = make("span", "fs-ui-result-count", "正在读取");
-    resultCount.setAttribute("role", "status");
-    resultCount.setAttribute("aria-live", "polite");
-    catalogHeader.append(catalogTitle, resultCount);
-
-    // 表头使用语义化 table/th/scope，点击行只改变当前视图选择，不执行文件操作。
-    const tableWrap = make("div", "fs-ui-table-wrap");
-    const table = make("table", "fs-ui-table");
-    const tableHead = make("thead");
-    const headRow = make("tr");
-    ["资料名称", "课程", "类型", "状态"].forEach((label) => {
-        const cell = make("th", "", label);
-        cell.scope = "col";
-        headRow.append(cell);
-    });
-    tableHead.append(headRow);
-    const tableBody = make("tbody");
-    table.append(tableHead, tableBody);
-    tableWrap.append(table);
-    catalog.append(catalogHeader, tableWrap);
-
+    const layout = make("div", "fs-ui-layout");
+    const rootRail = make("aside", "fs-ui-roots");
+    rootRail.setAttribute("aria-label", "已授权文件根");
+    const browser = make("section", "fs-ui-browser");
     const detail = make("aside", "fs-ui-detail");
-    const detailTitleId = "fs-ui-detail-title";
-    detail.setAttribute("aria-labelledby", detailTitleId);
-    const detailHeader = make("header", "fs-ui-detail__header");
-    const detailTitle = make("h2", "", "资料详情");
-    detailTitle.id = detailTitleId;
-    const detailStatus = make("span", "fs-ui-result-count", "只读");
-    detailHeader.append(detailTitle, detailStatus);
-    const detailBody = make("div", "fs-ui-detail__body");
-    detail.append(detailHeader, detailBody);
-    main.append(catalog, detail);
+    detail.setAttribute("aria-label", "文件详情");
+    layout.append(rootRail, browser, detail);
 
-    const footer = make("footer", "fs-ui-footer");
-    const sourceSummary = make("span", "", "数据源：fs.materials");
-    footer.append(
-        sourceSummary,
-        make(
-            "span",
-            "",
-            "文件变更仍需经过计划确认；删除只进入项目回收站。"
-        )
-    );
-    panel.append(header, notice, controls, main, footer);
+    panel.append(header, notice, authForm, layout);
     root.replaceChildren(panel);
 
-    function loadingRow(label) {
-        const row = make("tr");
-        const cell = make("td", "fs-ui-table__empty", label);
-        cell.colSpan = 4;
-        row.append(cell);
-        return row;
+    const uploadInput = make("input");
+    uploadInput.type = "file";
+    uploadInput.hidden = true;
+    panel.append(uploadInput);
+
+    function activeRoot() {
+        return state.roots.find((item) => item.id === state.activeRootId) || null;
+    }
+
+    function currentDirectory() {
+        return state.mode === "trash" ? "" : state.path;
+    }
+
+    function canWrite() {
+        return Boolean(activeRoot()?.write);
+    }
+
+    function canDelete() {
+        return Boolean(activeRoot()?.delete);
+    }
+
+    function setBusy(element, busy, label = "处理中…") {
+        if (!element) return;
+        element.disabled = busy;
+        element.dataset.busyLabel = busy ? label : "";
+    }
+
+    function renderRoots() {
+        rootRail.replaceChildren();
+        const headingNode = make("header", "fs-ui-panel-heading");
+        headingNode.append(make("h2", "", "文件根"));
+        rootRail.append(headingNode);
+        if (!state.roots.length) {
+            const empty = make("div", "fs-ui-empty fs-ui-empty--compact");
+            empty.append(
+                iconNode("folder", 22),
+                make("strong", "", "尚未授权本地目录"),
+                make("p", "", "选择“授权目录”后可浏览该目录。")
+            );
+            rootRail.append(empty);
+            return;
+        }
+        state.roots.forEach((fileRoot) => {
+            const row = make("div", "fs-ui-root-row");
+            const item = make(
+                "button",
+                `fs-ui-root${fileRoot.id === state.activeRootId ? " is-active" : ""}`
+            );
+            item.type = "button";
+            item.setAttribute("aria-pressed", String(fileRoot.id === state.activeRootId));
+            item.append(
+                iconNode("folder", 18),
+                make("span", "fs-ui-root__label", text(fileRoot.label, "未命名文件根")),
+                make(
+                    "small",
+                    "fs-ui-root__caps",
+                    [fileRoot.read ? "读" : "", fileRoot.write ? "写" : "",
+                        fileRoot.delete ? "回收站" : ""].filter(Boolean).join(" · ")
+                )
+            );
+            item.addEventListener("click", () => {
+                state.activeRootId = fileRoot.id;
+                state.path = "";
+                state.selectedPath = "";
+                state.preview = null;
+                state.mode = "files";
+                renderRoots();
+                loadDirectory();
+            });
+            const revoke = iconButton("撤销该文件根授权", "close");
+            revoke.classList.add("fs-ui-root__revoke");
+            revoke.addEventListener("click", () => revokeRoot(fileRoot, revoke));
+            row.append(item, revoke);
+            rootRail.append(row);
+        });
+    }
+
+    function replaceBrowser(children) {
+        browser.replaceChildren(...children);
+    }
+
+    function browserHeader() {
+        const root = activeRoot();
+        const top = make("header", "fs-ui-browser__header");
+        const crumb = make("nav", "fs-ui-breadcrumb");
+        crumb.setAttribute("aria-label", "当前目录");
+        const rootCrumb = make("button", "fs-ui-crumb", text(root?.label, "选择文件根"));
+        rootCrumb.type = "button";
+        rootCrumb.addEventListener("click", () => {
+            state.path = "";
+            state.selectedPath = "";
+            loadDirectory();
+        });
+        crumb.append(rootCrumb);
+        let cursor = "";
+        state.path.split("/").filter(Boolean).forEach((part) => {
+            crumb.append(make("span", "fs-ui-crumb__separator", "/"));
+            cursor = joinPath(cursor, part);
+            const partPath = cursor;
+            const item = make("button", "fs-ui-crumb", part);
+            item.type = "button";
+            item.addEventListener("click", () => {
+                state.path = partPath;
+                state.selectedPath = "";
+                loadDirectory();
+            });
+            crumb.append(item);
+        });
+        const toolbar = make("div", "fs-ui-toolbar");
+        const up = iconButton("上一级", "up");
+        up.disabled = !state.path || state.mode === "trash";
+        up.addEventListener("click", () => {
+            state.path = parentPath(state.path);
+            state.selectedPath = "";
+            loadDirectory();
+        });
+        const newFolder = button("新建目录", "folder", "fs-ui-button--secondary");
+        newFolder.disabled = !canWrite() || state.mode === "trash";
+        newFolder.addEventListener("click", createDirectory);
+        const newText = button("新建文本", "file", "fs-ui-button--secondary");
+        newText.disabled = !canWrite() || state.mode === "trash";
+        newText.addEventListener("click", createTextFile);
+        const upload = button("上传", "download", "fs-ui-button--secondary");
+        upload.disabled = !canWrite() || state.mode === "trash" || !activeRoot();
+        upload.addEventListener("click", () => uploadInput.click());
+        const trashButton = button(
+            state.mode === "trash" ? "返回文件" : "回收站",
+            "trash",
+            "fs-ui-button--secondary"
+        );
+        trashButton.addEventListener("click", () => {
+            state.mode = state.mode === "trash" ? "files" : "trash";
+            state.selectedPath = "";
+            state.preview = null;
+            if (state.mode === "trash") loadTrash();
+            else loadDirectory();
+        });
+        toolbar.append(up, newFolder, newText, upload, trashButton);
+        top.append(crumb, toolbar);
+        return top;
+    }
+
+    function renderFileBrowser() {
+        const headerNode = browserHeader();
+        const searchWrap = make("label", "fs-ui-search");
+        const search = make("input");
+        search.type = "search";
+        search.placeholder = "筛选当前目录";
+        search.value = state.search;
+        search.setAttribute("aria-label", "筛选当前目录");
+        searchWrap.append(iconNode("search"), search);
+        search.addEventListener("input", () => {
+            state.search = search.value;
+            renderFileTable(tableHost);
+        });
+        const tableHost = make("div", "fs-ui-table-wrap");
+        const summaryLine = make(
+            "p",
+            "fs-ui-browser__summary",
+            `${state.entries.length} 个项目`
+        );
+        browser.replaceChildren(headerNode, searchWrap, summaryLine, tableHost);
+        renderFileTable(tableHost);
+    }
+
+    function filteredEntries() {
+        const needle = normalizeText(state.search).trim();
+        if (!needle) return state.entries;
+        return state.entries.filter((entry) =>
+            normalizeText(`${entry.name} ${entry.path}`).includes(needle)
+        );
+    }
+
+    function renderFileTable(host) {
+        const entries = filteredEntries();
+        host.replaceChildren();
+        const table = make("table", "fs-ui-table");
+        const head = make("thead");
+        const headRow = make("tr");
+        ["名称", "类型", "大小", "修改时间"].forEach((label) => {
+            const th = make("th", "", label);
+            th.scope = "col";
+            headRow.append(th);
+        });
+        head.append(headRow);
+        const body = make("tbody");
+        if (!entries.length) {
+            const row = make("tr");
+            const cell = make("td", "fs-ui-table__empty", "当前目录为空或没有匹配项。");
+            cell.colSpan = 4;
+            row.append(cell);
+            body.append(row);
+        }
+        entries.forEach((entry) => {
+            const row = make(
+                "tr",
+                `fs-ui-file-row${entry.path === state.selectedPath ? " is-selected" : ""}`
+            );
+            row.tabIndex = 0;
+            row.setAttribute("aria-selected", String(entry.path === state.selectedPath));
+            const nameCell = make("td");
+            const nameButton = make("button", "fs-ui-file-name");
+            nameButton.type = "button";
+            nameButton.append(
+                iconNode(entry.directory ? "folder" : "file", 18),
+                make("span", "", text(entry.name, "未命名"))
+            );
+            nameButton.addEventListener("click", () => {
+                if (entry.directory) openDirectory(entry.path);
+                else selectEntry(entry);
+            });
+            nameCell.append(nameButton);
+            row.append(
+                nameCell,
+                make("td", "", entry.directory ? "目录" : extensionOf(entry.name).toUpperCase() || "文件"),
+                make("td", "", entry.directory ? "—" : formatSize(entry.size)),
+                make("td", "", formatTime(entry.modifiedAt))
+            );
+            row.addEventListener("keydown", (event) => {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    if (entry.directory) openDirectory(entry.path);
+                    else selectEntry(entry);
+                }
+            });
+            body.append(row);
+        });
+        table.append(head, body);
+        host.append(table);
+    }
+
+    function renderTrash() {
+        const headerNode = browserHeader();
+        const list = make("div", "fs-ui-trash-list");
+        if (!state.trash.length) {
+            const empty = make("div", "fs-ui-empty");
+            empty.append(
+                iconNode("trash", 24),
+                make("strong", "", "项目回收站为空"),
+                make("p", "", "删除的文件会出现在这里，且不会被物理删除。")
+            );
+            list.append(empty);
+        }
+        state.trash.forEach((entry) => {
+            const item = make("article", "fs-ui-trash-item");
+            const copy = make("div");
+            copy.append(
+                make("strong", "", text(entry.name, "未命名")),
+                make("p", "", text(entry.originalPath, "原位置未知")),
+                make("small", "", formatTime(entry.deletedAt))
+            );
+            const restore = button("恢复", "undo", "fs-ui-button--secondary");
+            restore.addEventListener("click", () => restoreTrash(entry, restore));
+            item.append(copy, restore);
+            list.append(item);
+        });
+        browser.replaceChildren(headerNode, list);
+        renderEmptyDetail("回收站条目不提供内容预览。");
     }
 
     function renderEmptyDetail(message) {
-        detailStatus.textContent = "只读";
-        detailBody.replaceChildren();
-        const empty = make("div", "fs-ui-detail__empty");
+        detail.replaceChildren();
+        const headingNode = make("header", "fs-ui-panel-heading");
+        headingNode.append(make("h2", "", "详情"));
+        const empty = make("div", "fs-ui-empty fs-ui-empty--compact");
         empty.append(
-            iconNode("file", 20, "fs-ui-detail__empty-icon"),
-            make("strong", "", "尚未选择资料"),
+            iconNode("file", 22),
+            make("strong", "", "尚未选择文件"),
             make("p", "", message)
         );
-        detailBody.append(empty);
+        detail.append(headingNode, empty);
     }
 
-    function renderError(error) {
-        resultCount.textContent = "读取失败";
-        tableBody.replaceChildren();
-        const row = make("tr");
-        const cell = make(
-            "td",
-            "fs-ui-table__error",
-            error?.message || "资料数据读取失败"
+    function currentEntry() {
+        return state.entries.find((entry) => entry.path === state.selectedPath) || null;
+    }
+
+    function selectEntry(entry) {
+        state.selectedPath = entry.path;
+        state.preview = null;
+        renderFileTable(browser.querySelector(".fs-ui-table-wrap"));
+        renderDetail(entry);
+    }
+
+    function renderDetail(entry) {
+        detail.replaceChildren();
+        const headingNode = make("header", "fs-ui-panel-heading");
+        headingNode.append(make("h2", "", entry.directory ? "目录详情" : "文件详情"));
+        const titleRow = make("div", "fs-ui-detail__title-row");
+        titleRow.append(
+            iconNode(entry.directory ? "folder" : "file", 24),
+            make("h3", "", text(entry.name, "未命名"))
         );
-        cell.colSpan = 4;
-        row.append(cell);
-        tableBody.append(row);
-        detailStatus.textContent = "不可用";
-        detailBody.replaceChildren();
-        const message = make(
-            "p",
-            "fs-ui-detail__error",
-            "资料详情暂不可用，请检查模块数据后重试。"
-        );
-        detailBody.append(message);
-    }
-
-    function courseFor(material) {
-        return state.courseById.get(material.courseId) || null;
-    }
-
-    function sourceFor(material) {
-        return state.sourceById.get(material.sourceId) || null;
-    }
-
-    function searchText(material) {
-        const course = courseFor(material);
-        const source = sourceFor(material);
-        const cards = Array.isArray(material.cards) ? material.cards : [];
-        return normalize([
-            material.title,
-            material.chapter,
-            material.format,
-            material.status,
-            material.excerpt,
-            course?.title,
-            course?.code,
-            course?.description,
-            source?.label,
-            ...cards.flatMap((card) => [card?.title, card?.summary])
-        ].join(" "));
-    }
-
-    function filteredMaterials() {
-        // 搜索和课程筛选完全在已加载快照上进行，不产生 Query 或磁盘访问。
-        const needle = normalize(state.search).trim();
-        return state.materials.filter((material) => {
-            const matchesCourse = state.activeCourse === "all"
-                || material.courseId === state.activeCourse;
-            const matchesSearch = !needle || searchText(material).includes(needle);
-            return matchesCourse && matchesSearch;
-        });
-    }
-
-    function renderCourseChips() {
-        chips.replaceChildren();
-        const entries = [
-            {
-                id: "all",
-                title: "全部课程",
-                count: state.materials.length
-            },
-            ...state.courses.map((course) => ({
-                id: course.id,
-                title: course.title,
-                count: state.materials.filter(
-                    (material) => material.courseId === course.id
-                ).length
-            }))
+        const meta = make("dl", "fs-ui-meta");
+        const metadata = [
+            ["根内路径", text(entry.path, "/")],
+            ["类型", entry.directory ? "目录" : extensionOf(entry.name).toUpperCase() || "文件"],
+            ["大小", entry.directory ? "—" : formatSize(entry.size)],
+            ["修改时间", formatTime(entry.modifiedAt)]
         ];
-        entries.forEach((entry) => {
-            const active = state.activeCourse === entry.id;
-            const chip = make(
-                "button",
-                `fs-ui-chip${active ? " is-active" : ""}`
-            );
-            chip.type = "button";
-            chip.setAttribute("aria-pressed", String(active));
-            chip.append(
-                make("span", "", entry.title),
-                make("span", "fs-ui-chip__count", String(entry.count))
-            );
-            chip.addEventListener("click", () => {
-                state.activeCourse = entry.id;
-                renderCourseChips();
-                renderResults();
-            });
-            chips.append(chip);
+        metadata.forEach(([label, value]) => {
+            meta.append(make("dt", "", label), make("dd", "", value));
         });
-    }
-
-    function statusBadge(material) {
-        const status = text(material.status, "只读示例");
-        return make(
-            "span",
-            `fs-ui-status fs-ui-status--${statusTone(status)}`,
-            status
-        );
-    }
-
-    function selectMaterial(id) {
-        state.selectedId = id;
-        tableBody.querySelectorAll("tr[data-material-id]").forEach((row) => {
-            const selected = row.dataset.materialId === id;
-            row.classList.toggle("is-selected", selected);
-            row.setAttribute("aria-selected", String(selected));
-        });
-        const material = state.materials.find((item) => item.id === id) || null;
-        renderDetail(material);
-    }
-
-    function materialRow(material) {
-        const row = make("tr");
-        row.dataset.materialId = material.id;
-        row.setAttribute("aria-selected", String(material.id === state.selectedId));
-        row.classList.toggle("is-selected", material.id === state.selectedId);
-        row.addEventListener("click", () => selectMaterial(material.id));
-
-        const nameCell = make("td");
-        const nameButton = make("button", "fs-ui-material-link");
-        nameButton.type = "button";
-        nameButton.append(
-            make("strong", "", text(material.title, "未命名资料")),
-            make(
-                "small",
-                "",
-                `${text(material.chapter, "未分章")} · ${text(material.excerpt, "暂无摘要")}`
-            )
-        );
-        nameButton.addEventListener("click", (event) => {
-            // 名称按钮是行内的原生键盘入口；阻止冒泡避免同一次点击重复选择。
-            event.stopPropagation();
-            selectMaterial(material.id);
-        });
-        nameCell.append(nameButton);
-
-        const course = courseFor(material);
-        const courseCell = make("td");
-        const courseCopy = make("div", "fs-ui-course");
-        courseCopy.append(
-            make("strong", "", text(course?.title, "未分类课程")),
-            make("small", "", text(course?.code, "NO-CODE"))
-        );
-        courseCell.append(courseCopy);
-
-        const typeCell = make("td");
-        const type = make("div", "fs-ui-type");
-        type.append(make("span", "fs-ui-format", text(material.format, "文件")));
-        typeCell.append(type);
-
-        const statusCell = make("td");
-        statusCell.append(statusBadge(material));
-
-        row.append(nameCell, courseCell, typeCell, statusCell);
-        return row;
-    }
-
-    function metaItem(label, value) {
-        const item = make("div", "fs-ui-detail__meta-item");
-        item.append(
-            make("span", "fs-ui-detail__meta-label", label),
-            make("span", "fs-ui-detail__meta-value", text(value, "未提供"))
-        );
-        return item;
-    }
-
-    function renderDetail(material) {
-        detailBody.replaceChildren();
-        if (!material) {
-            renderEmptyDetail("从左侧资料表中选择一项以查看摘要与知识卡片。");
-            return;
+        const actions = make("div", "fs-ui-detail__actions");
+        if (!entry.directory) {
+            const open = button("默认应用打开", "arrow", "fs-ui-button--primary");
+            open.addEventListener("click", () => openEntry(entry, open));
+            const preview = button("本地预览", "file", "fs-ui-button--secondary");
+            preview.disabled = !isReadableEntry(entry);
+            preview.title = isReadableEntry(entry) ? "" : "该文件类型暂不提供文本提取";
+            preview.addEventListener("click", () => openPreview(entry, preview));
+            const summary = button("AI 摘要", "spark", "fs-ui-button--secondary");
+            summary.disabled = !isReadableEntry(entry);
+            summary.addEventListener("click", () => requestSummary(entry, summary));
+            actions.append(open, preview, summary);
         }
-        const course = courseFor(material);
-        const source = sourceFor(material);
-        detailStatus.replaceChildren(statusBadge(material));
+        const rename = button("移动或重命名", "route", "fs-ui-button--secondary");
+        rename.disabled = !canWrite();
+        rename.addEventListener("click", () => moveEntry(entry, rename));
+        const remove = button("移入回收站", "trash", "fs-ui-button--danger");
+        remove.disabled = !canDelete();
+        remove.addEventListener("click", () => trashEntry(entry, remove));
+        actions.append(rename, remove);
 
-        const headingSection = make("div", "fs-ui-detail__heading");
-        headingSection.append(
-            make(
-                "p",
-                "fs-ui-detail__kicker",
-                `${text(course?.code, "NO-CODE")} · ${text(material.chapter, "未分章")}`
-            ),
-            make(
-                "h3",
-                "fs-ui-detail__title",
-                text(material.title, "未命名资料")
-            ),
-            make(
-                "p",
-                "fs-ui-detail__excerpt",
-                text(material.excerpt, "暂无摘要")
-            )
+        const previewHost = make("div", "fs-ui-preview");
+        detail.append(headingNode, titleRow, meta, actions, previewHost);
+        if (state.preview) renderPreview(previewHost, state.preview);
+    }
+
+    function renderPreview(host, preview) {
+        host.replaceChildren();
+        const headerNode = make("div", "fs-ui-preview__header");
+        headerNode.append(
+            make("h3", "", "文本预览"),
+            make("span", "fs-ui-muted", preview.eof ? "已到文件末尾" : "内容已分页读取")
         );
+        const editor = make("textarea", "fs-ui-preview__editor");
+        editor.value = preview.content || "";
+        editor.spellcheck = false;
+        editor.setAttribute("aria-label", "文本文件内容");
+        const actions = make("div", "fs-ui-preview__actions");
+        const next = button("读取下一段", "arrow", "fs-ui-button--secondary");
+        next.disabled = preview.eof;
+        next.addEventListener("click", async () => {
+            const entry = currentEntry();
+            if (!entry) return;
+            await loadPreview(entry, preview.nextOffset, next);
+        });
+        const save = button("保存覆盖", "check", "fs-ui-button--primary");
+        save.disabled = !canWrite() || !activeRoot() || preview.editable !== true;
+        save.addEventListener("click", async () => {
+            if (!window.confirm("确认覆盖当前文件？旧内容会先进入项目回收站。")) return;
+            setBusy(save, true, "保存中…");
+            try {
+                await context.executeAction("fs.write", {
+                    rootId: state.activeRootId,
+                    path: preview.path,
+                    content: editor.value,
+                    overwrite: true
+                }, true);
+                notify("文件已保存");
+                state.preview = { ...preview, content: editor.value };
+                await loadDirectory();
+                const entry = currentEntry();
+                if (entry) selectEntry(entry);
+            } catch (error) {
+                fail(error);
+            } finally {
+                setBusy(save, false);
+            }
+        });
+        actions.append(next, save);
+        host.append(headerNode, editor, actions);
+    }
 
-        const meta = make("div", "fs-ui-detail__meta");
-        meta.append(
-            metaItem("课程", course?.title),
-            metaItem("资料格式", material.format),
-            metaItem("来源", source?.label),
-            metaItem("记录 ID", material.id)
-        );
-
-        const cardSection = make("section", "fs-ui-detail__section");
-        cardSection.append(make("h3", "", "知识卡片"));
-        const cards = Array.isArray(material.cards) ? material.cards : [];
-        if (cards.length) {
-            const list = make("div", "fs-ui-card-list");
-            cards.forEach((card) => {
-                const item = make("article", "fs-ui-card");
-                item.append(
-                    make("strong", "", text(card?.title, "未命名卡片")),
-                    make("p", "", text(card?.summary, "暂无摘要"))
+    async function loadRoots(selectFirst = false) {
+        setBusy(refreshButton, true, "刷新中…");
+        try {
+            const payload = await context.query("fs.roots");
+            const roots = Array.isArray(payload?.roots) ? payload.roots : [];
+            if (Number(payload?.count) !== roots.length) {
+                throw new TypeError("文件根数量与结果不一致");
+            }
+            state.roots = roots;
+            if (!state.roots.some((item) => item.id === state.activeRootId)) {
+                state.activeRootId = state.roots[0]?.id || "";
+            }
+            renderRoots();
+            if (selectFirst && state.activeRootId) await loadDirectory();
+            else if (!state.activeRootId) {
+                const empty = make("div", "fs-ui-empty");
+                empty.append(
+                    make("strong", "", "尚未授权本地文件根"),
+                    make("p", "", "点击右上角“授权目录”，输入本机绝对路径并确认能力。")
                 );
-                list.append(item);
-            });
-            cardSection.append(list);
-        } else {
-            cardSection.append(make("p", "fs-ui-muted", "这份资料暂无知识卡片。"));
+                replaceBrowser([empty]);
+                renderEmptyDetail("授权文件根后即可浏览目录。");
+            }
+        } catch (error) {
+            fail(error);
+        } finally {
+            setBusy(refreshButton, false);
         }
-
-        const readonlyNote = make("div", "fs-ui-readonly-note");
-        readonlyNote.append(
-            iconNode("shield", 17, "fs-ui-readonly-note__icon"),
-            make(
-                "span",
-                "",
-                "当前视图为模块只读数据，不会执行整理、上传或文件变更。"
-            )
-        );
-
-        const sourceLine = make(
-            "p",
-            "fs-ui-detail__source",
-            text(source?.location, material.sourceId)
-        );
-
-        const organizeButton = createPendingButton("AI 整理", "spark");
-        organizeButton.classList.add("fs-ui-detail__action");
-
-        detailBody.append(
-            headingSection,
-            meta,
-            cardSection,
-            readonlyNote,
-            sourceLine,
-            organizeButton
-        );
     }
 
-    function renderResults() {
-        const materials = filteredMaterials();
-        resultCount.textContent = `显示 ${materials.length} / ${state.materials.length} 份`;
-        tableBody.replaceChildren();
-        if (!materials.length) {
-            tableBody.append(loadingRow("没有符合当前搜索和课程筛选的资料。"));
-            state.selectedId = null;
-            renderEmptyDetail("调整搜索词或课程筛选后再试。");
+    async function loadDirectory() {
+        if (!state.activeRootId) {
+            renderRoots();
+            renderEmptyDetail("请先选择文件根。");
             return;
         }
-        if (!materials.some((material) => material.id === state.selectedId)) {
-            state.selectedId = materials[0].id;
+        const version = ++state.requestVersion;
+        setBusy(refreshButton, true, "读取中…");
+        try {
+            const payload = await context.query("fs.list", {
+                rootId: state.activeRootId,
+                path: state.path
+            });
+            if (version !== state.requestVersion) return;
+            const entries = Array.isArray(payload?.entries) ? payload.entries : [];
+            if (Number(payload?.count) !== entries.length) {
+                throw new TypeError("目录条目数量与结果不一致");
+            }
+            state.entries = entries;
+            state.mode = "files";
+            state.search = "";
+            renderRoots();
+            renderFileBrowser();
+            const selected = currentEntry();
+            if (selected) renderDetail(selected);
+            else renderEmptyDetail("选择文件后可查看详情、预览、打开或摘要。");
+        } catch (error) {
+            if (version === state.requestVersion) fail(error);
+        } finally {
+            setBusy(refreshButton, false);
         }
-        materials.forEach((material) => {
-            tableBody.append(materialRow(material));
-        });
-        const selected = materials.find(
-            (material) => material.id === state.selectedId
-        );
-        renderDetail(selected || null);
     }
 
-    // 输入事件只更新本地筛选快照，重建结果时保留仍可见的选中资料或回退到首项。
-    searchInput.addEventListener("input", () => {
-        state.search = searchInput.value;
-        renderResults();
+    async function loadTrash() {
+        setBusy(refreshButton, true, "读取中…");
+        try {
+            const payload = await context.query("fs.trash");
+            state.trash = Array.isArray(payload?.entries) ? payload.entries : [];
+            if (Number(payload?.count) !== state.trash.length) {
+                throw new TypeError("回收站条目数量与结果不一致");
+            }
+            state.mode = "trash";
+            renderRoots();
+            renderTrash();
+        } catch (error) {
+            fail(error);
+        } finally {
+            setBusy(refreshButton, false);
+        }
+    }
+
+    function openDirectory(path) {
+        state.path = path;
+        state.selectedPath = "";
+        state.preview = null;
+        loadDirectory();
+    }
+
+    async function createDirectory() {
+        const name = window.prompt("请输入新目录名称或根内相对路径");
+        if (!name?.trim()) return;
+        const target = joinPath(state.path, name.trim());
+        try {
+            await context.executeAction("fs.mkdir", {
+                rootId: state.activeRootId,
+                path: target
+            }, true);
+            notify("目录已创建");
+            await loadDirectory();
+        } catch (error) {
+            fail(error);
+        }
+    }
+
+    async function createTextFile() {
+        const name = window.prompt("请输入新文本文件路径，例如 笔记.txt");
+        if (!name?.trim()) return;
+        const content = window.prompt("请输入初始文本内容，可留空", "") ?? "";
+        try {
+            await context.executeAction("fs.write", {
+                rootId: state.activeRootId,
+                path: joinPath(state.path, name.trim()),
+                content,
+                overwrite: false
+            }, true);
+            notify("文本文件已创建");
+            await loadDirectory();
+        } catch (error) {
+            fail(error);
+        }
+    }
+
+    async function openEntry(entry, trigger) {
+        setBusy(trigger, true, "打开中…");
+        try {
+            await context.executeAction("fs.open", {
+                rootId: state.activeRootId,
+                path: entry.path
+            }, true);
+            notify("已请求系统默认应用打开");
+        } catch (error) {
+            fail(error);
+        } finally {
+            setBusy(trigger, false);
+        }
+    }
+
+    async function openPreview(entry, trigger) {
+        setBusy(trigger, true, "读取中…");
+        try {
+            await loadPreview(entry, 0, trigger);
+        } finally {
+            setBusy(trigger, false);
+        }
+    }
+
+    async function loadPreview(entry, offset, trigger) {
+        setBusy(trigger, true, "读取中…");
+        try {
+            const grant = await context.fileRoots.grantRead(
+                state.activeRootId,
+                entry.path,
+                "preview"
+            );
+            const token = grant?.token;
+            if (!token) throw new Error("宿主未返回读取令牌");
+            const payload = await context.query("fs.readGrantedText", {
+                token,
+                offset: Math.max(0, Number(offset) || 0),
+                maxChars: 8000
+            });
+            state.preview = {
+                ...payload,
+                token,
+                path: entry.path,
+                editable: isTextEntry(entry)
+            };
+            renderDetail(entry);
+        } catch (error) {
+            fail(error);
+        } finally {
+            setBusy(trigger, false);
+        }
+    }
+
+    async function requestSummary(entry, trigger) {
+        setBusy(trigger, true, "授权中…");
+        try {
+            const grant = await context.fileRoots.grantRead(
+                state.activeRootId,
+                entry.path,
+                "summary"
+            );
+            const token = grant?.token;
+            if (!token) throw new Error("宿主未返回摘要读取令牌");
+            context.openAiWithText(
+                `请使用 module_fs 的 fs.readGrantedText 查询读取令牌 ${token} 对应文本，`
+                + "参数 offset=0、maxChars=3000，并根据实际返回内容生成简明摘要。"
+                + "不要复述读取令牌，不要猜测或输出文件路径，也不要修改文件。"
+            );
+            notify("已生成短时读取授权，请在 AI 对话中发送摘要请求");
+        } catch (error) {
+            fail(error);
+        } finally {
+            setBusy(trigger, false);
+        }
+    }
+
+    async function revokeRoot(fileRoot, trigger) {
+        if (!window.confirm(`确认撤销文件根“${fileRoot.label}”的授权？目录中的文件不会被删除。`)) {
+            return;
+        }
+        setBusy(trigger, true, "撤销中…");
+        try {
+            await context.fileRoots.revoke(fileRoot.id);
+            if (state.activeRootId === fileRoot.id) {
+                state.activeRootId = "";
+                state.path = "";
+                state.selectedPath = "";
+                state.preview = null;
+            }
+            notify("文件根授权已撤销");
+            await loadRoots(true);
+        } catch (error) {
+            fail(error);
+        } finally {
+            setBusy(trigger, false);
+        }
+    }
+
+    async function moveEntry(entry, trigger) {
+        const target = window.prompt("请输入根内目标相对路径", entry.path);
+        if (!target?.trim() || target.trim() === entry.path) return;
+        if (!window.confirm("确认移动或重命名该对象？目标已存在时会被拒绝。")) return;
+        setBusy(trigger, true, "移动中…");
+        try {
+            await context.executeAction("fs.move", {
+                sourceRootId: state.activeRootId,
+                source: entry.path,
+                targetRootId: state.activeRootId,
+                target: target.trim()
+            }, true);
+            notify("对象已移动");
+            state.selectedPath = "";
+            await loadDirectory();
+        } catch (error) {
+            fail(error);
+        } finally {
+            setBusy(trigger, false);
+        }
+    }
+
+    async function trashEntry(entry, trigger) {
+        if (!window.confirm(`确认把“${entry.name}”移入项目回收站？`)) return;
+        setBusy(trigger, true, "移动中…");
+        try {
+            await context.executeAction("fs.trash", {
+                rootId: state.activeRootId,
+                path: entry.path
+            }, true);
+            notify("已移入项目回收站");
+            state.selectedPath = "";
+            state.preview = null;
+            await loadDirectory();
+        } catch (error) {
+            fail(error);
+        } finally {
+            setBusy(trigger, false);
+        }
+    }
+
+    async function restoreTrash(entry, trigger) {
+        if (!window.confirm(`确认恢复“${entry.name}”？原位置已存在时会被拒绝。`)) return;
+        setBusy(trigger, true, "恢复中…");
+        try {
+            await context.executeAction("fs.restore", {
+                trashId: entry.id
+            }, true);
+            notify("对象已恢复");
+            await loadTrash();
+        } catch (error) {
+            fail(error);
+        } finally {
+            setBusy(trigger, false);
+        }
+    }
+
+    uploadInput.addEventListener("change", async () => {
+        const file = uploadInput.files?.[0];
+        uploadInput.value = "";
+        if (!file || !activeRoot()) return;
+        const target = joinPath(state.path, file.name);
+        if (!window.confirm(`确认上传“${file.name}”到当前目录？`)) return;
+        const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 80) || "upload.bin";
+        const uploadPath = `uploads/${Date.now()}-${safeName}`;
+        const uploadBlob = new Blob([file], { type: "application/octet-stream" });
+        try {
+            await context.executeActionWithFile("fs.upload", {
+                rootId: state.activeRootId,
+                path: target,
+                uploadPath,
+                overwrite: false
+            }, uploadBlob, true);
+            notify("文件已上传");
+            await loadDirectory();
+        } catch (error) {
+            fail(error);
+        }
     });
 
-    tableBody.append(loadingRow("正在读取模块资料…"));
-    renderEmptyDetail("正在读取 fs.materials…");
+    authButton.addEventListener("click", () => {
+        authForm.hidden = !authForm.hidden;
+        if (!authForm.hidden) authPath.focus();
+    });
+    cancelAuth.addEventListener("click", () => {
+        authForm.hidden = true;
+        authForm.reset();
+    });
+    refreshButton.addEventListener("click", () => {
+        if (state.mode === "trash") loadTrash();
+        else loadDirectory();
+    });
+    authForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const path = authPath.value.trim();
+        if (!path) {
+            authPath.focus();
+            return;
+        }
+        if (!window.confirm("确认授权该本地目录？后续文件操作仍受能力位、确认和宿主审计约束。")) {
+            return;
+        }
+        setBusy(submitAuth, true, "授权中…");
+        try {
+            const payload = await context.fileRoots.authorize(
+                path,
+                authLabel.value.trim(),
+                authWrite.checked,
+                authDelete.checked
+            );
+            if (payload?.root?.id) {
+                state.activeRootId = payload.root.id;
+            }
+            notify("文件根已授权");
+            authForm.reset();
+            authForm.hidden = true;
+            await loadRoots(true);
+        } catch (error) {
+            fail(error);
+        } finally {
+            setBusy(submitAuth, false);
+        }
+    });
 
-    // 查询结果必须声明 materials 契约、模块归属和只读标志，并核对 count 后才进入视图状态。
+    renderRoots();
+    renderEmptyDetail("正在读取文件根…");
     try {
-        const payload = await context.query("fs.materials");
-        if (
-            payload?.kind !== "materials"
-            || payload?.ownerModule !== context.module.moduleId
-            || payload?.readOnly !== true
-        ) {
-            throw new TypeError("fs.materials 返回了不符合 materials 契约的数据");
-        }
-        const courses = payload?.payload?.courses;
-        const materials = payload?.payload?.materials;
-        if (!Array.isArray(courses) || !Array.isArray(materials)) {
-            throw new TypeError("fs.materials 缺少 courses 或 materials 数组");
-        }
-        if (Number(payload.count) !== materials.length) {
-            throw new TypeError("fs.materials 的 count 与资料数量不一致");
-        }
-        state.payload = payload;
-        state.courses = courses;
-        state.materials = materials;
-        state.courseById = new Map(
-            courses.map((course) => [course.id, course])
-        );
-        state.sourceById = new Map(
-            (Array.isArray(payload.sources) ? payload.sources : [])
-                .map((source) => [source.id, source])
-        );
-        state.selectedId = materials[0]?.id || null;
-        sourceSummary.textContent = `数据源：fs.materials · ${text(payload.title, "资料库")}`;
-        renderCourseChips();
-        renderResults();
+        await loadRoots(true);
     } catch (error) {
-        renderError(error);
+        fail(error);
     }
 }

@@ -17,6 +17,74 @@ public interface ModuleRuntime {
     String workspaceLabel();
 
     /**
+     * 返回用户显式授权的本地文件根目录快照。
+     *
+     * <p>返回值按注册顺序稳定排列，只包含根标识、显示名称和能力位，不包含宿主机
+     * 绝对路径；模块只能使用返回的 id 调用宿主解析方法，不得自行拼接根路径。</p>
+     */
+    List<AuthorizedFileRoot> listFileRoots();
+
+    /**
+     * 将授权根内相对路径解析为宿主受控绝对路径。
+     *
+     * <p>拒绝绝对路径、越界路径和经过现有链接或重解析点的逃逸。目标可以尚不存在，
+     * 但最近的现有祖先必须真实位于授权根内。</p>
+     */
+    Path resolveAuthorizedPath(String rootId, String relativePath);
+
+    /** 列出授权根目录的直接子项；结果路径相对于该根。 */
+    List<FileEntry> listAuthorizedDirectory(Path directory);
+
+    /**
+     * 凭宿主签发的短时令牌读取文件正文。
+     *
+     * <p>令牌只绑定宿主内存中的授权根、相对路径和用途，模块不接收文件路径。结果不含
+     * 绝对路径；令牌缺失、过期或越界时拒绝读取。</p>
+     */
+    FileReadResult readGrantedText(String token, int offset, int maxChars);
+
+    /**
+     * 使用操作系统默认应用打开授权根内普通文件。
+     *
+     * <p>该能力只读路径内容，但会启动外部程序；是否允许由宿主审计并确认。外部应用
+     * 后续对文件的操作不由 Orderly 担保。</p>
+     */
+    void openFile(Path file);
+
+    /**
+     * 在授权根内新建 UTF-8 文本文件，并自动创建缺失父目录；目标已存在时拒绝。
+     */
+    Path createAuthorizedTextFile(Path file, String content);
+
+    /**
+     * 在授权根内写入 UTF-8 文本文件。
+     *
+     * <p>覆盖已有文件前由宿主把旧对象移入项目回收站并返回备份条目；目标已存在且
+     * {@code overwrite=false} 时拒绝。成功写入通过同目录临时文件替换。</p>
+     */
+    FileWriteResult writeAuthorizedTextFile(
+            Path file,
+            String content,
+            boolean overwrite,
+            String planId,
+            String stepId
+    );
+
+    /**
+     * 把宿主已暂存的普通二进制文件写入授权根。
+     *
+     * <p>覆盖已有目标时先把旧对象移入项目回收站。暂存文件必须位于宿主工作区，
+     * 目标不得位于系统保护目录。</p>
+     */
+    FileWriteResult writeAuthorizedBinaryFile(
+            Path stagedFile,
+            Path target,
+            boolean overwrite,
+            String planId,
+            String stepId
+    );
+
+    /**
      * 将工作区相对路径规范化为宿主受控路径。
      *
      * <p>拒绝绝对路径、规范化后越出工作区的路径，以及经过现有符号链接或重解析点
@@ -84,6 +152,15 @@ public interface ModuleRuntime {
      * 该操作不会物理删除内容，也不是可重复调用的幂等操作。</p>
      */
     TrashEntry moveToTrash(Path source, String planId, String stepId);
+
+    /**
+     * 宿主撤销写入、创建或恢复动作时把对象移入项目回收站。
+     *
+     * <p>该入口只服务于宿主统一回滚和覆盖前备份，不要求用户授予直接删除能力，但仍
+     * 校验路径属于已授权的可读根、拒绝系统保护目录和受控根本身。业务动作不得用它
+     * 替代用户显式删除。</p>
+     */
+    TrashEntry moveToTrashForRecovery(Path source, String planId, String stepId);
 
     /**
      * 按回收站条目 ID 将对象恢复到原工作区相对位置。

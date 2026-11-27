@@ -1,0 +1,258 @@
+{
+  "moduleId": "module_materials",
+  "title": "资料管理",
+  "description": "导入、检索、整理并回收本地资料文件。",
+  "order": 15,
+  "actions": [
+    {
+      "id": "materials.import",
+      "title": "导入资料",
+      "description": "把宿主暂存的本地文件导入资料库并保存展示信息。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "uploadPath", "type": "string", "required": true, "description": "宿主临时上传路径" },
+        { "name": "fileName", "type": "string", "required": true, "description": "原始文件名" },
+        { "name": "title", "type": "string", "required": true, "description": "资料标题" },
+        { "name": "category", "type": "string", "required": false, "description": "资料分类" },
+        { "name": "tags", "type": "string", "required": false, "description": "逗号分隔的标签" },
+        { "name": "description", "type": "string", "required": false, "description": "资料说明" },
+        { "name": "contentType", "type": "string", "required": false, "description": "文件内容类型" }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["item"],
+        "properties": {
+          "item": {
+            "type": "object",
+            "required": [
+              "id",
+              "title",
+              "description",
+              "category",
+              "tags",
+              "fileName",
+              "format",
+              "sizeBytes",
+              "contentType",
+              "storagePath",
+              "status",
+              "createdAt",
+              "updatedAt"
+            ],
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "category": { "type": "string" },
+              "tags": { "type": "array", "items": { "type": "string" } },
+              "fileName": { "type": "string" },
+              "format": { "type": "string" },
+              "sizeBytes": { "type": "integer" },
+              "contentType": { "type": "string" },
+              "storagePath": { "type": "string" },
+              "status": { "type": "string" },
+              "createdAt": { "type": "string" },
+              "updatedAt": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "materials.update",
+      "title": "更新资料信息",
+      "description": "修改资料标题、分类、标签或说明，不改变文件内容。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "id", "type": "string", "required": true, "description": "资料 ID" },
+        { "name": "title", "type": "string", "required": false, "description": "资料标题" },
+        { "name": "category", "type": "string", "required": false, "description": "资料分类" },
+        { "name": "tags", "type": "string", "required": false, "description": "逗号分隔的标签" },
+        { "name": "description", "type": "string", "required": false, "description": "资料说明" }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["before", "after"],
+        "properties": {
+          "before": { "type": "object" },
+          "after": { "type": "object" }
+        }
+      }
+    },
+    {
+      "id": "materials.trash",
+      "title": "移入回收站",
+      "description": "把资料文件移入项目回收站，不执行物理删除。",
+      "risk": "DELETE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "id", "type": "string", "required": true, "description": "资料 ID" }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["item", "trashEntry"],
+        "properties": {
+          "item": { "type": "object" },
+          "trashEntry": {
+            "type": "object",
+            "required": ["id", "originalPath", "storedPath", "name", "deletedAt"],
+            "properties": {
+              "id": { "type": "string" },
+              "originalPath": { "type": "string" },
+              "storedPath": { "type": "string" },
+              "name": { "type": "string" },
+              "deletedAt": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "materials.restore",
+      "title": "恢复资料",
+      "description": "从项目回收站恢复资料文件与有效状态。",
+      "risk": "WRITE",
+      "confirmationRequired": true,
+      "parameters": [
+        { "name": "id", "type": "string", "required": true, "description": "资料 ID" }
+      ],
+      "outputSchema": {
+        "type": "object",
+        "required": ["item"],
+        "properties": {
+          "item": { "type": "object" }
+        }
+      }
+    }
+  ],
+  "queries": [
+    {
+      "id": "materials.list",
+      "title": "资料列表",
+      "description": "只读读取资料库中的有效资料元数据。",
+      "parameters": [],
+      "outputSchema": {
+        "type": "object",
+        "required": ["items", "count"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "title",
+                "description",
+                "category",
+                "tags",
+                "fileName",
+                "format",
+                "sizeBytes",
+                "contentType",
+                "storagePath",
+                "status",
+                "createdAt",
+                "updatedAt"
+              ],
+              "properties": {
+                "id": { "type": "string" },
+                "title": { "type": "string" },
+                "description": { "type": "string" },
+                "category": { "type": "string" },
+                "tags": { "type": "array", "items": { "type": "string" } },
+                "fileName": { "type": "string" },
+                "format": { "type": "string" },
+                "sizeBytes": { "type": "integer" },
+                "contentType": { "type": "string" },
+                "storagePath": { "type": "string" },
+                "status": { "type": "string" },
+                "createdAt": { "type": "string" },
+                "updatedAt": { "type": "string" },
+                "trashId": { "type": "string" },
+                "deletedAt": { "type": "string" }
+              }
+            }
+          },
+          "count": { "type": "integer" }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示资料标题、分类、格式和更新时间；没有资料时显示空状态。",
+        "fallbackLayout": "table",
+        "rowPath": "items",
+        "fields": [
+          { "key": "title", "label": "资料", "format": "text" },
+          { "key": "category", "label": "分类", "format": "text" },
+          { "key": "format", "label": "格式", "format": "text" },
+          { "key": "updatedAt", "label": "更新时间", "format": "datetime" }
+        ],
+        "emptyText": "暂无资料"
+      }
+    },
+    {
+      "id": "materials.trash.list",
+      "title": "资料回收站",
+      "description": "只读读取已移入项目回收站的资料元数据。",
+      "parameters": [],
+      "outputSchema": {
+        "type": "object",
+        "required": ["items", "count"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "title",
+                "description",
+                "category",
+                "tags",
+                "fileName",
+                "format",
+                "sizeBytes",
+                "contentType",
+                "storagePath",
+                "status",
+                "createdAt",
+                "updatedAt"
+              ],
+              "properties": {
+                "id": { "type": "string" },
+                "title": { "type": "string" },
+                "description": { "type": "string" },
+                "category": { "type": "string" },
+                "tags": { "type": "array", "items": { "type": "string" } },
+                "fileName": { "type": "string" },
+                "format": { "type": "string" },
+                "sizeBytes": { "type": "integer" },
+                "contentType": { "type": "string" },
+                "storagePath": { "type": "string" },
+                "status": { "type": "string" },
+                "createdAt": { "type": "string" },
+                "updatedAt": { "type": "string" },
+                "trashId": { "type": "string" },
+                "deletedAt": { "type": "string" }
+              }
+            }
+          },
+          "count": { "type": "integer" }
+        }
+      },
+      "display": {
+        "prompt": "以列表展示回收站资料标题、分类和删除时间；回收站为空时显示空状态。",
+        "fallbackLayout": "list",
+        "rowPath": "items",
+        "fields": [
+          { "key": "title", "label": "资料", "format": "text" },
+          { "key": "category", "label": "分类", "format": "text" },
+          { "key": "deletedAt", "label": "删除时间", "format": "datetime" }
+        ],
+        "emptyText": "回收站暂无资料"
+      }
+    }
+  ],
+  "plannerRules": []
+}

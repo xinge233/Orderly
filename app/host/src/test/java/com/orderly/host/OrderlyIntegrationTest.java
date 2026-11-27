@@ -30,6 +30,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -88,6 +90,69 @@ class OrderlyIntegrationTest {
     @BeforeEach
     void enablePlanning() {
         features.setPlanningEnabled(true);
+    }
+
+    @Test
+    void fileRootAuthorizationRequiresConfirmationAndNeverExposesAbsolutePath() throws Exception {
+        Path root = Path.of("target", "file-root-" + UUID.randomUUID()).toAbsolutePath().normalize();
+        Files.createDirectories(root);
+        String body = objectMapper.writeValueAsString(Map.of(
+                "confirmed", true,
+                "path", root.toString(),
+                "label", "集成测试根",
+                "allowWrite", true,
+                "allowDelete", true
+        ));
+
+        MvcResult authorization = mockMvc.perform(post("/api/file-roots")
+                        .header("X-Orderly-Action", "authorize-file-root")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.root.id").isString())
+                .andExpect(jsonPath("$.root.label").value("集成测试根"))
+                .andExpect(jsonPath("$.root.path").doesNotExist())
+                .andReturn();
+
+        String rootId = objectMapper.readTree(authorization.getResponse().getContentAsString())
+                .path("root")
+                .path("id")
+                .asText();
+        Files.writeString(root.resolve("note.txt"), "摘要测试");
+        String grantBody = objectMapper.writeValueAsString(Map.of(
+                "confirmed", true,
+                "rootId", rootId,
+                "path", "note.txt",
+                "purpose", "summary"
+        ));
+        mockMvc.perform(post("/api/file-read-grants")
+                        .header("X-Orderly-Action", "grant-file-read")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(grantBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isString())
+                .andExpect(jsonPath("$.expiresAt").isNumber())
+                .andExpect(jsonPath("$.path").doesNotExist());
+        assertThat(journal.snapshot())
+                .allSatisfy(event -> assertThat(event.message() == null ? "" : event.message())
+                        .doesNotContain(root.toString()));
+
+        mockMvc.perform(get("/api/file-roots"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.roots[0].path").doesNotExist());
+
+        mockMvc.perform(post("/api/file-roots/{rootId}/revoke", rootId)
+                        .header("X-Orderly-Action", "revoke-file-root"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.root.id").value(rootId))
+                .andExpect(jsonPath("$.root.path").doesNotExist());
+
+        mockMvc.perform(post("/api/file-roots")
+                        .header("X-Orderly-Action", "authorize-file-root")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body.replace("\"confirmed\":true", "\"confirmed\":false")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_FILE_ROOT_REQUEST"));
     }
 
     @Test
@@ -549,16 +614,16 @@ class OrderlyIntegrationTest {
                           "confirmed": true,
                           "arguments": {
                             "type": "image",
-                            "uploadPath": "uploads/unsupported.txt",
-                            "contentType": "text/plain"
+                            "uploadPath": "uploads/unsupported.exe",
+                            "contentType": "application/x-msdownload"
                           }
                         }
                         """.getBytes(java.nio.charset.StandardCharsets.UTF_8)
         );
         MockMultipartFile text = new MockMultipartFile(
                 "file",
-                "unsupported.txt",
-                "text/plain",
+                "unsupported.exe",
+                "application/x-msdownload",
                 "not-media".getBytes(java.nio.charset.StandardCharsets.UTF_8)
         );
         mockMvc.perform(multipart(
@@ -581,8 +646,8 @@ class OrderlyIntegrationTest {
                                   "actions": [
                                     {
                                       "moduleId": "module_fs",
-                                      "actionId": "fs.list",
-                                      "arguments": {"path": "收件箱"}
+                                      "actionId": "fs.mkdir",
+                                      "arguments": {"path": "收件箱/引用测试"}
                                     },
                                     {
                                       "moduleId": "module_todo",
@@ -590,7 +655,7 @@ class OrderlyIntegrationTest {
                                       "arguments": {
                                         "title": {
                                           "$fromAction": 0,
-                                          "path": ["output", "entries", 0, "path"]
+                                          "path": ["output", "path"]
                                         }
                                       }
                                     }
@@ -601,7 +666,7 @@ class OrderlyIntegrationTest {
                 .andExpect(jsonPath("$.origin").value("AI_DIRECT"))
                 .andExpect(jsonPath("$.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.steps.length()").value(2))
-                .andExpect(jsonPath("$.steps[1].arguments.title").value("收件箱/示例笔记.txt"))
+                .andExpect(jsonPath("$.steps[1].arguments.title").value("收件箱/引用测试"))
                 .andExpect(jsonPath("$.snapshots").isMap())
                 .andExpect(jsonPath("$.outputs").isMap())
                 .andExpect(jsonPath("$.events").isArray())
@@ -612,7 +677,7 @@ class OrderlyIntegrationTest {
         assertThat(executionId).isNotBlank();
         assertThat(runtime.readItems("todos")).hasSize(before + 1);
         assertThat(runtime.readItems("todos"))
-                .anyMatch(item -> "收件箱/示例笔记.txt".equals(item.get("title")));
+                .anyMatch(item -> "收件箱/引用测试".equals(item.get("title")));
 
         mockMvc.perform(post("/api/executions/{id}/rollback", executionId))
                 .andExpect(status().isOk())

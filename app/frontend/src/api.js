@@ -272,6 +272,56 @@ export class OrderlyApi {
         });
     }
 
+    getFileRoots(options) {
+        return this.request("/api/file-roots", options);
+    }
+
+    authorizeFileRoot(path, label = "", allowWrite = false, allowDelete = false, options = {}) {
+        return this.request("/api/file-roots", {
+            ...options,
+            method: "POST",
+            headers: {
+                ...options.headers,
+                "X-Orderly-Action": "authorize-file-root"
+            },
+            body: {
+                confirmed: true,
+                path,
+                label,
+                allowWrite,
+                allowDelete
+            }
+        });
+    }
+
+    revokeFileRoot(rootId, options = {}) {
+        return this.request(`/api/file-roots/${encodeURIComponent(rootId)}/revoke`, {
+            ...options,
+            method: "POST",
+            headers: {
+                ...options.headers,
+                "X-Orderly-Action": "revoke-file-root"
+            }
+        });
+    }
+
+    grantFileRead(rootId, path, purpose = "preview", options = {}) {
+        return this.request("/api/file-read-grants", {
+            ...options,
+            method: "POST",
+            headers: {
+                ...options.headers,
+                "X-Orderly-Action": "grant-file-read"
+            },
+            body: {
+                confirmed: true,
+                rootId,
+                path,
+                purpose
+            }
+        });
+    }
+
     getThemes(options) {
         return this.request("/api/themes", options);
     }

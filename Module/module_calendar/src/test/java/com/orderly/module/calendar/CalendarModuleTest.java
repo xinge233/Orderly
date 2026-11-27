@@ -1,6 +1,9 @@
 package com.orderly.module.calendar;
 
+import com.orderly.kernel.AuthorizedFileRoot;
 import com.orderly.kernel.FileEntry;
+import com.orderly.kernel.FileReadResult;
+import com.orderly.kernel.FileWriteResult;
 import com.orderly.kernel.ModuleInvocation;
 import com.orderly.kernel.ModuleResult;
 import com.orderly.kernel.ModuleRuntime;
@@ -224,6 +227,58 @@ class CalendarModuleTest {
         }
 
         @Override
+        public List<AuthorizedFileRoot> listFileRoots() {
+            return List.of();
+        }
+
+        @Override
+        public Path resolveAuthorizedPath(String rootId, String relativePath) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<FileEntry> listAuthorizedDirectory(Path directory) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public FileReadResult readGrantedText(String token, int offset, int maxChars) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void openFile(Path file) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Path createAuthorizedTextFile(Path file, String content) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public FileWriteResult writeAuthorizedTextFile(
+                Path file,
+                String content,
+                boolean overwrite,
+                String planId,
+                String stepId
+        ) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public FileWriteResult writeAuthorizedBinaryFile(
+                Path stagedFile,
+                Path target,
+                boolean overwrite,
+                String planId,
+                String stepId
+        ) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public Path resolveWorkspacePath(String relativePath) {
             throw new UnsupportedOperationException();
         }
@@ -260,6 +315,11 @@ class CalendarModuleTest {
 
         @Override
         public TrashEntry moveToTrash(Path source, String planId, String stepId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public TrashEntry moveToTrashForRecovery(Path source, String planId, String stepId) {
             throw new UnsupportedOperationException();
         }
 

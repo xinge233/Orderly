@@ -1,0 +1,7 @@
+{
+  "id": "2871de00-9c9c-3a91-9af3-7c54373e0083",
+  "label": "用户目录",
+  "read": true,
+  "write": true,
+  "delete": true
+}

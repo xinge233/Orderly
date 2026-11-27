@@ -2661,6 +2661,20 @@ async function mountModule(module) {
                 queryId,
                 parameters
             ),
+            fileRoots: {
+                list: (options) => api.getFileRoots(options),
+                authorize: (path, label, allowWrite, allowDelete, options) =>
+                    api.authorizeFileRoot(
+                        path,
+                        label,
+                        allowWrite,
+                        allowDelete,
+                        options
+                    ),
+                revoke: (rootId, options) => api.revokeFileRoot(rootId, options),
+                grantRead: (rootId, path, purpose, options) =>
+                    api.grantFileRead(rootId, path, purpose, options)
+            },
             executeAction: (actionId, argumentsValue = {}, confirmed = true) =>
                 api.executeModuleAction(
                     module.moduleId,
@@ -2694,7 +2708,8 @@ async function mountModule(module) {
             toast,
             fillCommand,
             formatDate,
-            subscribeEvents: subscribeFrameworkEvents
+            subscribeEvents: subscribeFrameworkEvents,
+            openAiWithText: (text = "") => aiDialog?.openWithText?.(text)
         };
         await moduleScript.default(root, createModuleMountContext({
             module,

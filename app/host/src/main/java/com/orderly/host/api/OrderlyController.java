@@ -28,6 +28,7 @@ import com.orderly.host.moduledata.ModuleDataService;
 import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanView;
 import com.orderly.host.runtime.WorkspaceRuntime;
+import com.orderly.kernel.AuthorizedFileRoot;
 import com.orderly.host.system.BuildSettingsService;
 import com.orderly.host.system.HostShutdownService;
 import com.orderly.host.system.SystemFeatureService;
@@ -365,6 +366,117 @@ public class OrderlyController {
                 .body(new FileSystemResource(resource.file()));
     }
 
+    /** 列出宿主内部的显式文件根授权，不返回绝对路径。 */
+    @GetMapping("/file-roots")
+    public Map<String, Object> fileRoots() {
+        List<AuthorizedFileRoot> roots = runtime.listFileRoots();
+        return Map.of("roots", roots, "count", roots.size());
+    }
+
+    /**
+     * 由本机用户显式授权一个本地文件根。
+     *
+     * <p>请求必须带固定操作头和确认标志。绝对路径只在宿主内部保存，响应及审计事件
+     * 只返回根 ID、名称和能力，不记录路径。</p>
+     */
+    @PostMapping("/file-roots")
+    public Map<String, Object> authorizeFileRoot(
+            @RequestHeader(name = "X-Orderly-Action", defaultValue = "") String action,
+            @RequestBody FileRootRequest request
+    ) {
+        if (!"authorize-file-root".equals(action) || request == null || !request.confirmed()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_FILE_ROOT_REQUEST",
+                    "授权文件根必须由本机用户确认并声明 X-Orderly-Action: authorize-file-root"
+            );
+        }
+        AuthorizedFileRoot root = runtime.authorizeFileRoot(
+                request.path(),
+                request.label(),
+                request.allowWrite(),
+                request.allowDelete()
+        );
+        journal.append(
+                "FILE_ROOT",
+                "SYSTEM",
+                null,
+                "authorize-file-root",
+                null,
+                null,
+                "COMPLETED",
+                "已授权本地文件根：" + root.label()
+        );
+        return Map.of("root", root);
+    }
+
+    /**
+     * 由本机用户撤销一个文件根授权。
+     *
+     * <p>撤销只停止后续宿主访问，不移动或删除目录中的文件；尚未使用的读取令牌
+     * 会同步失效。响应和审计事件不包含绝对路径。</p>
+     */
+    @PostMapping("/file-roots/{rootId}/revoke")
+    public Map<String, Object> revokeFileRoot(
+            @PathVariable("rootId") String rootId,
+            @RequestHeader(name = "X-Orderly-Action", defaultValue = "") String action
+    ) {
+        if (!"revoke-file-root".equals(action)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_FILE_ROOT_REVOKE_REQUEST",
+                    "撤销文件根必须由本机用户确认并声明 X-Orderly-Action: revoke-file-root"
+            );
+        }
+        AuthorizedFileRoot root = runtime.revokeFileRoot(rootId);
+        journal.append(
+                "FILE_ROOT",
+                "SYSTEM",
+                null,
+                "revoke-file-root",
+                null,
+                null,
+                "COMPLETED",
+                "已撤销本地文件根授权：" + root.label()
+        );
+        return Map.of("root", root);
+    }
+
+    /**
+     * 为本机用户当前选择的文件签发短时读取令牌。
+     *
+     * <p>请求路径只用于宿主即时解析，响应和审计事件只保留随机令牌、用途和过期时间。</p>
+     */
+    @PostMapping("/file-read-grants")
+    public Map<String, Object> issueFileReadGrant(
+            @RequestHeader(name = "X-Orderly-Action", defaultValue = "") String action,
+            @RequestBody FileReadGrantRequest request
+    ) {
+        if (!"grant-file-read".equals(action) || request == null || !request.confirmed()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_FILE_READ_GRANT_REQUEST",
+                    "签发文件读取授权必须由本机用户确认并声明 X-Orderly-Action: grant-file-read"
+            );
+        }
+        Map<String, Object> grant = runtime.issueReadGrant(
+                request.rootId(),
+                request.path(),
+                request.purpose()
+        );
+        journal.append(
+                "FILE_READ",
+                "SYSTEM",
+                null,
+                "grant-file-read",
+                null,
+                null,
+                "COMPLETED",
+                "已签发短时文件读取授权"
+        );
+        return grant;
+    }
+
     /**
      * 先暂存上传文件，再通过统一 Action 执行核心运行模块上传动作。
      *
@@ -390,10 +502,15 @@ public class OrderlyController {
                     "上传动作必须包含 uploadPath 与非空文件"
             );
         }
+        String contentType = file.getContentType();
+        if (contentType == null || contentType.isBlank()) {
+            Object declaredType = request.arguments().get("contentType");
+            contentType = declaredType == null ? "" : declaredType.toString();
+        }
         moduleData.stage(
                 moduleId,
                 uploadPath,
-                file.getContentType(),
+                contentType,
                 file.getBytes()
         );
         try {
@@ -782,6 +899,23 @@ public class OrderlyController {
         public ModuleActionRequest {
             arguments = arguments == null ? Map.of() : Map.copyOf(arguments);
         }
+    }
+
+    public record FileRootRequest(
+            boolean confirmed,
+            String path,
+            String label,
+            boolean allowWrite,
+            boolean allowDelete
+    ) {
+    }
+
+    public record FileReadGrantRequest(
+            boolean confirmed,
+            String rootId,
+            String path,
+            String purpose
+    ) {
     }
 
     /** 总体 AI Action 数组直执请求。 */

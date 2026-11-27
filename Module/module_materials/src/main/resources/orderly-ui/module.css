@@ -1,0 +1,564 @@
+.materials-ui {
+    --materials-ui-accent-soft: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    display: grid;
+    gap: var(--space-5);
+    min-width: 0;
+}
+
+.materials-ui [hidden] {
+    display: none !important;
+}
+
+.materials-ui-header,
+.materials-ui-controls,
+.materials-ui-body,
+.materials-ui-detail-header,
+.materials-ui-row,
+.materials-ui-header-actions,
+.materials-ui-detail-actions,
+.materials-ui-dialog-footer {
+    display: flex;
+    align-items: center;
+}
+
+.materials-ui-header {
+    justify-content: space-between;
+    gap: var(--space-5);
+}
+
+.materials-ui-heading {
+    min-width: 0;
+}
+
+.materials-ui-eyebrow {
+    margin: 0 0 var(--space-2);
+    color: var(--color-text-soft);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    letter-spacing: 0;
+}
+
+.materials-ui-title {
+    margin: 0;
+    color: var(--color-text);
+    font-family: var(--font-display);
+    font-size: clamp(1.8rem, 3vw, 2.7rem);
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+.materials-ui-summary,
+.materials-ui-muted,
+.materials-ui-detail-file,
+.materials-ui-description,
+.materials-ui-state {
+    color: var(--color-text-soft);
+}
+
+.materials-ui-summary {
+    margin: var(--space-2) 0 0;
+    font-size: var(--font-size-body);
+}
+
+.materials-ui-header-actions {
+    gap: var(--space-2);
+    flex: 0 0 auto;
+}
+
+.materials-ui-controls {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) minmax(130px, auto) minmax(130px, auto) auto;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+}
+
+.materials-ui-search {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface);
+}
+
+.materials-ui-search-input,
+.materials-ui-select,
+.materials-ui-field-control {
+    min-width: 0;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: inherit;
+}
+
+.materials-ui-search-input {
+    width: 100%;
+    padding: var(--space-3) 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+}
+
+.materials-ui-select,
+.materials-ui-field-control {
+    padding: var(--space-3);
+}
+
+.materials-ui-view-switch {
+    display: flex;
+    gap: var(--space-1);
+    padding: var(--space-1);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface-muted);
+}
+
+.materials-ui-tab,
+.materials-ui-category,
+.materials-ui-row,
+.materials-ui-icon-button,
+.materials-ui-primary,
+.materials-ui-secondary,
+.materials-ui-danger {
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--color-text);
+    font: inherit;
+    cursor: pointer;
+}
+
+.materials-ui-tab {
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-xs);
+    color: var(--color-text-soft);
+    white-space: nowrap;
+}
+
+.materials-ui-tab[aria-pressed="true"] {
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: var(--shadow-soft);
+}
+
+.materials-ui-body {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 180px minmax(320px, 1.15fr) minmax(280px, 0.85fr);
+    gap: var(--space-4);
+    min-height: 520px;
+}
+
+.materials-ui-categories,
+.materials-ui-list-panel,
+.materials-ui-detail {
+    min-width: 0;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+}
+
+.materials-ui-categories {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-3);
+}
+
+.materials-ui-category-title,
+.materials-ui-list-title {
+    margin: 0;
+    color: var(--color-text-soft);
+    font-size: var(--font-size-caption);
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+.materials-ui-category-title {
+    padding: var(--space-2) var(--space-3) var(--space-3);
+}
+
+.materials-ui-category {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-xs);
+    color: var(--color-text-soft);
+    text-align: left;
+}
+
+.materials-ui-category:hover,
+.materials-ui-category[aria-pressed="true"] {
+    background: var(--materials-ui-accent-soft);
+    color: var(--color-text);
+}
+
+.materials-ui-category-count,
+.materials-ui-count,
+.materials-ui-row-date {
+    color: var(--color-text-faint);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+}
+
+.materials-ui-list-panel {
+    overflow: hidden;
+}
+
+.materials-ui-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+}
+
+.materials-ui-list {
+    display: grid;
+    align-content: start;
+    gap: var(--space-1);
+    max-height: 620px;
+    padding: var(--space-2);
+    overflow: auto;
+}
+
+.materials-ui-row {
+    width: 100%;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border-radius: var(--radius-xs);
+    text-align: left;
+}
+
+.materials-ui-row:hover,
+.materials-ui-row[aria-pressed="true"] {
+    background: var(--color-surface-muted);
+}
+
+.materials-ui-row[aria-pressed="true"] {
+    border-color: var(--color-line-strong);
+}
+
+.materials-ui-row-copy {
+    display: grid;
+    flex: 1;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.materials-ui-row-copy strong,
+.materials-ui-row-copy small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.materials-ui-row-copy small {
+    color: var(--color-text-soft);
+}
+
+.materials-ui-row-icon,
+.materials-ui-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+}
+
+.materials-ui-detail {
+    display: grid;
+    align-content: start;
+    gap: var(--space-3);
+    padding: var(--space-4);
+}
+
+.materials-ui-detail-header {
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.materials-ui-detail-actions {
+    gap: var(--space-1);
+}
+
+.materials-ui-format {
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-xs);
+    background: var(--materials-ui-accent-soft);
+    color: var(--color-accent-strong);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+}
+
+.materials-ui-detail-title {
+    margin: 0;
+    color: var(--color-text);
+    font-size: var(--font-size-panel-title);
+    letter-spacing: 0;
+}
+
+.materials-ui-detail-file,
+.materials-ui-description {
+    margin: 0;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+}
+
+.materials-ui-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+}
+
+.materials-ui-tag {
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-xs);
+    color: var(--color-text-soft);
+    font-size: var(--font-size-caption);
+}
+
+.materials-ui-tag.is-muted {
+    border-style: dashed;
+    color: var(--color-text-faint);
+}
+
+.materials-ui-metadata {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    padding: var(--space-3);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-xs);
+}
+
+.materials-ui-metadata div {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: var(--space-2);
+}
+
+.materials-ui-metadata dt {
+    color: var(--color-text-faint);
+}
+
+.materials-ui-metadata dd {
+    margin: 0;
+    color: var(--color-text-soft);
+    overflow-wrap: anywhere;
+}
+
+.materials-ui-preview {
+    display: grid;
+    place-items: center;
+    gap: var(--space-2);
+    min-height: 170px;
+    padding: var(--space-3);
+    border: 1px dashed var(--color-line);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface-muted);
+}
+
+.materials-ui-preview-image,
+.materials-ui-preview-video,
+.materials-ui-preview-pdf {
+    width: 100%;
+    max-height: 320px;
+    border: 0;
+    border-radius: var(--radius-xs);
+    object-fit: contain;
+    background: var(--color-canvas-deep);
+}
+
+.materials-ui-preview-pdf {
+    min-height: 280px;
+}
+
+.materials-ui-state {
+    padding: var(--space-8) var(--space-4);
+    text-align: center;
+}
+
+.materials-ui-state.is-error,
+.materials-ui-dialog-error {
+    color: var(--color-danger);
+}
+
+.materials-ui-primary,
+.materials-ui-secondary,
+.materials-ui-danger,
+.materials-ui-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-height: 38px;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-xs);
+    transition:
+        background var(--duration-fast) var(--ease-out),
+        border-color var(--duration-fast) var(--ease-out);
+}
+
+.materials-ui-primary {
+    border-color: var(--color-accent);
+    background: var(--color-accent);
+    color: var(--color-accent-contrast);
+}
+
+.materials-ui-secondary,
+.materials-ui-icon-button {
+    border-color: var(--color-line);
+    background: var(--color-surface);
+}
+
+.materials-ui-danger,
+.materials-ui-icon-button.is-danger {
+    border-color: var(--color-danger);
+    color: var(--color-danger);
+}
+
+.materials-ui-icon-button {
+    width: 38px;
+    padding: 0;
+}
+
+.materials-ui-primary:hover,
+.materials-ui-secondary:hover,
+.materials-ui-icon-button:hover {
+    filter: brightness(0.96);
+}
+
+.materials-ui-primary:disabled,
+.materials-ui-secondary:disabled,
+.materials-ui-danger:disabled,
+.materials-ui-icon-button:disabled {
+    cursor: wait;
+    opacity: 0.58;
+}
+
+.materials-ui-dialog {
+    width: min(560px, calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+    padding: 0;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    box-shadow: var(--shadow-card);
+}
+
+.materials-ui-dialog::backdrop {
+    background: color-mix(in srgb, var(--color-overlay) 42%, transparent);
+}
+
+.materials-ui-dialog-form {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-5);
+}
+
+.materials-ui-dialog-title {
+    margin: 0 0 var(--space-2);
+    font-size: var(--font-size-panel-title);
+    letter-spacing: 0;
+}
+
+.materials-ui-field {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.materials-ui-field-label {
+    color: var(--color-text-soft);
+    font-size: var(--font-size-small);
+}
+
+.materials-ui-field-control {
+    width: 100%;
+}
+
+textarea.materials-ui-field-control {
+    min-height: 104px;
+    resize: vertical;
+}
+
+.materials-ui-dialog-error {
+    min-height: 1.2em;
+    margin: 0;
+    font-size: var(--font-size-small);
+}
+
+.materials-ui-dialog-footer {
+    justify-content: flex-end;
+    gap: var(--space-2);
+    padding-top: var(--space-2);
+}
+
+.materials-ui-confirm-message {
+    margin: 0;
+    color: var(--color-text-soft);
+    line-height: 1.7;
+}
+
+.materials-ui :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+@media (max-width: 1120px) {
+    .materials-ui-body {
+        grid-template-columns: 160px minmax(0, 1fr);
+    }
+
+    .materials-ui-detail {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 760px) {
+    .materials-ui-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .materials-ui-controls {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .materials-ui-search,
+    .materials-ui-view-switch {
+        grid-column: 1 / -1;
+    }
+
+    .materials-ui-body {
+        grid-template-columns: 1fr;
+    }
+
+    .materials-ui-categories {
+        flex-direction: row;
+        overflow-x: auto;
+    }
+
+    .materials-ui-category-title {
+        display: none;
+    }
+
+    .materials-ui-category {
+        width: auto;
+        white-space: nowrap;
+    }
+
+    .materials-ui-detail {
+        grid-column: auto;
+    }
+
+    .materials-ui-row-date {
+        display: none;
+    }
+}

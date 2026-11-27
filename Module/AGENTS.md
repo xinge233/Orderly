@@ -86,7 +86,7 @@
 - 普通业务模块不得自行启动模型进程或读取 API Key。受保护系统模块若经仓库规则明确批准，可把提示词和提案脚本放在自身 `ai/**`，但只能生成声明式候选；宿主负责路径校验、构建、预览、版本与回滚。
 - 读取、修改、缓存或接管其他模块的数据、集合、设置和执行状态。
 - 自行判定授权、确认、风险、模块启停状态或执行顺序。
-- 直接打开项目数据库、直接访问文件系统或绕过 `ModuleRuntime`。
+- 直接打开项目数据库、直接访问文件系统或绕过 `ModuleRuntime`；文件根绝对路径、授权登记和撤销只能由宿主管理。
 - 物理删除文件或目录；删除只能进入项目回收站。
 - 在 Java、前端或模块文档中硬编码第二套 Action、Query、参数或风险定义。
 
@@ -320,7 +320,9 @@ export default async function mount(root, context) {
     // context.query(...): 通用只读查询
     // context.element / context.icon: 主题一致的元素与内置图标
     // context.moduleIcon(...): 清单 icons 声明的模块本地图标元素
-    // context.toast / context.fillCommand / context.formatDate: 宿主交互辅助能力
+    // context.fileRoots: 宿主本地文件根授权与短时读取令牌入口
+    // context.toast / context.fillCommand / context.openAiWithText / context.formatDate:
+    //   宿主交互辅助能力
 }
 ```
 
@@ -373,10 +375,12 @@ export default async function mount(root, context) {
 - 远程插件下载或分发。
 - 来源验证、签名校验或供应链认证。
 - JVM 级权限隔离、恶意代码隔离或插件权限沙箱。
-- 任意个人目录访问能力。
+- 由模块自主登记或扩大的任意个人目录访问能力。
 
-模块只能通过 `ModuleRuntime` 使用应用自管工作区。工作区边界是应用行为约束，不等于
-恶意代码安全隔离。
+模块可以通过 `ModuleRuntime` 使用应用自管工作区，以及用户通过宿主专用管理接口显式
+授权、按读/写/删除能力分级的本地文件根。模块只能获得不含绝对路径的根 ID、名称和
+能力位，并按根 ID 与根内相对路径请求宿主校验。该边界是应用行为约束，不等于恶意代码
+安全隔离。
 
 ## 10. 模块验收矩阵
 

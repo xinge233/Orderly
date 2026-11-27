@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "view": {
+    "id": "materials",
+    "icon": "file",
+    "caption": "本地资料库"
+  },
+  "card": {
+    "title": "资料管理",
+    "description": "导入、检索和整理本地资料文件。",
+    "badge": "本地资料库",
+    "icon": "file",
+    "queryId": "materials.list",
+    "countKey": "count",
+    "unit": "份资料"
+  },
+  "settings": [
+    {
+      "key": "defaultSort",
+      "title": "默认排序",
+      "type": "select",
+      "default": "updated-desc",
+      "options": [
+        { "value": "updated-desc", "label": "最近更新" },
+        { "value": "title-asc", "label": "标题顺序" },
+        { "value": "size-desc", "label": "文件大小" }
+      ]
+    }
+  ],
+  "examples": [
+    { "label": "查看资料", "text": "列出资料库中的资料" },
+    { "label": "查找资料", "text": "查找分类为课程的资料" }
+  ],
+  "script": "module.js",
+  "style": "module.css"
+}

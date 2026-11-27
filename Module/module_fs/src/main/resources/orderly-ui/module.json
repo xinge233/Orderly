@@ -5,22 +5,22 @@
   },
   "view": {
     "id": "files",
-    "icon": "materials",
-    "caption": "资料管理"
+    "icon": "folder",
+    "caption": "文件管理器"
   },
   "card": {
-    "title": "资料管理",
-    "description": "按课程检索只读学习资料，并从模块自带数据读取详情。",
-    "badge": "模块只读资料",
-    "icon": "materials",
-    "queryId": "fs.materials",
+    "title": "文件管理器",
+    "description": "浏览用户授权的本地文件根，执行受控写入、移动、打开和回收站操作。",
+    "badge": "本地文件",
+    "icon": "folder",
+    "queryId": "fs.roots",
     "countKey": "count",
-    "unit": "份资料"
+    "unit": "个文件根"
   },
   "settings": [],
   "examples": [
-    { "label": "创建课程目录", "text": "创建目录 课程归档" },
-    { "label": "移动示例笔记", "text": "移动 收件箱/示例笔记.txt 到 待整理/示例笔记.txt" }
+    { "label": "创建归档目录", "text": "在文件管理器中创建目录 归档" },
+    { "label": "总结选中文件", "text": "总结我当前选中的文件" }
   ],
   "script": "module.js",
   "style": "module.css"

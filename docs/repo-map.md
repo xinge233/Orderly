@@ -13,7 +13,6 @@
 | `docs/测试说明与测试记录.md` | 人类维护的完整测试资产、用例明细、历史记录和验收资料 | 仅人类日常查阅；AI 仅在用户明确要求时按章节读取 |
 | `.codex/config.toml` | Codex 项目级上下文配置 | 检查上下文预算配置时 |
 ## 顶层目录
-
 | 路径 | 职责 |
 |---|---|
 | `app/kernel/` | 模块 SPI、风险等级、调用与结果等跨端基础类型 |
@@ -26,14 +25,14 @@
 | `scripts/` | 构建、启动、门禁、烟测、模块化和上下文工具 |
 | `docs/agents/` | 角色规则、架构基线、协作流程、模板和历史交接 |
 | `.codex/agents/` | 项目级 agent 与角色卡配置 |
-
 ## 业务模块
 
 | 目录 | 入口职责 |
 |---|---|
 | `Module/module_system_control/` | 唯一控制模块；模块启停、顺序和设置治理 |
 | `Module/module_system_codegen/` | 受保护模块与动效生成器；UI、模块专属 Python 提案、步骤回滚、镜像预览入口 |
-| `Module/module_fs/` | 沙箱文件查询、写动作、回收站与资料视图 |
+| `Module/module_fs/` | 显式授权文件根浏览、文本/Office/PDF 读取、默认应用打开、可回滚写入、上传、移动、回收站与资料视图 |
+| `Module/module_materials/` | 本地资料导入、检索、编辑、回收站与恢复 |
 | `Module/module_todo/` | 待办查询与创建 |
 | `Module/module_calendar/` | 日程查询与时间修改 |
 | `Module/module_study_assistant/` | 只读学习助手参考视图 |
@@ -72,6 +71,7 @@
 | 契约 | 主要消费者 |
 |---|---|
 | `contracts/plan.schema.json` | 宿主计划校验、计划样例 |
+| `contracts/file-root.schema.json`、`file-root-authorization.schema.json` | 显式文件根描述与本地授权请求校验 |
 | `contracts/action-execution.schema.json` | 总体 AI 直执 Action 数组请求 |
 | `contracts/build-manifest.schema.json` | 源码构建清单、输入指纹和 JAR 产物 |
 | `contracts/ai-settings.schema.json` | AI 模式、临时 API Key 与删除直执设置 |

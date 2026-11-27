@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/file-root.schema.json",
+  "title": "Orderly Authorized File Root",
+  "description": "宿主对模块和本地界面公开的文件根描述，不包含绝对路径。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "label", "read", "write", "delete"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "label": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "read": { "type": "boolean" },
+    "write": { "type": "boolean" },
+    "delete": { "type": "boolean" }
+  }
+}

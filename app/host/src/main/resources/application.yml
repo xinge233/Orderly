@@ -8,6 +8,10 @@ spring:
     resources:
       cache:
         period: 0
+  servlet:
+    multipart:
+      max-file-size: 64MB
+      max-request-size: 65MB
 orderly:
   data-dir: .orderly-data
   module-source-dir: Module

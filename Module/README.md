@@ -125,7 +125,8 @@ Module/
 可先复制现有模块作为起点：
 
 - [`module_todo`](module_todo)：包含可撤销写操作、只读查询和计划规则的完整示例。
-- [`module_fs`](module_fs)：包含文件列表、回收站查询和多个动作的示例。
+- [`module_fs`](module_fs)：显式授权文件根浏览、文本/Office/PDF 读取、默认应用打开、可回滚写入、64 MiB 上传、移动和项目回收站。
+- [`module_materials`](module_materials)：包含资料文件导入、元数据搜索、回收站与恢复动作的示例。
 - [`module_calendar`](module_calendar)：包含日程查询和时间修改动作的示例。
 
 模块的 `pom.xml` 应继承仓库父 POM，并依赖 `orderly-kernel`。例如：
@@ -292,7 +293,9 @@ export default async function mount(root, context) {
     // context.module / context.ui：模块契约和 UI 清单
     // context.query(...)：调用模块声明的通用查询
     // context.element / context.icon：创建主题一致的界面元素和图标
-    // context.toast / context.fillCommand / context.formatDate：宿主交互辅助能力
+    // context.fileRoots：宿主本地文件根授权与短时读取令牌入口
+    // context.toast / context.fillCommand / context.openAiWithText / context.formatDate：
+    //   宿主交互辅助能力
 }
 ```
 
