@@ -194,6 +194,15 @@ test("frontend gates plan surfaces with host state and keeps history independent
     assert.match(html, /data-history-view="timeline" aria-pressed="true"/);
 });
 
+test("motion preview iframes do not hold host event-stream connections", async () => {
+    const app = await read("../src/app.js");
+    const bootstrap = between(app, "async function bootstrap", "async function loadModuleUis");
+
+    assert.match(bootstrap, /const previewRequest = motionPreviewRequest\(\);/);
+    assert.match(bootstrap, /if \(!previewRequest\) \{\s*connectEventStream\(\);/);
+    assert.match(bootstrap, /if \(!previewRequest\) \{\s*scheduleModuleBuildPoll\(\);/);
+});
+
 test("settings provide reusable accessible help tooltips", async () => {
     const app = await read("../src/app.js");
     const css = await read("../styles/app.css");
