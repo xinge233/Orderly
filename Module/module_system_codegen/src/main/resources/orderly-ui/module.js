@@ -434,13 +434,13 @@ export default async function mount(root, context) {
             },
             ...(body === undefined ? {} : { body: JSON.stringify(body) })
         });
-        const text = await response.text();
+        const bodyText = await response.text();
         let payload = null;
-        if (text) {
+        if (bodyText) {
             try {
-                payload = JSON.parse(text);
+                payload = JSON.parse(bodyText);
             } catch {
-                payload = text;
+                payload = bodyText;
             }
         }
         if (!response.ok) {
@@ -923,6 +923,7 @@ export default async function mount(root, context) {
             if (state.session?.sessionId === version.sessionId) {
                 applySession(updated);
             }
+            state.status = "版本已回滚，生成前文件已恢复。";
             notify("版本已回滚，生成前文件已恢复。");
         } catch (error) {
             notify(error.message, { error: true });
@@ -1644,9 +1645,16 @@ export default async function mount(root, context) {
             )
         );
         const action = make("span", "module-codegen-ui-rollback-version-action");
+        const actionLabel = version.status === "ROLLED_BACK"
+            ? "已回滚"
+            : version.status === "PARTIALLY_ROLLED_BACK"
+                ? "部分回滚"
+                : rollingBack
+                    ? "回滚中"
+                    : "回滚";
         action.append(
             icon("undo", 15),
-            make("span", "", rollingBack ? "回滚中" : "回滚")
+            make("span", "", actionLabel)
         );
         card.append(copy, action);
         card.addEventListener("click", () => rollbackMotionVersion(version));
@@ -2392,18 +2400,110 @@ export default async function mount(root, context) {
         return panel;
     }
 
+    function buildMotionCandidateActions(session) {
+        const actions = make("div", "module-codegen-ui-motion-progress-actions");
+        if (!session) return actions;
+
+        if (session.buildStatus === "READY") {
+            const previewAction = codegenPreviewAction(session);
+            if (previewAction.kind === "open") {
+                actions.append(previewLink(
+                    previewAction.url,
+                    previewAction.label,
+                    "module-codegen-ui-button is-small"
+                ));
+            } else {
+                const previewButton = button(
+                    previewAction.label,
+                    "route",
+                    "module-codegen-ui-button is-small"
+                );
+                previewButton.disabled = state.busy || previewAction.kind !== "start";
+                previewButton.addEventListener("click", () => startPreview());
+                actions.append(previewButton);
+            }
+        }
+
+        const rebuild = button(
+            "重新构建",
+            "spark",
+            "module-codegen-ui-button is-small"
+        );
+        rebuild.disabled = state.busy
+            || session.status === "APPLIED"
+            || session.steps.every((step) => step.status === "ROLLED_BACK");
+        rebuild.addEventListener("click", rebuildCandidate);
+        actions.append(rebuild);
+
+        if (session.buildStatus === "READY"
+                && session.previewStatus === "READY"
+                && !session.applyVersionId) {
+            const apply = button(
+                "应用版本",
+                "shield",
+                "module-codegen-ui-button is-primary is-small"
+            );
+            apply.disabled = state.busy;
+            apply.addEventListener("click", applyVersion);
+            actions.append(apply);
+        }
+        return actions;
+    }
+
+    function buildMotionProgressSteps(session) {
+        const list = make("div", "module-codegen-ui-step-list");
+        session.steps.forEach((step) => {
+            const row = make("div", "module-codegen-ui-step-row");
+            const copy = make("div", "module-codegen-ui-step-copy");
+            copy.append(
+                make("strong", "", step.title),
+                make("span", "", `${step.path} · ${step.bytes} B`)
+            );
+            const status = make(
+                "span",
+                `module-codegen-ui-step-status is-${step.status.toLowerCase()}`
+            );
+            status.textContent = step.status;
+            const rollback = button(
+                "回滚",
+                "route",
+                "module-codegen-ui-icon-button"
+            );
+            rollback.title = "回滚此步及后续步骤";
+            rollback.setAttribute("aria-label", `回滚 ${step.title} 及后续步骤`);
+            rollback.disabled = state.busy || step.status === "ROLLED_BACK";
+            rollback.addEventListener("click", () => rollbackStep(step));
+            row.append(copy, status, rollback);
+            list.append(row);
+        });
+        return list;
+    }
+
     function buildMotionProgressPanel() {
         const session = state.session;
         const buildStatus = session?.buildStatus ?? "PENDING";
         const stage = !session
             ? "AI 正在理解需求并生成候选文件"
-            : ["QUEUED", "BUILDING", "PENDING"].includes(buildStatus)
-                ? "候选文件已生成，正在构建"
-                : buildStatus === "READY"
-                    ? "候选构建完成"
-                    : buildStatus === "FAILED"
-                        ? "候选构建失败"
-                        : "正在整理候选结果";
+            : session.status === "ROLLED_BACK"
+                ? "候选已回滚"
+                : session.status === "APPLIED"
+                    ? "候选已应用"
+                    : ["QUEUED", "BUILDING", "PENDING"].includes(buildStatus)
+                        ? "候选文件已生成，正在构建"
+                        : buildStatus === "READY"
+                            ? "候选构建完成"
+                            : buildStatus === "FAILED"
+                                ? "候选构建失败"
+                                : "正在整理候选结果";
+        const progressStatus = state.status || (
+            !session
+                ? "正在处理"
+                : session.status === "ROLLED_BACK"
+                    ? "生成前文件已恢复。"
+                    : session.status === "APPLIED"
+                        ? "下次启动使用新版本。"
+                        : session.buildMessage || session.summary || "等待下一步操作"
+        );
         const panel = make(
             "section",
             `module-codegen-ui-motion-progress${state.motionProgressExpanded ? " is-expanded" : ""}`
@@ -2414,7 +2514,7 @@ export default async function mount(root, context) {
         toggle.append(
             icon("spark", 18),
             make("strong", "", stage),
-            make("span", "", state.status || "正在处理"),
+            make("span", "", progressStatus),
             make("span", "module-codegen-ui-motion-progress-chevron",
                 state.motionProgressExpanded ? "⌃" : "⌄")
         );
@@ -2452,14 +2552,18 @@ export default async function mount(root, context) {
             );
             details.append(row);
         });
+        panel.append(toggle, buildMotionCandidateActions(session));
         if (session?.steps?.length) {
-            details.append(make(
-                "span",
-                "module-codegen-ui-motion-progress-meta",
-                `${session.steps.length} 个文件步骤 · ${buildStatus}`
-            ));
+            details.append(
+                make(
+                    "span",
+                    "module-codegen-ui-motion-progress-meta",
+                    `${session.steps.length} 个文件步骤 · ${buildStatus}`
+                ),
+                buildMotionProgressSteps(session)
+            );
         }
-        panel.append(toggle, details);
+        panel.append(details);
         return panel;
     }
 
@@ -2504,10 +2608,7 @@ export default async function mount(root, context) {
         return { shell, input };
     }
 
-    function buildMotionComposer() {
-        if (state.motionGenerating) {
-            return buildMotionProgressPanel();
-        }
+    function buildMotionRequestComposer() {
         const mode = motionComposerMode({
             configured: state.modelConfigured,
             generating: state.motionGenerating
@@ -2541,6 +2642,17 @@ export default async function mount(root, context) {
         return composer;
     }
 
+    function buildMotionComposerRegion() {
+        const region = make("div", "module-codegen-ui-motion-composer-region");
+        if (state.motionGenerating || state.session) {
+            region.append(buildMotionProgressPanel());
+        }
+        if (!state.motionGenerating) {
+            region.append(buildMotionRequestComposer());
+        }
+        return region;
+    }
+
     function buildMotionWorkspace() {
         selectedMotionHook();
         const workspace = make("div", "module-codegen-ui-motion-studio");
@@ -2557,7 +2669,7 @@ export default async function mount(root, context) {
         workspace.append(
             buildMotionPreviewPane("interface1"),
             side,
-            buildMotionComposer()
+            buildMotionComposerRegion()
         );
         return workspace;
     }

@@ -206,6 +206,7 @@ public class CodegenService {
         for (int index = 0; index < rawSteps.size(); index++) {
             JsonNode rawStep = rawSteps.get(index);
             String path = safeProposalPath(rawStep.path("path").asText(""));
+            path = normalizeProposalPath(mode, resolved, path);
             validateProposalPath(mode, resolved, moduleId, path);
             if (!paths.add(path)) {
                 throw invalidProposal("模型提案包含重复文件路径：" + path);
@@ -2003,6 +2004,22 @@ public class CodegenService {
         for (String segment : path.split("/")) {
             if (segment.isBlank() || ".".equals(segment) || "..".equals(segment)) {
                 throw invalidProposal("模型返回了未规范化的文件路径：" + path);
+            }
+        }
+        return path;
+    }
+
+    private String normalizeProposalPath(String mode, Target target, String path) {
+        if (!"motion".equals(mode) || !"framework".equals(target.motionTarget())) {
+            return path;
+        }
+        Set<String> themeFiles = Set.of("motion.css", "tokens.css");
+        for (String prefix : List.of(
+                "themes/" + target.themeId() + "/",
+                target.themeId() + "/"
+        )) {
+            if (path.startsWith(prefix) && themeFiles.contains(path.substring(prefix.length()))) {
+                return path.substring(prefix.length());
             }
         }
         return path;

@@ -92,6 +92,14 @@ def test_prompts_use_packaged_maven_resource_paths():
     assert "src/main/resources/orderly-ui/module.json" in motion_prompt
     assert "motionAnnotations" in motion_prompt
     assert "sourceHint" in motion_prompt
+    framework_motion_prompt = agent._system_prompt(
+        mode="motion",
+        target_module="",
+        motion_target="framework",
+        theme_id="paper",
+    )
+    assert '必须恰好是 "motion.css" 或 "tokens.css"' in framework_motion_prompt
+    assert "themes/..." in framework_motion_prompt
 
 
 def test_normalizes_motion_nodes_and_annotations_with_bounds():

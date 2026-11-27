@@ -111,6 +111,12 @@ test("system service delegates generation to the protected host API", async () =
     assert.match(source, /module-codegen-ui-motion-target-panel/);
     assert.match(source, /module-codegen-ui-hook-card/);
     assert.match(source, /module-codegen-ui-motion-progress/);
+    assert.match(source, /module-codegen-ui-motion-composer-region/);
+    assert.match(source, /buildMotionCandidateActions/);
+    assert.match(source, /buildMotionProgressSteps/);
+    assert.match(source, /state\.motionGenerating \|\| state\.session/);
+    assert.match(source, /state\.status = "版本已回滚，生成前文件已恢复。"/);
+    assert.match(source, /const actionLabel = version\.status === "ROLLED_BACK"/);
     assert.match(source, /module-codegen-ui-motion-side-tabs/);
     assert.match(source, /module-codegen-ui-motion-rollback-panel/);
     assert.match(source, /module-codegen-ui-live-preview-frame/);
@@ -126,6 +132,8 @@ test("system service delegates generation to the protected host API", async () =
     assert.match(source, /context\.toast\(message, \{ error \}\)/);
     assert.match(source, /toggleMotionPreviewFocus/);
     assert.match(source, /saveMotionApiKey/);
+    assert.match(source, /const bodyText = await response\.text\(\);/);
+    assert.doesNotMatch(source, /const text = await response\.text\(\);/);
     assert.doesNotMatch(source, /state\.apiKey/);
     assert.doesNotMatch(source, /buildModelField/);
     assert.doesNotMatch(source, /const generate = button/);
@@ -163,6 +171,14 @@ test("system service delegates generation to the protected host API", async () =
     assert.match(
         style,
         /\.module-codegen-ui-motion-studio > \.module-codegen-ui-motion-side\s*\{[^}]*grid-area:\s*side/s
+    );
+    assert.match(
+        style,
+        /\.module-codegen-ui-motion-studio > \.module-codegen-ui-motion-composer-region\s*\{[^}]*grid-area:\s*composer/s
+    );
+    assert.match(
+        style,
+        /\.module-codegen-ui-motion-progress-actions\s*\{[^}]*display:\s*flex[^}]*flex-wrap:\s*wrap/s
     );
     assert.match(
         style,

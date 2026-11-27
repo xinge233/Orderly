@@ -1147,13 +1147,13 @@
     grid-area: side;
 }
 
-.module-codegen-ui-motion-studio > .module-codegen-ui-motion-composer,
-.module-codegen-ui-motion-studio > .module-codegen-ui-motion-progress {
+.module-codegen-ui-motion-studio > .module-codegen-ui-motion-composer-region {
     grid-area: composer;
 }
 
 .module-codegen-ui-motion-preview-pane,
 .module-codegen-ui-hook-panel,
+.module-codegen-ui-motion-composer-region,
 .module-codegen-ui-motion-composer,
 .module-codegen-ui-motion-progress,
 .module-codegen-ui-motion-side {
@@ -1941,6 +1941,11 @@
     font-weight: 700;
 }
 
+.module-codegen-ui-motion-composer-region {
+    display: grid;
+    gap: var(--space-2);
+}
+
 .module-codegen-ui-motion-composer,
 .module-codegen-ui-motion-progress {
     align-self: end;
@@ -2078,6 +2083,17 @@
     min-height: 14rem;
 }
 
+.module-codegen-ui-motion-progress-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    cursor: default;
+}
+
+.module-codegen-ui-motion-progress-actions:empty {
+    display: none;
+}
+
 .module-codegen-ui-motion-progress-toggle {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
@@ -2175,6 +2191,10 @@
     border-top: 1px solid var(--color-line);
     color: var(--color-text-soft);
     font-size: 0.8rem;
+}
+
+.module-codegen-ui-motion-progress-details .module-codegen-ui-step-list {
+    margin-top: var(--space-1);
 }
 
 @keyframes module-codegen-surface-in {

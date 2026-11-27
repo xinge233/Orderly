@@ -177,6 +177,51 @@ class CodegenServiceTest {
     }
 
     @Test
+    void normalizesThemeRelativeFrameworkMotionPaths() throws Exception {
+        TestContext context = contextWithTheme();
+        CodegenProposalRunner runner = mock(CodegenProposalRunner.class);
+        when(runner.propose(any())).thenReturn(new ObjectMapper().readTree("""
+                {
+                  "moduleId": "",
+                  "summary": "change motion",
+                  "steps": [
+                    {
+                      "title": "motion",
+                      "path": "themes/paper/motion.css",
+                      "content": ".candidate { transition: none; }"
+                    },
+                    {
+                      "title": "tokens",
+                      "path": "paper/tokens.css",
+                      "content": ":root { --candidate-token: 1; }"
+                    }
+                  ]
+                }
+                """));
+        CodegenService service = service(
+                context,
+                runner,
+                mock(CodegenPreviewService.class)
+        );
+
+        CodegenService.SessionView generated = service.generate(
+                request("motion", "framework", "paper")
+        );
+        awaitBuild(service, generated.sessionId());
+
+        assertThat(generated.steps())
+                .extracting(CodegenService.StepView::path)
+                .containsExactly("motion.css", "tokens.css");
+        Path workspace = tempDir.resolve(".orderly-data/codegen/workspaces")
+                .resolve(generated.sessionId())
+                .resolve("source");
+        assertThat(Files.readString(workspace.resolve("motion.css")))
+                .contains(".candidate");
+        assertThat(Files.readString(workspace.resolve("tokens.css")))
+                .contains("--candidate-token");
+    }
+
+    @Test
     void rollbackMovesNewFilesIntoProjectTrash() throws Exception {
         TestContext context = contextWithoutTokens();
         CodegenProposalRunner runner = mock(CodegenProposalRunner.class);

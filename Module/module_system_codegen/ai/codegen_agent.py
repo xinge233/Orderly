@@ -168,7 +168,9 @@ summary 和每个步骤的 title 必须使用简体中文；路径、代码、�
 动效模式要求：
 - {target_rule}
 - {scope_rule}
-- 框架动效只能修改主题的 motion.css 或 tokens.css 文件。
+        - 框架动效只能修改主题的 motion.css 或 tokens.css 文件。每个步骤的 path
+          必须恰好是 "motion.css" 或 "tokens.css"，它们相对于目标主题根目录；
+          不要返回 themes/...、<themeId>/... 或 src/main/resources/... 前缀。
 - 模块动效只能修改 src/main/resources/orderly-ui/module.css、
   src/main/resources/orderly-ui/module.js 以及
   src/main/resources/orderly-ui/module.json.
