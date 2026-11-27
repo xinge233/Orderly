@@ -111,6 +111,10 @@ test("system service delegates generation to the protected host API", async () =
     assert.match(source, /module-codegen-ui-motion-target-panel/);
     assert.match(source, /module-codegen-ui-hook-card/);
     assert.match(source, /module-codegen-ui-motion-progress/);
+    assert.match(source, /module-codegen-ui-motion-side-tabs/);
+    assert.match(source, /module-codegen-ui-motion-rollback-panel/);
+    assert.match(source, /\/api\/codegen\/versions/);
+    assert.match(source, /rollbackMotionVersion/);
     assert.match(source, /input\.placeholder = "请输入 API"/);
     assert.match(source, /module-codegen-ui-motion-composer-confirm/);
     assert.match(source, /context\.toast\(message, \{ error \}\)/);
@@ -183,6 +187,14 @@ test("system service delegates generation to the protected host API", async () =
         style,
         /\.module-codegen-ui-hook-card-list\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s
     );
+    assert.match(
+        style,
+        /\.module-codegen-ui-motion-side-tabs\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s
+    );
+    assert.match(
+        style,
+        /\.module-codegen-ui-rollback-version-card\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) auto/s
+    );
     assert.match(style, /\.module-codegen-ui-motion-swap\.is-disabled\s*\{/);
     assert.match(
         style,
@@ -210,6 +222,8 @@ test("system service delegates generation to the protected host API", async () =
     );
     assert.match(style, /@keyframes module-codegen-surface-in/);
     assert.doesNotMatch(style, /\.module-codegen-ui-model-field/);
+    assert.doesNotMatch(style, /\.module-codegen-ui-records/);
+    assert.doesNotMatch(source, /候选记录与回滚/);
     assert.doesNotMatch(style, /#[0-9a-fA-F]{3,8}\b/);
 });
 
@@ -378,6 +392,43 @@ test("motion composer prioritizes API entry before prompt and progress", () => {
         configured: true,
         generating: true
     }), "progress");
+});
+
+test("motion version history filters the active target and keeps rollback source", () => {
+    const targetKey = codegenModule.codegenVersionTargetKey({
+        motionTarget: "framework",
+        themeId: "paper"
+    });
+    const versions = codegenModule.normalizeCodegenVersions([
+        {
+            versionId: "module-version",
+            targetKey: "module:module_todo",
+            status: "ACTIVE",
+            sessionId: "module-session",
+            createdAt: "2026-11-27T10:00:00Z"
+        },
+        {
+            versionId: "older-theme-version",
+            targetKey: "theme:paper",
+            status: "DEPRECATED",
+            sessionId: "older-session",
+            createdAt: "2026-11-27T09:00:00Z"
+        },
+        {
+            versionId: "current-theme-version",
+            targetKey: "theme:paper",
+            status: "PENDING_RESTART",
+            sessionId: "current-session",
+            createdAt: "2026-11-27T11:00:00Z"
+        }
+    ], { targetKey });
+
+    assert.equal(targetKey, "theme:paper");
+    assert.deepEqual(versions.map((version) => version.versionId), [
+        "current-theme-version",
+        "older-theme-version"
+    ]);
+    assert.equal(versions[0].sessionId, "current-session");
 });
 
 test("preview action starts first and opens through a direct user link", () => {

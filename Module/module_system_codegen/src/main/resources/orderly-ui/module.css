@@ -856,6 +856,10 @@
     font-size: 0.75rem;
 }
 
+.module-codegen-ui-empty.is-error {
+    color: var(--color-danger);
+}
+
 .module-codegen-ui-revision-body {
     display: flex;
     flex: 1;
@@ -1193,12 +1197,51 @@
 }
 
 .module-codegen-ui-motion-side {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
     gap: var(--space-3);
+    overflow: hidden;
     border-left: 1px solid var(--color-line);
     padding-left: var(--space-4);
-    padding-bottom: calc(var(--space-12) + var(--space-10));
+    padding-bottom: 0;
+}
+
+.module-codegen-ui-motion-side-tabs {
+    display: grid;
+    flex: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-1);
+    padding: var(--space-1);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+}
+
+.module-codegen-ui-motion-side-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+    min-height: 2.45rem;
+    padding: 0 var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-soft);
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition:
+        border-color var(--duration-fast) var(--ease-out),
+        background var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out);
+}
+
+.module-codegen-ui-motion-side-tab[aria-selected="true"] {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+    color: var(--color-accent-strong);
 }
 
 .module-codegen-ui-motion-swap {
@@ -1231,7 +1274,8 @@
 .module-codegen-ui-motion-composer-field:focus-visible,
 .module-codegen-ui-motion-composer-confirm:focus-visible,
 .module-codegen-ui-motion-progress-toggle:focus-visible,
-.module-codegen-ui-records summary:focus-visible {
+.module-codegen-ui-motion-side-tab:focus-visible,
+.module-codegen-ui-rollback-version-card:focus-visible {
     outline: 2px solid var(--color-focus);
     outline-offset: 2px;
 }
@@ -1621,8 +1665,10 @@
 .module-codegen-ui-hook-panel {
     position: relative;
     display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr);
     gap: var(--space-3);
+    min-height: 0;
+    flex: 1;
     overflow: visible;
     padding-top: var(--space-2);
     border-top: 1px solid var(--color-line);
@@ -1799,27 +1845,92 @@
     white-space: nowrap;
 }
 
-.module-codegen-ui-records {
-    border-top: 1px solid var(--color-line);
-    padding-top: var(--space-2);
-}
-
-.module-codegen-ui-records summary {
-    min-height: 2.4rem;
-    padding: var(--space-2) 0;
-    color: var(--color-text-soft);
-    font-size: 0.86rem;
-    font-weight: 700;
-    cursor: pointer;
-}
-
-.module-codegen-ui-records[open] {
-    max-height: 18rem;
-    overflow-y: auto;
-}
-
-.module-codegen-ui-records .module-codegen-ui-revision-panel {
+.module-codegen-ui-motion-rollback-panel {
+    display: grid;
     min-height: 0;
+    flex: 1;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: var(--space-3);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--color-line);
+}
+
+.module-codegen-ui-rollback-version-list {
+    display: grid;
+    align-content: start;
+    gap: var(--space-2);
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: var(--space-1);
+    scrollbar-color: var(--color-line-strong) transparent;
+    scrollbar-width: thin;
+}
+
+.module-codegen-ui-rollback-version-card {
+    display: grid;
+    width: 100%;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: var(--space-2);
+    align-items: center;
+    min-height: 3.8rem;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        border-color var(--duration-fast) var(--ease-out),
+        background var(--duration-fast) var(--ease-out);
+}
+
+.module-codegen-ui-rollback-version-card:not(:disabled):hover {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+}
+
+.module-codegen-ui-rollback-version-card:disabled {
+    cursor: not-allowed;
+    opacity: 0.62;
+}
+
+.module-codegen-ui-rollback-version-index {
+    color: var(--color-accent-strong);
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.module-codegen-ui-rollback-version-copy {
+    display: grid;
+    min-width: 0;
+    gap: 1px;
+}
+
+.module-codegen-ui-rollback-version-copy strong,
+.module-codegen-ui-rollback-version-copy span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.module-codegen-ui-rollback-version-copy strong {
+    font-size: 0.9rem;
+}
+
+.module-codegen-ui-rollback-version-copy span {
+    color: var(--color-text-soft);
+    font-size: 0.76rem;
+}
+
+.module-codegen-ui-rollback-version-action {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--color-accent-strong);
+    font-size: 0.8rem;
+    font-weight: 700;
 }
 
 .module-codegen-ui-motion-composer,
@@ -2168,7 +2279,6 @@
     }
 
     .module-codegen-ui-motion-side {
-        grid-template-rows: auto auto;
         border-left: 0;
         padding-bottom: 0;
         padding-left: 0;
@@ -2325,7 +2435,9 @@
 [data-motion="none"] .module-codegen-ui-motion-composer-input,
 [data-motion="none"] .module-codegen-ui-motion-composer-field,
 [data-motion="none"] .module-codegen-ui-motion-progress,
-[data-motion="none"] .module-codegen-ui-motion-progress-details {
+[data-motion="none"] .module-codegen-ui-motion-progress-details,
+[data-motion="none"] .module-codegen-ui-motion-side-tab,
+[data-motion="none"] .module-codegen-ui-rollback-version-card {
     transition: none;
 }
 

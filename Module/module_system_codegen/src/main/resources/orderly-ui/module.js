@@ -91,12 +91,46 @@ export function normalizeCodegenSession(input) {
             : {},
         versions: listOf(input.versions).map((version) => ({
             versionId: text(version?.versionId),
+            targetKey: text(version?.targetKey),
+            moduleId: text(version?.moduleId),
+            mode: text(version?.mode),
             status: text(version?.status),
-            createdAt: text(version?.createdAt)
+            sessionId: text(version?.sessionId),
+            createdAt: text(version?.createdAt),
+            relativePath: text(version?.relativePath)
         })).filter((version) => version.versionId),
         createdAt: text(input.createdAt),
         updatedAt: text(input.updatedAt)
     };
+}
+
+export function codegenVersionTargetKey({
+    motionTarget = "",
+    themeId = ""
+} = {}) {
+    return text(motionTarget) === "framework"
+        ? `theme:${text(themeId)}`
+        : `module:${text(motionTarget)}`;
+}
+
+export function normalizeCodegenVersions(input, { targetKey = "" } = {}) {
+    const normalizedTargetKey = text(targetKey);
+    return listOf(input)
+        .map((version) => ({
+            versionId: text(version?.versionId),
+            targetKey: text(version?.targetKey),
+            moduleId: text(version?.moduleId),
+            mode: text(version?.mode),
+            status: text(version?.status, "UNKNOWN"),
+            sessionId: text(version?.sessionId),
+            createdAt: text(version?.createdAt),
+            relativePath: text(version?.relativePath)
+        }))
+        .filter((version) => version.versionId)
+        .filter((version) =>
+            !normalizedTargetKey || version.targetKey === normalizedTargetKey)
+        .sort((left, right) =>
+            sessionTimestamp(right.createdAt) - sessionTimestamp(left.createdAt));
 }
 
 export function normalizeCodegenSessions(input) {
@@ -244,7 +278,12 @@ export default async function mount(root, context) {
         motionGenerating: false,
         selectedMotionHook: "",
         motionPreviewFocus: "overview",
-        motionProgressExpanded: false
+        motionProgressExpanded: false,
+        motionSideMode: "modify",
+        motionVersions: [],
+        motionVersionsLoading: false,
+        motionVersionsError: "",
+        motionRollbackVersionId: ""
     };
 
     function icon(name, size = 17) {
@@ -696,6 +735,89 @@ export default async function mount(root, context) {
         }
     }
 
+    function currentMotionVersionTargetKey() {
+        return codegenVersionTargetKey({
+            motionTarget: state.motionTarget,
+            themeId: state.themeId
+        });
+    }
+
+    async function loadMotionVersions({ quiet = false } = {}) {
+        state.motionVersionsLoading = true;
+        state.motionVersionsError = "";
+        if (!quiet) render();
+        try {
+            state.motionVersions = normalizeCodegenVersions(
+                await request("/api/codegen/versions"),
+                { targetKey: currentMotionVersionTargetKey() }
+            );
+        } catch (error) {
+            state.motionVersions = [];
+            state.motionVersionsError = error.message;
+        } finally {
+            state.motionVersionsLoading = false;
+            if (root.isConnected) render();
+        }
+    }
+
+    function setMotionSideMode(mode) {
+        const nextMode = mode === "rollback" ? "rollback" : "modify";
+        if (state.motionSideMode === nextMode) return;
+        state.motionSideMode = nextMode;
+        state.motionTargetExpanded = false;
+        state.motionVersionsError = "";
+        render();
+        if (nextMode === "rollback") {
+            loadMotionVersions({ quiet: true });
+        }
+    }
+
+    async function rollbackMotionVersion(version) {
+        if (!version?.sessionId
+                || state.busy
+                || ["ROLLED_BACK", "PARTIALLY_ROLLED_BACK"].includes(version.status)) {
+            return;
+        }
+        const accepted = typeof globalThis.confirm === "function"
+            ? globalThis.confirm(
+                "回滚此版本会恢复该次生成前的文件，并连带回滚该版本内后续步骤。"
+                + "当前程序仍运行旧版本，是否继续？"
+            )
+            : false;
+        if (!accepted) return;
+        state.busy = true;
+        state.motionRollbackVersionId = version.versionId;
+        state.status = "正在读取版本步骤…";
+        render();
+        try {
+            const session = normalizeCodegenSession(await request(
+                `/api/codegen/sessions/${encodeURIComponent(version.sessionId)}`
+            ));
+            const step = session?.steps.find(
+                (candidate) => candidate.status !== "ROLLED_BACK"
+            );
+            if (!step) {
+                throw new Error("该版本没有可回滚的步骤");
+            }
+            const updated = await request(
+                `/api/codegen/sessions/${encodeURIComponent(version.sessionId)}`
+                    + `/steps/${encodeURIComponent(step.stepId)}/rollback`,
+                { method: "POST", action: "rollback-codegen-step" }
+            );
+            if (state.session?.sessionId === version.sessionId) {
+                applySession(updated);
+            }
+            notify("版本已回滚，生成前文件已恢复。");
+        } catch (error) {
+            notify(error.message, { error: true });
+        } finally {
+            state.busy = false;
+            state.motionRollbackVersionId = "";
+            await loadMotionVersions({ quiet: true });
+            render();
+        }
+    }
+
     function buildTabs() {
         const tabs = make("div", "module-codegen-ui-tabs");
         tabs.setAttribute("role", "tablist");
@@ -716,6 +838,9 @@ export default async function mount(root, context) {
                 state.motionTargetExpanded = false;
                 state.motionPreviewFocus = "overview";
                 state.selectedMotionHook = "";
+                state.motionSideMode = "modify";
+                state.motionVersions = [];
+                state.motionVersionsError = "";
                 render();
                 restoreSession({
                     mode,
@@ -1138,8 +1263,13 @@ export default async function mount(root, context) {
         state.motionTargetExpanded = false;
         state.selectedMotionHook = "";
         state.motionPreviewFocus = "overview";
+        state.motionVersions = [];
+        state.motionVersionsError = "";
         state.status = "";
         render();
+        if (state.motionSideMode === "rollback") {
+            loadMotionVersions({ quiet: true });
+        }
         restoreSession({
             mode: "motion",
             moduleId: id === "framework" ? "" : id,
@@ -1165,6 +1295,9 @@ export default async function mount(root, context) {
         }
         select.addEventListener("change", () => {
             state.themeId = select.value;
+            if (state.motionSideMode === "rollback") {
+                loadMotionVersions({ quiet: true });
+            }
         });
         field.append(select);
         return field;
@@ -1294,6 +1427,8 @@ export default async function mount(root, context) {
 
     function buildMotionHookPanel() {
         const panel = make("section", "module-codegen-ui-hook-panel");
+        panel.id = "module-codegen-motion-side-panel";
+        panel.setAttribute("role", "tabpanel");
         const scopes = currentMotionScopes();
         selectedMotionHook(scopes);
         const head = make("header", "module-codegen-ui-motion-panel-head");
@@ -1313,12 +1448,118 @@ export default async function mount(root, context) {
                 list.append(buildMotionHookCard(entry, index));
             });
         }
-        const records = make("details", "module-codegen-ui-records");
-        records.append(
-            make("summary", "", "候选记录与回滚"),
-            buildRevisionPanel()
+        panel.append(buildMotionTargetSelector(), head, list);
+        return panel;
+    }
+
+    function buildMotionSideTabs() {
+        const tabs = make("div", "module-codegen-ui-motion-side-tabs");
+        tabs.setAttribute("role", "tablist");
+        tabs.setAttribute("aria-label", "动效工作方式");
+        [
+            ["modify", "修改", "spark"],
+            ["rollback", "回滚", "undo"]
+        ].forEach(([mode, label, iconName]) => {
+            const tab = button(label, iconName, "module-codegen-ui-motion-side-tab");
+            tab.setAttribute("role", "tab");
+            const selected = state.motionSideMode === mode;
+            tab.setAttribute("aria-selected", String(selected));
+            tab.setAttribute("aria-controls", "module-codegen-motion-side-panel");
+            tab.tabIndex = selected ? 0 : -1;
+            tab.addEventListener("click", () => setMotionSideMode(mode));
+            tabs.append(tab);
+        });
+        return tabs;
+    }
+
+    function motionVersionStatus(status) {
+        return {
+            ACTIVE: "当前版本",
+            PENDING_RESTART: "待重启",
+            READY: "已登记",
+            DEPRECATED: "历史版本",
+            PARTIALLY_ROLLED_BACK: "部分回滚",
+            ROLLED_BACK: "已回滚"
+        }[status] ?? status;
+    }
+
+    function buildMotionVersionCard(version, index) {
+        const unavailable = ["ROLLED_BACK", "PARTIALLY_ROLLED_BACK"].includes(
+            version.status
         );
-        panel.append(buildMotionTargetSelector(), head, list, records);
+        const rollingBack = state.motionRollbackVersionId === version.versionId;
+        const card = make("button", "module-codegen-ui-rollback-version-card");
+        card.type = "button";
+        card.disabled = state.busy || unavailable;
+        card.setAttribute(
+            "aria-label",
+            `回滚版本 ${version.versionId.slice(0, 8)}`
+        );
+        card.append(make(
+            "span",
+            "module-codegen-ui-rollback-version-index",
+            String(index + 1).padStart(2, "0")
+        ));
+        const copy = make("span", "module-codegen-ui-rollback-version-copy");
+        copy.append(
+            make("strong", "", motionVersionStatus(version.status)),
+            make(
+                "span",
+                "",
+                `${version.versionId.slice(0, 8)} · ${
+                    typeof context.formatDate === "function"
+                        ? context.formatDate(version.createdAt)
+                        : version.createdAt || "时间未知"
+                }`
+            )
+        );
+        const action = make("span", "module-codegen-ui-rollback-version-action");
+        action.append(
+            icon("undo", 15),
+            make("span", "", rollingBack ? "回滚中" : "回滚")
+        );
+        card.append(copy, action);
+        card.addEventListener("click", () => rollbackMotionVersion(version));
+        return card;
+    }
+
+    function buildMotionRollbackPanel() {
+        const target = motionTargetModel();
+        const panel = make("section", "module-codegen-ui-motion-rollback-panel");
+        panel.id = "module-codegen-motion-side-panel";
+        panel.setAttribute("role", "tabpanel");
+        const head = make("header", "module-codegen-ui-motion-panel-head");
+        head.append(
+            make("strong", "", "回滚历史"),
+            make(
+                "span",
+                "",
+                state.motionVersionsLoading
+                    ? "正在读取版本"
+                    : `${state.motionVersions.length} 个版本`
+            )
+        );
+        const list = make("div", "module-codegen-ui-rollback-version-list");
+        if (state.motionVersionsLoading) {
+            list.append(make("p", "module-codegen-ui-empty", "正在读取历史版本…"));
+        } else if (state.motionVersionsError) {
+            list.append(make(
+                "p",
+                "module-codegen-ui-empty is-error",
+                `读取版本失败：${state.motionVersionsError}`
+            ));
+        } else if (!state.motionVersions.length) {
+            list.append(make(
+                "p",
+                "module-codegen-ui-empty",
+                `“${target.title}”暂无已应用版本。先在修改界面生成、预览并应用版本。`
+            ));
+        } else {
+            state.motionVersions.forEach((version, index) => {
+                list.append(buildMotionVersionCard(version, index));
+            });
+        }
+        panel.append(buildMotionTargetSelector(), head, list);
         return panel;
     }
 
@@ -1660,10 +1901,15 @@ export default async function mount(root, context) {
         selectedMotionHook();
         const workspace = make("div", "module-codegen-ui-motion-studio");
         const side = make("aside", "module-codegen-ui-motion-side");
-        side.append(
-            buildMotionPreviewPane("interface2"),
-            buildMotionHookPanel()
-        );
+        side.append(buildMotionSideTabs());
+        if (state.motionSideMode === "rollback") {
+            side.append(buildMotionRollbackPanel());
+        } else {
+            side.append(
+                buildMotionPreviewPane("interface2"),
+                buildMotionHookPanel()
+            );
+        }
         workspace.append(
             buildMotionPreviewPane("interface1"),
             side,
