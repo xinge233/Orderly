@@ -616,6 +616,10 @@
     cursor: pointer;
 }
 
+.module-codegen-ui-preview-link {
+    text-decoration: none;
+}
+
 .module-codegen-ui-button.is-primary {
     border-color: var(--color-accent);
     background: var(--color-accent-soft);
@@ -675,6 +679,13 @@
     background-size: 0.8rem 0.8rem;
     color: var(--color-text);
     cursor: pointer;
+    text-decoration: none;
+}
+
+.module-codegen-ui-thumb:disabled,
+.module-codegen-ui-motion-preview:disabled {
+    cursor: not-allowed;
+    opacity: 0.64;
 }
 
 .module-codegen-ui-thumb-app {

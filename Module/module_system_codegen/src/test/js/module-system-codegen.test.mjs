@@ -93,6 +93,11 @@ test("system service delegates generation to the protected host API", async () =
     assert.match(source, /\/api\/codegen\/sessions/);
     assert.match(source, /generate-codegen/);
     assert.match(source, /preview-codegen/);
+    assert.match(source, /restoreSession/);
+    assert.match(source, /codegenPreviewAction/);
+    assert.match(source, /target = "_blank"/);
+    assert.match(source, /module-codegen-ui-preview-link/);
+    assert.doesNotMatch(source, /globalThis\.open\(/);
     assert.match(source, /apply-codegen-version/);
     assert.match(source, /rollback-codegen-step/);
     assert.match(source, /框架动效复用公共挂点/);
@@ -112,6 +117,8 @@ test("system service delegates generation to the protected host API", async () =
     assert.match(style, /aspect-ratio:\s*16\s*\/\s*9/);
     assert.match(style, /\.module-codegen-ui-picker\s*\{/);
     assert.match(style, /\.module-codegen-ui-step-row\s*\{/);
+    assert.match(style, /\.module-codegen-ui-preview-link\s*\{[^}]*text-decoration:\s*none/s);
+    assert.match(style, /\.module-codegen-ui-thumb:disabled,[^}]*opacity:\s*0\.64/s);
     const shellRule = style.match(/\.module-codegen-ui-shell\s*\{([^}]*)\}/)?.[1] ?? "";
     assert.match(shellRule, /width:\s*calc\(/);
     assert.match(shellRule, /height:\s*max\(46rem,\s*calc\(100dvh - 3rem\)\)/);
@@ -192,6 +199,89 @@ test("session projection keeps steps and version state without file bodies", () 
     assert.equal(session.steps[0].stepId, "s1");
     assert.equal(Object.hasOwn(session.steps[0], "afterContent"), false);
     assert.equal(session.versions[0].status, "PENDING_RESTART");
+});
+
+test("session catalog selects the latest matching mode and target", () => {
+    const sessions = codegenModule.normalizeCodegenSessions([
+        {
+            sessionId: "older-target",
+            mode: "module",
+            moduleId: "module_demo",
+            updatedAt: "2026-11-26T10:00:00Z"
+        },
+        {
+            sessionId: "latest-target",
+            mode: "module",
+            moduleId: "module_demo",
+            updatedAt: "2026-11-26T12:00:00Z"
+        },
+        {
+            sessionId: "latest-motion",
+            mode: "motion",
+            updatedAt: "2026-11-26T13:00:00Z"
+        }
+    ]);
+
+    assert.equal(sessions[0].sessionId, "latest-motion");
+    assert.equal(
+        codegenModule.selectCodegenSession(sessions, {
+            mode: "module",
+            moduleId: "module_demo"
+        }).sessionId,
+        "latest-target"
+    );
+    assert.equal(
+        codegenModule.selectCodegenSession(sessions, {
+            mode: "module",
+            moduleId: "module_missing",
+            allowFallback: false
+        }),
+        null
+    );
+    assert.equal(
+        codegenModule.selectCodegenSession(sessions, {
+            mode: "module",
+            moduleId: "module_missing",
+            allowFallback: true
+        }).sessionId,
+        "latest-target"
+    );
+});
+
+test("preview action starts first and opens through a direct user link", () => {
+    assert.deepEqual(codegenModule.codegenPreviewAction(null), {
+        kind: "unavailable",
+        label: "生成后可预览",
+        url: ""
+    });
+    assert.deepEqual(codegenModule.codegenPreviewAction({
+        sessionId: "session-1",
+        buildStatus: "BUILDING",
+        previewStatus: "STOPPED"
+    }), {
+        kind: "unavailable",
+        label: "等待构建完成",
+        url: ""
+    });
+    assert.deepEqual(codegenModule.codegenPreviewAction({
+        sessionId: "session-1",
+        buildStatus: "READY",
+        previewStatus: "STOPPED"
+    }), {
+        kind: "start",
+        label: "启动镜像预览",
+        url: ""
+    });
+    assert.deepEqual(codegenModule.codegenPreviewAction({
+        sessionId: "session-1",
+        buildStatus: "READY",
+        previewStatus: "READY",
+        previewUrl: "http://127.0.0.1:18081/"
+    }), {
+        kind: "open",
+        label: "打开镜像预览",
+        url: "http://127.0.0.1:18081/"
+    });
 });
 
 test("framework mount context exposes read-only module, theme and motion catalogs", async () => {

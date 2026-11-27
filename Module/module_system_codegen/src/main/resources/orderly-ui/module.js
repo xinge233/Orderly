@@ -99,6 +99,68 @@ export function normalizeCodegenSession(input) {
     };
 }
 
+export function normalizeCodegenSessions(input) {
+    return listOf(input)
+        .map((session) => ({
+            sessionId: text(session?.sessionId),
+            mode: text(session?.mode),
+            moduleId: text(session?.moduleId),
+            status: text(session?.status, "GENERATED"),
+            buildStatus: text(session?.buildStatus, "PENDING"),
+            previewStatus: text(session?.previewStatus, "STOPPED"),
+            stepCount: Number(session?.stepCount) || 0,
+            createdAt: text(session?.createdAt),
+            updatedAt: text(session?.updatedAt)
+        }))
+        .filter((session) => session.sessionId)
+        .sort((left, right) =>
+            sessionTimestamp(right.updatedAt) - sessionTimestamp(left.updatedAt));
+}
+
+export function selectCodegenSession(input, {
+    mode = "module",
+    moduleId = "",
+    allowFallback = true
+} = {}) {
+    const normalizedMode = text(mode);
+    const normalizedModuleId = text(moduleId);
+    const candidates = normalizeCodegenSessions(input)
+        .filter((session) => session.mode === normalizedMode);
+    if (!candidates.length) return null;
+    if (normalizedMode === "module") {
+        if (normalizedModuleId) {
+            const exact = candidates.filter(
+                (session) => session.moduleId === normalizedModuleId
+            );
+            if (exact.length) return exact[0];
+        } else if (!allowFallback) {
+            return null;
+        }
+        if (!allowFallback) return null;
+    }
+    return candidates[0];
+}
+
+export function codegenPreviewAction(input) {
+    const session = input && typeof input === "object" ? input : null;
+    if (!session?.sessionId) {
+        return { kind: "unavailable", label: "生成后可预览", url: "" };
+    }
+    if (session.buildStatus !== "READY") {
+        return { kind: "unavailable", label: "等待构建完成", url: "" };
+    }
+    const url = text(session.previewUrl);
+    if (session.previewStatus === "READY" && url) {
+        return { kind: "open", label: "打开镜像预览", url };
+    }
+    return { kind: "start", label: "启动镜像预览", url: "" };
+}
+
+function sessionTimestamp(value) {
+    const parsed = Date.parse(text(value));
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function normalizeThemes(themes) {
     return listOf(themes)
         .map((theme) => ({
@@ -128,6 +190,8 @@ export default async function mount(root, context) {
         motionPrompt: "",
         status: "",
         session: null,
+        sessionLoading: false,
+        sessionRequestId: 0,
         busy: false,
         modelConfigured: false,
         moduleTargetExpanded: false,
@@ -145,6 +209,15 @@ export default async function mount(root, context) {
         node.type = "button";
         if (iconName) node.append(icon(iconName));
         node.append(make("span", "", label));
+        return node;
+    }
+
+    function previewLink(url, label, className = "module-codegen-ui-button is-small") {
+        const node = make("a", `${className} module-codegen-ui-preview-link`);
+        node.href = url;
+        node.target = "_blank";
+        node.rel = "noopener noreferrer";
+        node.append(icon("route"), make("span", "", label));
         return node;
     }
 
@@ -284,6 +357,7 @@ export default async function mount(root, context) {
     function applySession(payload) {
         state.session = normalizeCodegenSession(payload);
         if (state.session) {
+            if (state.session.mode) state.mode = state.session.mode;
             if (state.session.moduleId) state.moduleTarget = state.session.moduleId;
             if (state.session.motionTarget === "framework") {
                 state.motionTarget = "framework";
@@ -291,6 +365,43 @@ export default async function mount(root, context) {
                 state.motionTarget = state.session.moduleId;
             }
             if (state.session.themeId) state.themeId = state.session.themeId;
+        }
+    }
+
+    async function restoreSession({
+        mode = state.mode,
+        moduleId = state.moduleTarget,
+        allowFallback = true
+    } = {}) {
+        const requestId = ++state.sessionRequestId;
+        state.sessionLoading = true;
+        state.status = "";
+        render();
+        try {
+            const sessions = await request("/api/codegen/sessions");
+            if (requestId !== state.sessionRequestId || state.mode !== mode) return;
+            const selected = selectCodegenSession(sessions, {
+                mode,
+                moduleId,
+                allowFallback
+            });
+            if (!selected) {
+                state.session = null;
+                return;
+            }
+            const payload = await request(
+                `/api/codegen/sessions/${encodeURIComponent(selected.sessionId)}`
+            );
+            if (requestId !== state.sessionRequestId || state.mode !== mode) return;
+            applySession(payload);
+        } catch (error) {
+            if (requestId !== state.sessionRequestId || state.mode !== mode) return;
+            state.status = `恢复生成记录失败：${error.message}`;
+        } finally {
+            if (requestId === state.sessionRequestId && state.mode === mode) {
+                state.sessionLoading = false;
+                render();
+            }
         }
     }
 
@@ -383,27 +494,27 @@ export default async function mount(root, context) {
         }
     }
 
-    async function openPreview() {
+    async function startPreview({ restart = false } = {}) {
         if (!state.session?.sessionId || state.busy) return;
+        const action = codegenPreviewAction(state.session);
+        if (!restart && action.kind !== "start") return;
+        const sessionId = state.session.sessionId;
         state.busy = true;
-        state.status = "正在启动独立镜像预览…";
+        state.status = "正在启动独立镜像宿主，最长约 45 秒…";
         render();
         try {
-            let payload = state.session;
-            if (payload.previewStatus !== "READY" || !payload.previewUrl) {
-                payload = await request(
-                    `/api/codegen/sessions/${encodeURIComponent(payload.sessionId)}/preview`,
-                    {
-                        method: "POST",
-                        action: "preview-codegen"
-                    }
-                );
-                applySession(payload);
+            applySession(await request(
+                `/api/codegen/sessions/${encodeURIComponent(sessionId)}/preview`,
+                {
+                    method: "POST",
+                    action: "preview-codegen"
+                }
+            ));
+            const updatedAction = codegenPreviewAction(state.session);
+            if (updatedAction.kind !== "open" || !updatedAction.url) {
+                throw new Error("镜像预览已启动，但宿主未返回有效地址");
             }
-            const url = state.session?.previewUrl;
-            if (!url) throw new Error("镜像预览地址为空");
-            globalThis.open(url, "_blank", "noopener,noreferrer");
-            state.status = "独立镜像预览已打开。";
+            state.status = "镜像预览已就绪，请点击“打开镜像预览”。";
         } catch (error) {
             state.status = error.message;
         } finally {
@@ -494,9 +605,16 @@ export default async function mount(root, context) {
             tab.setAttribute("role", "tab");
             tab.setAttribute("aria-selected", String(state.mode === mode));
             tab.addEventListener("click", () => {
+                if (state.mode === mode) return;
                 state.mode = mode;
+                state.session = null;
                 state.status = "";
                 render();
+                restoreSession({
+                    mode,
+                    moduleId: mode === "module" ? state.moduleTarget : "",
+                    allowFallback: true
+                });
             });
             tabs.append(tab);
         });
@@ -526,8 +644,14 @@ export default async function mount(root, context) {
             item.addEventListener("click", () => {
                 state.moduleTarget = id;
                 state.moduleTargetExpanded = false;
+                state.session = null;
                 state.status = "";
                 render();
+                restoreSession({
+                    mode: "module",
+                    moduleId: id,
+                    allowFallback: false
+                });
             });
             list.append(item);
         };
@@ -628,8 +752,20 @@ export default async function mount(root, context) {
 
     function buildModulePreview() {
         const module = selectedModule();
-        const preview = make("button", "module-codegen-ui-thumb");
-        preview.type = "button";
+        const action = codegenPreviewAction(state.session);
+        const preview = make(
+            action.kind === "open" ? "a" : "button",
+            "module-codegen-ui-thumb"
+        );
+        if (action.kind === "open") {
+            preview.href = action.url;
+            preview.target = "_blank";
+            preview.rel = "noopener noreferrer";
+        } else {
+            preview.type = "button";
+            preview.disabled = state.busy || action.kind !== "start";
+            preview.addEventListener("click", () => startPreview());
+        }
         preview.setAttribute("aria-label", "打开独立模块候选预览");
         const mock = make("span", "module-codegen-ui-thumb-app");
         const rail = make("span", "module-codegen-ui-thumb-rail");
@@ -643,11 +779,12 @@ export default async function mount(root, context) {
         preview.append(
             mock,
             make("span", "module-codegen-ui-thumb-caption",
-                state.session?.previewStatus === "READY"
+                action.kind === "open"
                     ? `${state.session.moduleId} · 点击打开镜像预览`
-                    : module ? `${module.title} · 生成后可预览` : "新建模块预览")
+                    : action.kind === "start"
+                        ? `${state.session.moduleId} · 点击启动镜像预览`
+                        : module ? `${module.title} · 生成后可预览` : "新建模块预览")
         );
-        preview.addEventListener("click", openPreview);
         return preview;
     }
 
@@ -657,10 +794,18 @@ export default async function mount(root, context) {
         const session = state.session;
         head.append(
             make("strong", "", "版本与步骤"),
-            make("span", "", session ? `${session.steps.length} 步 · ${session.status}` : "无记录")
+            make(
+                "span",
+                "",
+                state.sessionLoading
+                    ? "读取记录中"
+                    : session ? `${session.steps.length} 步 · ${session.status}` : "无记录"
+            )
         );
         const body = make("div", "module-codegen-ui-revision-body");
-        if (!session) {
+        if (state.sessionLoading) {
+            body.append(make("p", "module-codegen-ui-empty", "正在恢复最近一次生成步骤…"));
+        } else if (!session) {
             body.append(
                 make("p", "module-codegen-ui-empty", "尚无候选版本或生成步骤记录。"),
                 make("p", "module-codegen-ui-empty-small",
@@ -676,13 +821,29 @@ export default async function mount(root, context) {
             body.append(summary);
 
             const actions = make("div", "module-codegen-ui-inline-actions");
-            const previewButton = button(
-                session.previewStatus === "READY" ? "打开镜像预览" : "启动镜像预览",
-                "route",
-                "module-codegen-ui-button is-small"
-            );
-            previewButton.disabled = state.busy || session.buildStatus !== "READY";
-            previewButton.addEventListener("click", openPreview);
+            const previewAction = codegenPreviewAction(session);
+            if (previewAction.kind === "open") {
+                actions.append(previewLink(previewAction.url, previewAction.label));
+                const restartPreview = button(
+                    "重启预览",
+                    "route",
+                    "module-codegen-ui-button is-small"
+                );
+                restartPreview.disabled = state.busy;
+                restartPreview.addEventListener("click", () => startPreview({ restart: true }));
+                actions.append(restartPreview);
+            } else {
+                const startPreviewButton = button(
+                    state.busy && previewAction.kind === "start"
+                        ? "正在启动镜像…"
+                        : previewAction.label,
+                    "route",
+                    "module-codegen-ui-button is-small"
+                );
+                startPreviewButton.disabled = state.busy || previewAction.kind !== "start";
+                startPreviewButton.addEventListener("click", () => startPreview());
+                actions.append(startPreviewButton);
+            }
             const rebuildButton = button(
                 "重新构建",
                 "spark",
@@ -692,7 +853,7 @@ export default async function mount(root, context) {
                 || session.status === "APPLIED"
                 || session.steps.every((step) => step.status === "ROLLED_BACK");
             rebuildButton.addEventListener("click", rebuildCandidate);
-            actions.append(previewButton, rebuildButton);
+            actions.append(rebuildButton);
             if (session.buildStatus === "READY"
                     && session.previewStatus === "READY"
                     && !session.applyVersionId) {
@@ -753,6 +914,7 @@ export default async function mount(root, context) {
 
     function buildModulePreviewPanel() {
         const module = selectedModule();
+        const action = codegenPreviewAction(state.session);
         const panel = make("section", "module-codegen-ui-preview-panel");
         const head = make("header", "module-codegen-ui-panel-head");
         head.append(
@@ -760,9 +922,11 @@ export default async function mount(root, context) {
             make(
                 "span",
                 "",
-                state.session?.previewStatus === "READY"
+                action.kind === "open"
                     ? `${state.session.moduleId} · 镜像已就绪`
-                    : module ? "生成后可打开候选镜像" : "新建模块预览"
+                    : action.kind === "start"
+                        ? `${state.session.moduleId} · 候选已构建`
+                        : module ? "生成后可打开候选镜像" : "新建模块预览"
             )
         );
         const body = make("div", "module-codegen-ui-preview-panel-body");
@@ -965,8 +1129,20 @@ export default async function mount(root, context) {
     }
 
     function buildMotionPreview() {
-        const preview = make("button", "module-codegen-ui-motion-preview");
-        preview.type = "button";
+        const action = codegenPreviewAction(state.session);
+        const preview = make(
+            action.kind === "open" ? "a" : "button",
+            "module-codegen-ui-motion-preview"
+        );
+        if (action.kind === "open") {
+            preview.href = action.url;
+            preview.target = "_blank";
+            preview.rel = "noopener noreferrer";
+        } else {
+            preview.type = "button";
+            preview.disabled = state.busy || action.kind !== "start";
+            preview.addEventListener("click", () => startPreview());
+        }
         preview.setAttribute("aria-label", "打开独立动效候选预览");
         const stage = make("span", "module-codegen-ui-motion-stage");
         const sidebar = make("span", "module-codegen-ui-motion-sidebar");
@@ -984,7 +1160,6 @@ export default async function mount(root, context) {
             stage.append(hook);
         });
         preview.append(stage);
-        preview.addEventListener("click", openPreview);
         return preview;
     }
 
@@ -1082,4 +1257,9 @@ export default async function mount(root, context) {
     });
     render();
     refreshModelState();
+    restoreSession({
+        mode: state.mode,
+        moduleId: state.moduleTarget,
+        allowFallback: true
+    });
 }
