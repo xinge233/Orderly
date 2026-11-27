@@ -389,6 +389,169 @@ function setSettingsStatus(message, { error = false } = {}) {
     status.classList.toggle("is-error", error);
 }
 
+/** 动效编辑预览的受限跨来源消息通道。 */
+const MOTION_PREVIEW_CHANNEL = "orderly-motion-preview";
+
+function motionPreviewRequest() {
+    const parameters = new URLSearchParams(globalThis.location?.search ?? "");
+    if (parameters.get("motionEditor") !== "1") return null;
+    return {
+        moduleId: parameters.get("motionPreviewModule") ?? "",
+        sessionId: parameters.get("motionPreviewSession") ?? ""
+    };
+}
+
+function motionPreviewMode() {
+    return document.body.classList.contains("motion-preview-mode");
+}
+
+function motionTracedElement(...args) {
+    const node = element(...args);
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return node;
+    const source = String(new Error().stack ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .find((line) => line.includes("/api/modules/") && line.includes("/ui/module.js"));
+    if (source) node.dataset.orderlyMotionSource = source.slice(0, 220);
+    return node;
+}
+
+function startMotionPreviewBridge(request) {
+    const nodeIds = new WeakMap();
+    let sequence = 0;
+    let selectMode = true;
+    let highlighted = null;
+
+    const moduleRoot = () => document.querySelector(
+        `[data-module-view="${CSS.escape(request.moduleId)}"]`
+    );
+    const scopeRoot = () => moduleRoot() ?? document.querySelector("#main-content");
+    const boundedText = (value, limit) => String(value ?? "").trim().slice(0, limit);
+    const normalizedRect = (node) => {
+        const rect = node.getBoundingClientRect();
+        return {
+            x: rect.left / Math.max(1, globalThis.innerWidth),
+            y: rect.top / Math.max(1, globalThis.innerHeight),
+            width: rect.width / Math.max(1, globalThis.innerWidth),
+            height: rect.height / Math.max(1, globalThis.innerHeight)
+        };
+    };
+    const candidates = () => {
+        const root = scopeRoot();
+        if (!root) return [];
+        return [
+            root,
+            ...root.querySelectorAll(
+                "section,article,nav,form,header,footer,button,input,textarea,select,"
+                + "[role],h1,h2,h3,li,img,canvas"
+            )
+        ]
+            .filter((node) => {
+                const rect = node.getBoundingClientRect();
+                const style = getComputedStyle(node);
+                return rect.width >= 8
+                    && rect.height >= 8
+                    && style.display !== "none"
+                    && style.visibility !== "hidden";
+            })
+            .slice(0, 120);
+    };
+    const nodeId = (node) => {
+        let id = nodeIds.get(node);
+        if (id) return id;
+        sequence += 1;
+        id = `motion-node-${sequence}`;
+        nodeIds.set(node, id);
+        node.dataset.orderlyMotionNode = id;
+        return id;
+    };
+    const describe = (node) => ({
+        node: nodeId(node),
+        selector: `[data-orderly-motion-node="${node.dataset.orderlyMotionNode}"]`,
+        tag: node.tagName.toLowerCase(),
+        role: boundedText(node.getAttribute("role"), 40),
+        classes: boundedText(node.className, 160),
+        text: boundedText(
+            node.getAttribute("aria-label")
+                || node.getAttribute("title")
+                || node.getAttribute("placeholder"),
+            120
+        ),
+        sourceHint: boundedText(node.dataset.orderlyMotionSource, 220),
+        rect: normalizedRect(node)
+    });
+    const inventory = () => candidates().map(describe);
+    const publish = (type, payload = {}) => {
+        globalThis.parent?.postMessage({
+            channel: MOTION_PREVIEW_CHANNEL,
+            type,
+            sessionId: request.sessionId,
+            moduleId: request.moduleId,
+            ...payload
+        }, "*");
+    };
+    const regionNodes = (points) => {
+        if (!Array.isArray(points) || !points.length) return [];
+        const xs = points.map((point) => Number(point?.[0])).filter(Number.isFinite);
+        const ys = points.map((point) => Number(point?.[1])).filter(Number.isFinite);
+        if (!xs.length || !ys.length) return [];
+        const pointRadius = xs.length < 2 || ys.length < 2 ? 0.035 : 0;
+        const left = Math.max(0, Math.min(...xs) - pointRadius);
+        const right = Math.min(1, Math.max(...xs) + pointRadius);
+        const top = Math.max(0, Math.min(...ys) - pointRadius);
+        const bottom = Math.min(1, Math.max(...ys) + pointRadius);
+        const area = Math.max(0.0001, (right - left) * (bottom - top));
+        return candidates()
+            .map((node) => {
+                const rect = normalizedRect(node);
+                const width = Math.max(0, Math.min(right, rect.x + rect.width) - Math.max(left, rect.x));
+                const height = Math.max(0, Math.min(bottom, rect.y + rect.height) - Math.max(top, rect.y));
+                return { node, overlap: (width * height) / area };
+            })
+            .filter((entry) => entry.overlap > 0.03)
+            .sort((leftEntry, rightEntry) => rightEntry.overlap - leftEntry.overlap)
+            .slice(0, 8)
+            .map((entry) => ({ ...describe(entry.node), overlap: Number(entry.overlap.toFixed(3)) }));
+    };
+
+    document.addEventListener("click", (event) => {
+        if (!selectMode || !(event.target instanceof Element)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        publish("select", { node: describe(event.target.closest(
+            "button,input,textarea,select,section,article,nav,form,header,footer,[role],main,div"
+        ) ?? event.target) });
+    }, true);
+
+    globalThis.addEventListener("message", (event) => {
+        if (event.source !== globalThis.parent) return;
+        const payload = event.data;
+        if (!payload || payload.channel !== MOTION_PREVIEW_CHANNEL) return;
+        if (request.sessionId && payload.sessionId !== request.sessionId) return;
+        if (payload.type === "scan") {
+            publish("nodes", { requestId: payload.requestId, nodes: inventory() });
+        } else if (payload.type === "region") {
+            publish("region-result", {
+                requestId: payload.requestId,
+                annotationId: payload.annotationId,
+                nodes: regionNodes(payload.points)
+            });
+        } else if (payload.type === "highlight") {
+            highlighted?.classList.remove("orderly-motion-preview-highlight");
+            highlighted = payload.selector
+                ? document.querySelector(String(payload.selector))
+                : null;
+            highlighted?.classList.add("orderly-motion-preview-highlight");
+        } else if (payload.type === "mode") {
+            selectMode = payload.mode !== "interact";
+        }
+    });
+
+    document.body.classList.add("motion-preview-mode");
+    document.body.dataset.motionPreviewSession = request.sessionId;
+    globalThis.setTimeout(() => publish("ready", { nodes: inventory() }), 0);
+}
+
 /**
  * 启动框架外壳。
  *
@@ -557,7 +720,21 @@ async function bootstrap() {
         });
     }
 
-    void navigate("overview");
+    const previewRequest = motionPreviewRequest();
+    if (previewRequest) {
+        document.body.classList.add("motion-preview-mode");
+        const previewModule = state.modules.find(
+            (module) => module.moduleId === previewRequest.moduleId
+        );
+        if (previewModule && state.moduleUi[previewModule.moduleId]) {
+            await navigate(moduleNavigationItem(previewModule).id);
+        } else {
+            await navigate("overview");
+        }
+        startMotionPreviewBridge(previewRequest);
+    } else {
+        void navigate("overview");
+    }
     scheduleModuleBuildPoll();
 }
 
@@ -2440,6 +2617,10 @@ async function mountModule(module) {
     view.dataset.moduleView = module.moduleId;
     const root = element("div", "module-view__root");
     root.id = `module-view-${module.moduleId}`;
+    root.dataset.motionNode = ui.view.id;
+    root.dataset.motionScope = ui.view.id;
+    root.dataset.motionState = "ready";
+    root.dataset.motionPhase = "active";
     view.append(root);
     main.replaceChildren(view);
 
@@ -2451,6 +2632,7 @@ async function mountModule(module) {
         if (typeof moduleScript.default !== "function") {
             throw new TypeError("模块 UI 必须默认导出 mount 函数");
         }
+        const contextElement = motionPreviewMode() ? motionTracedElement : element;
         const baseContext = {
             module,
             ui,
@@ -2489,7 +2671,7 @@ async function mountModule(module) {
                     file,
                     confirmed
                 ),
-            element,
+            element: contextElement,
             icon,
             moduleIcon: (iconId, size = 18) => {
                 const node = element("span", "module-inline-icon");

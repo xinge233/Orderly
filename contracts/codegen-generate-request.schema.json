@@ -48,6 +48,78 @@
           "phase": { "type": "string", "maxLength": 80 }
         }
       }
+    },
+    "motionNodes": {
+      "type": "array",
+      "maxItems": 120,
+      "items": { "$ref": "#/$defs/motionNode" }
+    },
+    "motionAnnotations": {
+      "type": "array",
+      "maxItems": 16,
+      "items": { "$ref": "#/$defs/motionAnnotation" }
+    }
+  },
+  "$defs": {
+    "normalizedPoint": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number", "minimum": 0, "maximum": 1 }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "motionNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node", "tag"],
+      "properties": {
+        "node": { "type": "string", "pattern": "^[a-z0-9_-]{1,80}$" },
+        "selector": { "type": "string", "maxLength": 300 },
+        "tag": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,32}$" },
+        "role": { "type": "string", "maxLength": 40 },
+        "classes": { "type": "string", "maxLength": 240 },
+        "text": { "type": "string", "maxLength": 160 },
+        "sourceHint": { "type": "string", "maxLength": 300 },
+        "overlap": { "type": "number", "minimum": 0, "maximum": 1 },
+        "rect": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": { "type": "number", "minimum": 0, "maximum": 1 },
+            "y": { "type": "number", "minimum": 0, "maximum": 1 },
+            "width": { "type": "number", "minimum": 0, "maximum": 1 },
+            "height": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    },
+    "motionAnnotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["annotationId", "kind", "points"],
+      "properties": {
+        "annotationId": { "type": "string", "pattern": "^annotation-[0-9]{1,4}$" },
+        "kind": { "enum": ["rect", "arrow", "pen", "text"] },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/normalizedPoint" }
+        },
+        "text": { "type": "string", "maxLength": 200 },
+        "targetNode": { "type": "string", "pattern": "^[a-z0-9_-]{1,80}$" },
+        "selector": { "type": "string", "maxLength": 300 },
+        "sourceHint": { "type": "string", "maxLength": 300 },
+        "nodes": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/motionNode" }
+        }
+      }
     }
   },
   "allOf": [

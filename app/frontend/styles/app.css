@@ -3814,3 +3814,29 @@ body.is-navigation-dragging * {
 
 /* 基础层不声明过渡；主题 motion.css 读取三档时长，关闭档由 tokens.css 的 safety 层统一清零。 */
 }
+
+body.motion-preview-mode .app-shell {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+body.motion-preview-mode .sidebar,
+body.motion-preview-mode .mobile-toolbar,
+body.motion-preview-mode .history-view-rail,
+body.motion-preview-mode .ai-dock,
+body.motion-preview-mode .ai-call-layer,
+body.motion-preview-mode .toast,
+body.motion-preview-mode .scrim {
+    display: none !important;
+}
+
+body.motion-preview-mode .main-content {
+    width: 100%;
+    max-width: none;
+    min-height: 100vh;
+    padding: var(--space-3);
+}
+
+.orderly-motion-preview-highlight {
+    outline: 2px solid var(--color-accent) !important;
+    outline-offset: 2px !important;
+}

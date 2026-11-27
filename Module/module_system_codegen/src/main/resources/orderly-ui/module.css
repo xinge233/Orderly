@@ -2444,3 +2444,130 @@
 [data-motion="none"] .module-codegen-ui-motion-surface {
     animation: none;
 }
+
+.module-codegen-ui-live-preview {
+    position: relative;
+    min-height: 34rem;
+    height: 100%;
+    overflow: hidden;
+    background: var(--color-surface-muted);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+}
+
+.module-codegen-ui-live-preview.is-compact {
+    min-height: 14rem;
+}
+
+.module-codegen-ui-live-preview-frame {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: var(--color-canvas);
+}
+
+.module-codegen-ui-annotation-canvas {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    cursor: crosshair;
+}
+
+.module-codegen-ui-annotation-canvas.is-browse {
+    pointer-events: none;
+    cursor: default;
+}
+
+.module-codegen-ui-annotation-canvas:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -2px;
+}
+
+.module-codegen-ui-annotation-toolbar {
+    position: absolute;
+    left: var(--space-2);
+    right: var(--space-2);
+    bottom: var(--space-2);
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex-wrap: wrap;
+    padding: var(--space-2);
+    background: color-mix(in srgb, var(--color-surface-raised) 94%, transparent);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+}
+
+.module-codegen-ui-annotation-tool,
+.module-codegen-ui-annotation-action {
+    min-height: 2rem;
+    padding-inline: var(--space-2);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+}
+
+.module-codegen-ui-annotation-tool.is-selected {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+    color: var(--color-accent-strong);
+}
+
+.module-codegen-ui-annotation-tool:disabled,
+.module-codegen-ui-annotation-action:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.module-codegen-ui-annotation-note {
+    flex: 1 1 9rem;
+    min-width: 7rem;
+    min-height: 2rem;
+    padding-inline: var(--space-2);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: inherit;
+    font-size: 0.78rem;
+}
+
+.module-codegen-ui-live-preview-empty {
+    display: flex;
+    min-height: 20rem;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    text-align: center;
+    color: var(--color-text-soft);
+    border: 1px dashed var(--color-line-strong);
+    border-radius: var(--radius-md);
+}
+
+.module-codegen-ui-live-preview-empty strong {
+    color: var(--color-text);
+    font-size: 1rem;
+}
+
+@media (max-width: 980px) {
+    .module-codegen-ui-live-preview {
+        min-height: 26rem;
+    }
+
+    .module-codegen-ui-annotation-toolbar {
+        position: static;
+        margin: var(--space-2);
+    }
+}
