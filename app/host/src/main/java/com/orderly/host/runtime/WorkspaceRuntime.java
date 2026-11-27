@@ -58,6 +58,10 @@ public class WorkspaceRuntime implements ModuleRuntime {
     private static final int MAX_READ_CHARS = 20_000;
     private static final long MAX_TEXT_FILE_BYTES = 16L * 1024L * 1024L;
     private static final String PER_VOLUME_TRASH_DIRECTORY = ".orderly-trash";
+    private static final List<String> LEGACY_IMPLICIT_USER_HOME_LABELS = List.of(
+            "用户目录",
+            "用户主目录"
+    );
     private static final List<String> PROTECTED_WINDOWS_DIRECTORIES = List.of(
             "windows",
             "program files",
@@ -921,7 +925,12 @@ public class WorkspaceRuntime implements ModuleRuntime {
         }
     }
 
-    /** 读取文件根 JSON；首次启动保持空授权，等待本机用户显式登记目录。 */
+    /**
+     * 读取文件根 JSON；首次启动保持空授权，等待本机用户显式登记目录。
+     *
+     * <p>早期开发版本曾把系统用户主目录自动登记为“用户目录”。这类记录没有经过本机
+     * 用户授权，升级时按路径和旧版标签识别并移除；手动授权的其他根保持原样。</p>
+     */
     private List<FileRootRegistration> loadFileRoots() throws IOException {
         if (!Files.exists(fileRootsFile, LinkOption.NOFOLLOW_LINKS)) {
             List<FileRootRegistration> initial = List.of();
@@ -930,6 +939,7 @@ public class WorkspaceRuntime implements ModuleRuntime {
         }
         List<FileRootRegistration> loaded = objectMapper.readValue(fileRootsFile.toFile(), FILE_ROOTS_TYPE);
         List<FileRootRegistration> validated = new ArrayList<>();
+        boolean removedLegacyImplicitRoot = false;
         for (FileRootRegistration root : loaded) {
             if (root == null || root.id() == null || root.id().isBlank()
                     || root.path() == null || root.path().isBlank()) {
@@ -944,6 +954,10 @@ public class WorkspaceRuntime implements ModuleRuntime {
             if (!path.isAbsolute()) {
                 throw new IllegalStateException("文件根配置必须是绝对路径：" + root.path());
             }
+            if (isLegacyImplicitUserHomeRoot(root, path)) {
+                removedLegacyImplicitRoot = true;
+                continue;
+            }
             if (validated.stream().anyMatch(entry -> entry.id().equals(root.id()))) {
                 throw new IllegalStateException("文件根配置包含重复 id：" + root.id());
             }
@@ -956,7 +970,28 @@ public class WorkspaceRuntime implements ModuleRuntime {
                     root.delete()
             ));
         }
+        if (removedLegacyImplicitRoot) {
+            persistFileRoots(validated);
+        }
         return List.copyOf(validated);
+    }
+
+    /** 仅识别早期自动生成的用户主目录根，不删除同路径下用户自定义授权的根。 */
+    private boolean isLegacyImplicitUserHomeRoot(FileRootRegistration root, Path normalizedPath) {
+        String label = Objects.requireNonNullElse(root.label(), "").trim();
+        if (!LEGACY_IMPLICIT_USER_HOME_LABELS.contains(label)) {
+            return false;
+        }
+        String homeValue = Objects.requireNonNullElse(System.getProperty("user.home"), "").trim();
+        if (homeValue.isEmpty()) {
+            return false;
+        }
+        try {
+            Path home = Path.of(homeValue).toAbsolutePath().normalize();
+            return normalizedPath.equals(home);
+        } catch (RuntimeException exception) {
+            return false;
+        }
     }
 
     /** 原子替换文件根注册表；失败直接阻止启动或授权操作成功。 */

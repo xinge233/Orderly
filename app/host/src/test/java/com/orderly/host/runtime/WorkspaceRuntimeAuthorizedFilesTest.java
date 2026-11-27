@@ -7,6 +7,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -25,6 +27,44 @@ class WorkspaceRuntimeAuthorizedFilesTest {
         assertThat(new ObjectMapper().readTree(
                 Files.readString(data.resolve("file-roots.json"))
         ).isEmpty()).isTrue();
+    }
+
+    @Test
+    void startupRemovesLegacyImplicitUserHomeRootAndPersistsExplicitRoots() throws Exception {
+        Path data = temporaryDirectory.resolve("data");
+        Path explicitRoot = Files.createDirectories(temporaryDirectory.resolve("explicit"));
+        Path userHome = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize();
+        List<Map<String, Object>> roots = List.of(
+                Map.of(
+                        "id", "legacy-user-home",
+                        "label", "用户目录",
+                        "path", userHome.toString(),
+                        "read", true,
+                        "write", true,
+                        "delete", true
+                ),
+                Map.of(
+                        "id", "explicit-root",
+                        "label", "显式资料",
+                        "path", explicitRoot.toString(),
+                        "read", true,
+                        "write", false,
+                        "delete", false
+                )
+        );
+        Files.createDirectories(data);
+        ObjectMapper objectMapper = new ObjectMapper();
+        Files.writeString(data.resolve("file-roots.json"), objectMapper.writeValueAsString(roots));
+
+        WorkspaceRuntime runtime = runtime(data);
+
+        assertThat(runtime.listFileRoots())
+                .extracting(root -> root.id())
+                .containsExactly("explicit-root");
+        var persisted = objectMapper.readTree(Files.readString(data.resolve("file-roots.json")));
+        assertThat(persisted.size()).isEqualTo(1);
+        assertThat(persisted.get(0).path("id").asText()).isEqualTo("explicit-root");
+        assertThat(persisted.get(0).path("label").asText()).isEqualTo("显式资料");
     }
 
     @Test
