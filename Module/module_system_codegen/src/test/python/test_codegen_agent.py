@@ -41,7 +41,7 @@ def test_normalizes_steps_and_rejects_duplicate_paths():
         == "src/main/resources/orderly-modules/module_demo.json"
     )
 
-    with pytest.raises(ValueError, match="duplicate"):
+    with pytest.raises(ValueError, match="重复"):
         agent._normalize_proposal(
             {
                 "summary": "candidate",
@@ -82,10 +82,11 @@ def test_prompts_use_packaged_maven_resource_paths():
     )
 
     assert "src/main/resources/orderly-ui/module.json" in module_prompt
-    assert "Never use root-level" in module_prompt
+    assert "不要使用根目录级的 orderly-modules" in module_prompt
     assert "export default async function mount" in module_prompt
     assert '"version":1' in module_prompt
-    assert "Do not use schemaVersion" in module_prompt
-    assert "JSON Schema outputSchema" in module_prompt
+    assert "不要使用 schemaVersion" in module_prompt
+    assert "JSON Schema" in module_prompt
+    assert "outputSchema" in module_prompt
     assert "src/main/resources/orderly-ui/module.js" in motion_prompt
     assert "src/main/resources/orderly-ui/module.json" in motion_prompt

@@ -1,9 +1,8 @@
-"""Module-local AI proposal builder for Orderly's code generation studio.
+"""归序代码生成工作室的模块内 AI 提案构建器。
 
-The script owns code-generation prompts and output-shape normalization. It receives
-current text files from the Java system service, sends a single generic completion
-request to the loopback Orderly AI service, and returns a declarative file proposal.
-It never writes files or reads the repository directly.
+本脚本负责代码生成提示词和输出结构归一化。它接收 Java 系统服务提供的当前文本
+文件，向本机回环的归序 AI 服务发送一次通用补全请求，并返回声明式文件提案。
+脚本不会写入文件，也不会直接读取仓库。
 """
 
 from __future__ import annotations
@@ -22,28 +21,31 @@ MAX_OUTPUT_BYTES = 900_000
 
 
 def main() -> int:
-    """Read one JSON request from stdin and write one JSON proposal to stdout."""
+    """从标准输入读取一个 JSON 请求，并向标准输出写入一个 JSON 提案。"""
     try:
         raw = sys.stdin.read()
-        payload = json.loads(raw)
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError("标准输入不是有效的 JSON 请求") from exc
         result = build_proposal(payload)
-    except Exception as exc:  # Keep diagnostics stable and secret-free.
-        print(str(exc) or "codegen proposal failed", file=sys.stderr)
+    except Exception as exc:  # 保持诊断稳定，且不得泄露密钥。
+        print(str(exc) or "代码生成提案失败", file=sys.stderr)
         return 1
     json.dump(result, sys.stdout, ensure_ascii=False, separators=(",", ":"))
     return 0
 
 
 def build_proposal(payload: dict[str, Any]) -> dict[str, Any]:
-    """Validate request shape, call the generic model endpoint, and normalize output."""
+    """校验请求结构，调用通用模型端点，并归一化输出。"""
     mode = _text(payload.get("mode"))
     if mode not in {"module", "motion"}:
-        raise ValueError("mode must be module or motion")
+        raise ValueError("mode 必须是 module 或 motion")
     prompt = _text(payload.get("prompt"))
     if not prompt:
-        raise ValueError("prompt is required")
+        raise ValueError("必须提供 prompt")
     if len(prompt) > 8_000:
-        raise ValueError("prompt is too large")
+        raise ValueError("prompt 过大")
 
     target_module = _text(payload.get("targetModuleId"))
     motion_target = _text(payload.get("motionTarget"))
@@ -90,86 +92,86 @@ def _system_prompt(
     theme_id: str,
 ) -> str:
     common = """
-You are the module-local generator for Orderly, a local-first desktop application.
-Return exactly one JSON object. Do not use Markdown fences or prose outside JSON.
-Never claim that files were built, applied, or executed. Only propose complete files.
-Paths must be relative, use forward slashes, and must never contain '..', drive
-letters, leading slash, NUL, or module_system_ targets.
-Keep total output below 900000 UTF-8 bytes and at most 48 file steps.
-The output shape is:
-{"moduleId":"module_example","summary":"short summary","steps":[{"title":"...","path":"...","content":"..."}]}
-For an existing target, include only files that should change. For a new module,
-include every source and resource file required for a runnable module.
+你是归序（Orderly）本地优先桌面应用的模块内生成器。
+只返回一个 JSON 对象，不要在 JSON 外使用 Markdown 代码围栏或说明文字。
+不得声称文件已经构建、应用或执行，只能提出完整文件。
+路径必须是相对路径，使用正斜杠，且不得包含 '..'、盘符、开头的斜杠、NUL
+或 module_system_ 目标。
+输出总大小必须小于 900000 个 UTF-8 字节，文件步骤不得超过 48 个。
+输出结构为：
+{"moduleId":"module_example","summary":"简短说明","steps":[{"title":"...","path":"...","content":"..."}]}
+summary 和每个步骤的 title 必须使用简体中文；路径、代码、标识符和协议字段保持原文。
+修改现有目标时，只包含需要变更的文件。创建新模块时，必须包含可运行模块所需的
+全部源码和资源文件。
 """.strip()
     if mode == "module":
         return (
             common
             + """
 
-Module mode requirements:
-- Generate or modify one ordinary business module only.
-- moduleId must match ^module_[a-z0-9_]+$ and must equal the returned moduleId.
-- A complete module requires pom.xml,
+模块模式要求：
+- 只生成或修改一个普通业务模块。
+- moduleId 必须匹配 ^module_[a-z0-9_]+$，并且与返回对象中的 moduleId 一致。
+- 完整模块必须包含 pom.xml、
   src/main/resources/META-INF/services/com.orderly.kernel.OrderlyModule,
   src/main/resources/orderly-modules/<moduleId>.json,
   src/main/resources/orderly-ui/module.json,
   src/main/resources/orderly-ui/module.js,
-  src/main/resources/orderly-ui/module.css, and a Java OrderlyModule
-  implementation under src/main/java.
-- Maven resources must stay under src/main/resources. Never use root-level
-  orderly-modules or orderly-ui directories, because Maven will not package them.
-- The module contract must expose every implemented Action and Query. WRITE and DELETE
-  actions must set confirmationRequired true. Do not declare aiCallable.
-- Module code must use only the public OrderlyModule/ModuleRuntime SPI. Do not import
-  another business module or read arbitrary filesystem paths.
-- The Java class must implement exactly these public methods:
+  src/main/resources/orderly-ui/module.css，以及位于 src/main/java 下的
+  Java OrderlyModule 实现。
+- Maven 资源必须位于 src/main/resources 下。不要使用根目录级的 orderly-modules
+  或 orderly-ui 目录，因为 Maven 不会打包这些目录。
+- 模块契约必须公开每一个已实现 Action 和 Query。WRITE 和 DELETE
+  Action 必须设置 confirmationRequired 为 true，不得声明 aiCallable。
+- 模块代码只能使用公开的 OrderlyModule/ModuleRuntime SPI。不得导入其他业务模块，
+  也不得读取任意文件系统路径。
+- Java 类必须准确实现以下公有方法：
   moduleId(), query(String, Map<String,String>, ModuleRuntime),
   prepareSnapshot(ModuleInvocation, ModuleRuntime),
-  execute(ModuleInvocation, ModuleRuntime), and
+  execute(ModuleInvocation, ModuleRuntime)，以及
   rollback(ModuleInvocation, Map<String,Object>, Map<String,Object>, ModuleRuntime).
-- src/main/resources/orderly-ui/module.js is an ES module and must contain a top-level
-  default export such as `export default async function mount(root, context) { ... }`.
-  Do not emit an IIFE, Node export, registerView call, or global OrderlyModules registry.
-- src/main/resources/orderly-ui/module.json must use this exact version-1 shape:
+- src/main/resources/orderly-ui/module.js 是 ES module，必须包含顶层默认导出，例如
+  `export default async function mount(root, context) { ... }`。
+  不要生成 IIFE、Node export、registerView 调用或全局 OrderlyModules 注册表。
+- src/main/resources/orderly-ui/module.json 必须使用以下精确的 version 1 结构：
   {"version":1,"view":{"id":"lowercase-view-id","icon":"spark","caption":"标题"},
   "card":{"title":"标题","description":"只读摘要","badge":"只读","icon":"spark",
   "queryId":"query.id"},"settings":[],"examples":[],"script":"module.js",
-  "style":"module.css"}. Do not use schemaVersion, moduleId, entry, styles, or views.
-- Every Query in the module contract must have id, title, description, parameters, and a
-  JSON Schema outputSchema. The first UI card queryId must match an implemented Query.
-- pom.xml must use the repository parent, dependency com.orderly:orderly-kernel with
-  version ${project.version}, and artifactId equal to moduleId.
-- UI CSS must use semantic variables and no raw color literals or fixed motion duration.
-- If the request changes framework behavior or requires privileges, keep that out of the
-  module and explain the limitation in summary.
+  "style":"module.css"}。不要使用 schemaVersion、moduleId、entry、styles 或 views。
+- 模块契约中的每个 Query 都必须包含 id、title、description、parameters，以及
+  JSON Schema 格式的 outputSchema。第一个 UI card 的 queryId 必须对应一个已实现 Query。
+- pom.xml 必须使用仓库父工程、依赖 com.orderly:orderly-kernel、版本
+  ${project.version}，并让 artifactId 等于 moduleId。
+- UI CSS 必须使用语义变量，不得包含原始颜色字面量或固定动效时长。
+- 如果请求需要修改框架行为或申请额外权限，不得写入模块，并在 summary 中说明该限制。
 """.strip()
         )
     framework = motion_target == "framework"
     scope_rule = (
-        "Reuse existing framework motion hooks only. Do not add a new framework hook."
+        "只能复用现有框架动效挂点，不得新增框架挂点。"
         if framework
-        else "You may add data-motion-scope hooks only inside the selected module UI."
+        else "只能在所选模块 UI 内新增 data-motion-scope 挂点。"
     )
     target_rule = (
-        f"Framework target theme is {theme_id or 'the current theme'}."
+        f"框架目标主题为 {theme_id or '当前主题'}。"
         if framework
-        else f"Selected module is {target_module}."
+        else f"所选模块为 {target_module}。"
     )
     return (
         common
         + f"""
 
-Motion mode requirements:
+动效模式要求：
 - {target_rule}
 - {scope_rule}
-- Framework motion may change only theme motion.css or tokens.css files.
-- Module motion may change only src/main/resources/orderly-ui/module.css,
-  src/main/resources/orderly-ui/module.js, and
+- 框架动效只能修改主题的 motion.css 或 tokens.css 文件。
+- 模块动效只能修改 src/main/resources/orderly-ui/module.css、
+  src/main/resources/orderly-ui/module.js 以及
   src/main/resources/orderly-ui/module.json.
-- Module CSS must use semantic variables; no raw colors, font families, or fixed durations.
-- Motion must remain fully usable when data-motion='none'.
-- Every new module hook must keep its visible fallback position and label.
-- Put the final selected hook positions in the summary, but do not invent runtime state.
+- 模块 CSS 必须使用语义变量，不得包含原始颜色、字体族或固定时长。
+- 当 data-motion='none' 时，界面仍必须完全可用。
+- 每个新增模块挂点都必须保留可见的降级位置和标签。
+- 在 summary 中写明最终选择的挂点位置，但不得虚构运行时状态。
 """.strip()
     )
 
@@ -178,9 +180,9 @@ def _complete(*, system_prompt: str, user_content: str) -> str:
     base_url = _text(os.environ.get("ORDERLY_AI_SERVICE_URL"))
     token = _text(os.environ.get("ORDERLY_AI_IPC_TOKEN"))
     if not base_url.startswith("http://127.0.0.1:"):
-        raise ValueError("ORDERLY_AI_SERVICE_URL must be a loopback HTTP endpoint")
+        raise ValueError("ORDERLY_AI_SERVICE_URL 必须指向本机回环 HTTP 地址")
     if not token:
-        raise ValueError("ORDERLY_AI_IPC_TOKEN is not configured")
+        raise ValueError("尚未配置 ORDERLY_AI_IPC_TOKEN")
     endpoint = base_url.rstrip("/") + "/v1/model/complete"
     body = json.dumps(
         {
@@ -203,22 +205,26 @@ def _complete(*, system_prompt: str, user_content: str) -> str:
     )
     try:
         with request.urlopen(req, timeout=95) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+            response_body = response.read()
+        try:
+            payload = json.loads(response_body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("模型服务返回了非 JSON 响应") from exc
     except error.HTTPError as exc:
-        message = f"model service returned HTTP {exc.code}"
+        message = f"模型服务返回 HTTP {exc.code}"
         try:
             details = json.loads(exc.read().decode("utf-8"))
             safe_message = details.get("message")
             if isinstance(safe_message, str) and safe_message.strip():
-                message = safe_message.strip()[:300]
+                message = f"模型服务返回 HTTP {exc.code}：{safe_message.strip()[:300]}"
         except Exception:
             pass
         raise RuntimeError(message) from exc
     except error.URLError as exc:
-        raise RuntimeError("model service is unavailable") from exc
+        raise RuntimeError("模型服务不可用") from exc
     content = payload.get("content") if isinstance(payload, dict) else None
     if not isinstance(content, str) or not content.strip():
-        raise ValueError("model service returned empty content")
+        raise ValueError("模型服务返回了空内容")
     return content
 
 
@@ -237,13 +243,13 @@ def _parse_json_object(content: str) -> dict[str, Any]:
         start = text.find("{")
         end = text.rfind("}")
         if start < 0 or end <= start:
-            raise ValueError("model response is not a JSON object") from exc
+            raise ValueError("模型响应不是 JSON 对象") from exc
         try:
             value = json.loads(text[start : end + 1])
         except json.JSONDecodeError as nested:
-            raise ValueError("model response is not a JSON object") from nested
+            raise ValueError("模型响应不是 JSON 对象") from nested
     if not isinstance(value, dict):
-        raise ValueError("model response must be a JSON object")
+        raise ValueError("模型响应必须是 JSON 对象")
     return value
 
 
@@ -255,26 +261,26 @@ def _normalize_proposal(
 ) -> dict[str, Any]:
     summary = _text(proposal.get("summary"))
     if not summary:
-        raise ValueError("proposal summary is required")
+        raise ValueError("提案必须包含 summary")
     module_id = _text(proposal.get("moduleId")) or target_module
     if mode == "module" and not module_id:
-        raise ValueError("proposal moduleId is required")
+        raise ValueError("提案必须包含 moduleId")
     steps = proposal.get("steps")
     if not isinstance(steps, list) or not steps or len(steps) > MAX_OUTPUT_STEPS:
-        raise ValueError("proposal steps must contain 1 to 48 items")
+        raise ValueError("提案 steps 必须包含 1 至 48 项")
     normalized = []
     total = 0
     seen: set[str] = set()
     for index, raw_step in enumerate(steps):
         if not isinstance(raw_step, dict):
-            raise ValueError(f"step {index + 1} must be an object")
-        title = _text(raw_step.get("title")) or f"File change {index + 1}"
+            raise ValueError(f"第 {index + 1} 步必须是对象")
+        title = _text(raw_step.get("title")) or f"文件变更 {index + 1}"
         path = _safe_relative_path(_text(raw_step.get("path")))
         content = raw_step.get("content")
         if not isinstance(content, str):
-            raise ValueError(f"step {index + 1} content must be text")
+            raise ValueError(f"第 {index + 1} 步的 content 必须是文本")
         if path in seen:
-            raise ValueError(f"duplicate file path: {path}")
+            raise ValueError(f"文件路径重复：{path}")
         seen.add(path)
         total += len(content.encode("utf-8"))
         normalized.append(
@@ -285,7 +291,7 @@ def _normalize_proposal(
             }
         )
     if total > MAX_OUTPUT_BYTES:
-        raise ValueError("proposal output is too large")
+        raise ValueError("提案输出过大")
     return {
         "moduleId": module_id,
         "summary": summary[:2000],
@@ -313,12 +319,12 @@ def _bounded_files(raw: Any) -> dict[str, str]:
 def _safe_relative_path(value: str) -> str:
     normalized = value.strip().replace("\\", "/")
     if not normalized or normalized.startswith("/") or ":" in normalized:
-        raise ValueError("file path must be relative")
+        raise ValueError("文件路径必须是相对路径")
     parts = normalized.split("/")
     if any(part in {"", ".", ".."} for part in parts):
-        raise ValueError("file path is not normalized")
+        raise ValueError("文件路径未规范化")
     if "\x00" in normalized:
-        raise ValueError("file path contains NUL")
+        raise ValueError("文件路径包含 NUL 字符")
     return normalized
 
 
