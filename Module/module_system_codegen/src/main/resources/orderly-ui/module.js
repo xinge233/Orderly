@@ -127,17 +127,16 @@ export function selectCodegenSession(input, {
     const candidates = normalizeCodegenSessions(input)
         .filter((session) => session.mode === normalizedMode);
     if (!candidates.length) return null;
-    if (normalizedMode === "module") {
-        if (normalizedModuleId) {
-            const exact = candidates.filter(
-                (session) => session.moduleId === normalizedModuleId
-            );
-            if (exact.length) return exact[0];
-        } else if (!allowFallback) {
-            return null;
-        }
-        if (!allowFallback) return null;
+    if (normalizedMode === "motion" && !normalizedModuleId) {
+        const frameworkSessions = candidates.filter((session) => !session.moduleId);
+        if (frameworkSessions.length) return frameworkSessions[0];
+    } else if (normalizedModuleId) {
+        const exact = candidates.filter(
+            (session) => session.moduleId === normalizedModuleId
+        );
+        if (exact.length) return exact[0];
     }
+    if (!allowFallback) return null;
     return candidates[0];
 }
 
@@ -154,6 +153,51 @@ export function codegenPreviewAction(input) {
         return { kind: "open", label: "打开镜像预览", url };
     }
     return { kind: "start", label: "启动镜像预览", url: "" };
+}
+
+export function motionHookKey(entry) {
+    return [
+        text(entry?.scope),
+        text(entry?.state),
+        text(entry?.phase)
+    ].join("|");
+}
+
+export function normalizeMotionScopes(input) {
+    return listOf(input)
+        .map((entry) => ({
+            scope: text(entry?.scope),
+            state: text(entry?.state),
+            phase: text(entry?.phase)
+        }))
+        .filter((entry) => entry.scope)
+        .filter((entry, index, entries) =>
+            entries.findIndex((candidate) =>
+                motionHookKey(candidate) === motionHookKey(entry)) === index)
+        .slice(0, 8);
+}
+
+export function availableMotionScopes({
+    motionTarget = "",
+    candidateHooks = [],
+    currentHooks = []
+} = {}) {
+    return normalizeMotionScopes([
+        ...listOf(candidateHooks),
+        ...(motionTarget === "framework" ? listOf(currentHooks) : [])
+    ]);
+}
+
+export function resolveMotionHook(input, selectedKey = "") {
+    const scopes = normalizeMotionScopes(input);
+    return scopes.find((entry) => motionHookKey(entry) === selectedKey)
+        ?? scopes[0]
+        ?? null;
+}
+
+export function motionComposerMode({ configured = false, generating = false } = {}) {
+    if (!configured) return "api";
+    return generating ? "progress" : "prompt";
 }
 
 function sessionTimestamp(value) {
@@ -195,7 +239,12 @@ export default async function mount(root, context) {
         busy: false,
         modelConfigured: false,
         moduleTargetExpanded: false,
-        pendingGenerationKind: ""
+        motionTargetExpanded: false,
+        pendingGenerationKind: "",
+        motionGenerating: false,
+        selectedMotionHook: "",
+        motionPreviewFocus: "overview",
+        motionProgressExpanded: false
     };
 
     function icon(name, size = 17) {
@@ -259,12 +308,21 @@ export default async function mount(root, context) {
         return payload;
     }
 
+    function notify(message, { error = false } = {}) {
+        state.status = message;
+        if (typeof context.toast === "function") {
+            context.toast(message, { error });
+        }
+    }
+
     async function refreshModelState() {
         try {
             const settings = await request("/api/ai/settings");
             state.modelConfigured = settings?.configured === true;
         } catch {
             state.modelConfigured = false;
+        } finally {
+            if (root.isConnected) render();
         }
     }
 
@@ -396,7 +454,7 @@ export default async function mount(root, context) {
             applySession(payload);
         } catch (error) {
             if (requestId !== state.sessionRequestId || state.mode !== mode) return;
-            state.status = `恢复生成记录失败：${error.message}`;
+            notify(`恢复生成记录失败：${error.message}`, { error: true });
         } finally {
             if (requestId === state.sessionRequestId && state.mode === mode) {
                 state.sessionLoading = false;
@@ -423,12 +481,22 @@ export default async function mount(root, context) {
                     return;
                 }
                 state.busy = false;
+                state.motionGenerating = false;
                 state.status = state.session?.buildMessage
                     || (buildStatus === "READY" ? "候选已就绪，可打开镜像预览。" : "候选构建结束。");
+                if (buildStatus === "READY") {
+                    notify("候选构建完成，可以打开镜像预览。");
+                } else if (buildStatus === "FAILED") {
+                    notify(
+                        state.session?.buildMessage || "候选构建失败，请检查生成步骤。",
+                        { error: true }
+                    );
+                }
                 render();
             } catch (error) {
                 state.busy = false;
-                state.status = error.message;
+                state.motionGenerating = false;
+                notify(error.message, { error: true });
                 render();
             }
         }, 900);
@@ -438,6 +506,10 @@ export default async function mount(root, context) {
         const prompt = text(kind === "module" ? state.modulePrompt : state.motionPrompt);
         if (!prompt || state.busy) return;
         state.busy = true;
+        if (kind === "motion") {
+            state.motionGenerating = true;
+            state.motionProgressExpanded = false;
+        }
         state.status = "正在生成候选步骤…";
         render();
         try {
@@ -461,10 +533,17 @@ export default async function mount(root, context) {
             applySession(payload);
             state.status = "候选步骤已生成，正在自动构建。";
             render();
-            if (state.session?.sessionId) pollSession(state.session.sessionId);
+            if (state.session?.sessionId) {
+                pollSession(state.session.sessionId);
+            } else if (kind === "motion") {
+                state.busy = false;
+                state.motionGenerating = false;
+                notify("候选步骤已生成。");
+            }
         } catch (error) {
             state.busy = false;
-            state.status = error.message;
+            state.motionGenerating = false;
+            notify(error.message, { error: true });
             render();
         }
     }
@@ -489,7 +568,31 @@ export default async function mount(root, context) {
             state.status = "";
             await startGeneration(kind);
         } catch (error) {
-            state.status = error.message;
+            notify(error.message, { error: true });
+            render();
+        }
+    }
+
+    async function saveMotionApiKey(apiKey) {
+        const value = text(apiKey);
+        if (!value || state.busy) return;
+        state.busy = true;
+        state.status = "正在验证 API 连接…";
+        render();
+        try {
+            const settings = await request("/api/ai/settings", {
+                method: "PUT",
+                body: { mode: "DEEPSEEK", apiKey: value }
+            });
+            state.modelConfigured = settings?.configured === true;
+            if (!state.modelConfigured) {
+                throw new Error("模型服务未返回已连接状态");
+            }
+            notify("AI 连接成功");
+        } catch (error) {
+            notify(error.message, { error: true });
+        } finally {
+            state.busy = false;
             render();
         }
     }
@@ -516,7 +619,7 @@ export default async function mount(root, context) {
             }
             state.status = "镜像预览已就绪，请点击“打开镜像预览”。";
         } catch (error) {
-            state.status = error.message;
+            notify(error.message, { error: true });
         } finally {
             state.busy = false;
             render();
@@ -536,7 +639,7 @@ export default async function mount(root, context) {
             pollSession(state.session.sessionId);
         } catch (error) {
             state.busy = false;
-            state.status = error.message;
+            notify(error.message, { error: true });
             render();
         }
     }
@@ -557,7 +660,7 @@ export default async function mount(root, context) {
             ));
             state.status = "版本已应用；当前程序继续运行旧版本，下次启动使用新版本。";
         } catch (error) {
-            state.status = error.message;
+            notify(error.message, { error: true });
         } finally {
             state.busy = false;
             render();
@@ -584,7 +687,7 @@ export default async function mount(root, context) {
                 pollSession(state.session.sessionId);
             }
         } catch (error) {
-            state.status = error.message;
+            notify(error.message, { error: true });
         } finally {
             if (!["QUEUED", "BUILDING"].includes(state.session?.buildStatus)) {
                 state.busy = false;
@@ -609,6 +712,10 @@ export default async function mount(root, context) {
                 state.mode = mode;
                 state.session = null;
                 state.status = "";
+                state.moduleTargetExpanded = false;
+                state.motionTargetExpanded = false;
+                state.motionPreviewFocus = "overview";
+                state.selectedMotionHook = "";
                 render();
                 restoreSession({
                     mode,
@@ -996,41 +1103,48 @@ export default async function mount(root, context) {
         return workspace;
     }
 
-    function buildMotionPicker() {
-        const wrapper = make("div", "module-codegen-ui-field module-codegen-ui-target-field");
-        wrapper.append(make("span", "module-codegen-ui-label", "修改目标"));
-        const list = make("div", "module-codegen-ui-picker");
-        list.setAttribute("role", "listbox");
-        list.setAttribute("aria-label", "动效修改目标");
+    function motionTargetModel() {
+        if (state.motionTarget === "framework") {
+            return {
+                id: "framework",
+                title: "框架动效",
+                description: "当前应用框架与公共挂点",
+                icon: "modules"
+            };
+        }
+        const selected = modules.find((module) => module.moduleId === state.motionTarget);
+        return selected
+            ? {
+                id: selected.moduleId,
+                title: selected.title,
+                description: selected.moduleId,
+                icon: "spark"
+            }
+            : {
+                id: "framework",
+                title: "框架动效",
+                description: "当前应用框架与公共挂点",
+                icon: "modules"
+            };
+    }
 
-        const addTarget = (id, title, description, iconName) => {
-            const item = make("button", "module-codegen-ui-picker-item");
-            item.type = "button";
-            item.setAttribute("role", "option");
-            item.setAttribute("aria-selected", String(state.motionTarget === id));
-            const iconNode = make("span", "module-codegen-ui-picker-icon");
-            iconNode.innerHTML = context.icon(iconName, 16);
-            const copy = make("span", "module-codegen-ui-picker-copy");
-            copy.append(make("strong", "", title), make("span", "", description));
-            item.append(iconNode, copy);
-            item.addEventListener("click", () => {
-                state.motionTarget = id;
-                if (id !== "framework") state.moduleTarget = id;
-                state.status = "";
-                render();
-            });
-            list.append(item);
-        };
-
-        addTarget("framework", "框架动效", "复用现有公共挂点", "modules");
-        modules.forEach((module) => addTarget(
-            module.moduleId,
-            module.title,
-            `${module.moduleId} · 模块挂点`,
-            "spark"
-        ));
-        wrapper.append(list);
-        return wrapper;
+    function setMotionTarget(id) {
+        if (state.busy) return;
+        const exists = id === "framework"
+            || modules.some((module) => module.moduleId === id);
+        if (!exists) return;
+        state.motionTarget = id;
+        if (id !== "framework") state.moduleTarget = id;
+        state.motionTargetExpanded = false;
+        state.selectedMotionHook = "";
+        state.motionPreviewFocus = "overview";
+        state.status = "";
+        render();
+        restoreSession({
+            mode: "motion",
+            moduleId: id === "framework" ? "" : id,
+            allowFallback: false
+        });
     }
 
     function buildThemeSelect() {
@@ -1057,141 +1171,505 @@ export default async function mount(root, context) {
     }
 
     function currentMotionScopes() {
-        const values = typeof context.listMotionScopes === "function"
+        const values = state.motionTarget === "framework"
+            && typeof context.listMotionScopes === "function"
             ? context.listMotionScopes()
             : [];
-        const candidate = state.session?.mode === "motion"
-            ? listOf(state.session?.interfaces?.motionHooks)
-            : [];
-        return [...candidate, ...listOf(values)]
-            .map((entry) => ({
-                scope: text(entry.scope),
-                state: text(entry.state),
-                phase: text(entry.phase)
-            }))
-            .filter((entry) => entry.scope)
-            .filter((entry, index, entries) =>
-                entries.findIndex((candidateEntry) =>
-                    candidateEntry.scope === entry.scope
-                    && candidateEntry.state === entry.state) === index)
-            .slice(0, 8);
+        return availableMotionScopes({
+            motionTarget: state.motionTarget,
+            candidateHooks: state.session?.mode === "motion"
+                ? state.session?.interfaces?.motionHooks
+                : [],
+            currentHooks: values
+        });
     }
 
-    function buildMotionComposer() {
-        const composer = make("section", "module-codegen-ui-composer");
-        const head = make("header", "module-codegen-ui-composer-head");
-        const targetLabel = state.motionTarget === "framework"
-            ? "框架动效"
-            : modules.find((module) => module.moduleId === state.motionTarget)?.title
-                ?? state.motionTarget;
-        const title = make("div", "module-codegen-ui-composer-title");
-        title.append(make("h2", "", "动效生成"), make("span", "", targetLabel));
-        head.append(
-            title,
+    function selectedMotionHook(scopes = currentMotionScopes()) {
+        const hook = resolveMotionHook(scopes, state.selectedMotionHook);
+        state.selectedMotionHook = hook ? motionHookKey(hook) : "";
+        return hook;
+    }
+
+    function selectMotionHook(entry) {
+        state.selectedMotionHook = motionHookKey(entry);
+        state.motionPreviewFocus = "detail";
+        render();
+    }
+
+    function toggleMotionPreviewFocus() {
+        state.motionPreviewFocus = state.motionPreviewFocus === "overview"
+            ? "detail"
+            : "overview";
+        render();
+    }
+
+    function buildMotionTargetOption(id, title, description, iconName) {
+        const option = make("button", "module-codegen-ui-motion-target-option");
+        option.type = "button";
+        option.setAttribute("role", "option");
+        option.setAttribute("aria-selected", String(state.motionTarget === id));
+        const iconNode = make("span", "module-codegen-ui-motion-target-option-icon");
+        iconNode.innerHTML = context.icon(iconName, 17);
+        const copy = make("span", "module-codegen-ui-motion-target-option-copy");
+        copy.append(make("strong", "", title), make("span", "", description));
+        option.append(iconNode, copy);
+        option.addEventListener("click", () => setMotionTarget(id));
+        return option;
+    }
+
+    function buildMotionTargetSelector() {
+        const target = motionTargetModel();
+        const panel = make("section", "module-codegen-ui-motion-target-panel");
+        const head = make("div", "module-codegen-ui-motion-target-head");
+        head.append(make("span", "module-codegen-ui-label", "修改对象"));
+        const trigger = make("button", "module-codegen-ui-motion-target-trigger");
+        trigger.type = "button";
+        trigger.setAttribute("aria-expanded", String(state.motionTargetExpanded));
+        trigger.setAttribute("aria-controls", "module-codegen-motion-target-options");
+        const triggerIcon = make("span", "module-codegen-ui-motion-target-icon");
+        triggerIcon.innerHTML = context.icon(target.icon, 18);
+        const triggerCopy = make("span", "module-codegen-ui-motion-target-copy");
+        triggerCopy.append(
+            make("strong", "", target.title),
+            make("span", "", target.description)
+        );
+        trigger.append(
+            triggerIcon,
+            triggerCopy,
             make(
                 "span",
-                `module-codegen-ui-badge${state.session?.buildStatus === "READY" ? " is-ready" : ""}`,
-                state.session ? state.session.buildStatus : "等待生成"
+                "module-codegen-ui-motion-target-chevron",
+                state.motionTargetExpanded ? "⌃" : "⌄"
             )
         );
-
-        const body = make("div", "module-codegen-ui-composer-body");
-        const editor = make("div", "module-codegen-ui-editor is-motion");
-        editor.append(
-            buildMotionPicker(),
-            buildThemeSelect(),
-            buildPrompt(
-                "需求描述",
-                state.motionPrompt,
-                "描述进入、切换、反馈和关闭动效时的表现",
-                (value) => { state.motionPrompt = value; }
-            )
-        );
-        body.append(editor);
-        const foot = make("footer", "module-codegen-ui-composer-foot");
-        const note = make("span", "module-codegen-ui-note");
-        note.append(
-            icon("route", 15),
-            make("span", "", "框架动效复用公共挂点；模块动效只能增加本模块挂点。")
-        );
-        const generateButton = button(
-            "生成动效候选",
-            "spark",
-            "module-codegen-ui-button is-primary"
-        );
-        generateButton.disabled = state.busy;
-        generateButton.title = "调用模块专属 Python AI 生成动效候选";
-        generateButton.addEventListener("click", () => generate("motion"));
-        foot.append(note, generateButton);
-        body.append(foot);
-        composer.append(head, body);
-        return composer;
-    }
-
-    function buildMotionPreview() {
-        const action = codegenPreviewAction(state.session);
-        const preview = make(
-            action.kind === "open" ? "a" : "button",
-            "module-codegen-ui-motion-preview"
-        );
-        if (action.kind === "open") {
-            preview.href = action.url;
-            preview.target = "_blank";
-            preview.rel = "noopener noreferrer";
-        } else {
-            preview.type = "button";
-            preview.disabled = state.busy || action.kind !== "start";
-            preview.addEventListener("click", () => startPreview());
-        }
-        preview.setAttribute("aria-label", "打开独立动效候选预览");
-        const stage = make("span", "module-codegen-ui-motion-stage");
-        const sidebar = make("span", "module-codegen-ui-motion-sidebar");
-        const canvas = make("span", "module-codegen-ui-motion-canvas");
-        const heading = make("span", "module-codegen-ui-motion-heading");
-        const tiles = make("span", "module-codegen-ui-motion-tiles");
-        tiles.append(make("span"), make("span"), make("span"), make("span"));
-        canvas.append(heading, tiles);
-        stage.append(sidebar, canvas);
-
-        const scopes = currentMotionScopes();
-        scopes.slice(0, 5).forEach((entry, index) => {
-            const hook = make("span", `module-codegen-ui-hook is-hook-${index + 1}`);
-            hook.textContent = [entry.scope, entry.state].filter(Boolean).join(" · ");
-            stage.append(hook);
+        trigger.addEventListener("click", () => {
+            state.motionTargetExpanded = !state.motionTargetExpanded;
+            render();
         });
-        preview.append(stage);
-        return preview;
-    }
-
-    function buildMotionSummary() {
-        const panel = make("section", "module-codegen-ui-motion-summary");
-        const head = make("header", "module-codegen-ui-panel-head");
-        const scopes = currentMotionScopes();
-        head.append(
-            make("strong", "", "可视化挂点"),
-            make("span", "", `${scopes.length} 个当前挂点`)
-        );
-        const list = make("div", "module-codegen-ui-hook-list");
-        if (!scopes.length) {
-            list.append(make("p", "module-codegen-ui-empty", "当前视图未暴露公共动效挂点。"));
-        } else {
-            scopes.forEach((scope) => {
-                const item = make("span", "module-codegen-ui-hook-chip");
-                item.append(
-                    make("strong", "", scope.scope),
-                    make("span", "", [scope.state, scope.phase].filter(Boolean).join(" / "))
-                );
-                list.append(item);
+        head.append(trigger);
+        panel.append(head, buildThemeSelect());
+        if (state.motionTargetExpanded) {
+            const options = make("div", "module-codegen-ui-motion-target-options");
+            options.id = "module-codegen-motion-target-options";
+            options.setAttribute("role", "listbox");
+            options.append(buildMotionTargetOption(
+                "framework",
+                "框架动效",
+                "当前应用框架与公共挂点",
+                "modules"
+            ));
+            modules.forEach((module) => {
+                options.append(buildMotionTargetOption(
+                    module.moduleId,
+                    module.title,
+                    module.moduleId,
+                    "spark"
+                ));
             });
+            panel.append(options);
         }
-        panel.append(head, list);
         return panel;
     }
 
-    function buildMotionSide() {
-        const side = make("aside", "module-codegen-ui-side");
-        side.append(buildMotionPreview(), buildMotionSummary(), buildRevisionPanel());
-        return side;
+    function buildMotionHookCard(entry, index) {
+        const selected = motionHookKey(entry) === state.selectedMotionHook;
+        const card = make(
+            "button",
+            `module-codegen-ui-hook-card${selected ? " is-selected" : ""}`
+        );
+        card.type = "button";
+        card.setAttribute("aria-pressed", String(selected));
+        card.append(
+            make("span", "module-codegen-ui-hook-card-index", String(index + 1).padStart(2, "0")),
+            make("strong", "", entry.scope),
+            make(
+                "span",
+                "module-codegen-ui-hook-card-meta",
+                [entry.state, entry.phase].filter(Boolean).join(" / ") || "默认状态"
+            )
+        );
+        card.addEventListener("click", () => selectMotionHook(entry));
+        return card;
+    }
+
+    function buildMotionHookPanel() {
+        const panel = make("section", "module-codegen-ui-hook-panel");
+        const scopes = currentMotionScopes();
+        selectedMotionHook(scopes);
+        const head = make("header", "module-codegen-ui-motion-panel-head");
+        head.append(
+            make("strong", "", "挂点"),
+            make("span", "", `${scopes.length} 个可用挂点`)
+        );
+        const list = make("div", "module-codegen-ui-hook-card-list");
+        if (!scopes.length) {
+            list.append(make(
+                "p",
+                "module-codegen-ui-empty",
+                "当前对象尚未读取到可预览挂点。生成候选后会显示宿主返回的挂点。"
+            ));
+        } else {
+            scopes.forEach((entry, index) => {
+                list.append(buildMotionHookCard(entry, index));
+            });
+        }
+        const records = make("details", "module-codegen-ui-records");
+        records.append(
+            make("summary", "", "候选记录与回滚"),
+            buildRevisionPanel()
+        );
+        panel.append(buildMotionTargetSelector(), head, list, records);
+        return panel;
+    }
+
+    function buildPreviewApp(compact = false) {
+        const target = motionTargetModel();
+        const app = make(
+            "span",
+            `module-codegen-ui-preview-app${compact ? " is-compact" : ""}`
+        );
+        const rail = make("span", "module-codegen-ui-preview-rail");
+        rail.append(
+            make("span", "is-active"),
+            make("span"),
+            make("span"),
+            make("span")
+        );
+        const canvas = make("span", "module-codegen-ui-preview-canvas");
+        const topbar = make("span", "module-codegen-ui-preview-topbar");
+        topbar.append(
+            make("strong", "", target.title),
+            make("span", "", "结构预览")
+        );
+        const content = make("span", "module-codegen-ui-preview-content");
+        const heading = make("span", "module-codegen-ui-preview-heading");
+        heading.append(
+            make("strong", "", target.title === "框架动效" ? "整个应用界面" : target.title),
+            make("span", "", "左侧保留固定导航，主体承载当前模块视图与操作反馈。")
+        );
+        const cards = make("span", "module-codegen-ui-preview-cards");
+        cards.append(
+            make("span", "module-codegen-ui-preview-card"),
+            make("span", "module-codegen-ui-preview-card"),
+            make("span", "module-codegen-ui-preview-card is-wide")
+        );
+        content.append(heading, cards);
+        canvas.append(topbar, content);
+        app.append(rail, canvas);
+        return app;
+    }
+
+    function buildMotionHookMarker(entry, index) {
+        const selected = motionHookKey(entry) === state.selectedMotionHook;
+        const marker = make(
+            "button",
+            `module-codegen-ui-preview-hook is-hook-${(index % 5) + 1}${selected ? " is-selected" : ""}`
+        );
+        marker.type = "button";
+        marker.setAttribute("aria-pressed", String(selected));
+        marker.setAttribute(
+            "aria-label",
+            `选择挂点 ${entry.scope}${selected ? "，当前已选中" : ""}`
+        );
+        marker.append(
+            make("span", "module-codegen-ui-preview-hook-dot"),
+            make(
+                "span",
+                "module-codegen-ui-preview-hook-label",
+                entry.scope
+            )
+        );
+        marker.addEventListener("click", (event) => {
+            event.stopPropagation();
+            selectMotionHook(entry);
+        });
+        return marker;
+    }
+
+    function buildMotionOverviewSurface(compact = false) {
+        const surface = make(
+            "div",
+            `module-codegen-ui-motion-surface is-overview${compact ? " is-compact" : ""}`
+        );
+        surface.append(buildPreviewApp(compact));
+        const scopes = currentMotionScopes();
+        if (!scopes.length) {
+            surface.append(make(
+                "span",
+                "module-codegen-ui-preview-empty",
+                "尚未读取到挂点"
+            ));
+        } else {
+            scopes.slice(0, 5).forEach((entry, index) => {
+                if (compact) {
+                    const dot = make(
+                        "span",
+                        `module-codegen-ui-preview-hook-dot-only is-hook-${index + 1}`
+                    );
+                    if (motionHookKey(entry) === state.selectedMotionHook) {
+                        dot.classList.add("is-selected");
+                    }
+                    surface.append(dot);
+                } else {
+                    surface.append(buildMotionHookMarker(entry, index));
+                }
+            });
+        }
+        return surface;
+    }
+
+    function buildMotionDetailSurface(compact = false) {
+        const surface = make(
+            "div",
+            `module-codegen-ui-motion-surface is-detail${compact ? " is-compact" : ""}`
+        );
+        const hook = selectedMotionHook();
+        if (!hook) {
+            surface.append(make(
+                "span",
+                "module-codegen-ui-preview-empty",
+                "选择挂点后查看局部放大"
+            ));
+            return surface;
+        }
+        const stage = make("span", "module-codegen-ui-detail-stage");
+        const card = make("span", "module-codegen-ui-detail-card");
+        card.append(
+            make("span", "module-codegen-ui-detail-line is-short"),
+            make("span", "module-codegen-ui-detail-line"),
+            make("span", "module-codegen-ui-detail-line")
+        );
+        const focus = make("span", "module-codegen-ui-detail-focus");
+        focus.append(
+            make("strong", "", hook.scope),
+            make(
+                "span",
+                "",
+                [hook.state, hook.phase].filter(Boolean).join(" / ") || "默认状态"
+            )
+        );
+        stage.append(card, focus);
+        surface.append(
+            make("span", "module-codegen-ui-detail-caption", "选中挂点局部放大"),
+            stage
+        );
+        return surface;
+    }
+
+    function buildMotionPreviewPane(kind) {
+        const isMain = kind === "interface1";
+        const panel = make(
+            "section",
+            `module-codegen-ui-motion-preview-pane ${isMain ? "is-main" : "is-mini"}`
+        );
+        const head = make("header", "module-codegen-ui-motion-panel-head");
+        head.append(
+            make("strong", "", isMain ? "界面 1" : "界面 2"),
+            make(
+                "span",
+                "",
+                isMain ? "整个界面的结构化预览" : "选中挂点的局部放大"
+            )
+        );
+        const previewIsDetail = isMain
+            ? state.motionPreviewFocus === "detail"
+            : state.motionPreviewFocus === "overview";
+        const surface = previewIsDetail
+            ? buildMotionDetailSurface(!isMain)
+            : buildMotionOverviewSurface(!isMain);
+        if (isMain) {
+            panel.append(head, surface);
+        } else {
+            const swap = make("div", "module-codegen-ui-motion-swap");
+            const canSwap = Boolean(selectedMotionHook());
+            swap.setAttribute("role", "button");
+            swap.setAttribute("tabindex", canSwap ? "0" : "-1");
+            swap.setAttribute("aria-disabled", String(!canSwap));
+            swap.setAttribute("aria-label", "点击交换界面 1 与界面 2");
+            swap.append(surface, make(
+                "span",
+                "module-codegen-ui-motion-swap-hint",
+                canSwap ? "点击与界面 1 互换" : "选择挂点后可互换"
+            ));
+            if (canSwap) {
+                swap.addEventListener("click", toggleMotionPreviewFocus);
+                swap.addEventListener("keydown", (event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        toggleMotionPreviewFocus();
+                    }
+                });
+            } else {
+                swap.classList.add("is-disabled");
+            }
+            panel.append(head, swap);
+        }
+        return panel;
+    }
+
+    function buildMotionProgressPanel() {
+        const session = state.session;
+        const buildStatus = session?.buildStatus ?? "PENDING";
+        const stage = !session
+            ? "AI 正在理解需求并生成候选文件"
+            : ["QUEUED", "BUILDING", "PENDING"].includes(buildStatus)
+                ? "候选文件已生成，正在构建"
+                : buildStatus === "READY"
+                    ? "候选构建完成"
+                    : buildStatus === "FAILED"
+                        ? "候选构建失败"
+                        : "正在整理候选结果";
+        const panel = make(
+            "section",
+            `module-codegen-ui-motion-progress${state.motionProgressExpanded ? " is-expanded" : ""}`
+        );
+        const toggle = make("button", "module-codegen-ui-motion-progress-toggle");
+        toggle.type = "button";
+        toggle.setAttribute("aria-expanded", String(state.motionProgressExpanded));
+        toggle.append(
+            icon("spark", 18),
+            make("strong", "", stage),
+            make("span", "", state.status || "正在处理"),
+            make("span", "module-codegen-ui-motion-progress-chevron",
+                state.motionProgressExpanded ? "⌃" : "⌄")
+        );
+        toggle.addEventListener("click", () => {
+            state.motionProgressExpanded = !state.motionProgressExpanded;
+            render();
+        });
+        const details = make("div", "module-codegen-ui-motion-progress-details");
+        const steps = [
+            ["理解修改需求", "done"],
+            ["读取对象与挂点", "done"],
+            ["生成候选文件", session ? "done" : "active"],
+            ["校验文件提案", session ? "done" : "pending"],
+            [
+                "构建候选",
+                buildStatus === "READY"
+                    ? "done"
+                    : buildStatus === "FAILED"
+                        ? "failed"
+                        : session ? "active" : "pending"
+            ],
+            [
+                "准备镜像预览",
+                buildStatus === "READY" ? "done" : "pending"
+            ]
+        ];
+        steps.forEach(([label, status]) => {
+            const row = make(
+                "span",
+                `module-codegen-ui-motion-progress-step is-${status}`
+            );
+            row.append(
+                make("span", "module-codegen-ui-motion-progress-dot"),
+                make("span", "", label)
+            );
+            details.append(row);
+        });
+        if (session?.steps?.length) {
+            details.append(make(
+                "span",
+                "module-codegen-ui-motion-progress-meta",
+                `${session.steps.length} 个文件步骤 · ${buildStatus}`
+            ));
+        }
+        panel.append(toggle, details);
+        return panel;
+    }
+
+    function buildMotionComposerInput({ mode }) {
+        const shell = make("div", "module-codegen-ui-motion-composer-input");
+        const isApi = mode === "api";
+        const input = make(
+            isApi ? "input" : "textarea",
+            `module-codegen-ui-motion-composer-field${isApi ? " is-api" : ""}`
+        );
+        if (isApi) {
+            input.type = "password";
+            input.autocomplete = "off";
+            input.spellcheck = false;
+            input.placeholder = "请输入 API";
+        } else {
+            input.value = state.motionPrompt;
+            input.placeholder = "描述需要修改的动效";
+            input.rows = 1;
+            input.addEventListener("input", () => {
+                state.motionPrompt = input.value;
+            });
+            input.addEventListener("keydown", (event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    input.form?.requestSubmit();
+                }
+            });
+        }
+        const confirm = button(
+            "确认",
+            isApi ? "shield" : "spark",
+            "module-codegen-ui-motion-composer-confirm"
+        );
+        confirm.type = "submit";
+        const syncDisabled = () => {
+            confirm.disabled = state.busy || !text(input.value);
+        };
+        input.addEventListener("input", syncDisabled);
+        syncDisabled();
+        shell.append(input, confirm);
+        return { shell, input };
+    }
+
+    function buildMotionComposer() {
+        if (state.motionGenerating) {
+            return buildMotionProgressPanel();
+        }
+        const mode = motionComposerMode({
+            configured: state.modelConfigured,
+            generating: state.motionGenerating
+        });
+        const composer = make("section", "module-codegen-ui-motion-composer");
+        const head = make("header", "module-codegen-ui-motion-composer-head");
+        head.append(
+            make("strong", "", mode === "api" ? "连接 AI" : "修改需求"),
+            make(
+                "span",
+                "",
+                mode === "api"
+                    ? "API Key 仅保存在本机 AI 服务内存中"
+                    : "Enter 确认，Shift + Enter 换行"
+            )
+        );
+        const form = make("form", "module-codegen-ui-motion-composer-form");
+        const { shell, input } = buildMotionComposerInput({ mode });
+        form.append(shell);
+        form.addEventListener("submit", (event) => {
+            event.preventDefault();
+            if (mode === "api") {
+                const apiKey = input.value;
+                input.value = "";
+                saveMotionApiKey(apiKey);
+                return;
+            }
+            generate("motion");
+        });
+        composer.append(head, form);
+        return composer;
+    }
+
+    function buildMotionWorkspace() {
+        selectedMotionHook();
+        const workspace = make("div", "module-codegen-ui-motion-studio");
+        const side = make("aside", "module-codegen-ui-motion-side");
+        side.append(
+            buildMotionPreviewPane("interface2"),
+            buildMotionHookPanel()
+        );
+        workspace.append(
+            buildMotionPreviewPane("interface1"),
+            side,
+            buildMotionComposer()
+        );
+        return workspace;
     }
 
     function buildHeaderActions() {
@@ -1210,28 +1688,34 @@ export default async function mount(root, context) {
 
     function render() {
         const shell = make("section", "module-codegen-ui-shell");
-        const header = make("header", "module-codegen-ui-header");
-        const heading = make("div", "module-codegen-ui-heading");
-        heading.append(
-            make("p", "module-codegen-ui-eyebrow", "GENERATION STUDIO"),
-            make("h1", "", state.mode === "module" ? "模块生成" : "动效生成"),
-            make("p", "module-codegen-ui-description",
-                state.mode === "module"
-                    ? "描述要生成或修改的模块。"
-                    : "描述框架或模块需要呈现的动效。")
+        const header = make(
+            "header",
+            `module-codegen-ui-header${state.mode === "motion" ? " is-motion" : ""}`
         );
+        const heading = make(
+            "div",
+            `module-codegen-ui-heading${state.mode === "motion" ? " is-motion" : ""}`
+        );
+        if (state.mode === "module") {
+            heading.append(
+                make("p", "module-codegen-ui-eyebrow", "GENERATION STUDIO"),
+                make("h1", "", "模块生成"),
+                make("p", "module-codegen-ui-description", "描述要生成或修改的模块。")
+            );
+        } else {
+            heading.append(make("h1", "", "动效生成"));
+        }
         header.append(heading, buildHeaderActions());
 
         let layout;
         if (state.mode === "module") {
             layout = buildModuleWorkspace();
         } else {
-            layout = make("div", "module-codegen-ui-layout is-motion-workspace");
-            layout.append(buildMotionComposer(), buildMotionSide());
+            layout = buildMotionWorkspace();
         }
         shell.append(header, layout);
 
-        if (state.status) {
+        if (state.status && state.mode === "module") {
             const status = make("p", "module-codegen-ui-status", state.status);
             status.setAttribute("role", "status");
             shell.append(status);
@@ -1240,18 +1724,27 @@ export default async function mount(root, context) {
     }
 
     root.addEventListener("pointerdown", (event) => {
-        if (!state.moduleTargetExpanded) return;
         const target = event.target;
-        if (target && typeof target.closest === "function"
-                && target.closest(".module-codegen-ui-target-panel")) {
-            return;
+        let changed = false;
+        if (state.moduleTargetExpanded
+                && !(target && typeof target.closest === "function"
+                    && target.closest(".module-codegen-ui-target-panel"))) {
+            state.moduleTargetExpanded = false;
+            changed = true;
         }
-        state.moduleTargetExpanded = false;
-        render();
+        if (state.motionTargetExpanded
+                && !(target && typeof target.closest === "function"
+                    && target.closest(".module-codegen-ui-motion-target-panel"))) {
+            state.motionTargetExpanded = false;
+            changed = true;
+        }
+        if (changed) render();
     });
     root.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && state.moduleTargetExpanded) {
+        if (event.key !== "Escape") return;
+        if (state.moduleTargetExpanded || state.motionTargetExpanded) {
             state.moduleTargetExpanded = false;
+            state.motionTargetExpanded = false;
             render();
         }
     });

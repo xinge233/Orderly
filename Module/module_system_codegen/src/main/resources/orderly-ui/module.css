@@ -5,22 +5,23 @@
 
 .module-codegen-ui-shell {
     position: relative;
+    left: 50%;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
-    width: calc(
-        100%
-        + clamp(var(--space-6), 4vw, var(--space-12))
-        + clamp(var(--space-6), 4vw, var(--space-12))
+    width: min(
+        calc(100vw - var(--sidebar-width) - var(--space-6)),
+        calc(100% + 30rem)
     );
     height: max(46rem, calc(100dvh - 3rem));
     min-height: 46rem;
-    margin-inline: calc(0px - clamp(var(--space-6), 4vw, var(--space-12)));
+    margin-bottom: -9.5rem;
     overflow: hidden;
     contain: layout paint;
     border: 0;
     border-radius: 0;
     background: transparent;
     box-shadow: none;
+    transform: translateX(-50%);
 }
 
 .module-codegen-ui-header {
@@ -30,6 +31,11 @@
     gap: var(--space-4);
     padding: 0 var(--space-4) var(--space-4);
     border-bottom: 1px solid var(--color-line);
+}
+
+.module-codegen-ui-header.is-motion {
+    min-height: 3rem;
+    padding: 0 0 var(--space-2);
 }
 
 .module-codegen-ui-header-actions {
@@ -60,6 +66,11 @@
     font-size: 1.85rem;
     font-weight: 700;
     letter-spacing: 0;
+}
+
+.module-codegen-ui-heading.is-motion h1 {
+    font-size: 1.35rem;
+    font-weight: 700;
 }
 
 .module-codegen-ui-eyebrow {
@@ -1111,18 +1122,966 @@
     box-shadow: var(--shadow-sm);
 }
 
+.module-codegen-ui-motion-studio {
+    display: grid;
+    min-width: 0;
+    min-height: 0;
+    grid-template-columns: minmax(0, 2.35fr) minmax(19rem, 0.78fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+        "overview side"
+        "composer side";
+    gap: var(--space-3) var(--space-4);
+    padding: var(--space-3) var(--space-2) 0;
+}
+
+.module-codegen-ui-motion-studio > .module-codegen-ui-motion-preview-pane.is-main {
+    grid-area: overview;
+}
+
+.module-codegen-ui-motion-studio > .module-codegen-ui-motion-side {
+    grid-area: side;
+}
+
+.module-codegen-ui-motion-studio > .module-codegen-ui-motion-composer,
+.module-codegen-ui-motion-studio > .module-codegen-ui-motion-progress {
+    grid-area: composer;
+}
+
+.module-codegen-ui-motion-preview-pane,
+.module-codegen-ui-hook-panel,
+.module-codegen-ui-motion-composer,
+.module-codegen-ui-motion-progress,
+.module-codegen-ui-motion-side {
+    min-width: 0;
+    min-height: 0;
+}
+
+.module-codegen-ui-motion-preview-pane {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.module-codegen-ui-motion-preview-pane.is-main {
+    padding-right: 0;
+}
+
+.module-codegen-ui-motion-preview-pane.is-mini {
+    position: relative;
+    z-index: 3;
+}
+
+.module-codegen-ui-motion-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: 2.7rem;
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--color-line);
+}
+
+.module-codegen-ui-motion-panel-head strong {
+    color: var(--color-text);
+    font-size: 0.98rem;
+}
+
+.module-codegen-ui-motion-panel-head span {
+    color: var(--color-text-soft);
+    font-size: 0.82rem;
+}
+
+.module-codegen-ui-motion-side {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: var(--space-3);
+    border-left: 1px solid var(--color-line);
+    padding-left: var(--space-4);
+    padding-bottom: calc(var(--space-12) + var(--space-10));
+}
+
+.module-codegen-ui-motion-swap {
+    position: relative;
+    display: block;
+    width: 100%;
+    max-height: 13.5rem;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    cursor: pointer;
+}
+
+.module-codegen-ui-motion-swap:hover {
+    border-color: var(--color-line-strong);
+}
+
+.module-codegen-ui-motion-swap.is-disabled {
+    cursor: not-allowed;
+    opacity: 0.72;
+}
+
+.module-codegen-ui-motion-swap:focus-visible,
+.module-codegen-ui-motion-target-trigger:focus-visible,
+.module-codegen-ui-motion-target-option:focus-visible,
+.module-codegen-ui-hook-card:focus-visible,
+.module-codegen-ui-preview-hook:focus-visible,
+.module-codegen-ui-motion-composer-field:focus-visible,
+.module-codegen-ui-motion-composer-confirm:focus-visible,
+.module-codegen-ui-motion-progress-toggle:focus-visible,
+.module-codegen-ui-records summary:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+.module-codegen-ui-motion-swap-hint {
+    position: absolute;
+    right: var(--space-2);
+    bottom: var(--space-2);
+    padding: 0.18rem var(--space-2);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-text-soft);
+    font-size: 0.8rem;
+    pointer-events: none;
+}
+
+.module-codegen-ui-motion-surface {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background-color: transparent;
+    background-image: radial-gradient(circle, var(--color-line) 1px, transparent 1px);
+    background-size: 0.85rem 0.85rem;
+}
+
+.module-codegen-ui-motion-preview-pane.is-main .module-codegen-ui-motion-surface {
+    flex: 1;
+    min-height: 22rem;
+    animation: module-codegen-surface-in var(--duration-normal) var(--ease-out) both;
+}
+
+.module-codegen-ui-motion-swap > .module-codegen-ui-motion-surface {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    border-radius: 0;
+}
+
+.module-codegen-ui-preview-app {
+    position: absolute;
+    inset: var(--space-4);
+    display: grid;
+    grid-template-columns: 3.4rem minmax(0, 1fr);
+    overflow: hidden;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+}
+
+.module-codegen-ui-preview-app.is-compact {
+    inset: var(--space-2);
+    grid-template-columns: 2rem minmax(0, 1fr);
+}
+
+.module-codegen-ui-preview-rail {
+    display: grid;
+    align-content: start;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-2);
+    border-right: 1px solid var(--color-line);
+    background: var(--color-surface-muted);
+}
+
+.module-codegen-ui-preview-rail span {
+    min-height: 0.75rem;
+    border-radius: 2px;
+    background: var(--color-line);
+}
+
+.module-codegen-ui-preview-rail span.is-active {
+    background: var(--color-accent);
+}
+
+.module-codegen-ui-preview-app.is-compact .module-codegen-ui-preview-rail {
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-1);
+}
+
+.module-codegen-ui-preview-canvas {
+    display: grid;
+    min-width: 0;
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+}
+
+.module-codegen-ui-preview-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: 3.2rem;
+    padding: 0 var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+}
+
+.module-codegen-ui-preview-topbar strong {
+    overflow: hidden;
+    font-size: 0.94rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.module-codegen-ui-preview-topbar span {
+    flex: none;
+    color: var(--color-text-soft);
+    font-size: 0.8rem;
+}
+
+.module-codegen-ui-preview-app.is-compact .module-codegen-ui-preview-topbar {
+    min-height: 1.8rem;
+    padding-inline: var(--space-2);
+}
+
+.module-codegen-ui-preview-app.is-compact .module-codegen-ui-preview-topbar strong,
+.module-codegen-ui-preview-app.is-compact .module-codegen-ui-preview-topbar span {
+    font-size: 0.65rem;
+}
+
+.module-codegen-ui-preview-content {
+    display: grid;
+    min-height: 0;
+    align-content: start;
+    gap: var(--space-4);
+    padding: var(--space-4);
+}
+
+.module-codegen-ui-preview-app.is-compact .module-codegen-ui-preview-content {
+    gap: var(--space-2);
+    padding: var(--space-2);
+}
+
+.module-codegen-ui-preview-heading {
+    display: grid;
+    gap: var(--space-1);
+}
+
+.module-codegen-ui-preview-heading strong {
+    font-size: 1.22rem;
+}
+
+.module-codegen-ui-preview-heading span {
+    color: var(--color-text-soft);
+    font-size: 0.9rem;
+    line-height: 1.55;
+}
+
+.module-codegen-ui-preview-app.is-compact .module-codegen-ui-preview-heading strong {
+    font-size: 0.75rem;
+}
+
+.module-codegen-ui-preview-app.is-compact .module-codegen-ui-preview-heading span {
+    display: none;
+}
+
+.module-codegen-ui-preview-cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+}
+
+.module-codegen-ui-preview-card {
+    min-height: 5.5rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+}
+
+.module-codegen-ui-preview-card.is-wide {
+    grid-column: 1 / -1;
+    min-height: 8rem;
+}
+
+.module-codegen-ui-preview-app.is-compact .module-codegen-ui-preview-cards {
+    gap: var(--space-1);
+}
+
+.module-codegen-ui-preview-app.is-compact .module-codegen-ui-preview-card,
+.module-codegen-ui-preview-app.is-compact .module-codegen-ui-preview-card.is-wide {
+    min-height: 1.2rem;
+}
+
+.module-codegen-ui-preview-empty {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    max-width: min(22rem, calc(100% - 2rem));
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-text-soft);
+    font-size: 0.88rem;
+    line-height: 1.5;
+    text-align: center;
+    transform: translate(-50%, -50%);
+}
+
+.module-codegen-ui-preview-hook {
+    position: absolute;
+    z-index: 4;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    max-width: 12rem;
+    min-height: 2rem;
+    padding: 0 var(--space-2);
+    overflow: hidden;
+    border: 1px solid var(--color-accent);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-accent-strong);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+}
+
+.module-codegen-ui-preview-hook.is-selected,
+.module-codegen-ui-preview-hook:hover {
+    background: var(--color-accent-soft);
+}
+
+.module-codegen-ui-preview-hook-dot,
+.module-codegen-ui-preview-hook-dot-only {
+    width: 0.62rem;
+    height: 0.62rem;
+    flex: none;
+    border: 2px solid var(--color-accent);
+    border-radius: 999px;
+    background: var(--color-surface);
+}
+
+.module-codegen-ui-preview-hook.is-selected .module-codegen-ui-preview-hook-dot,
+.module-codegen-ui-preview-hook-dot-only.is-selected {
+    background: var(--color-accent);
+}
+
+.module-codegen-ui-preview-hook-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.module-codegen-ui-preview-hook.is-hook-1,
+.module-codegen-ui-preview-hook-dot-only.is-hook-1 {
+    top: 24%;
+    left: 8%;
+}
+
+.module-codegen-ui-preview-hook.is-hook-2,
+.module-codegen-ui-preview-hook-dot-only.is-hook-2 {
+    top: 28%;
+    right: 9%;
+}
+
+.module-codegen-ui-preview-hook.is-hook-3,
+.module-codegen-ui-preview-hook-dot-only.is-hook-3 {
+    right: 22%;
+    bottom: 20%;
+}
+
+.module-codegen-ui-preview-hook.is-hook-4,
+.module-codegen-ui-preview-hook-dot-only.is-hook-4 {
+    bottom: 18%;
+    left: 30%;
+}
+
+.module-codegen-ui-preview-hook.is-hook-5,
+.module-codegen-ui-preview-hook-dot-only.is-hook-5 {
+    top: 58%;
+    right: 7%;
+}
+
+.module-codegen-ui-preview-hook-dot-only {
+    position: absolute;
+    z-index: 4;
+}
+
+.module-codegen-ui-detail-caption {
+    position: absolute;
+    top: var(--space-3);
+    left: var(--space-3);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-text-soft);
+    font-size: 0.82rem;
+}
+
+.module-codegen-ui-detail-stage {
+    position: absolute;
+    inset: 3.5rem var(--space-4) var(--space-4);
+    display: grid;
+    place-items: center;
+}
+
+.module-codegen-ui-detail-card {
+    display: grid;
+    align-content: start;
+    gap: var(--space-3);
+    width: min(78%, 24rem);
+    min-height: 65%;
+    padding: var(--space-5);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+}
+
+.module-codegen-ui-motion-surface.is-detail:not(.is-compact) .module-codegen-ui-detail-card {
+    width: min(72%, 48rem);
+    min-height: 70%;
+    padding: var(--space-6);
+}
+
+.module-codegen-ui-detail-line {
+    height: 0.85rem;
+    border-radius: 2px;
+    background: var(--color-line);
+}
+
+.module-codegen-ui-detail-line.is-short {
+    width: 42%;
+    background: var(--color-line-strong);
+}
+
+.module-codegen-ui-motion-surface.is-detail:not(.is-compact) .module-codegen-ui-detail-line {
+    height: 1.05rem;
+}
+
+.module-codegen-ui-detail-focus {
+    position: absolute;
+    display: grid;
+    gap: 1px;
+    min-width: 8rem;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-accent);
+    border-radius: var(--radius-sm);
+    background: var(--color-accent-soft);
+    color: var(--color-accent-strong);
+}
+
+.module-codegen-ui-motion-surface.is-detail:not(.is-compact) .module-codegen-ui-detail-focus {
+    min-width: 12rem;
+    padding: var(--space-3) var(--space-4);
+}
+
+.module-codegen-ui-detail-focus strong {
+    font-size: 0.94rem;
+}
+
+.module-codegen-ui-detail-focus span {
+    font-size: 0.82rem;
+}
+
+.module-codegen-ui-motion-surface.is-compact .module-codegen-ui-detail-caption {
+    top: var(--space-1);
+    left: var(--space-1);
+    font-size: 0.65rem;
+}
+
+.module-codegen-ui-motion-surface.is-compact .module-codegen-ui-detail-stage {
+    inset: 1.8rem var(--space-2) var(--space-2);
+}
+
+.module-codegen-ui-motion-surface.is-compact .module-codegen-ui-detail-card {
+    width: 82%;
+    min-height: 65%;
+    padding: var(--space-2);
+}
+
+.module-codegen-ui-motion-surface.is-compact .module-codegen-ui-detail-focus {
+    min-width: 4.5rem;
+    padding: var(--space-1);
+}
+
+.module-codegen-ui-motion-surface.is-compact .module-codegen-ui-detail-focus strong,
+.module-codegen-ui-motion-surface.is-compact .module-codegen-ui-detail-focus span {
+    font-size: 0.6rem;
+}
+
+.module-codegen-ui-hook-panel {
+    position: relative;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    gap: var(--space-3);
+    overflow: visible;
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--color-line);
+}
+
+.module-codegen-ui-motion-target-panel {
+    position: relative;
+    z-index: 12;
+    display: grid;
+    gap: var(--space-2);
+}
+
+.module-codegen-ui-motion-target-head {
+    display: grid;
+    gap: var(--space-1);
+}
+
+.module-codegen-ui-motion-target-trigger {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr) auto;
+    gap: var(--space-2);
+    align-items: center;
+    min-height: 3.2rem;
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.module-codegen-ui-motion-target-trigger:hover {
+    border-color: var(--color-line-strong);
+}
+
+.module-codegen-ui-motion-target-icon,
+.module-codegen-ui-motion-target-option-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    color: var(--color-accent-strong);
+}
+
+.module-codegen-ui-motion-target-copy,
+.module-codegen-ui-motion-target-option-copy {
+    display: grid;
+    min-width: 0;
+    gap: 1px;
+}
+
+.module-codegen-ui-motion-target-copy strong,
+.module-codegen-ui-motion-target-option-copy strong {
+    overflow: hidden;
+    color: var(--color-text);
+    font-size: 0.92rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.module-codegen-ui-motion-target-copy span,
+.module-codegen-ui-motion-target-option-copy span {
+    overflow: hidden;
+    color: var(--color-text-soft);
+    font-size: 0.8rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.module-codegen-ui-motion-target-chevron {
+    color: var(--color-accent-strong);
+    font-size: 1rem;
+}
+
+.module-codegen-ui-motion-target-options {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + var(--space-1));
+    right: 0;
+    left: 0;
+    display: grid;
+    max-height: min(20rem, 46vh);
+    overflow-y: auto;
+    padding: var(--space-1);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    box-shadow: var(--shadow-card);
+}
+
+.module-codegen-ui-motion-target-option {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr);
+    gap: var(--space-2);
+    align-items: center;
+    min-height: 3rem;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.module-codegen-ui-motion-target-option[aria-selected="true"],
+.module-codegen-ui-motion-target-option:hover {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+}
+
+.module-codegen-ui-hook-card-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+    gap: var(--space-2);
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: var(--space-1);
+    scrollbar-color: var(--color-line-strong) transparent;
+    scrollbar-width: thin;
+}
+
+.module-codegen-ui-hook-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+        "index name"
+        "index meta";
+    gap: 1px var(--space-2);
+    min-height: 3.4rem;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.module-codegen-ui-hook-card:hover,
+.module-codegen-ui-hook-card.is-selected {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+}
+
+.module-codegen-ui-hook-card-index {
+    grid-area: index;
+    align-self: center;
+    color: var(--color-accent-strong);
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+.module-codegen-ui-hook-card strong {
+    grid-area: name;
+    overflow: hidden;
+    font-size: 0.9rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.module-codegen-ui-hook-card-meta {
+    grid-area: meta;
+    overflow: hidden;
+    color: var(--color-text-soft);
+    font-size: 0.8rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.module-codegen-ui-records {
+    border-top: 1px solid var(--color-line);
+    padding-top: var(--space-2);
+}
+
+.module-codegen-ui-records summary {
+    min-height: 2.4rem;
+    padding: var(--space-2) 0;
+    color: var(--color-text-soft);
+    font-size: 0.86rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.module-codegen-ui-records[open] {
+    max-height: 18rem;
+    overflow-y: auto;
+}
+
+.module-codegen-ui-records .module-codegen-ui-revision-panel {
+    min-height: 0;
+}
+
+.module-codegen-ui-motion-composer,
+.module-codegen-ui-motion-progress {
+    align-self: end;
+    min-height: 5.8rem;
+    padding: var(--space-3);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    transition:
+        min-height var(--duration-normal) var(--ease-out),
+        border-color var(--duration-fast) var(--ease-out),
+        background var(--duration-fast) var(--ease-out);
+}
+
+.module-codegen-ui-motion-composer:focus-within {
+    min-height: 10rem;
+    border-color: var(--color-line-strong);
+    background: var(--color-surface-muted);
+}
+
+.module-codegen-ui-motion-composer-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding-bottom: var(--space-2);
+}
+
+.module-codegen-ui-motion-composer-head strong {
+    font-size: 0.96rem;
+}
+
+.module-codegen-ui-motion-composer-head span {
+    overflow: hidden;
+    color: var(--color-text-soft);
+    font-size: 0.82rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.module-codegen-ui-motion-composer-form {
+    display: grid;
+}
+
+.module-codegen-ui-motion-composer-input {
+    position: relative;
+    display: grid;
+    min-height: 3.2rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    transition:
+        border-color var(--duration-fast) var(--ease-out),
+        min-height var(--duration-normal) var(--ease-out);
+}
+
+.module-codegen-ui-motion-composer:focus-within .module-codegen-ui-motion-composer-input {
+    min-height: 7.8rem;
+    border-color: var(--color-accent);
+}
+
+.module-codegen-ui-motion-composer-field {
+    width: 100%;
+    min-height: 3.1rem;
+    max-height: 7.6rem;
+    padding: var(--space-3) 7.5rem var(--space-3) var(--space-3);
+    overflow-y: auto;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text);
+    font: inherit;
+    font-size: 0.96rem;
+    line-height: 1.55;
+    outline: 0;
+    resize: none;
+    transition: min-height var(--duration-normal) var(--ease-out);
+}
+
+.module-codegen-ui-motion-composer-field.is-api {
+    min-height: 3.1rem;
+    max-height: 3.1rem;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.module-codegen-ui-motion-composer:focus-within .module-codegen-ui-motion-composer-field:not(.is-api) {
+    min-height: 7.6rem;
+}
+
+.module-codegen-ui-motion-composer:focus-within .module-codegen-ui-motion-composer-field.is-api {
+    min-height: 7.6rem;
+    max-height: 7.6rem;
+    padding-top: var(--space-3);
+    padding-bottom: var(--space-3);
+}
+
+.module-codegen-ui-motion-composer-field::placeholder {
+    color: var(--color-text-faint);
+}
+
+.module-codegen-ui-motion-composer-confirm {
+    position: absolute;
+    right: var(--space-2);
+    bottom: var(--space-2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+    min-width: 5.2rem;
+    min-height: 2.4rem;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--color-accent);
+    border-radius: var(--radius-sm);
+    background: var(--color-accent-soft);
+    color: var(--color-accent-strong);
+    font: inherit;
+    font-size: 0.88rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.module-codegen-ui-motion-composer-confirm:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.module-codegen-ui-motion-progress {
+    display: grid;
+    gap: var(--space-2);
+    cursor: pointer;
+}
+
+.module-codegen-ui-motion-progress.is-expanded {
+    min-height: 14rem;
+}
+
+.module-codegen-ui-motion-progress-toggle {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+        "icon title chevron"
+        "icon status chevron";
+    gap: 1px var(--space-2);
+    align-items: center;
+    min-height: 3rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--color-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.module-codegen-ui-motion-progress-toggle > .module-codegen-ui-icon {
+    grid-area: icon;
+    color: var(--color-accent-strong);
+}
+
+.module-codegen-ui-motion-progress-toggle strong {
+    grid-area: title;
+    font-size: 0.96rem;
+}
+
+.module-codegen-ui-motion-progress-toggle > span:not(.module-codegen-ui-icon):not(.module-codegen-ui-motion-progress-chevron) {
+    grid-area: status;
+    overflow: hidden;
+    color: var(--color-text-soft);
+    font-size: 0.84rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.module-codegen-ui-motion-progress-chevron {
+    grid-area: chevron;
+    color: var(--color-accent-strong);
+    font-size: 1rem;
+}
+
+.module-codegen-ui-motion-progress-details {
+    display: grid;
+    gap: var(--space-2);
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition:
+        max-height var(--duration-normal) var(--ease-out),
+        opacity var(--duration-fast) var(--ease-out);
+}
+
+.module-codegen-ui-motion-progress.is-expanded .module-codegen-ui-motion-progress-details {
+    max-height: 12rem;
+    overflow-y: auto;
+    opacity: 1;
+}
+
+.module-codegen-ui-motion-progress-step {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--color-text-soft);
+    font-size: 0.86rem;
+}
+
+.module-codegen-ui-motion-progress-dot {
+    width: 0.65rem;
+    height: 0.65rem;
+    flex: none;
+    border: 1px solid var(--color-line-strong);
+    border-radius: 999px;
+    background: transparent;
+}
+
+.module-codegen-ui-motion-progress-step.is-done .module-codegen-ui-motion-progress-dot {
+    border-color: var(--color-safe);
+    background: var(--color-safe);
+}
+
+.module-codegen-ui-motion-progress-step.is-active .module-codegen-ui-motion-progress-dot {
+    border-color: var(--color-accent);
+    background: var(--color-accent);
+}
+
+.module-codegen-ui-motion-progress-step.is-failed .module-codegen-ui-motion-progress-dot {
+    border-color: var(--color-danger);
+    background: var(--color-danger);
+}
+
+.module-codegen-ui-motion-progress-meta {
+    padding-top: var(--space-1);
+    border-top: 1px solid var(--color-line);
+    color: var(--color-text-soft);
+    font-size: 0.8rem;
+}
+
+@keyframes module-codegen-surface-in {
+    from {
+        opacity: 0;
+        transform: translateY(var(--space-1));
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 @media (max-width: 980px) {
     .module-codegen-ui-shell {
-        width: calc(
-            100%
-            + clamp(var(--space-6), 4vw, var(--space-12))
-            + clamp(var(--space-6), 4vw, var(--space-12))
-        );
+        position: static;
+        left: auto;
+        width: 100%;
         height: auto;
         min-height: 0;
         aspect-ratio: auto;
         contain: none;
-        margin-inline: calc(0px - clamp(var(--space-6), 4vw, var(--space-12)));
+        margin-inline: 0;
+        margin-bottom: 0;
+        transform: none;
     }
 
     .module-codegen-ui-layout {
@@ -1192,6 +2151,45 @@
     .module-codegen-ui-editor.is-motion > .module-codegen-ui-prompt {
         grid-area: auto;
     }
+
+    .module-codegen-ui-motion-studio {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto auto auto;
+        grid-template-areas:
+            "overview"
+            "side"
+            "composer";
+        gap: var(--space-5);
+        padding-top: var(--space-4);
+    }
+
+    .module-codegen-ui-motion-preview-pane.is-main .module-codegen-ui-motion-surface {
+        min-height: 24rem;
+    }
+
+    .module-codegen-ui-motion-side {
+        grid-template-rows: auto auto;
+        border-left: 0;
+        padding-bottom: 0;
+        padding-left: 0;
+    }
+
+    .module-codegen-ui-hook-card-list {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .module-codegen-ui-motion-swap {
+        max-height: 22rem;
+    }
+
+    .module-codegen-ui-motion-target-options {
+        max-height: min(18rem, 42vh);
+    }
+
+    .module-codegen-ui-motion-composer,
+    .module-codegen-ui-motion-progress {
+        min-height: 6.4rem;
+    }
 }
 
 @media (max-width: 680px) {
@@ -1247,6 +2245,73 @@
         position: static;
         margin: 0 var(--space-3) var(--space-3);
     }
+
+    .module-codegen-ui-motion-studio {
+        padding-inline: 0;
+    }
+
+    .module-codegen-ui-motion-preview-pane.is-main .module-codegen-ui-motion-surface {
+        min-height: 19rem;
+    }
+
+    .module-codegen-ui-preview-app {
+        inset: var(--space-2);
+        grid-template-columns: 2.2rem minmax(0, 1fr);
+    }
+
+    .module-codegen-ui-preview-topbar {
+        min-height: 2.5rem;
+        padding-inline: var(--space-2);
+    }
+
+    .module-codegen-ui-preview-content {
+        gap: var(--space-2);
+        padding: var(--space-2);
+    }
+
+    .module-codegen-ui-preview-heading strong {
+        font-size: 1rem;
+    }
+
+    .module-codegen-ui-preview-heading span {
+        display: none;
+    }
+
+    .module-codegen-ui-preview-cards {
+        gap: var(--space-2);
+    }
+
+    .module-codegen-ui-preview-card {
+        min-height: 3.4rem;
+    }
+
+    .module-codegen-ui-preview-card.is-wide {
+        min-height: 5rem;
+    }
+
+    .module-codegen-ui-preview-hook {
+        max-width: 8.5rem;
+        min-height: 1.8rem;
+        font-size: 0.76rem;
+    }
+
+    .module-codegen-ui-motion-composer-head {
+        align-items: start;
+        flex-direction: column;
+    }
+
+    .module-codegen-ui-motion-composer-head span {
+        white-space: normal;
+    }
+
+    .module-codegen-ui-motion-composer-field {
+        padding-right: 6.8rem;
+    }
+
+    .module-codegen-ui-motion-composer-confirm {
+        min-width: 4.6rem;
+        padding-inline: var(--space-2);
+    }
 }
 
 [data-motion="none"] .module-codegen-ui-tab,
@@ -1254,6 +2319,16 @@
 [data-motion="none"] .module-codegen-ui-picker-item,
 [data-motion="none"] .module-codegen-ui-thumb,
 [data-motion="none"] .module-codegen-ui-motion-preview,
-[data-motion="none"] .module-codegen-ui-icon-button {
+[data-motion="none"] .module-codegen-ui-icon-button,
+[data-motion="none"] .module-codegen-ui-motion-surface,
+[data-motion="none"] .module-codegen-ui-motion-composer,
+[data-motion="none"] .module-codegen-ui-motion-composer-input,
+[data-motion="none"] .module-codegen-ui-motion-composer-field,
+[data-motion="none"] .module-codegen-ui-motion-progress,
+[data-motion="none"] .module-codegen-ui-motion-progress-details {
     transition: none;
+}
+
+[data-motion="none"] .module-codegen-ui-motion-surface {
+    animation: none;
 }

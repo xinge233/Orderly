@@ -100,16 +100,22 @@ test("system service delegates generation to the protected host API", async () =
     assert.doesNotMatch(source, /globalThis\.open\(/);
     assert.match(source, /apply-codegen-version/);
     assert.match(source, /rollback-codegen-step/);
-    assert.match(source, /框架动效复用公共挂点/);
     assert.match(source, /module-codegen-ui-layout is-module-workspace/);
     assert.match(source, /module-codegen-ui-module-prompt-panel/);
-    assert.match(source, /module-codegen-ui-editor is-motion/);
     assert.match(source, /module-codegen-ui-target-trigger/);
     assert.match(source, /function openApiDialog/);
     assert.match(source, /dialog\.showModal\(\)/);
     assert.match(source, /context\.openSettings\("ai"\)/);
     assert.match(source, /generateButton\.addEventListener\("click", \(\) => generate\("module"\)\)/);
-    assert.match(source, /generateButton\.addEventListener\("click", \(\) => generate\("motion"\)\)/);
+    assert.match(source, /module-codegen-ui-motion-studio/);
+    assert.match(source, /module-codegen-ui-motion-target-panel/);
+    assert.match(source, /module-codegen-ui-hook-card/);
+    assert.match(source, /module-codegen-ui-motion-progress/);
+    assert.match(source, /input\.placeholder = "请输入 API"/);
+    assert.match(source, /module-codegen-ui-motion-composer-confirm/);
+    assert.match(source, /context\.toast\(message, \{ error \}\)/);
+    assert.match(source, /toggleMotionPreviewFocus/);
+    assert.match(source, /saveMotionApiKey/);
     assert.doesNotMatch(source, /state\.apiKey/);
     assert.doesNotMatch(source, /buildModelField/);
     assert.doesNotMatch(source, /const generate = button/);
@@ -120,7 +126,8 @@ test("system service delegates generation to the protected host API", async () =
     assert.match(style, /\.module-codegen-ui-preview-link\s*\{[^}]*text-decoration:\s*none/s);
     assert.match(style, /\.module-codegen-ui-thumb:disabled,[^}]*opacity:\s*0\.64/s);
     const shellRule = style.match(/\.module-codegen-ui-shell\s*\{([^}]*)\}/)?.[1] ?? "";
-    assert.match(shellRule, /width:\s*calc\(/);
+    assert.match(shellRule, /width:\s*min\(/);
+    assert.match(shellRule, /calc\(100vw - var\(--sidebar-width\) - var\(--space-6\)\)/);
     assert.match(shellRule, /height:\s*max\(46rem,\s*calc\(100dvh - 3rem\)\)/);
     assert.doesNotMatch(shellRule, /height:\s*clamp/);
     assert.match(shellRule, /border:\s*0/);
@@ -138,7 +145,11 @@ test("system service delegates generation to the protected host API", async () =
     );
     assert.match(
         style,
-        /\.module-codegen-ui-editor\.is-motion\s*\{[^}]*grid-template-rows:\s*minmax\(12rem,\s*0\.85fr\)\s*minmax\(10rem,\s*1\.15fr\)/s
+        /\.module-codegen-ui-motion-studio\s*\{[^}]*grid-template-areas:\s*"overview side"\s*"composer side"/s
+    );
+    assert.match(
+        style,
+        /\.module-codegen-ui-motion-studio > \.module-codegen-ui-motion-side\s*\{[^}]*grid-area:\s*side/s
     );
     assert.match(
         style,
@@ -150,7 +161,40 @@ test("system service delegates generation to the protected host API", async () =
     );
     assert.match(
         style,
-        /\.module-codegen-ui-editor\.is-motion > \.module-codegen-ui-target-field,[\s\S]*?grid-area:\s*auto/s
+        /\.module-codegen-ui-motion-composer:focus-within\s*\{[^}]*min-height:\s*10rem/s
+    );
+    assert.match(
+        style,
+        /\.module-codegen-ui-motion-composer:focus-within \.module-codegen-ui-motion-composer-field\.is-api\s*\{[^}]*min-height:\s*7\.6rem/s
+    );
+    assert.match(
+        style,
+        /\.module-codegen-ui-motion-composer-confirm\s*\{[^}]*position:\s*absolute[^}]*right:\s*var\(--space-2\)/s
+    );
+    assert.match(
+        style,
+        /\.module-codegen-ui-motion-target-options\s*\{[^}]*position:\s*absolute/s
+    );
+    assert.match(
+        style,
+        /\.module-codegen-ui-hook-card:hover,\s*\.module-codegen-ui-hook-card\.is-selected\s*\{[^}]*border-color:\s*var\(--color-accent\)/s
+    );
+    assert.match(
+        style,
+        /\.module-codegen-ui-hook-card-list\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s
+    );
+    assert.match(style, /\.module-codegen-ui-motion-swap\.is-disabled\s*\{/);
+    assert.match(
+        style,
+        /\.module-codegen-ui-motion-preview-pane\.is-main \.module-codegen-ui-motion-surface\s*\{[^}]*animation:\s*module-codegen-surface-in\s+var\(--duration-normal\)\s+var\(--ease-out\)/s
+    );
+    assert.match(
+        style,
+        /\[data-motion="none"\] \.module-codegen-ui-motion-progress-details/
+    );
+    assert.match(
+        style,
+        /\[data-motion="none"\] \.module-codegen-ui-motion-surface\s*\{[^}]*animation:\s*none/s
     );
     assert.match(
         style,
@@ -164,7 +208,7 @@ test("system service delegates generation to the protected host API", async () =
         style,
         /\.module-codegen-ui-api-dialog\s*\{[^}]*background:\s*var\(--color-surface-raised\)/s
     );
-    assert.match(style, /\.module-codegen-ui-editor > \.module-codegen-ui-prompt/);
+    assert.match(style, /@keyframes module-codegen-surface-in/);
     assert.doesNotMatch(style, /\.module-codegen-ui-model-field/);
     assert.doesNotMatch(style, /#[0-9a-fA-F]{3,8}\b/);
 });
@@ -246,6 +290,94 @@ test("session catalog selects the latest matching mode and target", () => {
         }).sessionId,
         "latest-target"
     );
+});
+
+test("motion sessions distinguish framework and module targets", () => {
+    const sessions = codegenModule.normalizeCodegenSessions([
+        {
+            sessionId: "motion-module",
+            mode: "motion",
+            moduleId: "module_todo",
+            updatedAt: "2026-11-27T10:00:00Z"
+        },
+        {
+            sessionId: "motion-framework-old",
+            mode: "motion",
+            moduleId: "",
+            updatedAt: "2026-11-27T09:00:00Z"
+        },
+        {
+            sessionId: "motion-framework-new",
+            mode: "motion",
+            moduleId: "",
+            updatedAt: "2026-11-27T11:00:00Z"
+        }
+    ]);
+
+    assert.equal(
+        codegenModule.selectCodegenSession(sessions, {
+            mode: "motion",
+            moduleId: "",
+            allowFallback: false
+        }).sessionId,
+        "motion-framework-new"
+    );
+    assert.equal(
+        codegenModule.selectCodegenSession(sessions, {
+            mode: "motion",
+            moduleId: "module_todo",
+            allowFallback: false
+        }).sessionId,
+        "motion-module"
+    );
+});
+
+test("motion hooks deduplicate, preserve selection and fall back honestly", () => {
+    const scopes = codegenModule.normalizeMotionScopes([
+        { scope: "sidebar", state: "expanded", phase: "settled" },
+        { scope: "sidebar", state: "expanded", phase: "settled" },
+        { scope: "feedback", state: "success", phase: "active" },
+        { scope: "", state: "idle", phase: "" }
+    ]);
+
+    assert.deepEqual(scopes, [
+        { scope: "sidebar", state: "expanded", phase: "settled" },
+        { scope: "feedback", state: "success", phase: "active" }
+    ]);
+    assert.deepEqual(
+        codegenModule.resolveMotionHook(
+            scopes,
+            codegenModule.motionHookKey(scopes[1])
+        ),
+        scopes[1]
+    );
+    assert.deepEqual(codegenModule.resolveMotionHook(scopes, "missing"), scopes[0]);
+    assert.equal(codegenModule.resolveMotionHook([]), null);
+    assert.deepEqual(codegenModule.availableMotionScopes({
+        motionTarget: "module_todo",
+        candidateHooks: [],
+        currentHooks: scopes
+    }), []);
+    assert.deepEqual(codegenModule.availableMotionScopes({
+        motionTarget: "framework",
+        candidateHooks: scopes.slice(0, 1),
+        currentHooks: scopes
+    }), scopes);
+});
+
+test("motion composer prioritizes API entry before prompt and progress", () => {
+    assert.equal(codegenModule.motionComposerMode({
+        configured: false,
+        generating: false
+    }), "api");
+    assert.equal(codegenModule.motionComposerMode({
+        configured: true,
+        generating: false
+    }), "prompt");
+    assert.equal(codegenModule.motionComposerMode({
+        configured: true,
+        generating: true
+    }), "progress");
 });
 
 test("preview action starts first and opens through a direct user link", () => {
