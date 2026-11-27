@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "view": {
+    "id": "codegen-e2e-smoke",
+    "icon": "spark",
+    "caption": "生成链路验收"
+  },
+  "card": {
+    "title": "生成链路验收",
+    "description": "只读验证真实模型生成的模块已加载。",
+    "badge": "只读 · 生成链路",
+    "icon": "spark",
+    "queryId": "codegen.e2e.summary"
+  },
+  "settings": [],
+  "examples": [],
+  "script": "module.js",
+  "style": "module.css"
+}

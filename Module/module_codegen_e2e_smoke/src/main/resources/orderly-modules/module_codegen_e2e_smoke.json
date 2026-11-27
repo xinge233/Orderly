@@ -1,0 +1,31 @@
+{
+  "moduleId": "module_codegen_e2e_smoke",
+  "title": "生成链路验收",
+  "description": "真实模型生成的只读模块构建链路验收样例。",
+  "order": 55,
+  "actions": [],
+  "queries": [
+    {
+      "id": "codegen.e2e.summary",
+      "title": "生成链路摘要",
+      "description": "返回固定的只读生成链路验收结果。",
+      "parameters": [],
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "schemaVersion",
+          "moduleId",
+          "readOnly",
+          "message"
+        ],
+        "properties": {
+          "schemaVersion": { "type": "integer" },
+          "moduleId": { "type": "string" },
+          "readOnly": { "type": "boolean" },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  ],
+  "plannerRules": []
+}

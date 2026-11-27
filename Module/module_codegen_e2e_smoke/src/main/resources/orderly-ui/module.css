@@ -1,0 +1,10 @@
+.codegen-e2e-smoke,
+[data-orderly-view="codegen-e2e-smoke"] {
+  box-sizing: border-box;
+  padding: var(--orderly-space-4);
+  color: var(--orderly-color-text);
+  background: var(--orderly-color-surface);
+  border: var(--orderly-border-width) solid var(--orderly-color-border);
+  border-radius: var(--orderly-radius-md);
+  font: inherit;
+}
