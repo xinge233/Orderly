@@ -148,6 +148,33 @@ test("API client uses the module governance endpoints and action header", async 
     );
 });
 
+test("API client reads and confirms the module AI risk level", async () => {
+    const requests = [];
+    const api = new OrderlyApi({
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url, options });
+            return new Response("{}", { status: 200 });
+        }
+    });
+
+    await api.getModuleAiRiskLevel("module/fs");
+    await api.setModuleAiRiskLevel("module/fs", "WRITE");
+
+    assert.deepEqual(requests.map(({ url }) => url), [
+        "/api/modules/module%2Ffs/ai-risk-level",
+        "/api/modules/module%2Ffs/ai-risk-level"
+    ]);
+    assert.equal(requests[1].options.method, "PATCH");
+    assert.equal(
+        requests[1].options.headers["X-Orderly-Action"],
+        "set-action-ai-risk-level"
+    );
+    assert.deepEqual(JSON.parse(requests[1].options.body), {
+        confirmed: true,
+        actionAiRiskLevel: "WRITE"
+    });
+});
+
 test("API client reads and prioritizes background module builds", async () => {
     const requests = [];
     const api = new OrderlyApi({

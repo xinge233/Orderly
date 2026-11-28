@@ -1,5 +1,7 @@
 package com.orderly.host.modulecontrol;
 
+import com.orderly.kernel.RiskLevel;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,18 +15,20 @@ import java.util.Map;
 public record ModuleInterfaceState(
         Map<String, Map<String, Boolean>> actionAiCallableEnabled,
         Map<String, Map<String, Boolean>> queryAiCallableEnabled,
+        Map<String, RiskLevel> actionAiRiskLevels,
         List<String> inUseActions
 ) {
 
     public ModuleInterfaceState {
         actionAiCallableEnabled = copy(actionAiCallableEnabled);
         queryAiCallableEnabled = copy(queryAiCallableEnabled);
+        actionAiRiskLevels = Map.copyOf(actionAiRiskLevels);
         inUseActions = List.copyOf(inUseActions);
     }
 
     /** 返回无开关、无使用中 Action 的空状态。 */
     public static ModuleInterfaceState empty() {
-        return new ModuleInterfaceState(Map.of(), Map.of(), List.of());
+        return new ModuleInterfaceState(Map.of(), Map.of(), Map.of(), List.of());
     }
 
     /** 将两级开关映射复制为不可变结构。 */

@@ -9,6 +9,7 @@ import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.contract.ModuleSettingsDefinition;
 import com.orderly.host.contract.SystemModulePolicy;
 import com.orderly.host.runtime.WorkspaceRuntime;
+import com.orderly.kernel.RiskLevel;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -55,6 +56,7 @@ public class ModulePreferencesService {
     private Map<String, Map<String, Object>> moduleSettings = new LinkedHashMap<>();
     private Map<String, Map<String, Boolean>> actionAiCallableEnabled = new LinkedHashMap<>();
     private Map<String, Map<String, Boolean>> queryAiCallableEnabled = new LinkedHashMap<>();
+    private Map<String, RiskLevel> actionAiRiskLevels = new LinkedHashMap<>();
     private String revision = UUID.randomUUID().toString();
 
     public ModulePreferencesService(
@@ -121,6 +123,16 @@ public class ModulePreferencesService {
         return copyFlags(queryAiCallableEnabled);
     }
 
+    /** 返回各业务模块 Action 的 AI 风险上限；旧状态缺失时按完全权限兼容。 */
+    public synchronized Map<String, RiskLevel> actionAiRiskLevels() {
+        return Map.copyOf(actionAiRiskLevels);
+    }
+
+    /** 查询模块 AI 风险上限；未登记模块默认沿用全部 Action 可调用的旧行为。 */
+    public synchronized RiskLevel actionAiRiskLevel(String moduleId) {
+        return actionAiRiskLevels.getOrDefault(moduleId, RiskLevel.DELETE);
+    }
+
     /** 查询 Action 动态开关；未登记值默认允许。 */
     public synchronized boolean isActionAiCallableEnabled(String moduleId, String actionId) {
         return actionAiCallableEnabled
@@ -154,6 +166,12 @@ public class ModulePreferencesService {
     ) {
         queryAiCallableEnabled.computeIfAbsent(moduleId, ignored -> new LinkedHashMap<>())
                 .put(queryId, enabled);
+        persist();
+    }
+
+    /** 更新模块级 AI 风险上限并立即写入治理状态。 */
+    public synchronized void setActionAiRiskLevel(String moduleId, RiskLevel riskLevel) {
+        actionAiRiskLevels.put(moduleId, riskLevel);
         persist();
     }
 
@@ -237,6 +255,7 @@ public class ModulePreferencesService {
         Map<String, Map<String, Object>> previousSettings = deepCopy(moduleSettings);
         Map<String, Map<String, Boolean>> previousActions = copyFlags(actionAiCallableEnabled);
         Map<String, Map<String, Boolean>> previousQueries = copyFlags(queryAiCallableEnabled);
+        Map<String, RiskLevel> previousRiskLevels = new LinkedHashMap<>(actionAiRiskLevels);
         String previousRevision = revision;
         try {
             enabled.putIfAbsent(module.moduleId(), true);
@@ -244,6 +263,7 @@ public class ModulePreferencesService {
             appendMissing(managementOrder, List.of(module));
             initializeSettings(module);
             initializeInterfaceFlags(module);
+            actionAiRiskLevels.putIfAbsent(module.moduleId(), RiskLevel.DELETE);
             persist();
         } catch (RuntimeException exception) {
             enabled = previousEnabled;
@@ -252,6 +272,7 @@ public class ModulePreferencesService {
             moduleSettings = previousSettings;
             actionAiCallableEnabled = previousActions;
             queryAiCallableEnabled = previousQueries;
+            actionAiRiskLevels = previousRiskLevels;
             revision = previousRevision;
             throw exception;
         }
@@ -307,8 +328,10 @@ public class ModulePreferencesService {
 
         Map<String, Map<String, Boolean>> reconciledActions = copyFlags(actionAiCallableEnabled);
         Map<String, Map<String, Boolean>> reconciledQueries = copyFlags(queryAiCallableEnabled);
+        Map<String, RiskLevel> reconciledRiskLevels = new LinkedHashMap<>(actionAiRiskLevels);
         reconciledActions.keySet().removeIf(moduleId -> !businessIds.contains(moduleId));
         reconciledQueries.keySet().removeIf(moduleId -> !businessIds.contains(moduleId));
+        reconciledRiskLevels.keySet().removeIf(moduleId -> !businessIds.contains(moduleId));
         for (ModuleContract module : businessModules) {
             Map<String, Boolean> actionValues = new LinkedHashMap<>();
             for (var action : module.actions()) {
@@ -335,9 +358,11 @@ public class ModulePreferencesService {
             if (!queryValues.isEmpty()) {
                 reconciledQueries.put(module.moduleId(), new LinkedHashMap<>(queryValues));
             }
+            reconciledRiskLevels.putIfAbsent(module.moduleId(), RiskLevel.DELETE);
         }
         actionAiCallableEnabled = reconciledActions;
         queryAiCallableEnabled = reconciledQueries;
+        actionAiRiskLevels = reconciledRiskLevels;
     }
 
     /** 保留现有顺序中仍有效且不重复的 ID，再按契约顺序补齐缺失模块。 */
@@ -589,6 +614,7 @@ public class ModulePreferencesService {
                 root.path("queryAiCallableEnabled"),
                 "queryAiCallableEnabled"
         );
+        actionAiRiskLevels = parseRiskLevels(root.path("actionAiRiskLevels"));
 
         JsonNode rawSettings = root.path("moduleSettings");
         if (!rawSettings.isObject()) {
@@ -701,6 +727,10 @@ public class ModulePreferencesService {
         );
         root.set("actionAiCallableEnabled", flagObject(actionAiCallableEnabled));
         root.set("queryAiCallableEnabled", flagObject(queryAiCallableEnabled));
+        ObjectNode riskLevelNode = root.putObject("actionAiRiskLevels");
+        actionAiRiskLevels.forEach((moduleId, riskLevel) ->
+                riskLevelNode.put(moduleId, riskLevel.name())
+        );
 
         Path temporary = stateFile.resolveSibling(FILE_NAME + ".tmp");
         try {
@@ -735,6 +765,37 @@ public class ModulePreferencesService {
             ObjectNode moduleNode = result.putObject(moduleId);
             values.forEach(moduleNode::put);
         });
+        return result;
+    }
+
+    /** 解析模块到风险等级的映射；缺失字段按空映射兼容旧状态。 */
+    private Map<String, RiskLevel> parseRiskLevels(JsonNode raw) {
+        if (raw.isMissingNode() || raw.isNull()) {
+            return new LinkedHashMap<>();
+        }
+        if (!raw.isObject()) {
+            throw new IllegalStateException("actionAiRiskLevels 必须是对象");
+        }
+        Map<String, RiskLevel> result = new LinkedHashMap<>();
+        for (var iterator = raw.fields(); iterator.hasNext(); ) {
+            Map.Entry<String, JsonNode> entry = iterator.next();
+            if (!entry.getValue().isTextual()) {
+                throw new IllegalStateException(
+                        "actionAiRiskLevels." + entry.getKey() + " 必须是风险等级文本"
+                );
+            }
+            try {
+                result.put(
+                        entry.getKey(),
+                        RiskLevel.valueOf(entry.getValue().asText().trim().toUpperCase(java.util.Locale.ROOT))
+                );
+            } catch (IllegalArgumentException exception) {
+                throw new IllegalStateException(
+                        "actionAiRiskLevels." + entry.getKey() + " 不是合法风险等级",
+                        exception
+                );
+            }
+        }
         return result;
     }
 

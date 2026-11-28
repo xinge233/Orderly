@@ -568,7 +568,7 @@ class AiInterpretServiceTest {
     }
 
     @Test
-    void sendsOnlyEnabledModulesAndDynamicallyEnabledActionsAndQueriesToPython() {
+    void sendsOnlyEnabledModulesAndAiAllowedActionsAndQueriesToPython() {
         ModuleContract enabled = new ModuleContract(
                 "module_enabled",
                 "启用模块",
@@ -576,7 +576,8 @@ class AiInterpretServiceTest {
                 1,
                 null,
                 List.of(
-                        action("action.allowed"),
+                        action("action.allowed", RiskLevel.READ_ONLY),
+                        action("action.risk-blocked", RiskLevel.WRITE),
                         action("action.dynamic-off")
                 ),
                 List.of(
@@ -602,7 +603,19 @@ class AiInterpretServiceTest {
                 .thenReturn(true);
         when(moduleControl.isActionAiCallableEnabled(
                 "module_enabled",
+                "action.risk-blocked"
+        )).thenReturn(true);
+        when(moduleControl.isActionAiCallableEnabled(
+                "module_enabled",
                 "action.dynamic-off"
+        )).thenReturn(false);
+        when(moduleControl.isActionWithinAiRiskLimit(
+                "module_enabled",
+                RiskLevel.READ_ONLY
+        )).thenReturn(true);
+        when(moduleControl.isActionWithinAiRiskLimit(
+                "module_enabled",
+                RiskLevel.WRITE
         )).thenReturn(false);
         when(moduleControl.isQueryAiCallableEnabled("module_enabled", "query.allowed"))
                 .thenReturn(true);
@@ -752,11 +765,15 @@ class AiInterpretServiceTest {
     }
 
     private ActionContract action(String id) {
+        return action(id, RiskLevel.READ_ONLY);
+    }
+
+    private ActionContract action(String id, RiskLevel risk) {
         return new ActionContract(
                 id,
                 id,
                 "动作说明",
-                RiskLevel.READ_ONLY,
+                risk,
                 false,
                 null,
                 List.of(),

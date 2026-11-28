@@ -203,6 +203,31 @@ export class OrderlyApi {
         );
     }
 
+    getModuleAiRiskLevel(moduleId, options = {}) {
+        return this.request(
+            `/api/modules/${encodeURIComponent(moduleId)}/ai-risk-level`,
+            options
+        );
+    }
+
+    setModuleAiRiskLevel(moduleId, actionAiRiskLevel, options = {}) {
+        return this.request(
+            `/api/modules/${encodeURIComponent(moduleId)}/ai-risk-level`,
+            {
+                ...options,
+                method: "PATCH",
+                headers: {
+                    ...options.headers,
+                    "X-Orderly-Action": "set-action-ai-risk-level"
+                },
+                body: {
+                    confirmed: true,
+                    actionAiRiskLevel
+                }
+            }
+        );
+    }
+
     refreshSystemModules(options = {}) {
         return this.request("/api/system/modules/refresh", {
             ...options,

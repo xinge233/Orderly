@@ -747,6 +747,11 @@ public class AiInterpretService {
                             module.moduleId(),
                             action.id()
                     ))
+                    .filter(action -> module.system() != null
+                            || moduleControl.isActionWithinAiRiskLimit(
+                                    module.moduleId(),
+                                    action.risk()
+                            ))
                     .map(this::toolAction)
                     .toList();
             List<AiContracts.ToolQuery> queries = module.queries().stream()

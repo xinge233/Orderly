@@ -27,6 +27,13 @@ test("module_fs uses host file-root authorization and tokenized reads", async ()
     assert.match(moduleSource, /context\.query\("fs\.list"/);
     assert.match(moduleSource, /context\.fileRoots\.grantRead\(/);
     assert.match(moduleSource, /context\.fileRoots\.revoke\(/);
+    assert.match(moduleSource, /context\.aiRiskPolicy\.get\(/);
+    assert.match(moduleSource, /context\.aiRiskPolicy\.set\(/);
+    assert.match(moduleSource, /AI 文件操作风险上限/);
+    assert.match(moduleSource, /完全权限/);
+    assert.match(moduleSource, /只读/);
+    assert.match(moduleSource, /写入/);
+    assert.match(moduleSource, /宿主返回了无效的 AI 风险上限/);
     assert.match(moduleSource, /context\.query\("fs\.readGrantedText"/);
     assert.match(moduleSource, /context\.openAiWithText\(/);
     assert.doesNotMatch(moduleSource, /context\.fillCommand\(/);

@@ -79,6 +79,13 @@ public class ActionExecutionCore {
                     "动作已被用户关闭 AI 调用：" + actionId
             );
         }
+        if (!moduleControl.isActionWithinAiRiskLimit(moduleId, target.risk())) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "ACTION_AI_RISK_LIMIT",
+                    "动作风险高于模块当前允许的 AI 风险上限：" + actionId
+            );
+        }
         return target;
     }
 

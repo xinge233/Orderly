@@ -2676,6 +2676,11 @@ async function mountModule(module) {
                 grantRead: (rootId, path, purpose, options) =>
                     api.grantFileRead(rootId, path, purpose, options)
             },
+            aiRiskPolicy: {
+                get: (options) => api.getModuleAiRiskLevel(module.moduleId, options),
+                set: (actionAiRiskLevel, options) =>
+                    api.setModuleAiRiskLevel(module.moduleId, actionAiRiskLevel, options)
+            },
             executeAction: (actionId, argumentsValue = {}, confirmed = true) =>
                 api.executeModuleAction(
                     module.moduleId,

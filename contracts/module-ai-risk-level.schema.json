@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/module-ai-risk-level.schema.json",
+  "title": "Orderly Module AI Risk Level",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/response" }
+  ],
+  "$defs": {
+    "riskLevel": {
+      "type": "string",
+      "enum": ["READ_ONLY", "WRITE", "DELETE"]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["confirmed", "actionAiRiskLevel"],
+      "properties": {
+        "confirmed": {
+          "const": true,
+          "description": "本机用户是否已明确确认新的 AI 风险上限。"
+        },
+        "actionAiRiskLevel": {
+          "$ref": "#/$defs/riskLevel"
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["moduleId", "actionAiRiskLevel"],
+      "properties": {
+        "moduleId": {
+          "type": "string",
+          "pattern": "^module_[a-z0-9_]+$"
+        },
+        "actionAiRiskLevel": {
+          "$ref": "#/$defs/riskLevel"
+        }
+      }
+    }
+  }
+}

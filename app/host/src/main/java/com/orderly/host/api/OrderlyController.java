@@ -37,6 +37,7 @@ import com.orderly.host.theme.ThemeAsset;
 import com.orderly.host.theme.ThemeCatalog;
 import com.orderly.host.theme.ThemeCatalogSnapshot;
 import com.orderly.host.theme.ThemeDefinition;
+import com.orderly.kernel.RiskLevel;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
@@ -719,6 +720,42 @@ public class OrderlyController {
         return moduleControl.interfaceState();
     }
 
+    /** 读取业务模块当前允许 AI 调用的最高 Action 风险。 */
+    @GetMapping("/modules/{moduleId}/ai-risk-level")
+    public ActionAiRiskLevelView moduleAiRiskLevel(@PathVariable String moduleId) {
+        return new ActionAiRiskLevelView(
+                moduleId,
+                moduleControl.actionAiRiskLevel(moduleId)
+        );
+    }
+
+    /**
+     * 由本机用户确认并更新业务模块的 Action AI 风险上限。
+     *
+     * <p>该值只限制 AI 可请求的最高 Action 风险，不替代文件根能力、确认、快照、
+     * 审计、回收站与回滚规则。</p>
+     */
+    @PatchMapping("/modules/{moduleId}/ai-risk-level")
+    public ActionAiRiskLevelView updateModuleAiRiskLevel(
+            @PathVariable String moduleId,
+            @RequestHeader(name = "X-Orderly-Action", defaultValue = "") String action,
+            @RequestBody ActionAiRiskLevelRequest request
+    ) {
+        if (!"set-action-ai-risk-level".equals(action)
+                || request == null
+                || !request.confirmed()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_AI_RISK_LEVEL_REQUEST",
+                    "更新 AI 风险上限必须由本机用户确认并声明 "
+                            + "X-Orderly-Action: set-action-ai-risk-level"
+            );
+        }
+        RiskLevel riskLevel = riskLevel(request.actionAiRiskLevel());
+        moduleControl.setActionAiRiskLevel(moduleId, riskLevel);
+        return new ActionAiRiskLevelView(moduleId, riskLevel);
+    }
+
     /**
      * 更新治理层的 AI 可调用开关；系统模块和未声明接口不可修改。
      */
@@ -903,6 +940,14 @@ public class OrderlyController {
     public record InterfaceAiCallableRequest(Boolean aiCallable) {
     }
 
+    /** 模块级 AI 风险上限更新请求。 */
+    public record ActionAiRiskLevelRequest(boolean confirmed, String actionAiRiskLevel) {
+    }
+
+    /** 模块级 AI 风险上限响应，只包含模块 ID 和等级。 */
+    public record ActionAiRiskLevelView(String moduleId, RiskLevel actionAiRiskLevel) {
+    }
+
     /** 侧边栏或管理视图的模块 ID 顺序请求。 */
     public record ModuleOrderRequest(List<String> moduleIds) {
     }
@@ -953,6 +998,22 @@ public class OrderlyController {
 
     /** 总体 AI Action 数组直执请求。 */
     public record AiActionsRequest(boolean confirmed, List<AiActionService.ActionCall> actions) {
+    }
+
+    /** 将请求文本严格转换为框架统一风险等级。 */
+    private RiskLevel riskLevel(String value) {
+        String normalized = String.valueOf(value == null ? "" : value)
+                .trim()
+                .toUpperCase(java.util.Locale.ROOT);
+        try {
+            return RiskLevel.valueOf(normalized);
+        } catch (IllegalArgumentException exception) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_AI_RISK_LEVEL",
+                    "AI 风险上限必须是 READ_ONLY、WRITE 或 DELETE"
+            );
+        }
     }
 
     /** 校验排序请求确实提供 moduleIds 数组，具体 ID 由治理服务继续检查。 */

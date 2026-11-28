@@ -121,11 +121,11 @@ docs/                       产品与协作文档
 
 ### 模块治理状态
 
-- 宿主在 `.orderly-data/module-governance.json` 单一 JSON 中持久化业务模块 `enabled`、全部运行模块的两套顺序（`sidebarOrder`、`managementOrder`）、`moduleSettings` 以及 Action/Query 的动态 `aiCallableEnabled`；写入使用同目录临时文件加原子替换。
+- 宿主在 `.orderly-data/module-governance.json` 单一 JSON 中持久化业务模块 `enabled`、全部运行模块的两套顺序（`sidebarOrder`、`managementOrder`）、`moduleSettings`、Action/Query 的动态 `aiCallableEnabled` 以及 `actionAiRiskLevels`；写入使用同目录临时文件加原子替换。旧状态缺少 `actionAiRiskLevels` 时按 `DELETE` 兼容，保持既有全部 Action 可调用的行为。
 - 新业务模块默认启用，并按契约 `order` 插入 `module_system_control` 之前。`sidebarOrder` 和 `managementOrder` 都包含业务模块与系统模块 ID；旧治理文件中的 `module_control` 顺序 ID 读取时迁移为 `module_system_control`。失效模块 ID 从运行偏好中清理，系统模块可排序但不可停用或写入业务设置。
 - 状态文件损坏必须产生包含文件路径和原因的明确启动错误，不得静默回退为空状态。
 - 模块设置定义来自模块 JAR 的 `orderly-ui/module.json`。宿主校验字段 key 唯一、默认值、select options 与默认值归属、integer/text 范围，并拒绝未声明字段和错误类型。
-- 业务 Action/Query 的 `aiCallableEnabled` 只属于宿主运行治理，默认开启并可由 `module_system_control` 切换；模块契约不得声明静态 AI 权限。`module_system_control` 自身不参与业务接口开关治理，但其固定治理 Action/Query 可进入受控工具卡，动作必须单独执行并复用宿主确认、快照、审计和回滚。动态开关只限制 AI，不阻断模块自身 Query；Query 开关控制已接入的 AI Query。未执行独立 AI 计划引用或执行中的 Action 由宿主标记“使用中”并拒绝关闭；计划确认时原子转换为整次执行占用，结束或失败后释放。旧版计划不参与。
+- 业务 Action/Query 的 `aiCallableEnabled` 只属于宿主运行治理，默认开启并可由 `module_system_control` 切换；模块契约不得声明静态 AI 权限。宿主还可按业务模块保存 `READ_ONLY`、`WRITE`、`DELETE` 三级 Action AI 风险上限：模型工具卡只暴露上限内动作，旧计划、直执或手工请求超过上限时由统一执行核心拒绝。该上限不替代文件根能力、确认、快照、审计、项目回收站和回滚。`module_system_control` 自身不参与业务接口开关治理，但其固定治理 Action/Query 可进入受控工具卡，动作必须单独执行并复用宿主确认、快照、审计和回滚。动态开关只限制 AI，不阻断模块自身 Query；Query 开关控制已接入的 AI Query。未执行独立 AI 计划引用或执行中的 Action 由宿主标记“使用中”并拒绝关闭；降低风险上限涉及使用中的高风险 Action 时同样拒绝。计划确认时原子转换为整次执行占用，结束或失败后释放。旧版计划不参与。
 - 模块查询、计划规则、计划生成、计划确认、AI Action 直执和执行前检查都必须尊重业务模块 `enabled`。执行期间禁止停用；回滚不检查 `enabled`，始终允许按快照恢复。
 - 开关、设置、两类排序、刷新和打开模块源码目录都必须写入审计事件。打开目录只接受 Windows，只打开配置的 `orderly.module-source-dir`，不接受客户端路径。
 

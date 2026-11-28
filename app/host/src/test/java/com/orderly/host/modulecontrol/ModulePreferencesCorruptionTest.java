@@ -6,6 +6,7 @@ import com.orderly.host.runtime.WorkspaceRuntime;
 import com.orderly.host.support.TestBusinessModule;
 import com.orderly.host.support.TestControlModule;
 import com.orderly.host.support.TestModuleArchives;
+import com.orderly.kernel.RiskLevel;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -124,11 +125,14 @@ class ModulePreferencesCorruptionTest {
                     .containsExactly("module_business", "module_system_control");
             assertThat(preferences.snapshot().managementOrder())
                     .containsExactly("module_system_control", "module_business");
+            assertThat(preferences.actionAiRiskLevel("module_business"))
+                    .isEqualTo(RiskLevel.DELETE);
             String persisted = Files.readString(
                     data.resolve("module-governance.json"),
                     StandardCharsets.UTF_8
             );
             assertThat(persisted).contains("module_system_control");
+            assertThat(persisted).contains("\"actionAiRiskLevels\"");
             assertThat(persisted).doesNotContain("\"module_control\"");
         }
     }

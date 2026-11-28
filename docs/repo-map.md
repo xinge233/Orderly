@@ -81,7 +81,7 @@
 | `contracts/ai-query-continuation-request.schema.json` | Query 结果回传 Python 的受控续聊请求 |
 | `contracts/codegen-generate-request.schema.json` | 生成器模块/动效请求、目标与挂点范围 |
 | `contracts/ai-service-decision.schema.json` | Python 到 Java 的受控决策响应 |
-| `contracts/module.schema.json`、`module-ui.schema.json`、`module-catalog.schema.json`、`module-removal.schema.json` | 模块 JAR、模块 UI、GitHub 分发与删除生命周期契约 |
+| `contracts/module.schema.json`、`module-ui.schema.json`、`module-catalog.schema.json`、`module-removal.schema.json`、`module-ai-risk-level.schema.json` | 模块 JAR、模块 UI、GitHub 分发、删除生命周期与模块级 Action AI 风险上限契约 |
 | `contracts/theme.schema.json` | 宿主主题加载与主题样例 |
 | `contracts/runtime-release.schema.json`、`full-release.schema.json` | 轻量运行包与 Windows 完整版的清单、工件和启动路径 |
 | `contracts/study-data.schema.json` | 学习数据校验脚本与模块数据 |

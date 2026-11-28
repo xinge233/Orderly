@@ -6,6 +6,7 @@ import com.orderly.host.contract.ContractCatalog;
 import com.orderly.host.contract.ModuleContract;
 import com.orderly.host.contract.ModuleEntry;
 import com.orderly.host.event.ExecutionJournal;
+import com.orderly.kernel.RiskLevel;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -104,8 +105,67 @@ public class ModuleControlService {
         return new ModuleInterfaceState(
                 preferences.actionAiCallableEnabled(),
                 preferences.queryAiCallableEnabled(),
+                preferences.actionAiRiskLevels(),
                 usage.inUseActionKeys(Instant.now())
         );
+    }
+
+    /** 返回业务模块的 Action AI 风险上限；未登记时延续完全权限。 */
+    public RiskLevel actionAiRiskLevel(String moduleId) {
+        requireBusinessModule(moduleId);
+        return preferences.actionAiRiskLevel(moduleId);
+    }
+
+    /** 判断 Action 风险是否仍在模块的 AI 上限内；系统模块不受业务风险上限影响。 */
+    public boolean isActionWithinAiRiskLimit(String moduleId, RiskLevel risk) {
+        ModuleContract module = catalog.findModule(moduleId).orElse(null);
+        if (module == null || module.system() != null) {
+            return true;
+        }
+        return risk.ordinal() <= preferences.actionAiRiskLevel(moduleId).ordinal();
+    }
+
+    /**
+     * 更新业务模块的 Action AI 风险上限。
+     *
+     * <p>降低上限时，若更高风险的 Action 正在被未执行 AI 计划或当前执行占用，立即
+     * 返回冲突。文件根能力、确认、快照、审计和回滚仍由各自宿主边界独立担保。</p>
+     */
+    public ModuleInterfaceState setActionAiRiskLevel(String moduleId, RiskLevel riskLevel) {
+        ModuleContract module = requireBusinessModule(moduleId);
+        return coordinator.mutate(() -> usage.withActionLock(() -> {
+            RiskLevel previous = preferences.actionAiRiskLevel(moduleId);
+            if (previous.ordinal() > riskLevel.ordinal()) {
+                boolean inUse = module.actions().stream()
+                        .filter(action -> action.risk().ordinal() > riskLevel.ordinal())
+                        .anyMatch(action -> usage.isActionInUse(
+                                moduleId,
+                                action.id(),
+                                Instant.now()
+                        ));
+                if (inUse) {
+                    throw new ApiException(
+                            HttpStatus.CONFLICT,
+                            "INTERFACE_IN_USE",
+                            "更高风险动作正在被未执行 AI 计划或当前执行使用"
+                    );
+                }
+            }
+            if (previous != riskLevel) {
+                preferences.setActionAiRiskLevel(moduleId, riskLevel);
+                journal.append(
+                        "MODULE_CONTROL",
+                        "MODULE_CONTROL",
+                        null,
+                        null,
+                        moduleId,
+                        "action-ai-risk",
+                        "AI_RISK_" + riskLevel.name(),
+                        "Action AI 风险上限已更新为 " + riskLevel.name()
+                );
+            }
+            return interfaceState();
+        }));
     }
 
     /**

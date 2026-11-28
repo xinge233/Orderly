@@ -48,6 +48,36 @@ function isReadableEntry(entry) {
         || (entry && !entry.directory && READABLE_DOCUMENT_EXTENSIONS.has(extensionOf(entry.name)));
 }
 
+const AI_RISK_OPTIONS = [
+    {
+        value: "READ_ONLY",
+        label: "只读",
+        description: "AI 可查询、浏览和读取文件，不能修改。"
+    },
+    {
+        value: "WRITE",
+        label: "写入",
+        description: "AI 可创建、写入、移动和恢复文件，不能移入回收站。"
+    },
+    {
+        value: "DELETE",
+        label: "完全权限",
+        description: "AI 可调用全部文件动作；删除仍只进入项目回收站。"
+    }
+];
+
+function normalizeAiRiskLevel(value, fallback = "READ_ONLY") {
+    const normalized = String(value ?? "").trim().toUpperCase();
+    return AI_RISK_OPTIONS.some((option) => option.value === normalized)
+        ? normalized
+        : fallback;
+}
+
+function aiRiskOption(value) {
+    const normalized = normalizeAiRiskLevel(value);
+    return AI_RISK_OPTIONS.find((option) => option.value === normalized);
+}
+
 function formatSize(size) {
     const value = Number(size);
     if (!Number.isFinite(value) || value < 0) return "—";
@@ -79,6 +109,10 @@ export default async function mount(root, context) {
         trash: [],
         preview: null,
         previewLoading: false,
+        aiRiskLevel: "READ_ONLY",
+        aiRiskAvailable: false,
+        aiRiskLoading: true,
+        aiRiskSaving: false,
         requestVersion: 0
     };
 
@@ -132,7 +166,17 @@ export default async function mount(root, context) {
     const headerActions = make("div", "fs-ui-header__actions");
     const authButton = button("授权目录", "shield", "fs-ui-button--primary");
     const refreshButton = iconButton("刷新当前目录", "refresh");
-    headerActions.append(refreshButton, authButton);
+    const aiRiskControl = make("label", "fs-ui-ai-risk");
+    aiRiskControl.append(iconNode("shield", 16), make("span", "fs-ui-ai-risk__label", "AI 风险"));
+    const aiRiskSelect = make("select", "fs-ui-ai-risk__select");
+    aiRiskSelect.setAttribute("aria-label", "AI 文件操作风险上限");
+    AI_RISK_OPTIONS.forEach((option) => {
+        const item = make("option", "", option.label);
+        item.value = option.value;
+        aiRiskSelect.append(item);
+    });
+    aiRiskControl.append(aiRiskSelect);
+    headerActions.append(aiRiskControl, refreshButton, authButton);
     header.append(heading, headerActions);
 
     const notice = make("div", "fs-ui-notice");
@@ -201,6 +245,87 @@ export default async function mount(root, context) {
 
     function canDelete() {
         return Boolean(activeRoot()?.delete);
+    }
+
+    function updateAiRiskControl() {
+        const option = aiRiskOption(state.aiRiskLevel);
+        aiRiskSelect.value = option.value;
+        aiRiskSelect.disabled = state.aiRiskLoading
+            || state.aiRiskSaving
+            || !state.aiRiskAvailable;
+        aiRiskControl.dataset.risk = option.value;
+        aiRiskControl.dataset.busy = String(state.aiRiskLoading || state.aiRiskSaving);
+        aiRiskControl.title = state.aiRiskAvailable
+            ? `AI 文件动作上限：${option.label}。${option.description} 文件根能力位仍单独生效。`
+            : "宿主尚未接入模块 AI 风险上限。";
+    }
+
+    async function loadAiRiskLevel() {
+        if (!context.aiRiskPolicy?.get) {
+            state.aiRiskAvailable = false;
+            state.aiRiskLoading = false;
+            updateAiRiskControl();
+            return;
+        }
+        state.aiRiskLoading = true;
+        updateAiRiskControl();
+        try {
+            const payload = await context.aiRiskPolicy.get();
+            const nextLevel = normalizeAiRiskLevel(payload?.actionAiRiskLevel, "");
+            if (!nextLevel) {
+                throw new Error("宿主返回了无效的 AI 风险上限");
+            }
+            state.aiRiskLevel = nextLevel;
+            state.aiRiskAvailable = true;
+        } catch (error) {
+            state.aiRiskAvailable = false;
+            fail(error);
+        } finally {
+            state.aiRiskLoading = false;
+            updateAiRiskControl();
+        }
+    }
+
+    async function changeAiRiskLevel() {
+        const requested = normalizeAiRiskLevel(aiRiskSelect.value);
+        const previous = state.aiRiskLevel;
+        if (requested === previous) {
+            updateAiRiskControl();
+            return;
+        }
+        if (!state.aiRiskAvailable || !context.aiRiskPolicy?.set) {
+            aiRiskSelect.value = previous;
+            notify("宿主尚未接入模块 AI 风险上限", true);
+            return;
+        }
+        const option = aiRiskOption(requested);
+        if (requested !== "READ_ONLY") {
+            const warning = requested === "DELETE"
+                ? "完全权限允许 AI 调用全部文件动作。删除仍只会进入项目回收站，并继续经过确认、快照和审计。"
+                : "写入权限允许 AI 创建、写入、移动和恢复文件；文件根仍需单独授予写入能力。";
+            if (!window.confirm(`${warning}\n\n确认将 AI 风险上限设为“${option.label}”？`)) {
+                aiRiskSelect.value = previous;
+                updateAiRiskControl();
+                return;
+            }
+        }
+        state.aiRiskSaving = true;
+        updateAiRiskControl();
+        try {
+            const payload = await context.aiRiskPolicy.set(requested);
+            const nextLevel = normalizeAiRiskLevel(payload?.actionAiRiskLevel, "");
+            if (!nextLevel) {
+                throw new Error("宿主返回了无效的 AI 风险上限");
+            }
+            state.aiRiskLevel = nextLevel;
+            notify(`AI 风险上限已设为“${aiRiskOption(state.aiRiskLevel).label}”`);
+        } catch (error) {
+            state.aiRiskLevel = previous;
+            fail(error);
+        } finally {
+            state.aiRiskSaving = false;
+            updateAiRiskControl();
+        }
     }
 
     function setBusy(element, busy, label = "处理中…") {
@@ -869,6 +994,7 @@ export default async function mount(root, context) {
         if (state.mode === "trash") loadTrash();
         else loadDirectory();
     });
+    aiRiskSelect.addEventListener("change", () => void changeAiRiskLevel());
     authForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         const path = authPath.value.trim();
@@ -902,9 +1028,10 @@ export default async function mount(root, context) {
     });
 
     renderRoots();
+    updateAiRiskControl();
     renderEmptyDetail("正在读取文件根…");
     try {
-        await loadRoots(true);
+        await Promise.all([loadRoots(true), loadAiRiskLevel()]);
     } catch (error) {
         fail(error);
     }

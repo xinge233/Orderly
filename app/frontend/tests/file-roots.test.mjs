@@ -18,6 +18,9 @@ test("file root authorization stays a local host API and is exposed through moun
     assert.match(appSource, /authorize: \(path, label, allowWrite, allowDelete, options\)/);
     assert.match(appSource, /revoke: \(rootId, options\) => api\.revokeFileRoot/);
     assert.match(appSource, /grantRead: \(rootId, path, purpose, options\)/);
+    assert.match(appSource, /aiRiskPolicy: \{/);
+    assert.match(appSource, /getModuleAiRiskLevel\(module\.moduleId/);
+    assert.match(appSource, /setModuleAiRiskLevel\(module\.moduleId/);
     assert.match(appSource, /openAiWithText: \(text = ""\) => aiDialog\?\.openWithText/);
     assert.doesNotMatch(apiSource, /module_fs/);
 });

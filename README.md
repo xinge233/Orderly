@@ -6,8 +6,8 @@
 
 - 本地规则计划器：把少量明确的中文指令转换为结构化计划。它不连接外部大模型，界面会如实标注这一限制。
 - 自包含模块：每个 `Module/module_*` 在自身目录携带动作契约、只读查询、本地计划规则、执行器、逆操作和 UI 资源；宿主与前端不保存具体模块映射。
-- 模块控制：唯一的控制模块 `module_system_control` 管理系统业务模块的启停、侧边栏顺序、管理顺序、声明式设置，以及 Action/Query 的 AI 可调用状态。
-- 文件模块：用户显式授权本地目录后浏览文件根，读取文本、PDF、Office 和可由本机 OCR 识别的图片，使用默认应用打开，创建目录与文本、受控覆盖、64 MiB 以内上传、移动并移入同卷项目回收站。
+- 模块控制：唯一的控制模块 `module_system_control` 管理系统业务模块的启停、侧边栏顺序、管理顺序、声明式设置、Action/Query 的 AI 可调用状态，以及模块级 Action AI 风险上限。
+- 文件模块：用户显式授权本地目录后浏览文件根，读取文本、PDF、Office 和可由本机 OCR 识别的图片，使用默认应用打开，创建目录与文本、受控覆盖、64 MiB 以内上传、移动并移入同卷项目回收站；标题右侧可在“只读 / 写入 / 完全权限”之间调整 AI 可调用的最高风险。
 - 待办模块：读取并创建待办。
 - 日程模块：读取并修改已有日程的时间。
 - 学习界面参考扩展：新增 `研习蓝` 浅色主题、只读 AI 学习助手、知识脉络与复习自测模块。它们不是 V7 已交付能力；全局 AI 接入不等同于学习模块的上传、自动整理、任务记录、自动出题与自动阅卷能力，这些学习能力仍明确标注尚未接入。
@@ -83,7 +83,7 @@ Java 宿主只监听 `127.0.0.1:8080`，Python AI 服务使用每次启动分配
 - `.orderly-data/trash/`：应用回收站。
 - `.orderly-data/state/`：各模块自己的集合状态、初始化标记和执行记录。
 - `.orderly-data/executions/`：宿主统一持久化的执行、步骤、参数、输出、快照和审计结果。
-- `.orderly-data/module-governance.json`：业务模块启用状态、两套排序、模块设置以及 Action/Query 的动态 AI 可调用状态；使用原子文件替换写入。
+- `.orderly-data/module-governance.json`：业务模块启用状态、两套排序、模块设置、Action/Query 的动态 AI 可调用状态和模块级 Action AI 风险上限；使用原子文件替换写入。
 - `.orderly-data/module-removals.json`：等待重启清理的业务模块删除登记；启动扫描会跳过对应 JAR。
 - `.orderly-data/trash/modules/`：已移除模块源码和构建产物的本地回收站。
 - `.orderly-data/system-features.json`：宿主功能开关；首次运行默认关闭计划功能。
@@ -217,6 +217,8 @@ PUT   /api/system/module-preferences/sidebar-order
 PUT   /api/system/module-preferences/management-order
 GET   /api/system/module-interfaces
 PATCH /api/modules/{moduleId}/interfaces/{kind}/{interfaceId}/ai-callable
+GET   /api/modules/{moduleId}/ai-risk-level
+PATCH /api/modules/{moduleId}/ai-risk-level
 PUT   /api/modules/{moduleId}/settings
 POST  /api/modules/{moduleId}/settings/reset
 POST  /api/system/modules/refresh
@@ -239,7 +241,7 @@ POST  /api/system/module-removals/undo
 
 `POST /api/system/shutdown` 只接受 `X-Orderly-Action: shutdown`。存在执行中的 Action 或计划时返回 `HOST_EXECUTION_IN_PROGRESS`；接受后返回 `202` 和 `STOPPING`，随后由启动脚本清理相关子进程。
 
-业务 Action 和 Query 不在模块契约中声明静态 AI 权限。宿主在 `.orderly-data/module-governance.json` 中保存用户级 `actionAiCallableEnabled` 与 `queryAiCallableEnabled`，所有业务接口默认开启且可由 `module_system_control` 动态切换；系统模块自身不参与业务接口治理。动态开关只限制 AI：Action 影响 AI 计划与 AI 直执，Query 影响已接入的 AI Query，模块自身查询和总览不会受影响。独立 AI 计划引用中的 Action 显示“使用中”，确认时原子转换为整次执行占用，并在结束或失败后释放；过期提案也会释放。旧版计划不参与。
+业务 Action 和 Query 不在模块契约中声明静态 AI 权限。宿主在 `.orderly-data/module-governance.json` 中保存用户级 `actionAiCallableEnabled`、`queryAiCallableEnabled` 和 `actionAiRiskLevels`，所有业务接口默认开启且可由 `module_system_control` 动态切换；系统模块自身不参与业务接口治理。动态开关只限制 AI：Action 影响 AI 计划与 AI 直执，Query 影响已接入的 AI Query，模块自身查询和总览不会受影响。模块级 AI 风险上限按 `READ_ONLY`、`WRITE`、`DELETE` 逐级限制模型可见和可执行的 Action，但不替代文件根能力、确认、快照、审计、项目回收站和回滚；降低上限时，正在被未执行 AI 计划或当前执行使用的高风险 Action 会阻止变更。`PATCH /api/modules/{moduleId}/ai-risk-level` 只接受带 `X-Orderly-Action: set-action-ai-risk-level` 且 `confirmed: true` 的请求。独立 AI 计划引用中的 Action 显示“使用中”，确认时原子转换为整次执行占用，并在结束或失败后释放；过期提案也会释放。旧版计划不参与。
 
 宿主功能与直执 API：
 

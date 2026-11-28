@@ -574,6 +574,84 @@ class ModuleControlIntegrationTest {
     }
 
     @Test
+    void actionAiRiskLevelLimitsAiTargetsAndPersists() throws Exception {
+        boolean originalCallable = preferences.isActionAiCallableEnabled(
+                "module_business",
+                "business.write"
+        );
+        RiskLevel originalRisk = preferences.actionAiRiskLevel("module_business");
+        try {
+            moduleControl.setActivation("module_business", true);
+            moduleControl.setInterfaceAiCallable(
+                    "module_business",
+                    "action",
+                    "business.write",
+                    true
+            );
+            moduleControl.setActionAiRiskLevel("module_business", RiskLevel.DELETE);
+
+            mockMvc.perform(get("/api/modules/module_business/ai-risk-level"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.moduleId").value("module_business"))
+                    .andExpect(jsonPath("$.actionAiRiskLevel").value("DELETE"));
+
+            mockMvc.perform(patch("/api/modules/module_business/ai-risk-level")
+                            .header("X-Orderly-Action", "set-action-ai-risk-level")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "confirmed": true,
+                                      "actionAiRiskLevel": "READ_ONLY"
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.actionAiRiskLevel").value("READ_ONLY"));
+
+            assertThat(moduleControl.actionAiRiskLevel("module_business"))
+                    .isEqualTo(RiskLevel.READ_ONLY);
+            assertThatThrownBy(() -> aiActions.preview(List.of(
+                    new AiActionService.ActionCall(
+                            "module_business",
+                            "business.write",
+                            Map.of("label", "风险上限")
+                    )
+            )))
+                    .isInstanceOf(ApiException.class)
+                    .hasMessageContaining("AI 风险上限");
+
+            mockMvc.perform(patch("/api/modules/module_business/ai-risk-level")
+                            .header("X-Orderly-Action", "set-action-ai-risk-level")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "confirmed": true,
+                                      "actionAiRiskLevel": "MAYBE"
+                                    }
+                                    """))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_AI_RISK_LEVEL"));
+
+            ModulePreferencesService reloaded = new ModulePreferencesService(
+                    catalog,
+                    runtime,
+                    objectMapper,
+                    SOURCES.toString()
+            );
+            reloaded.initialize();
+            assertThat(reloaded.actionAiRiskLevel("module_business"))
+                    .isEqualTo(RiskLevel.READ_ONLY);
+        } finally {
+            moduleControl.setInterfaceAiCallable(
+                    "module_business",
+                    "action",
+                    "business.write",
+                    originalCallable
+            );
+            moduleControl.setActionAiRiskLevel("module_business", originalRisk);
+        }
+    }
+
+    @Test
     void systemControlQueriesExposeBusinessGovernanceState() throws Exception {
         mockMvc.perform(get(
                         "/api/modules/module_system_control/query/module_system_control.module.list"
