@@ -5,7 +5,7 @@
         left: calc(var(--sidebar-width) + var(--space-4));
         bottom: var(--space-4);
         display: grid;
-        grid-template-columns: auto minmax(140px, 1fr) auto minmax(108px, auto) auto auto;
+        grid-template-columns: auto minmax(140px, 1fr) auto minmax(0, auto) auto;
         align-items: center;
         gap: var(--space-2);
         max-width: min(760px, calc(100vw - var(--sidebar-width) - var(--space-8)));
@@ -79,6 +79,19 @@
         background: var(--color-surface-strong);
     }
 
+    .preview-console__actions {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        min-width: 0;
+    }
+
+    .preview-console__ai-motion[data-playing="true"] {
+        border-color: color-mix(in srgb, var(--color-accent) 58%, var(--color-line));
+        background: var(--color-accent-soft);
+        color: var(--color-accent-strong);
+    }
+
     .preview-console__toggle {
         width: 32px;
         padding: 0;
@@ -96,6 +109,39 @@
         outline-offset: 2px;
     }
 
+    html[data-orderly-preview-ai-playing="true"] #ai-dock .ai-launcher__ring {
+        animation: orderly-preview-ai-ring var(--duration-slow) var(--ease-out) infinite;
+    }
+
+    html[data-orderly-preview-ai-playing="true"] #ai-dock .ai-launcher__status {
+        animation: orderly-preview-ai-status var(--duration-normal) var(--ease-out) infinite alternate;
+    }
+
+    @keyframes orderly-preview-ai-ring {
+        0%,
+        100% {
+            opacity: 0.2;
+            scale: 0.84;
+        }
+
+        50% {
+            opacity: 0.72;
+            scale: 1.14;
+        }
+    }
+
+    @keyframes orderly-preview-ai-status {
+        from {
+            opacity: 0.36;
+            scale: 0.7;
+        }
+
+        to {
+            opacity: 1;
+            scale: 1.18;
+        }
+    }
+
     @media (max-width: 820px) {
         .preview-console {
             right: var(--space-3);
@@ -107,8 +153,29 @@
 
         .preview-console__brand,
         .preview-console__hint,
-        .preview-console__scopes {
+        .preview-console__actions .preview-console__scopes,
+        .preview-console__actions .preview-console__replay {
             display: none;
+        }
+
+        .preview-console__actions {
+            grid-column: 1 / -1;
+        }
+
+        .preview-console__actions .preview-console__ai-motion {
+            width: 100%;
+        }
+
+        .preview-console__toggle {
+            grid-column: 3;
+            grid-row: 1;
+        }
+
+        html[data-orderly-preview-ai-playing="true"] .preview-console[data-collapsed="true"] {
+            top: calc(var(--mobile-toolbar-height) + var(--space-3));
+            right: var(--space-3);
+            bottom: auto;
+            left: auto;
         }
     }
 }

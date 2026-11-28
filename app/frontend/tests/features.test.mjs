@@ -223,6 +223,26 @@ test("motion preview iframes do not hold host event-stream connections", async (
     assert.match(bootstrap, /if \(!previewRequest\) \{\s*scheduleModuleBuildPoll\(\);/);
 });
 
+test("preview console can replay AI motion without model or host side effects", async () => {
+    const preview = await read("../preview/dev-preview.js");
+    const css = await read("../preview/dev-preview.css");
+    const playback = between(preview, "async function playAiMotionSequence", "function createConsole");
+
+    assert.match(preview, /element\("button", "preview-console__ai-motion", "AI 动效"\)/);
+    assert.match(playback, /querySelector\("#ai-launcher"\)/);
+    assert.match(playback, /launcher\.click\(\)/);
+    assert.match(playback, /querySelector\("#ai-composer-close"\)\?\.click\(\)/);
+    assert.match(playback, /root\.dataset\.orderlyPreviewAiPlaying = "true"/);
+    assert.match(playback, /root\.dataset\.motion = previousMotion/);
+    assert.match(playback, /previousMotion === "none"[\s\S]*?root\.dataset\.motion = "gentle"/);
+    assert.match(playback, /shouldRestoreConsole[\s\S]*?dataset\.collapsed = "true"/);
+    assert.doesNotMatch(playback, /fetch\(|OrderlyApi|interpretGoal|confirmAiPlan/);
+    assert.match(css, /\.preview-console__actions/);
+    assert.match(css, /data-orderly-preview-ai-playing="true"[\s\S]*?\.ai-launcher__ring/);
+    assert.match(css, /data-orderly-preview-ai-playing="true"[\s\S]*?\.preview-console\[data-collapsed="true"\]/);
+    assert.match(css, /@keyframes orderly-preview-ai-ring/);
+});
+
 test("settings provide reusable accessible help tooltips", async () => {
     const app = await read("../src/app.js");
     const css = await read("../styles/app.css");
