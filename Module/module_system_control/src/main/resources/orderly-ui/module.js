@@ -10,6 +10,68 @@
 
 const SETTING_TYPES = new Set(["boolean", "select", "integer", "text"]);
 const MODULE_CONTROL_ROLE = "MODULE_CONTROL";
+const SCROLL_SELECTORS = Object.freeze({
+    list: ".module-control-ui-list-scroll",
+    settings: ".module-control-ui-settings-scroll",
+    catalog: ".module-control-ui-catalog-scroll"
+});
+
+/**
+ * 记录当前模组设置子页面的内部滚动位置和文档滚动位置。
+ *
+ * 全量重建视图会替换滚动容器；仅依赖浏览器滚动锚定无法在节点被销毁后恢复位置。
+ * 返回快照只在同一子页面内使用，避免列表、设置和下载目录之间互相串位。
+ *
+ * @param {HTMLElement} root 模块视图根节点。
+ * @param {string} subpage 当前子页面。
+ * @returns {{subpage: string, scrollerTop: number, windowLeft: number, windowTop: number}|null}
+ */
+export function captureViewScroll(root, subpage) {
+    const selector = SCROLL_SELECTORS[subpage];
+    if (!selector) return null;
+    const scroller = root?.querySelector?.(selector);
+    const view = root?.ownerDocument?.defaultView;
+    return {
+        subpage,
+        scrollerTop: finiteNumber(scroller?.scrollTop, 0),
+        windowLeft: finiteNumber(view?.scrollX ?? view?.pageXOffset, 0),
+        windowTop: finiteNumber(view?.scrollY ?? view?.pageYOffset, 0)
+    };
+}
+
+/**
+ * 在同一个子页面完成全量重建后恢复内部滚动和文档滚动。
+ *
+ * 内容缩短时由浏览器自然钳制到新的最大滚动值，不强行写回无效位置。
+ *
+ * @param {HTMLElement} root 模块视图根节点。
+ * @param {object|null} snapshot captureViewScroll 返回的快照。
+ * @param {string} subpage 重建后的子页面。
+ * @returns {boolean} 是否执行了恢复。
+ */
+export function restoreViewScroll(root, snapshot, subpage = snapshot?.subpage) {
+    const selector = SCROLL_SELECTORS[subpage];
+    if (!snapshot || snapshot.subpage !== subpage || !selector) return false;
+    const scroller = root?.querySelector?.(selector);
+    if (scroller) {
+        scroller.scrollTop = finiteNumber(snapshot.scrollerTop, 0);
+    }
+    const view = root?.ownerDocument?.defaultView;
+    if (typeof view?.scrollTo === "function") {
+        view.scrollTo({
+            left: finiteNumber(snapshot.windowLeft, 0),
+            top: finiteNumber(snapshot.windowTop, 0),
+            behavior: "auto"
+        });
+    } else {
+        const scrollingElement = root?.ownerDocument?.scrollingElement;
+        if (scrollingElement) {
+            scrollingElement.scrollLeft = finiteNumber(snapshot.windowLeft, 0);
+            scrollingElement.scrollTop = finiteNumber(snapshot.windowTop, 0);
+        }
+    }
+    return true;
+}
 
 function text(value, fallback = "") {
     return typeof value === "string" && value.trim() ? value.trim() : fallback;
@@ -416,10 +478,17 @@ export default async function mount(root, context) {
         state.pendingDeleteId = "";
     }
 
+    function focusDeletionAction(moduleId) {
+        root.querySelector(
+            `[data-module-id="${moduleId}"] .module-control-ui-removal-action`
+        )?.focus?.({ preventScroll: true });
+    }
+
     function beginDeleteConfirmation(moduleId) {
         clearDeleteConfirmation();
         state.pendingDeleteId = moduleId;
         render();
+        focusDeletionAction(moduleId);
         deleteConfirmTimer = setTimeout(() => {
             deleteConfirmTimer = null;
             if (!root.isConnected) return;
@@ -907,6 +976,7 @@ export default async function mount(root, context) {
             state.busy = false;
             state.removalBusyId = "";
             render();
+            focusDeletionAction(module.moduleId);
         }
     }
 
@@ -1753,6 +1823,7 @@ export default async function mount(root, context) {
 
     function render() {
         // 全量重建当前视图是本地状态模型的一部分；需要连续操作的控件在调用处显式恢复焦点。
+        const scrollSnapshot = captureViewScroll(root, state.subpage);
         const panel = make("section", "module-control-ui-panel");
         const header = make("header", "module-control-ui-header");
         header.append(
@@ -1773,6 +1844,7 @@ export default async function mount(root, context) {
             panel.append(buildListPanel());
         }
         root.replaceChildren(panel);
+        restoreViewScroll(root, scrollSnapshot, state.subpage);
     }
 
     render();

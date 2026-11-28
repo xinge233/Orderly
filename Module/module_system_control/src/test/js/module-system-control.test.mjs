@@ -217,3 +217,66 @@ test("module deletion mode replaces switches, confirms, marks restart and suppor
     assert.match(style, /\.module-control-ui-row\.is-pending-removal/);
     assert.match(style, /\.module-control-ui-button\.is-danger\s*\{/);
 });
+
+test("module control preserves list scroll and deletion focus across full rerenders", async () => {
+    const control = await readFile(controlUrl, "utf8");
+    const listScroller = { scrollTop: 486 };
+    const viewCalls = [];
+    const root = {
+        querySelector(selector) {
+            return selector === ".module-control-ui-list-scroll" ? listScroller : null;
+        },
+        ownerDocument: {
+            defaultView: {
+                scrollX: 12,
+                scrollY: 880,
+                scrollTo(options) {
+                    viewCalls.push(options);
+                }
+            }
+        }
+    };
+
+    const snapshot = controlModule.captureViewScroll(root, "list");
+    assert.deepEqual(snapshot, {
+        subpage: "list",
+        scrollerTop: 486,
+        windowLeft: 12,
+        windowTop: 880
+    });
+    assert.equal(viewCalls.length, 0);
+
+    const replacementScroller = { scrollTop: 0 };
+    const replacementCalls = [];
+    const replacementRoot = {
+        querySelector(selector) {
+            return selector === ".module-control-ui-list-scroll" ? replacementScroller : null;
+        },
+        ownerDocument: {
+            defaultView: {
+                scrollX: 0,
+                scrollY: 0,
+                scrollTo(options) {
+                    replacementCalls.push(options);
+                }
+            }
+        }
+    };
+
+    assert.equal(controlModule.restoreViewScroll(replacementRoot, snapshot, "list"), true);
+    assert.equal(replacementScroller.scrollTop, 486);
+    assert.deepEqual(replacementCalls, [{ left: 12, top: 880, behavior: "auto" }]);
+
+    assert.equal(controlModule.restoreViewScroll(replacementRoot, snapshot, "settings"), false);
+    assert.equal(replacementScroller.scrollTop, 486);
+    assert.equal(replacementCalls.length, 1);
+    assert.equal(controlModule.captureViewScroll(root, "unknown"), null);
+
+    assert.match(control, /const scrollSnapshot = captureViewScroll\(root, state\.subpage\);/);
+    assert.match(
+        control,
+        /root\.replaceChildren\(panel\);\s*restoreViewScroll\(root, scrollSnapshot, state\.subpage\);/
+    );
+    assert.match(control, /focusDeletionAction\(module\.moduleId\);/);
+    assert.match(control, /focus\?\.\(\{ preventScroll: true \}\)/);
+});
