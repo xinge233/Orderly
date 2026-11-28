@@ -354,6 +354,24 @@ export class OrderlyApi {
     }
 
     /**
+     * 请求宿主为模块自有资料生成短摘要。
+     *
+     * 摘要入口与 AI 对话回合隔离；模块只提交相对资源路径，文件读取、正文抽取、
+     * 模型配置检查和结果裁剪均由宿主完成。
+     */
+    summarizeModuleData(moduleId, storagePath, options = {}) {
+        return this.request(`/api/modules/${encodeURIComponent(moduleId)}/summary`, {
+            ...options,
+            method: "POST",
+            headers: {
+                ...options.headers,
+                "X-Orderly-Action": "summarize-module-data"
+            },
+            body: { storagePath }
+        });
+    }
+
+    /**
      * 以 multipart/form-data 上传文件并执行模块动作。
      *
      * @param {string} moduleId 模块 ID

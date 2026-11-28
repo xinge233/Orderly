@@ -25,6 +25,12 @@
         { "value": "title-asc", "label": "标题顺序" },
         { "value": "size-desc", "label": "文件大小" }
       ]
+    },
+    {
+      "key": "autoSummarizeAll",
+      "title": "自动生成全部资料摘要",
+      "type": "boolean",
+      "default": false
     }
   ],
   "examples": [

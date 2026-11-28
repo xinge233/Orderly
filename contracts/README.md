@@ -1,6 +1,6 @@
 # 契约目录
 
-**`plan.schema.json`** 定义计划与澄清问题的公开结构，**`execution-history.schema.json`** 定义可跨重启读取的执行历史摘要及宿主回滚结论，**`module.schema.json`** 定义模块契约，**`module-ui.schema.json`** 定义模块自带 UI 清单，**`module-catalog.schema.json`** 定义 GitHub 模块分发目录，**`module-build-status.schema.json`** 定义后台模块构建状态，**`module-build-priority-request.schema.json`** 定义受限优先构建请求，**`build-settings.schema.json`** 定义构建设置并发及允许范围，**`host-shutdown-response.schema.json`** 定义本地宿主安全退出的稳定响应，**`theme.schema.json`** 定义目录主题包的 `theme.json`，**`study-data.schema.json`** 定义学习相关模块的只读数据边界，**`samples/`** 提供前端和测试共享的示例。
+**`plan.schema.json`** 定义计划与澄清问题的公开结构，**`execution-history.schema.json`** 定义可跨重启读取的执行历史摘要及宿主回滚结论，**`module.schema.json`** 定义模块契约，**`module-ui.schema.json`** 定义模块自带 UI 清单，**`module-summary.schema.json`** 定义模块资料摘要的相对路径请求与安全响应，**`module-catalog.schema.json`** 定义 GitHub 模块分发目录，**`module-build-status.schema.json`** 定义后台模块构建状态，**`module-build-priority-request.schema.json`** 定义受限优先构建请求，**`build-settings.schema.json`** 定义构建设置并发及允许范围，**`host-shutdown-response.schema.json`** 定义本地宿主安全退出的稳定响应，**`theme.schema.json`** 定义目录主题包的 `theme.json`，**`study-data.schema.json`** 定义学习相关模块的只读数据边界，**`samples/`** 提供前端和测试共享的示例。
 
 **`samples/valid/module.json`、`module-system-control.json`、`module-system-service.json` 与模块 UI 样例**是宿主和前端实际校验逻辑接受的合法样例；`samples/invalid/` 中的模块契约和 UI 清单会被对应逻辑明确拒绝。模块 JAR 契约不得声明静态 `aiCallable`，其属性在 `module.schema.json` 中因 `additionalProperties: false` 被拒绝；动态用户开关不属于模块 JAR 契约。`gate.ps1` 同时执行 Java 模块契约样例测试与 Node 模块 UI 样例测试，防止 schema、样例和运行时规则漂移。
 

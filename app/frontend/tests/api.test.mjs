@@ -298,6 +298,10 @@ test("API client addresses module data and control actions", async () => {
         { id: "todo-1" },
         true
     );
+    await api.summarizeModuleData(
+        "module_materials",
+        "files/material-1/file.md"
+    );
 
     assert.equal(
         requests[0].url,
@@ -307,6 +311,18 @@ test("API client addresses module data and control actions", async () => {
     assert.deepEqual(JSON.parse(requests[0].options.body), {
         confirmed: true,
         arguments: { id: "todo-1" }
+    });
+    assert.equal(
+        requests[1].url,
+        "/api/modules/module_materials/summary"
+    );
+    assert.equal(requests[1].options.method, "POST");
+    assert.equal(
+        requests[1].options.headers["X-Orderly-Action"],
+        "summarize-module-data"
+    );
+    assert.deepEqual(JSON.parse(requests[1].options.body), {
+        storagePath: "files/material-1/file.md"
     });
 });
 

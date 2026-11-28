@@ -159,6 +159,37 @@ public class AiServiceClient {
         }
     }
 
+    /**
+     * 使用 Python 进程内存中的模型配置执行一次无状态补全。
+     *
+     * <p>请求可包含宿主已抽取并截断的业务正文；本方法不记录请求或响应正文，
+     * 也不允许调用方传入凭据或文件路径。</p>
+     */
+    public AiContracts.ModelCompletionView completeModel(
+            AiContracts.ModelCompletionRequest request
+    ) {
+        if (request == null) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_MODEL_COMPLETION_REQUEST",
+                    "模型补全请求不能为空"
+            );
+        }
+        JsonNode body = requestJson("POST", "/v1/model/complete", request, turnTimeout);
+        try {
+            AiContracts.ModelCompletionView result = objectMapper.treeToValue(
+                    body,
+                    AiContracts.ModelCompletionView.class
+            );
+            if (result.content() == null || result.content().isBlank()) {
+                throw invalidResponse("AI 补全响应缺少 content");
+            }
+            return result;
+        } catch (JsonProcessingException | IllegalArgumentException exception) {
+            throw invalidResponse("AI 补全响应格式非法");
+        }
+    }
+
     /** 使用整回合默认时限发送首次 AI 回合。 */
     public AiContracts.ServiceDecision createTurn(AiContracts.ServiceTurnRequest request) {
         return createTurn(request, turnTimeout);

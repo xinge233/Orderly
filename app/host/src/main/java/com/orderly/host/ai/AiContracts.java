@@ -71,6 +71,25 @@ public final class AiContracts {
     public record ConnectionTest(boolean ok, String message) {
     }
 
+    /** 根 AI 通用补全中的单条无状态消息。 */
+    public record ModelMessage(String role, String content) {
+    }
+
+    /** 宿主发往 Python 的无状态通用补全请求。 */
+    public record ModelCompletionRequest(
+            String systemPrompt,
+            List<ModelMessage> messages,
+            double timeoutSeconds
+    ) {
+        public ModelCompletionRequest {
+            messages = copy(messages);
+        }
+    }
+
+    /** Python 返回的通用补全文本，不包含凭据或上游元数据。 */
+    public record ModelCompletionView(String content) {
+    }
+
     /** 前端发起自然语言回合的请求。 */
     public record TurnRequest(
             String goal,

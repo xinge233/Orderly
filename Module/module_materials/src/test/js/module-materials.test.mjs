@@ -10,6 +10,8 @@ const moduleUrl = new URL(
 test("module_materials filters metadata locally and formats file sizes", async () => {
     const {
         formatBytes,
+        materialFormatGroup,
+        materialSummarySupported,
         materialMatches
     } = await import(moduleUrl);
     const item = {
@@ -28,6 +30,40 @@ test("module_materials filters metadata locally and formats file sizes", async (
     assert.equal(formatBytes(0), "0 B");
     assert.equal(formatBytes(1536), "1.5 KB");
     assert.equal(formatBytes("bad"), "大小未知");
+    assert.equal(materialSummarySupported("pdf"), true);
+    assert.equal(materialSummarySupported("PNG"), true);
+    assert.equal(materialSummarySupported("mp4"), false);
+    assert.equal(materialFormatGroup("xlsx"), "sheet");
+    assert.equal(materialFormatGroup("pptx"), "slide");
+    assert.equal(materialFormatGroup("webm"), "video");
+});
+
+test("module_materials skips cached, failed, trashed and unsupported auto summaries", async () => {
+    const {
+        MATERIAL_SUMMARY_CACHE,
+        materialAutoSummaryCandidates
+    } = await import(moduleUrl);
+    MATERIAL_SUMMARY_CACHE.clear();
+    MATERIAL_SUMMARY_CACHE.set("ready", { status: "ready", text: "已有摘要" });
+    MATERIAL_SUMMARY_CACHE.set("failed", { status: "error", message: "失败" });
+    MATERIAL_SUMMARY_CACHE.set("loading", { status: "loading" });
+    const items = [
+        { id: "ready", format: "PDF", status: "ACTIVE" },
+        { id: "failed", format: "DOCX", status: "ACTIVE" },
+        { id: "loading", format: "XLSX", status: "ACTIVE" },
+        { id: "video", format: "MP4", status: "ACTIVE" },
+        { id: "trashed", format: "TXT", status: "TRASHED" },
+        { id: "new", format: "TXT", status: "ACTIVE" },
+        { id: "new", format: "TXT", status: "ACTIVE" }
+    ];
+
+    assert.deepEqual(
+        materialAutoSummaryCandidates(items, MATERIAL_SUMMARY_CACHE)
+            .map((item) => item.id),
+        ["new"]
+    );
+    assert.equal(MATERIAL_SUMMARY_CACHE.get("ready").text, "已有摘要");
+    MATERIAL_SUMMARY_CACHE.clear();
 });
 
 test("module_materials refreshes only on terminal module events", async () => {
@@ -66,4 +102,9 @@ test("module_materials exposes guarded import, trash, restore and cleanup paths"
     assert.match(source, /unsubscribeEvents\?\.\(\)/);
     assert.match(source, /confirmDialog\.ask/);
     assert.match(source, /file\.size > MAX_UPLOAD_BYTES/);
+    assert.match(source, /autoSummarizeAll/);
+    assert.match(source, /summaries: MATERIAL_SUMMARY_CACHE/);
+    assert.match(source, /context\.summarizeModuleData\(/);
+    assert.match(source, /context\.saveSettings\(/);
+    assert.doesNotMatch(source, /openAiWithText/);
 });

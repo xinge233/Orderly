@@ -13,7 +13,6 @@
 .materials-ui-controls,
 .materials-ui-body,
 .materials-ui-detail-header,
-.materials-ui-row,
 .materials-ui-header-actions,
 .materials-ui-detail-actions,
 .materials-ui-dialog-footer {
@@ -67,7 +66,7 @@
 
 .materials-ui-controls {
     display: grid;
-    grid-template-columns: minmax(220px, 1fr) minmax(130px, auto) minmax(130px, auto) auto;
+    grid-template-columns: minmax(220px, 1fr) minmax(130px, auto) minmax(130px, auto) auto auto;
     gap: var(--space-3);
     padding: var(--space-3);
     border: 1px solid var(--color-line);
@@ -120,7 +119,7 @@
 
 .materials-ui-tab,
 .materials-ui-category,
-.materials-ui-row,
+.materials-ui-row-main,
 .materials-ui-icon-button,
 .materials-ui-primary,
 .materials-ui-secondary,
@@ -130,6 +129,74 @@
     color: var(--color-text);
     font: inherit;
     cursor: pointer;
+}
+
+.materials-ui-auto-summary {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 38px;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface);
+    color: var(--color-text-soft);
+    white-space: nowrap;
+}
+
+.materials-ui-auto-summary-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
+
+.materials-ui-auto-summary-track {
+    position: relative;
+    width: 30px;
+    height: 18px;
+    flex: 0 0 auto;
+    border: 1px solid var(--color-line-strong);
+    border-radius: 999px;
+    background: var(--color-surface-muted);
+    transition:
+        background var(--duration-fast) var(--ease-out),
+        border-color var(--duration-fast) var(--ease-out);
+}
+
+.materials-ui-auto-summary-track::after {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--color-text-soft);
+    content: "";
+    transition:
+        transform var(--duration-fast) var(--ease-out),
+        background var(--duration-fast) var(--ease-out);
+}
+
+.materials-ui-auto-summary-input:checked + .materials-ui-auto-summary-track {
+    border-color: var(--color-accent);
+    background: var(--color-accent);
+}
+
+.materials-ui-auto-summary-input:checked + .materials-ui-auto-summary-track::after {
+    background: var(--color-accent-contrast);
+    transform: translateX(12px);
+}
+
+.materials-ui-auto-summary-input:focus-visible + .materials-ui-auto-summary-track {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+.materials-ui-auto-summary-copy {
+    font-size: var(--font-size-small);
 }
 
 .materials-ui-tab {
@@ -230,20 +297,32 @@
 }
 
 .materials-ui-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+    gap: var(--space-2);
     width: 100%;
-    gap: var(--space-3);
     padding: var(--space-3);
     border-radius: var(--radius-xs);
     text-align: left;
 }
 
 .materials-ui-row:hover,
-.materials-ui-row[aria-pressed="true"] {
+.materials-ui-row[data-selected="true"] {
     background: var(--color-surface-muted);
 }
 
-.materials-ui-row[aria-pressed="true"] {
+.materials-ui-row[data-selected="true"] {
     border-color: var(--color-line-strong);
+}
+
+.materials-ui-row-main {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: 0;
+    text-align: left;
 }
 
 .materials-ui-row-copy {
@@ -254,14 +333,103 @@
 }
 
 .materials-ui-row-copy strong,
-.materials-ui-row-copy small {
+.materials-ui-row-copy > small:not(.materials-ui-row-summary) {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.materials-ui-row-copy small {
+.materials-ui-row-copy > small:not(.materials-ui-row-summary) {
     color: var(--color-text-soft);
+}
+
+.materials-ui-row-summary {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--color-text);
+    font-size: var(--font-size-small);
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.materials-ui-row-summary.is-muted {
+    color: var(--color-text-faint);
+}
+
+.materials-ui-row-summary.is-loading {
+    color: var(--color-accent-strong);
+}
+
+.materials-ui-row-summary.is-error {
+    color: var(--color-danger);
+}
+
+.materials-ui-thumbnail {
+    display: inline-grid;
+    place-items: center;
+    align-content: center;
+    gap: 1px;
+    width: 44px;
+    height: 48px;
+    flex: 0 0 44px;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--color-line) 70%, transparent);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface-muted);
+    color: var(--color-text-soft);
+}
+
+.materials-ui-thumbnail[data-format="image"] {
+    background: var(--materials-ui-accent-soft);
+    color: var(--color-accent-strong);
+}
+
+.materials-ui-thumbnail[data-format="pdf"] {
+    background: var(--color-danger-soft);
+    color: var(--color-danger);
+}
+
+.materials-ui-thumbnail[data-format="document"],
+.materials-ui-thumbnail[data-format="slide"] {
+    background: var(--materials-ui-accent-soft);
+    color: var(--color-accent-strong);
+}
+
+.materials-ui-thumbnail[data-format="sheet"] {
+    background: var(--color-warning-soft);
+    color: var(--color-warning);
+}
+
+.materials-ui-thumbnail[data-format="text"] {
+    background: var(--color-surface-strong);
+    color: var(--color-text);
+}
+
+.materials-ui-thumbnail[data-format="video"] {
+    background: var(--color-surface-strong);
+    color: var(--color-text-soft);
+}
+
+.materials-ui-thumbnail-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.materials-ui-thumbnail-label {
+    max-width: 40px;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.materials-ui-row-summary-button {
+    align-self: center;
 }
 
 .materials-ui-row-icon,
@@ -532,6 +700,7 @@ textarea.materials-ui-field-control {
     }
 
     .materials-ui-search,
+    .materials-ui-auto-summary,
     .materials-ui-view-switch {
         grid-column: 1 / -1;
     }

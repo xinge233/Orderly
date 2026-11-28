@@ -27,6 +27,7 @@ import com.orderly.host.modulecontrol.ModuleRemovalService;
 import com.orderly.host.moduledata.ModuleDataService;
 import com.orderly.host.plan.PlanService;
 import com.orderly.host.plan.PlanView;
+import com.orderly.host.runtime.ModuleSummaryService;
 import com.orderly.host.runtime.WorkspaceRuntime;
 import com.orderly.kernel.AuthorizedFileRoot;
 import com.orderly.host.system.BuildSettingsService;
@@ -89,6 +90,7 @@ public class OrderlyController {
     private final ModuleRemovalService moduleRemoval;
     private final ModuleFolderService moduleFolder;
     private final ModuleDataService moduleData;
+    private final ModuleSummaryService moduleSummary;
     private final SystemFeatureService features;
     private final AiActionService aiActions;
     private final AiServiceClient aiServiceClient;
@@ -112,6 +114,7 @@ public class OrderlyController {
             ModuleRemovalService moduleRemoval,
             ModuleFolderService moduleFolder,
             ModuleDataService moduleData,
+            ModuleSummaryService moduleSummary,
             SystemFeatureService features,
             AiActionService aiActions,
             AiServiceClient aiServiceClient,
@@ -134,6 +137,7 @@ public class OrderlyController {
         this.moduleRemoval = moduleRemoval;
         this.moduleFolder = moduleFolder;
         this.moduleData = moduleData;
+        this.moduleSummary = moduleSummary;
         this.features = features;
         this.aiActions = aiActions;
         this.aiServiceClient = aiServiceClient;
@@ -364,6 +368,31 @@ public class OrderlyController {
                 .header(HttpHeaders.CACHE_CONTROL, "no-cache")
                 .header("X-Content-Type-Options", "nosniff")
                 .body(new FileSystemResource(resource.file()));
+    }
+
+    /**
+     * 为模块自有资料生成短摘要。
+     *
+     * <p>该入口与 AI 对话回合完全分离；只允许宿主已登记的模块相对路径，正文在本机
+     * 抽取后发送给当前内存模型配置。响应不包含路径、正文或凭据，也不写入审计历史。</p>
+     */
+    @PostMapping("/modules/{moduleId}/summary")
+    public ModuleSummaryService.Summary summarizeModuleData(
+            @PathVariable String moduleId,
+            @RequestHeader(name = "X-Orderly-Action", defaultValue = "") String action,
+            @RequestBody ModuleSummaryRequest request
+    ) {
+        if (!"summarize-module-data".equals(action)
+                || request == null
+                || request.storagePath() == null
+                || request.storagePath().isBlank()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_MODULE_SUMMARY_REQUEST",
+                    "资料摘要请求必须包含 storagePath 与有效的 X-Orderly-Action 请求头"
+            );
+        }
+        return moduleSummary.summarize(moduleId, request.storagePath());
     }
 
     /** 列出宿主内部的显式文件根授权，不返回绝对路径。 */
@@ -899,6 +928,10 @@ public class OrderlyController {
         public ModuleActionRequest {
             arguments = arguments == null ? Map.of() : Map.copyOf(arguments);
         }
+    }
+
+    /** 模块资料摘要请求只携带模块工作区相对路径。 */
+    public record ModuleSummaryRequest(String storagePath) {
     }
 
     public record FileRootRequest(

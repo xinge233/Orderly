@@ -20,7 +20,18 @@ const SUPPORTED_FORMATS = new Set([
 ]);
 const IMAGE_FORMATS = new Set(["png", "jpg", "jpeg", "webp"]);
 const VIDEO_FORMATS = new Set(["mp4", "webm"]);
+const SUMMARY_FORMATS = new Set([
+    "pdf", "docx", "xlsx", "pptx",
+    "txt", "md", "csv", "json",
+    "png", "jpg", "jpeg", "webp"
+]);
 const MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
+
+/**
+ * 资料摘要只保存在当前页面会话内，跨模块视图重挂载复用，刷新页面后重新生成。
+ * 该缓存不写入 localStorage、模块设置、审计或执行记录。
+ */
+export const MATERIAL_SUMMARY_CACHE = new Map();
 
 /**
  * 判断执行事件是否应触发资料视图刷新。
@@ -62,6 +73,74 @@ export function formatBytes(value) {
     }
     const digits = size >= 10 ? 0 : 1;
     return `${size.toFixed(digits)} ${units[index]}`;
+}
+
+/**
+ * 判断某格式是否可通过宿主摘要通道生成本地抽取后的模型摘要。
+ *
+ * @param {unknown} value 文件格式
+ * @returns {boolean} 是否支持摘要
+ */
+export function materialSummarySupported(value) {
+    return SUMMARY_FORMATS.has(String(value ?? "").trim().toLowerCase());
+}
+
+/**
+ * 将文件格式归入稳定的视觉分组，供缩略图或格式图块差分。
+ *
+ * @param {unknown} value 文件格式
+ * @returns {"image" | "video" | "pdf" | "document" | "sheet" | "slide" | "text" | "file"} 视觉分组
+ */
+export function materialFormatGroup(value) {
+    const format = String(value ?? "").trim().toLowerCase();
+    if (IMAGE_FORMATS.has(format)) {
+        return "image";
+    }
+    if (VIDEO_FORMATS.has(format)) {
+        return "video";
+    }
+    if (format === "pdf") {
+        return "pdf";
+    }
+    if (format === "docx") {
+        return "document";
+    }
+    if (format === "xlsx" || format === "csv") {
+        return "sheet";
+    }
+    if (format === "pptx") {
+        return "slide";
+    }
+    if (format === "txt" || format === "md" || format === "json") {
+        return "text";
+    }
+    return "file";
+}
+
+/**
+ * 计算自动摘要仍需处理的资料。
+ *
+ * @param {Array<object>} items 资料库中的有效资料
+ * @param {Map<string, object>} [summaries] 当前页面会话摘要缓存
+ * @returns {Array<object>} 仍需自动生成的资料
+ */
+export function materialAutoSummaryCandidates(
+    items,
+    summaries = MATERIAL_SUMMARY_CACHE
+) {
+    const seen = new Set();
+    return (Array.isArray(items) ? items : []).filter((item) => {
+        const id = String(item?.id ?? "");
+        if (!id
+                || seen.has(id)
+                || String(item?.status ?? "ACTIVE") !== "ACTIVE"
+                || !materialSummarySupported(item?.format)) {
+            return false;
+        }
+        seen.add(id);
+        const current = summaries.get(id);
+        return !current || !["ready", "error", "loading"].includes(current.status);
+    });
 }
 
 /**
@@ -122,6 +201,8 @@ export default async function mount(root, context) {
         keyword: "",
         sort: defaultSort,
         selectedId: "",
+        autoSummarizeAll: settings.autoSummarizeAll === true,
+        summaries: MATERIAL_SUMMARY_CACHE,
         loading: true,
         error: ""
     };
@@ -130,6 +211,9 @@ export default async function mount(root, context) {
     let refreshRequested = false;
     let unsubscribeEvents = null;
     let lastEventSequence = 0;
+    let autoSummaryRunning = false;
+    let autoSummaryRunVersion = 0;
+    let aiConfigured = null;
 
     const workspace = make("section", "materials-ui");
     workspace.setAttribute("aria-label", "本地资料库");
@@ -172,13 +256,23 @@ export default async function mount(root, context) {
     });
     sortSelect.value = defaultSort;
 
+    const autoSummaryLabel = make("label", "materials-ui-auto-summary");
+    const autoSummaryInput = make("input", "materials-ui-auto-summary-input");
+    autoSummaryInput.type = "checkbox";
+    autoSummaryInput.checked = state.autoSummarizeAll;
+    autoSummaryLabel.append(
+        autoSummaryInput,
+        make("span", "materials-ui-auto-summary-track"),
+        make("span", "materials-ui-auto-summary-copy", "自动生成全部摘要")
+    );
+
     const viewSwitch = make("div", "materials-ui-view-switch");
     const activeTab = make("button", "materials-ui-tab", "资料库");
     const trashTab = make("button", "materials-ui-tab", "回收站");
     activeTab.type = "button";
     trashTab.type = "button";
     viewSwitch.append(activeTab, trashTab);
-    controls.append(searchField, formatSelect, sortSelect, viewSwitch);
+    controls.append(searchField, formatSelect, sortSelect, autoSummaryLabel, viewSwitch);
 
     const body = make("div", "materials-ui-body");
     const categoryRail = make("aside", "materials-ui-categories");
@@ -213,6 +307,9 @@ export default async function mount(root, context) {
     sortSelect.addEventListener("change", () => {
         state.sort = sortSelect.value;
         renderView();
+    });
+    autoSummaryInput.addEventListener("change", () => {
+        void setAutoSummarize(autoSummaryInput.checked);
     });
     activeTab.addEventListener("click", () => selectView("active"));
     trashTab.addEventListener("click", () => selectView("trash"));
@@ -299,6 +396,7 @@ export default async function mount(root, context) {
             state.error = "";
             ensureSelection();
             renderView();
+            void maybeRunAutoSummaries();
         } catch (error) {
             state.loading = false;
             state.error = error?.message || "资料读取失败";
@@ -347,6 +445,7 @@ export default async function mount(root, context) {
 
     function renderView() {
         summary.textContent = `${state.activeItems.length} 份资料 · ${state.trashItems.length} 份在回收站`;
+        autoSummaryInput.checked = state.autoSummarizeAll;
         activeTab.textContent = `资料库 ${state.activeItems.length}`;
         trashTab.textContent = `回收站 ${state.trashItems.length}`;
         activeTab.setAttribute("aria-pressed", String(state.view === "active"));
@@ -436,12 +535,15 @@ export default async function mount(root, context) {
     }
 
     function materialRow(item) {
-        const row = make("button", "materials-ui-row");
-        row.type = "button";
-        row.setAttribute("aria-pressed", String(item.id === state.selectedId));
-        const marker = iconNode(context, "file", 18);
-        marker.classList.add("materials-ui-row-icon");
+        const row = make("div", "materials-ui-row");
+        row.dataset.selected = String(item.id === state.selectedId);
+
+        const select = make("button", "materials-ui-row-main");
+        select.type = "button";
+        select.setAttribute("aria-pressed", String(item.id === state.selectedId));
+
         const copy = make("span", "materials-ui-row-copy");
+        const rowSummary = summaryLine(item);
         copy.append(
             make("strong", "", item.title || item.fileName || "未命名资料"),
             make(
@@ -452,18 +554,99 @@ export default async function mount(root, context) {
                     item.format || "未知格式",
                     formatBytes(item.sizeBytes)
                 ].join(" · ")
-            )
+            ),
+            rowSummary
         );
-        row.append(
-            marker,
+        select.append(
+            materialThumbnail(item),
             copy,
             make("span", "materials-ui-row-date", context.formatDate?.(item.updatedAt) || "")
         );
-        row.addEventListener("click", () => {
+        select.addEventListener("click", () => {
             state.selectedId = item.id;
             renderView();
         });
+        row.append(select);
+
+        if (state.view === "active") {
+            const supported = materialSummarySupported(item.format);
+            const summaryState = state.summaries.get(item.id);
+            const loading = summaryState?.status === "loading";
+            const summaryButton = iconButton(
+                context,
+                "spark",
+                loading
+                    ? "摘要生成中"
+                    : supported
+                        ? summaryState?.status === "ready" ? "重新生成摘要" : "生成摘要"
+                        : "该格式不支持摘要"
+            );
+            summaryButton.classList.add("materials-ui-row-summary-button");
+            summaryButton.disabled = loading || !supported;
+            summaryButton.addEventListener("click", () => {
+                void generateSummary(item, { manual: true });
+            });
+            row.append(summaryButton);
+        }
         return row;
+    }
+
+    function materialThumbnail(item) {
+        const format = String(item.format ?? "").toLowerCase();
+        const thumbnail = make("span", "materials-ui-thumbnail");
+        thumbnail.dataset.format = materialFormatGroup(format);
+        thumbnail.setAttribute("aria-hidden", "true");
+        const url = state.view === "active"
+            ? context.moduleDataUrl?.(item.storagePath)
+            : "";
+        if (url && IMAGE_FORMATS.has(format)) {
+            const image = make("img", "materials-ui-thumbnail-image");
+            image.src = url;
+            image.alt = "";
+            image.loading = "lazy";
+            image.addEventListener("error", () => {
+                image.remove();
+                paintFormatTile(thumbnail, format);
+            }, { once: true });
+            thumbnail.append(image);
+            return thumbnail;
+        }
+        paintFormatTile(thumbnail, format);
+        return thumbnail;
+    }
+
+    function paintFormatTile(thumbnail, format) {
+        const group = materialFormatGroup(format);
+        const iconName = group === "video" ? "play" : "file";
+        const label = format === "jpeg" ? "JPG" : String(format || "FILE").toUpperCase();
+        thumbnail.replaceChildren(
+            iconNode(context, iconName, 16),
+            make("span", "materials-ui-thumbnail-label", label)
+        );
+    }
+
+    function summaryLine(item) {
+        const current = state.summaries.get(item.id);
+        if (state.view !== "active") {
+            return make("small", "materials-ui-row-summary is-muted", "回收站资料不生成摘要");
+        }
+        if (!materialSummarySupported(item.format)) {
+            return make("small", "materials-ui-row-summary is-muted", "该格式暂不支持摘要");
+        }
+        if (current?.status === "loading") {
+            return make("small", "materials-ui-row-summary is-loading", "正在生成摘要…");
+        }
+        if (current?.status === "ready" && current.text) {
+            return make("small", "materials-ui-row-summary", current.text);
+        }
+        if (current?.status === "error") {
+            return make(
+                "small",
+                "materials-ui-row-summary is-error",
+                current.message || "摘要生成失败"
+            );
+        }
+        return make("small", "materials-ui-row-summary is-muted", "暂无摘要");
     }
 
     function renderDetail(item) {
@@ -597,6 +780,132 @@ export default async function mount(root, context) {
             await refreshData();
         } catch (error) {
             showError(error);
+        }
+    }
+
+    async function setAutoSummarize(enabled) {
+        const previous = state.autoSummarizeAll;
+        state.autoSummarizeAll = enabled;
+        autoSummaryInput.checked = enabled;
+        renderView();
+        try {
+            if (typeof context.saveSettings === "function") {
+                const saved = await context.saveSettings({
+                    ...context.settings,
+                    autoSummarizeAll: enabled
+                });
+                context.settings = {
+                    ...context.settings,
+                    ...(saved && typeof saved === "object" ? saved : {}),
+                    autoSummarizeAll: enabled
+                };
+            }
+        } catch (error) {
+            state.autoSummarizeAll = previous;
+            autoSummaryInput.checked = previous;
+            renderView();
+            showError(error);
+            return;
+        }
+        aiConfigured = null;
+        if (!enabled) {
+            autoSummaryRunVersion += 1;
+            return;
+        }
+        await maybeRunAutoSummaries({ notifyUnavailable: true });
+    }
+
+    async function maybeRunAutoSummaries({ notifyUnavailable = false } = {}) {
+        if (!state.autoSummarizeAll || autoSummaryRunning || !workspace.isConnected) {
+            return;
+        }
+        if (state.activeItems.length === 0) {
+            return;
+        }
+        if (aiConfigured === null && typeof context.isAiConfigured === "function") {
+            try {
+                aiConfigured = (await context.isAiConfigured()) === true;
+            } catch {
+                aiConfigured = null;
+            }
+        }
+        if (aiConfigured === false) {
+            if (notifyUnavailable) {
+                context.toast?.("请先在设置中配置 AI API；开启状态会保留", "error");
+            }
+            return;
+        }
+
+        const runVersion = ++autoSummaryRunVersion;
+        autoSummaryRunning = true;
+        try {
+            for (const item of materialAutoSummaryCandidates(
+                state.activeItems,
+                state.summaries
+            )) {
+                if (runVersion !== autoSummaryRunVersion
+                        || !state.autoSummarizeAll
+                        || !workspace.isConnected) {
+                    break;
+                }
+                await generateSummary(item);
+            }
+        } finally {
+            autoSummaryRunning = false;
+            if (runVersion === autoSummaryRunVersion) {
+                renderView();
+            }
+        }
+    }
+
+    async function generateSummary(item, { manual = false } = {}) {
+        if (!materialSummarySupported(item.format)) {
+            if (manual) {
+                context.toast?.("该文件格式暂不支持摘要", "error");
+            }
+            return;
+        }
+        const current = state.summaries.get(item.id);
+        if (current?.status === "loading") {
+            return;
+        }
+        if (typeof context.summarizeModuleData !== "function") {
+            state.summaries.set(item.id, {
+                status: "error",
+                message: "当前宿主未提供资料摘要接口"
+            });
+            renderView();
+            if (manual) {
+                context.toast?.("当前宿主未提供资料摘要接口", "error");
+            }
+            return;
+        }
+
+        state.summaries.set(item.id, {
+            status: "loading",
+            text: current?.status === "ready" ? current.text : ""
+        });
+        renderView();
+        try {
+            const result = await context.summarizeModuleData(item.storagePath);
+            const text = String(result?.summary ?? "").trim();
+            if (!text) {
+                throw new Error("模型没有返回可用摘要");
+            }
+            state.summaries.set(item.id, { status: "ready", text });
+        } catch (error) {
+            const message = String(error?.message || "摘要生成失败").trim();
+            state.summaries.set(item.id, {
+                status: "error",
+                message: message || "摘要生成失败"
+            });
+            if (manual) {
+                showError(error);
+            }
+        } finally {
+            if (workspace.isConnected) {
+                renderView();
+            }
         }
     }
 
@@ -824,6 +1133,7 @@ export default async function mount(root, context) {
             window.clearTimeout(refreshTimer);
             refreshTimer = null;
         }
+        autoSummaryRunVersion += 1;
         refreshRequested = false;
         unsubscribeEvents?.();
         unsubscribeEvents = null;

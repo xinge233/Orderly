@@ -2678,6 +2678,14 @@ async function mountModule(module) {
                     argumentsValue,
                     confirmed
                 ),
+            saveSettings: (values) =>
+                systemAdminApi.saveModuleSettings(module.moduleId, values),
+            isAiConfigured: async () => {
+                const settings = await api.getAiSettings();
+                return settings?.configured === true;
+            },
+            summarizeModuleData: (storagePath) =>
+                api.summarizeModuleData(module.moduleId, storagePath),
             moduleDataUrl: (relativePath) => api.moduleDataUrl(module.moduleId, relativePath),
             executeActionWithFile: (actionId, argumentsValue, file, confirmed = true) =>
                 api.executeModuleActionWithFile(

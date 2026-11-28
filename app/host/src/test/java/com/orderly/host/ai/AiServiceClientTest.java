@@ -61,6 +61,34 @@ class AiServiceClientTest {
     }
 
     @Test
+    void proxiesGenericModelCompletionWithoutEchoingIpcToken() throws Exception {
+        AtomicReference<String> path = new AtomicReference<>();
+        AtomicReference<String> body = new AtomicReference<>();
+        try (Server server = Server.start(exchange -> {
+            path.set(exchange.getRequestURI().getPath());
+            body.set(readBody(exchange));
+            writeJson(exchange, 200, "{\"content\":\"简要摘要\"}");
+        })) {
+            AiServiceClient client = client(server.url(), "ipc-summary");
+
+            AiContracts.ModelCompletionView result = client.completeModel(
+                    new AiContracts.ModelCompletionRequest(
+                            "只返回摘要。",
+                            List.of(new AiContracts.ModelMessage("user", "正文")),
+                            45
+                    )
+            );
+
+            assertThat(result.content()).isEqualTo("简要摘要");
+            assertThat(path.get()).isEqualTo("/v1/model/complete");
+            assertThat(body.get())
+                    .contains("\"systemPrompt\":\"只返回摘要。\"")
+                    .contains("\"content\":\"正文\"")
+                    .doesNotContain("ipc-summary");
+        }
+    }
+
+    @Test
     void omitsNullQueryDisplayFieldsFromPythonRequests() throws Exception {
         AtomicReference<String> body = new AtomicReference<>();
         try (Server server = Server.start(exchange -> {

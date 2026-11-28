@@ -67,6 +67,8 @@ final class FileContentExtractor {
                 case "ppt" -> new ExtractedText(extractPpt(file), "PPT");
                 case "png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp" ->
                         new ExtractedText(extractImageText(file), "OCR");
+                case "txt", "md", "csv", "json" ->
+                        new ExtractedText(readPlainText(file), "UTF-8");
                 default -> throw new IllegalArgumentException(
                         "该文件类型暂不提供正文提取：" + extension
                 );
@@ -211,6 +213,13 @@ final class FileContentExtractor {
                 process.destroyForcibly();
             }
         }
+    }
+
+    private static String readPlainText(Path file) throws IOException {
+        if (Files.size(file) > MAX_EXTRACT_BYTES) {
+            throw new IllegalArgumentException("文件超过 64 MiB 正文抽取上限");
+        }
+        return Files.readString(file, StandardCharsets.UTF_8);
     }
 
     private static String extension(Path file) {

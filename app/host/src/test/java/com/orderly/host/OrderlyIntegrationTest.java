@@ -639,6 +639,17 @@ class OrderlyIntegrationTest {
     }
 
     @Test
+    void moduleSummaryRequiresExplicitLocalActionHeader() throws Exception {
+        mockMvc.perform(post("/api/modules/module_materials/summary")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"storagePath":"files/material-1/file.md"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_MODULE_SUMMARY_REQUEST"));
+    }
+
+    @Test
     void executesAiActionsWithStructuredReferenceAndRollsBackRecord() throws Exception {
         int before = runtime.readItems("todos").size();
         MvcResult result = mockMvc.perform(post("/api/ai/actions/execute")

@@ -29,10 +29,14 @@ class FileContentExtractorTest {
         createDocx(docx);
         Path xlsx = temporaryDirectory.resolve("sample.xlsx");
         createXlsx(xlsx);
+        Path markdown = temporaryDirectory.resolve("sample.md");
+        Files.writeString(markdown, "Orderly Markdown summary");
 
         assertThat(FileContentExtractor.extract(pdf).content()).contains("Orderly PDF");
         assertThat(FileContentExtractor.extract(docx).content()).contains("Orderly Word");
         assertThat(FileContentExtractor.extract(xlsx).content()).contains("Orderly Excel");
+        assertThat(FileContentExtractor.extract(markdown).content())
+                .contains("Orderly Markdown");
     }
 
     private void createPdf(Path file) throws Exception {
