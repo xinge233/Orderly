@@ -247,6 +247,8 @@ test("preview console replays AI module-call feedback without host side effects"
     assert.doesNotMatch(playback, /#ai-launcher|ai-composer-close/);
     assert.match(css, /\.preview-console__actions/);
     assert.match(css, /\.preview-console__ai-motion\[data-playing="true"\]/);
+    assert.match(css, /\.nav-ai-result::before[\s\S]*?background:\s*var\(--nav-ai-result-edge\)/);
+    assert.match(css, /\.nav-ai-result::after[\s\S]*?filter:\s*none/);
     assert.doesNotMatch(css, /preview-ai-ring|ai-launcher__ring|ai-launcher__status/);
 });
 
