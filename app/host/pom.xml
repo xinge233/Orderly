@@ -52,8 +52,12 @@
                 <targetPath>static</targetPath>
                 <excludes>
                     <exclude>tests/**</exclude>
+                    <exclude>preview/**</exclude>
+                    <exclude>node_modules/**</exclude>
                     <exclude>README.md</exclude>
                     <exclude>package.json</exclude>
+                    <exclude>package-lock.json</exclude>
+                    <exclude>vite.config.mjs</exclude>
                 </excludes>
             </resource>
         </resources>

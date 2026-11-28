@@ -6,7 +6,7 @@
   "order": 10,
   "default": true,
   "colorScheme": "light",
-  "browserColor": "#f3efe7",
+  "browserColor": "#f1f2ee",
   "styles": [
     "tokens.css",
     "motion.css"

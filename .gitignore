@@ -8,6 +8,7 @@ target/
 
 # Local Maven cache and editor settings
 .m2-repository/
+**/node_modules/
 .idea/
 .vscode/
 

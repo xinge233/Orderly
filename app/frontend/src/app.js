@@ -646,6 +646,7 @@ async function bootstrap() {
     if (aiSettingsResult.status === "fulfilled") {
         state.aiSettings = normalizeAiSettings(aiSettingsResult.value);
         state.aiSettingsError = "";
+        aiDialog?.setAiSettings?.(state.aiSettings);
     } else {
         state.aiSettingsError = errorMessage(aiSettingsResult.reason);
     }
@@ -1844,6 +1845,10 @@ function syncAiIconPreviews() {
  * @param {string} message 消息
  */
 function updateSettingsStatus(message) {
+    if (document.querySelector("#settings-dialog")?.open
+        && state.settingsSection !== "appearance") {
+        return;
+    }
     const status = document.querySelector("#settings-status");
     if (status) {
         status.textContent = message;
@@ -2837,27 +2842,28 @@ function renderOverview() {
     if (!main) {
         return;
     }
+    const visibleModuleCount = state.modules.filter(isModuleVisible).length;
     const planningCopy = state.planningEnabled
         ? `
             <p>
-                计划功能已开启。下方计划预览仍使用本地规则计划器；
-                右下角 AI 对话框使用独立的真实模型接入，不受此开关控制。
+                计划审查已开启。你可以先检查风险、影响和步骤，再决定是否执行；
+                右下角 AI 入口保持独立，不会绕过确认、快照或回滚。
             </p>
             <div class="hero-tags">
                 <span>${icon("shield")} 本地优先</span>
                 <span>${icon("route")} 计划先于执行</span>
-                <span>${icon("spark")} AI 对话独立接入</span>
+                <span>${icon("spark")} AI 入口独立</span>
             </div>
         `
         : `
             <p>
-                计划功能当前由系统设置关闭。已安装模块与历史记录仍可正常使用，
-                需要生成和执行计划时可在系统设置中重新开启。
+                计划功能当前关闭。模块查询、AI 入口和历史记录仍可正常使用；
+                任何写入或删除仍由宿主执行确认、快照与回滚担保。
             </p>
             <div class="hero-tags">
                 <span>${icon("shield")} 本地优先</span>
-                <span>${icon("modules")} 模块契约协作</span>
-                <span>${icon("history")} 历史记录保留</span>
+                <span>${icon("spark")} AI 入口可用</span>
+                <span>${icon("history")} 历史留痕</span>
             </div>
         `;
     const planningRegions = state.planningEnabled
@@ -2917,17 +2923,38 @@ function renderOverview() {
         : "";
     main.innerHTML = `
         <div class="view-stack" data-motion-scope="overview" data-motion-state="entering" data-motion-phase="active">
-            <section class="hero-panel">
-                <div class="hero-content">
-                    <p class="eyebrow">CONTROLLED AGENT WORKFLOW</p>
-                    <h1>让 AI 把事做完，<br><em>也让你随时踩刹车。</em></h1>
+            <section class="overview-intro" aria-labelledby="overview-title">
+                <div class="overview-intro__copy">
+                    <div class="overview-intro__meta">
+                        <p class="eyebrow">LOCAL WORKSPACE</p>
+                        <span class="status-chip status-chip--safe">本地就绪</span>
+                    </div>
+                    <h1 id="overview-title">工作台</h1>
                     ${planningCopy}
                 </div>
-                <div class="hero-diagram" aria-label="已安装模块汇聚到归序">
-                    <span class="orbit-ring"></span>
-                    <span class="orbit-core"><strong>归序</strong><small>工作流中枢</small></span>
-                    <span class="orbit-module-nodes" id="orbit-module-nodes"></span>
-                </div>
+                <aside class="overview-contract" aria-label="执行担保">
+                    <div class="overview-contract__head">
+                        <span class="overview-contract__icon">${icon("shield", 20)}</span>
+                        <span>
+                            <strong>执行担保在线</strong>
+                            <small>${visibleModuleCount} 个模块已启用</small>
+                        </span>
+                    </div>
+                    <ul>
+                        <li>
+                            <span>01</span>
+                            <p><strong>先审查</strong><small>风险、参数与影响先于执行呈现。</small></p>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <p><strong>可恢复</strong><small>写入前留存快照，失败时逆序回滚。</small></p>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <p><strong>留痕迹</strong><small>执行结果进入历史，删除只进项目回收站。</small></p>
+                        </li>
+                    </ul>
+                </aside>
             </section>
 
             <section class="surface-grid" id="module-card-grid" aria-label="已安装模块摘要"></section>
@@ -3006,7 +3033,6 @@ async function loadOverviewCounts() {
 
 function renderModuleCards() {
     const grid = document.querySelector("#module-card-grid");
-    const orbit = document.querySelector("#orbit-module-nodes");
     if (!grid) return;
     const settings = settingsStore.getSnapshot();
     const ordered = sortModules(state.modules, settings.moduleOrderIds);
@@ -3014,21 +3040,6 @@ function renderModuleCards() {
     const displayed = visible.filter((module) =>
         state.moduleUi[module.moduleId]?.card !== null);
     grid.replaceChildren();
-    if (orbit) {
-        orbit.replaceChildren();
-        displayed.slice(0, 3).forEach((module, index) => {
-            const ui = state.moduleUi[module.moduleId];
-            const node = element("span", `orbit-node orbit-node--slot-${index + 1}`, "");
-            paintModuleIconNode(
-                node,
-                ui?.view.icon ?? "modules",
-                module.moduleId,
-                ui?.icons,
-                22
-            );
-            orbit.append(node);
-        });
-    }
     if (!displayed.length) {
         const pendingBuilds = pendingModuleBuilds(state.moduleBuilds, state.modules);
         grid.append(element(
@@ -3072,14 +3083,19 @@ function renderModuleCards() {
             21
         );
         top.append(cardIcon, element("span", "status-chip", card.badge));
-        const body = element("div");
+        const content = element("div", "surface-card__content");
+        const copy = element("div", "surface-card__copy");
+        copy.append(
+            element("h2", "", card.title),
+            element("p", "", card.description)
+        );
         const metric = element("div", "surface-card__metric");
         const value = state.moduleCounts[module.moduleId];
         metric.append(
             element("strong", "", value == null ? "—" : String(value)),
             element("small", "", card.unit)
         );
-        body.append(metric, element("h2", "", card.title), element("p", "", card.description));
+        content.append(copy, metric);
         const controls = element("div", "module-order-controls");
         const up = element("button", "icon-button", "↑");
         up.type = "button";
@@ -3092,7 +3108,7 @@ function renderModuleCards() {
         down.setAttribute("aria-label", `下移 ${card.title}`);
         down.addEventListener("click", () => changeModuleOrder(module.moduleId, 1));
         controls.append(up, down);
-        article.append(top, body, controls);
+        article.append(top, content, controls);
         article.addEventListener("dragstart", (event) => {
             state.dragModuleId = module.moduleId;
             article.dataset.motionState = "reordering";
@@ -3923,7 +3939,6 @@ function renderHistoryRuns(runs) {
             "span",
             "",
             [
-                statusLabel(status),
                 formatDate(run.createdAt),
                 run.stepCount == null ? "" : `${run.stepCount} 个步骤`,
                 run.displayId.slice(0, 24)
@@ -3934,18 +3949,25 @@ function renderHistoryRuns(runs) {
             copy.append(element("p", "", run.message));
         }
         const actions = element("div", "run-actions");
-        actions.append(element("span", `risk-chip`, statusLabel(status)));
+        const statusChip = element("span", "status-chip run-status", statusLabel(status));
+        statusChip.dataset.status = status;
+        actions.append(statusChip);
         const decision = executionRollbackDecision(run);
-        const button = element(
-            "button",
-            "text-button",
-            state.rollbackBusyId === run.executionId ? "正在回滚…" : "回滚执行"
-        );
-        button.type = "button";
-        button.disabled = !decision.allowed || Boolean(state.rollbackBusyId);
-        button.title = decision.reason || "通过执行记录回滚本次变更";
-        button.addEventListener("click", () => void rollbackHistoryExecution(run));
-        actions.append(button);
+        if (decision.allowed) {
+            const button = element(
+                "button",
+                "text-button",
+                state.rollbackBusyId === run.executionId ? "正在回滚…" : "回滚执行"
+            );
+            button.type = "button";
+            button.disabled = Boolean(state.rollbackBusyId);
+            button.addEventListener("click", () => void rollbackHistoryExecution(run));
+            actions.append(button);
+        } else if (decision.reason) {
+            const note = element("span", "run-action-note", "不可回滚");
+            note.title = decision.reason;
+            actions.append(note);
+        }
         if (state.rollbackFailures[run.executionId]) {
             copy.append(element(
                 "p",
@@ -4329,6 +4351,31 @@ function renderSettings({ focusPanel = false } = {}) {
         const target = heading ?? panel.querySelector("button, input, select, textarea, [tabindex]");
         target?.focus({ preventScroll: true });
     }
+    syncSettingsFooter();
+}
+
+/** 让设置页脚只显示当前分区的状态和适用操作。 */
+function syncSettingsFooter() {
+    const reset = document.querySelector("#reset-settings");
+    if (reset) {
+        reset.hidden = state.settingsSection !== "appearance";
+    }
+    if (state.settingsSection === "ai") {
+        setSettingsStatus("模型与临时凭据仅由当前 Python AI 服务进程持有。");
+        return;
+    }
+    if (state.settingsSection === "system") {
+        setSettingsStatus("系统设置由本地宿主保存；执行期间退出会被阻止。");
+        return;
+    }
+    const appliedTheme = themeManager.current;
+    const themeId = appliedTheme?.id
+        || settingsStore.getSnapshot().theme
+        || "";
+    const theme = state.themes.find((item) => item.id === themeId);
+    setSettingsStatus(theme
+        ? `主题“${theme.label || theme.id}”已应用；目录变更需重启宿主后生效。`
+        : "当前使用内置安全外观；选择目录主题后会立即应用。");
 }
 
 /**

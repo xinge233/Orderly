@@ -6,7 +6,8 @@ import { OrderlyApi } from "../src/api.js";
 import {
     EVENT_ORIGIN,
     inferEventOrigin,
-    normalizeExecutionRecord
+    normalizeExecutionRecord,
+    statusLabel
 } from "../src/models.js";
 import {
     normalizeAiPlanFeature,
@@ -154,6 +155,9 @@ test("execution records preserve rollback identity and availability", () => {
     assert.equal(completed.stepCount, 2);
     assert.equal(completed.canRollback, true);
     assert.equal(partial.canRollback, true);
+    assert.equal(partial.goal, "执行 #exec-2");
+    assert.equal(statusLabel(partial.status), "部分回滚");
+    assert.equal(statusLabel("STOPPING"), "停止中");
     assert.equal(unsupported.canRollback, false);
     assert.equal(unsupported.rollbackDisabledReason, "系统记录不可回滚");
 });

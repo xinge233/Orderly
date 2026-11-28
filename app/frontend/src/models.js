@@ -23,16 +23,24 @@ export const STATUS_LABEL = Object.freeze({
     PENDING: "等待",
     RUNNING: "执行中",
     EXECUTING: "执行中",
+    STOPPING: "停止中",
+    STOPPED: "已停止",
+    READY: "就绪",
+    BUILDING: "构建中",
     OK: "成功",
     COMPLETED: "成功",
     SUCCESS: "成功",
     SUCCEEDED: "成功",
     FAILED: "失败",
+    FAILED_ROLLED_BACK: "失败，已回滚",
+    FAILED_PARTIALLY_ROLLED_BACK: "失败，部分回滚",
+    PARTIALLY_ROLLED_BACK: "部分回滚",
     TRUNCATED: "已截断",
     REJECTED: "已拒绝",
     ROLLED_BACK: "已回滚",
     ROLLBACK: "回滚中",
     ROLLBACK_FAILED: "回滚失败",
+    PENDING_RESTART: "待重启生效",
     CANCELLED: "已取消",
     QUESTION: "需要澄清"
 });
@@ -845,12 +853,16 @@ export function normalizeExecutionRecord(raw, fallbackIndex = 0) {
         ?? source.rollbackAvailable
         ?? source.rollbackable;
     const stepCountValue = Number(source.stepCount ?? source.steps);
+    const displayId = String(source.executionId ?? source.id ?? source.planId ?? fallbackIndex + 1);
+    const goal = [source.goal, source.title, source.actionId, source.moduleId]
+        .map((value) => typeof value === "string" ? value.trim() : "")
+        .find(Boolean) || `执行 #${displayId}`;
     return {
         executionId,
-        displayId: String(source.executionId ?? source.id ?? source.planId ?? fallbackIndex + 1),
+        displayId,
         planId: String(source.planId ?? ""),
         origin: inferEventOrigin(source),
-        goal: String(source.goal ?? source.title ?? source.message ?? "未命名执行"),
+        goal,
         message: String(source.message ?? source.summary ?? ""),
         status,
         stepCount: Number.isInteger(stepCountValue) && stepCountValue >= 0 ? stepCountValue : null,
