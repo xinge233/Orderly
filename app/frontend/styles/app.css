@@ -391,14 +391,29 @@ body.is-navigation-dragging * {
     top: 50%;
     right: var(--space-2);
     display: grid;
-    width: 20px;
-    height: 20px;
+    width: 26px;
+    height: 22px;
     place-items: center;
     border: 1px solid var(--color-line-strong);
-    border-radius: 50%;
+    border-radius: var(--radius-sm) var(--radius-sm) var(--radius-sm) var(--radius-xs);
     background: var(--color-surface-raised);
     box-shadow: var(--shadow-card);
     transform: translateY(-50%);
+    transform-origin: 35% 100%;
+}
+
+.nav-ai-result::after {
+    position: absolute;
+    bottom: -4px;
+    left: 5px;
+    width: 7px;
+    height: 7px;
+    border-bottom: 1px solid var(--color-line-strong);
+    border-left: 1px solid var(--color-line-strong);
+    border-radius: 0 0 0 3px;
+    background: inherit;
+    content: "";
+    transform: rotate(-45deg);
 }
 
 .nav-ai-result[data-phase="success"] {
@@ -407,10 +422,18 @@ body.is-navigation-dragging * {
     color: var(--color-safe);
 }
 
+.nav-ai-result[data-phase="success"]::after {
+    border-color: color-mix(in srgb, var(--color-safe) 62%, transparent);
+}
+
 .nav-ai-result[data-phase="failure"] {
     border-color: color-mix(in srgb, var(--color-danger) 62%, transparent);
     background: var(--color-danger-soft);
     color: var(--color-danger);
+}
+
+.nav-ai-result[data-phase="failure"]::after {
+    border-color: color-mix(in srgb, var(--color-danger) 62%, transparent);
 }
 
 .nav-ai-result.is-leaving {
@@ -420,6 +443,7 @@ body.is-navigation-dragging * {
 .nav-ai-result__icon {
     display: grid;
     place-items: center;
+    filter: drop-shadow(0 1px 1px color-mix(in srgb, currentColor 38%, transparent));
 }
 
 .nav-icon {

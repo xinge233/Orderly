@@ -50,6 +50,12 @@
         animation: study-nav-ai-result-in var(--duration-slow) var(--ease-spring) backwards;
     }
 
+    html[data-theme="study"] .nav-ai-result[data-phase="success"]:not(.is-leaving) {
+        animation:
+            study-nav-ai-result-in var(--duration-slow) var(--ease-spring) backwards,
+            study-nav-ai-result-sway var(--duration-ai-activity) var(--ease-out) infinite;
+    }
+
     html[data-theme="study"] [data-motion-scope="module-card"] {
         transition:
             transform var(--duration-fast) var(--ease-out),
@@ -161,6 +167,18 @@
         }
         100% {
             transform: translateY(-50%) scale(1);
+        }
+    }
+
+    @keyframes study-nav-ai-result-sway {
+        0%,
+        100% {
+            translate: -0.6px 0;
+            rotate: -1deg;
+        }
+        50% {
+            translate: 1px 0;
+            rotate: 1.2deg;
         }
     }
 }

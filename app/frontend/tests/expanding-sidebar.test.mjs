@@ -421,7 +421,18 @@ test("AI module feedback stays inline and follows sidebar expansion", async () =
     assert.doesNotMatch(html, /sidebar-count-layer|sidebar-count-bubble/);
     assert.doesNotMatch(appCss, /sidebar-count-layer|sidebar-count-bubble/);
     assert.match(appCss, /\.nav-ai-progress\s*\{[\s\S]*?height:\s*2px;/);
-    assert.match(appCss, /\.nav-ai-result\s*\{[\s\S]*?border-radius:\s*50%;/);
+    assert.match(
+        appCss,
+        /\.nav-ai-result\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\) var\(--radius-sm\) var\(--radius-sm\) var\(--radius-xs\);/
+    );
+    assert.match(
+        appCss,
+        /\.nav-ai-result::after\s*\{[\s\S]*?border-bottom:\s*1px solid var\(--color-line-strong\);/
+    );
+    assert.match(
+        appCss,
+        /\.nav-ai-result__icon\s*\{[\s\S]*?filter:\s*drop-shadow\(/
+    );
     assert.match(
         appCss,
         /\.sidebar:not\(\.is-expanded\) \.nav-ai-progress\s*\{[\s\S]*?right:\s*calc\(100% - var\(--sidebar-width\) \+ var\(--space-4\)\);/
@@ -505,6 +516,14 @@ test("desktop sidebar motion is clip-path-only and mobile keeps transform", asyn
         assert.match(
             motion,
             /\.nav-ai-result\[data-phase\]:not\(\.is-leaving\)\s*\{[\s\S]*?animation:[\s\S]*?var\(--duration-slow\)/
+        );
+        assert.match(
+            motion,
+            /\.nav-ai-result\[data-phase="success"\]:not\(\.is-leaving\)\s*\{[\s\S]*?animation:\s*[\s\S]*?var\(--duration-slow\)[\s\S]*?var\(--duration-ai-activity\)/
+        );
+        assert.match(
+            motion,
+            /@keyframes (?:\w+-)?nav-ai-result-sway\s*\{[\s\S]*?translate:\s*-0\.6px 0;[\s\S]*?rotate:\s*-1deg;/
         );
     }
 });
