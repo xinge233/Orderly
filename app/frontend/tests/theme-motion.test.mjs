@@ -323,7 +323,7 @@ test("sidebar refinement uses semantic sizes and never animates geometry or type
     assert.match(tokens, /--sidebar-expanded-width:\s*272px;/);
     assert.match(tokens, /--sidebar-row-height:\s*48px;/);
     assert.match(tokens, /--sidebar-icon-size:\s*40px;/);
-    assert.match(tokens, /--content-max:\s*1520px;/);
+    assert.match(tokens, /--content-max:\s*1760px;/);
     assert.match(tokens, /--duration-sidebar:\s*200ms;/);
     assert.match(
         tokens,

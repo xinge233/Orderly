@@ -56,6 +56,13 @@ test("module_fs uses host file-root authorization and tokenized reads", async ()
     assert.match(css, /transform var\(--duration-normal\) var\(--ease-spring\)/);
     assert.match(css, /\.fs-ui-risk-dialog\s*\{[\s\S]*?position:\s*fixed;/);
     assert.match(css, /\.fs-ui-risk-dialog\[open\]\s*\{[\s\S]*?display:\s*grid;/);
+    assert.match(
+        css,
+        /@media \(min-width: 1560px\)\s*\{\s*\.fs-ui-layout\s*\{[\s\S]*?grid-template-columns:\s*minmax\(220px,\s*240px\)\s*minmax\(0,\s*1fr\)\s*minmax\(320px,\s*360px\);/s
+    );
+    assert.match(css, /\.fs-ui-table th:first-child,[\s\S]*?width:\s*48%;/);
+    assert.match(css, /\.fs-ui-table th:nth-child\(4\),[\s\S]*?width:\s*26%;/);
+    assert.match(css, /\.fs-ui-table tbody tr\s*\{\s*height:\s*44px;\s*\}/);
     const riskReminderSetting = manifest.settings.find(
         (setting) => setting.key === "aiRiskChangeReminderEnabled"
     );

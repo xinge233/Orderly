@@ -17,7 +17,7 @@ test("layout tokens keep typography, content width and remove the legacy topbar"
     assert.doesNotMatch(html, /id="breadcrumb"/);
     assert.doesNotMatch(`${tokens}\n${appCss}`, /--topbar-height/);
     assert.doesNotMatch(appCss, /\.topbar\b|\.breadcrumb\b/);
-    assert.match(tokens, /--content-max:\s*1520px;/);
+    assert.match(tokens, /--content-max:\s*1760px;/);
     assert.match(tokens, /--font-size-caption:\s*0\.75rem;/);
     assert.match(tokens, /--font-size-small:\s*0\.8125rem;/);
     assert.match(tokens, /--font-size-body:\s*0\.875rem;/);
