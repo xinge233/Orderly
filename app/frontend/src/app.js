@@ -87,6 +87,7 @@ const AI_MODULE_RESULT_HOLD_MS = 2800;
 const AI_MODULE_RESULT_EXIT_MS = 180;
 const AI_ANONYMOUS_STEP = Symbol("ai-anonymous-step");
 const aiModuleActivities = new Map();
+let aiModuleResultLayerBound = false;
 let settingHelpSequence = 0;
 
 const NAV_SECTIONS = Object.freeze([
@@ -1636,6 +1637,7 @@ function activateDesktopSidebar() {
     desktopSidebar.active = true;
     desktopSidebar.pointerInside = false;
     setDesktopSidebarExpansion(false);
+    refreshAllAiModuleActivities();
     sidebar.inert = false;
     sidebar.removeAttribute("aria-hidden");
 }
@@ -1653,9 +1655,10 @@ function deactivateDesktopSidebar() {
         sidebar.dataset.motionState = "collapsed";
         sidebar.dataset.motionPhase = "active";
     }
+    refreshAllAiModuleActivities();
 }
 
-// 展开与收起共用同一个状态入口；模块调用状态位于导航行内部，会随侧栏裁切自然移动。
+// 展开与收起共用同一个状态入口；结果气泡固定在侧栏可见右缘外侧并同步换位。
 function setDesktopSidebarExpansion(expanded) {
     const sidebar = document.querySelector("#sidebar");
     if (!sidebar || !desktopSidebar.active) {
@@ -1667,6 +1670,7 @@ function setDesktopSidebarExpansion(expanded) {
         sidebar.dataset.motionState = expanded ? "expanded" : "collapsed";
     }
     sidebar.dataset.motionPhase = "active";
+    positionAiModuleResults();
 }
 
 function expandDesktopSidebarImmediately() {
@@ -2382,8 +2386,8 @@ function applyAiModuleActivity(input) {
     if (phase === "reset") {
         aiModuleActivities.forEach(clearAiModuleActivityTimers);
         aiModuleActivities.clear();
-        document.querySelectorAll(".nav-item--module[data-module-id]")
-            .forEach((button) => syncAiModuleActivity(button, button.dataset.moduleId));
+        document.querySelector("#nav-ai-result-layer")?.replaceChildren();
+        refreshAllAiModuleActivities();
         return;
     }
 
@@ -2445,6 +2449,7 @@ function refreshAiModuleActivity(moduleId) {
     if (!id) {
         return;
     }
+    removeAiModuleResult(id);
     document.querySelectorAll(".nav-item--module[data-module-id]")
         .forEach((button) => {
             if (button.dataset.moduleId !== id) {
@@ -2455,9 +2460,83 @@ function refreshAiModuleActivity(moduleId) {
 }
 
 /**
- * 在模块导航行内同步 AI 调用进度或结果标记。
+ * 从固定结果层移除指定模块的气泡。
  *
- * <p>节点始终属于对应按钮，因此侧栏展开或收起时由行内布局自然跟随，不需要额外覆盖层。</p>
+ * @param {string} moduleId 模块 id
+ * @returns {void}
+ */
+function removeAiModuleResult(moduleId) {
+    document.querySelectorAll("#nav-ai-result-layer .nav-ai-result")
+        .forEach((result) => {
+            if (result.dataset.moduleId === moduleId) {
+                result.remove();
+            }
+        });
+}
+
+/**
+ * 把结果气泡定位到侧栏当前可见右缘之外，并以对应导航按钮垂直居中。
+ *
+ * @param {HTMLElement} result 结果气泡
+ * @param {HTMLElement} button 模块导航按钮
+ * @returns {boolean} 是否已定位到桌面固定层
+ */
+function positionAiModuleResult(result, button) {
+    if (!result || !button?.isConnected
+        || !window.matchMedia(DESKTOP_SIDEBAR_QUERY).matches) {
+        return false;
+    }
+    const sidebar = document.querySelector("#sidebar");
+    if (!sidebar) {
+        return false;
+    }
+    const sidebarRect = sidebar.getBoundingClientRect();
+    const rootStyle = getComputedStyle(document.documentElement);
+    const collapsedWidth = Number.parseFloat(rootStyle.getPropertyValue("--sidebar-width"))
+        || sidebarRect.width;
+    const gap = Number.parseFloat(rootStyle.getPropertyValue("--space-2")) || 8;
+    const visibleRight = sidebar.classList.contains("is-expanded")
+        ? sidebarRect.right
+        : Math.min(sidebarRect.right, sidebarRect.left + collapsedWidth);
+    const buttonRect = button.getBoundingClientRect();
+    result.style.left = `${visibleRight + gap}px`;
+    result.style.top = `${buttonRect.top + buttonRect.height / 2}px`;
+    return true;
+}
+
+function positionAiModuleResults() {
+    document.querySelectorAll("#nav-ai-result-layer .nav-ai-result")
+        .forEach((result) => {
+            const button = [...document.querySelectorAll(".nav-item--module[data-module-id]")]
+                .find((node) => node.dataset.moduleId === result.dataset.moduleId);
+            if (!button || !positionAiModuleResult(result, button)) {
+                result.remove();
+            }
+        });
+}
+
+function refreshAllAiModuleActivities() {
+    document.querySelectorAll(".nav-item--module[data-module-id]")
+        .forEach((button) => syncAiModuleActivity(button, button.dataset.moduleId));
+}
+
+function bindAiModuleResultLayer() {
+    if (aiModuleResultLayerBound) {
+        return;
+    }
+    aiModuleResultLayerBound = true;
+    const reposition = () => positionAiModuleResults();
+    window.addEventListener("resize", reposition, { passive: true });
+    document.querySelector(".sidebar-scroll")?.addEventListener("scroll", reposition, { passive: true });
+    window.matchMedia(DESKTOP_SIDEBAR_QUERY).addEventListener?.("change", () => {
+        refreshAllAiModuleActivities();
+    });
+}
+
+/**
+ * 同步 AI 调用进度与结果标记。
+ *
+ * <p>运行进度仍留在导航行内；桌面结果气泡进入固定层，避免被侧栏 clip-path 裁切并贴近侧栏右缘。</p>
  *
  * @param {HTMLElement} button 模块导航按钮
  * @param {string} moduleId 模块 id
@@ -2469,6 +2548,7 @@ function syncAiModuleActivity(button, moduleId) {
     }
     button.querySelector(".nav-ai-progress")?.remove();
     button.querySelector(".nav-ai-result")?.remove();
+    removeAiModuleResult(moduleId);
     const activity = aiModuleActivities.get(moduleId);
     if (!activity) {
         button.removeAttribute("data-ai-activity");
@@ -2498,8 +2578,14 @@ function syncAiModuleActivity(button, moduleId) {
     result.setAttribute("role", "status");
     result.setAttribute("aria-live", "polite");
     result.dataset.phase = successful ? "success" : "failure";
+    result.dataset.moduleId = moduleId;
     if (activity.phase === "leaving") {
         result.classList.add("is-leaving");
+    }
+    if (positionAiModuleResult(result, button)) {
+        bindAiModuleResultLayer();
+        document.querySelector("#nav-ai-result-layer")?.append(result);
+        return;
     }
     button.append(result);
 }

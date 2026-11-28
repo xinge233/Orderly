@@ -367,6 +367,14 @@ body.is-navigation-dragging * {
     pointer-events: none;
 }
 
+/* Fixed portal keeps the desktop result bubble outside the sidebar clip-path. */
+.nav-ai-result-layer {
+    position: fixed;
+    z-index: 30;
+    inset: 0;
+    pointer-events: none;
+}
+
 .nav-ai-progress {
     right: var(--space-3);
     bottom: 6px;
@@ -390,6 +398,7 @@ body.is-navigation-dragging * {
 .nav-ai-result {
     top: 50%;
     right: var(--space-2);
+    --nav-ai-result-edge: var(--color-line-strong);
     display: grid;
     width: 26px;
     height: 22px;
@@ -399,41 +408,41 @@ body.is-navigation-dragging * {
     background: var(--color-surface-raised);
     box-shadow: var(--shadow-card);
     transform: translateY(-50%);
-    transform-origin: 35% 100%;
+    transform-origin: 0 50%;
+}
+
+.nav-ai-result-layer .nav-ai-result {
+    position: fixed;
+    top: 0;
+    right: auto;
+    left: 0;
 }
 
 .nav-ai-result::after {
     position: absolute;
-    bottom: -4px;
-    left: 5px;
+    top: 50%;
+    left: -7px;
     width: 7px;
-    height: 7px;
-    border-bottom: 1px solid var(--color-line-strong);
-    border-left: 1px solid var(--color-line-strong);
-    border-radius: 0 0 0 3px;
+    height: 10px;
     background: inherit;
+    clip-path: polygon(100% 0, 100% 100%, 0 50%);
     content: "";
-    transform: rotate(-45deg);
+    filter: drop-shadow(-1px 0 0 var(--nav-ai-result-edge));
+    transform: translateY(-50%);
 }
 
 .nav-ai-result[data-phase="success"] {
+    --nav-ai-result-edge: color-mix(in srgb, var(--color-safe) 62%, transparent);
     border-color: color-mix(in srgb, var(--color-safe) 62%, transparent);
     background: var(--color-safe-soft);
     color: var(--color-safe);
 }
 
-.nav-ai-result[data-phase="success"]::after {
-    border-color: color-mix(in srgb, var(--color-safe) 62%, transparent);
-}
-
 .nav-ai-result[data-phase="failure"] {
+    --nav-ai-result-edge: color-mix(in srgb, var(--color-danger) 62%, transparent);
     border-color: color-mix(in srgb, var(--color-danger) 62%, transparent);
     background: var(--color-danger-soft);
     color: var(--color-danger);
-}
-
-.nav-ai-result[data-phase="failure"]::after {
-    border-color: color-mix(in srgb, var(--color-danger) 62%, transparent);
 }
 
 .nav-ai-result.is-leaving {
@@ -732,10 +741,6 @@ body.is-navigation-dragging * {
         right: calc(100% - var(--sidebar-width) + var(--space-4));
         bottom: 3px;
         left: 10px;
-    }
-
-    .sidebar:not(.is-expanded) .nav-ai-result {
-        right: calc(100% - var(--sidebar-width) + var(--space-4));
     }
 
     .nav-icon {

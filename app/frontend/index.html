@@ -14,6 +14,9 @@
     <!-- 键盘用户的首个可聚焦入口：跳过侧栏导航，直接落到主内容焦点目标。 -->
     <a class="skip-link" href="#main-content">跳到主要内容</a>
 
+    <!-- AI 模块结果气泡挂在侧栏裁切层之外，位置由导航按钮实时同步。 -->
+    <div class="nav-ai-result-layer" id="nav-ai-result-layer" aria-label="AI 模块调用结果"></div>
+
     <!-- 应用外壳：侧栏持久导航，app-main 承载移动工具栏、历史视图与模块主视图。 -->
     <div class="app-shell" data-motion-scope="app-shell" data-motion-state="ready" data-motion-phase="active">
         <!-- 侧栏业务导航由宿主模块接口生成；navigation-order-status 专门播报排序结果。 -->

@@ -403,7 +403,7 @@ test("mobile drawer keeps its width, inert/ARIA behavior and is isolated from de
     assert.match(mobileOpen, /data-motion-state", "open"/);
 });
 
-test("AI module feedback stays inline and follows sidebar expansion", async () => {
+test("AI module feedback anchors to the sidebar edge with a sharp tail", async () => {
     const html = await read("../index.html");
     const app = await read("../src/app.js");
     const appCss = await read("../styles/app.css");
@@ -420,14 +420,19 @@ test("AI module feedback stays inline and follows sidebar expansion", async () =
 
     assert.doesNotMatch(html, /sidebar-count-layer|sidebar-count-bubble/);
     assert.doesNotMatch(appCss, /sidebar-count-layer|sidebar-count-bubble/);
+    assert.match(html, /id="nav-ai-result-layer"/);
     assert.match(appCss, /\.nav-ai-progress\s*\{[\s\S]*?height:\s*2px;/);
+    assert.match(
+        appCss,
+        /\.nav-ai-result-layer\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?pointer-events:\s*none;/
+    );
     assert.match(
         appCss,
         /\.nav-ai-result\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\) var\(--radius-sm\) var\(--radius-sm\) var\(--radius-xs\);/
     );
     assert.match(
         appCss,
-        /\.nav-ai-result::after\s*\{[\s\S]*?border-bottom:\s*1px solid var\(--color-line-strong\);/
+        /\.nav-ai-result::after\s*\{[\s\S]*?left:\s*-7px;[\s\S]*?clip-path:\s*polygon\(100% 0, 100% 100%, 0 50%\);/
     );
     assert.match(
         appCss,
@@ -439,7 +444,7 @@ test("AI module feedback stays inline and follows sidebar expansion", async () =
     );
     assert.match(
         appCss,
-        /\.sidebar:not\(\.is-expanded\) \.nav-ai-result\s*\{[\s\S]*?right:\s*calc\(100% - var\(--sidebar-width\) \+ var\(--space-4\)\);/
+        /\.nav-ai-result-layer \.nav-ai-result\s*\{[\s\S]*?position:\s*fixed;/
     );
     assert.match(appCss, /\.nav-ai-result\[data-phase="success"\]/);
     assert.match(appCss, /\.nav-ai-result\[data-phase="failure"\]/);
@@ -452,6 +457,9 @@ test("AI module feedback stays inline and follows sidebar expansion", async () =
     assert.match(app, /const AI_ANONYMOUS_STEP = Symbol\("ai-anonymous-step"\)/);
     assert.match(activity, /AI_MODULE_RESULT_HOLD_MS/);
     assert.match(activity, /AI_MODULE_RESULT_EXIT_MS/);
+    assert.match(activity, /function positionAiModuleResult/);
+    assert.match(activity, /function bindAiModuleResultLayer/);
+    assert.match(activity, /#nav-ai-result-layer/);
     assert.match(activity, /role", "progressbar"/);
     assert.match(activity, /icon\(successful \? "check-plain" : "close", 12\)/);
     assert.match(activity, /result\.setAttribute\("role", "status"\)/);
