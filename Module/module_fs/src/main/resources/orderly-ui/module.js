@@ -113,6 +113,8 @@ export default async function mount(root, context) {
         aiRiskAvailable: false,
         aiRiskLoading: true,
         aiRiskSaving: false,
+        aiRiskReminderEnabled: context.settings?.aiRiskChangeReminderEnabled !== false,
+        aiRiskDialogOpen: false,
         requestVersion: 0
     };
 
@@ -219,6 +221,41 @@ export default async function mount(root, context) {
     authActions.append(cancelAuth, submitAuth);
     authForm.append(authTitle, authPath, authLabel, authLegend, authActions);
 
+    const riskDialogTitleId = "fs-ui-risk-dialog-title";
+    const riskDialogDescriptionId = "fs-ui-risk-dialog-description";
+    const riskDialog = make("dialog", "fs-ui-risk-dialog");
+    riskDialog.setAttribute("aria-labelledby", riskDialogTitleId);
+    riskDialog.setAttribute("aria-describedby", riskDialogDescriptionId);
+    const riskDialogPanel = make("section", "fs-ui-risk-dialog__panel");
+    const riskDialogHeading = make("header", "fs-ui-risk-dialog__heading");
+    const riskDialogTitle = make("h2", "", "切换 AI 风险上限？");
+    riskDialogTitle.id = riskDialogTitleId;
+    const riskDialogLevel = make("span", "fs-ui-risk-dialog__level");
+    riskDialogHeading.append(make("p", "fs-ui-eyebrow", "AI RISK"), riskDialogTitle, riskDialogLevel);
+    const riskDialogMessage = make("p", "fs-ui-risk-dialog__message");
+    riskDialogMessage.id = riskDialogDescriptionId;
+    const riskReminderLabel = make("label", "fs-ui-risk-dialog__remember");
+    const riskReminderCheckbox = make("input");
+    riskReminderCheckbox.type = "checkbox";
+    const riskReminderCopy = make("span", "fs-ui-risk-dialog__remember-copy");
+    riskReminderCopy.append(
+        make("strong", "", "以后切换 AI 风险上限时不再提醒"),
+        make("small", "", "可在模组设置的“AI 风险变更提醒”中重新开启。")
+    );
+    riskReminderLabel.append(riskReminderCheckbox, riskReminderCopy);
+    riskReminderLabel.hidden = typeof context.saveSettings !== "function";
+    const riskDialogActions = make("div", "fs-ui-risk-dialog__actions");
+    const riskDialogCancel = button("取消", "close", "fs-ui-button--secondary");
+    const riskDialogConfirm = button("确认切换", "check", "fs-ui-button--primary");
+    riskDialogActions.append(riskDialogCancel, riskDialogConfirm);
+    riskDialogPanel.append(
+        riskDialogHeading,
+        riskDialogMessage,
+        riskReminderLabel,
+        riskDialogActions
+    );
+    riskDialog.append(riskDialogPanel);
+
     const layout = make("div", "fs-ui-layout");
     const rootRail = make("aside", "fs-ui-roots");
     rootRail.setAttribute("aria-label", "已授权文件根");
@@ -227,7 +264,7 @@ export default async function mount(root, context) {
     detail.setAttribute("aria-label", "文件详情");
     layout.append(rootRail, browser, detail);
 
-    panel.append(header, notice, authForm, layout);
+    panel.append(header, notice, authForm, layout, riskDialog);
     root.replaceChildren(panel);
 
     const uploadInput = make("input");
@@ -261,6 +298,7 @@ export default async function mount(root, context) {
         });
         aiRiskControl.disabled = state.aiRiskLoading
             || state.aiRiskSaving
+            || state.aiRiskDialogOpen
             || !state.aiRiskAvailable;
         aiRiskControl.dataset.risk = option.value;
         aiRiskControl.dataset.busy = String(state.aiRiskLoading || state.aiRiskSaving);
@@ -309,6 +347,107 @@ export default async function mount(root, context) {
         return AI_RISK_OPTIONS[(currentIndex + 1) % AI_RISK_OPTIONS.length];
     }
 
+    let riskDialogResolve = null;
+    let riskDialogReturnFocus = null;
+
+    function riskDialogFocusNodes() {
+        return [...riskDialogPanel.querySelectorAll(
+            'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )].filter((node) => !node.hidden && node.getClientRects().length > 0);
+    }
+
+    function closeAiRiskDialog(result) {
+        if (!riskDialog.open || !riskDialogResolve) return;
+        riskDialog.close();
+        state.aiRiskDialogOpen = false;
+        const resolve = riskDialogResolve;
+        riskDialogResolve = null;
+        const returnFocus = riskDialogReturnFocus;
+        riskDialogReturnFocus = null;
+        updateAiRiskControl();
+        if (returnFocus?.isConnected) {
+            returnFocus.focus();
+        }
+        resolve(result);
+    }
+
+    function openAiRiskDialog(option, message) {
+        riskDialogReturnFocus = document.activeElement;
+        riskDialog.dataset.risk = option.value;
+        riskDialogLevel.dataset.risk = option.value;
+        riskDialogLevel.textContent = option.label;
+        riskDialogMessage.textContent = message;
+        riskReminderCheckbox.checked = false;
+        if (!riskDialog.open) {
+            riskDialog.showModal();
+        }
+        state.aiRiskDialogOpen = true;
+        updateAiRiskControl();
+        requestAnimationFrame(() => riskDialogCancel.focus());
+        return new Promise((resolve) => {
+            riskDialogResolve = resolve;
+        });
+    }
+
+    function requestAiRiskConfirmation(option, message) {
+        if (option.value === "READ_ONLY" || !state.aiRiskReminderEnabled) {
+            return Promise.resolve({ confirmed: true, suppressReminder: false });
+        }
+        return openAiRiskDialog(option, message);
+    }
+
+    async function saveAiRiskReminderPreference(enabled) {
+        if (typeof context.saveSettings !== "function") {
+            throw new Error("宿主尚未接入模块设置保存");
+        }
+        const payload = await context.saveSettings({
+            aiRiskChangeReminderEnabled: enabled
+        });
+        const savedEnabled = payload?.aiRiskChangeReminderEnabled !== false;
+        if (savedEnabled !== enabled) {
+            throw new Error("宿主未保存 AI 风险变更提醒设置");
+        }
+        state.aiRiskReminderEnabled = savedEnabled;
+    }
+
+    riskDialogCancel.addEventListener("click", () => {
+        closeAiRiskDialog({ confirmed: false, suppressReminder: false });
+    });
+    riskDialogConfirm.addEventListener("click", () => {
+        closeAiRiskDialog({
+            confirmed: true,
+            suppressReminder: !riskReminderLabel.hidden && riskReminderCheckbox.checked
+        });
+    });
+    riskDialog.addEventListener("click", (event) => {
+        if (event.target === riskDialog) {
+            closeAiRiskDialog({ confirmed: false, suppressReminder: false });
+        }
+    });
+    riskDialog.addEventListener("cancel", (event) => {
+        event.preventDefault();
+        closeAiRiskDialog({ confirmed: false, suppressReminder: false });
+    });
+    riskDialog.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+            event.preventDefault();
+            closeAiRiskDialog({ confirmed: false, suppressReminder: false });
+            return;
+        }
+        if (event.key !== "Tab") return;
+        const focusable = riskDialogFocusNodes();
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    });
+
     async function changeAiRiskLevel(requested) {
         const normalized = normalizeAiRiskLevel(requested, "");
         const previous = state.aiRiskLevel;
@@ -321,14 +460,15 @@ export default async function mount(root, context) {
             return;
         }
         const option = aiRiskOption(normalized);
-        if (normalized !== "READ_ONLY") {
-            const warning = normalized === "DELETE"
-                ? "删除权限允许 AI 调用全部文件动作。删除仍只会进入项目回收站，并继续经过确认、快照和审计。"
-                : "写入权限允许 AI 创建、写入、移动和恢复文件；文件根仍需单独授予写入能力。";
-            if (!window.confirm(`${warning}\n\n确认将 AI 风险上限设为“${option.label}”？`)) {
-                updateAiRiskControl();
-                return;
-            }
+        const warning = normalized === "DELETE"
+            ? "删除权限允许 AI 调用全部文件动作。删除仍只会进入项目回收站，并继续经过确认、快照和审计。"
+            : normalized === "WRITE"
+                ? "写入权限允许 AI 创建、写入、移动和恢复文件；文件根仍需单独授予写入能力。"
+                : "只读权限关闭 AI 的写入和删除动作，查询与读取仍受文件根能力位约束。";
+        const confirmation = await requestAiRiskConfirmation(option, warning);
+        if (!confirmation.confirmed) {
+            updateAiRiskControl();
+            return;
         }
         state.aiRiskSaving = true;
         updateAiRiskControl();
@@ -339,7 +479,19 @@ export default async function mount(root, context) {
                 throw new Error("宿主返回了无效的 AI 风险上限");
             }
             state.aiRiskLevel = nextLevel;
-            notify(`AI 风险上限已设为“${aiRiskOption(state.aiRiskLevel).label}”`);
+            if (confirmation.suppressReminder) {
+                try {
+                    await saveAiRiskReminderPreference(false);
+                    notify(`AI 风险上限已设为“${aiRiskOption(state.aiRiskLevel).label}”，以后不再提醒`);
+                } catch (error) {
+                    notify(
+                        `AI 风险上限已设为“${aiRiskOption(state.aiRiskLevel).label}”，但“不再提醒”设置未保存：${error?.message || "未知错误"}`,
+                        true
+                    );
+                }
+            } else {
+                notify(`AI 风险上限已设为“${aiRiskOption(state.aiRiskLevel).label}”`);
+            }
         } catch (error) {
             state.aiRiskLevel = previous;
             fail(error);

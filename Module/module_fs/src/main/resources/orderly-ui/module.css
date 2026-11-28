@@ -193,6 +193,144 @@
     font-weight: 800;
 }
 
+.fs-ui-risk-dialog {
+    position: fixed;
+    z-index: 80;
+    inset: 0;
+    display: none;
+    width: 100vw;
+    max-width: none;
+    height: 100vh;
+    max-height: none;
+    margin: 0;
+    padding: var(--space-4);
+    place-items: center;
+    border: 0;
+    background: color-mix(in srgb, var(--color-overlay) 44%, transparent);
+    color: var(--color-text);
+}
+
+.fs-ui-risk-dialog[open] {
+    display: grid;
+}
+
+.fs-ui-risk-dialog::backdrop {
+    background: transparent;
+}
+
+.fs-ui-risk-dialog__panel {
+    display: grid;
+    width: min(100%, 460px);
+    max-height: calc(100vh - (var(--space-4) * 2));
+    gap: var(--space-4);
+    padding: var(--space-6);
+    overflow: auto;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface-raised);
+    box-shadow: var(--shadow-card);
+    color: var(--color-text);
+}
+
+.fs-ui-risk-dialog[open] .fs-ui-risk-dialog__panel {
+    animation: fs-ui-risk-dialog-in var(--duration-normal) var(--ease-spring);
+}
+
+.fs-ui-risk-dialog__heading {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.fs-ui-risk-dialog__heading h2 {
+    font-size: var(--font-size-panel-title);
+    line-height: 1.25;
+}
+
+.fs-ui-risk-dialog__level {
+    display: inline-flex;
+    justify-self: start;
+    padding: 3px var(--space-2);
+    border: 1px solid currentColor;
+    border-radius: var(--radius-xs);
+    font-size: var(--font-size-caption);
+    font-weight: 800;
+}
+
+.fs-ui-risk-dialog__level[data-risk="READ_ONLY"] {
+    background: var(--color-safe-soft);
+    color: var(--color-safe);
+}
+
+.fs-ui-risk-dialog__level[data-risk="WRITE"] {
+    background: var(--color-warning-soft);
+    color: var(--color-warning);
+}
+
+.fs-ui-risk-dialog__level[data-risk="DELETE"] {
+    background: var(--color-danger-soft);
+    color: var(--color-danger);
+}
+
+.fs-ui-risk-dialog__message {
+    color: var(--color-text-soft);
+    font-size: var(--font-size-body);
+    line-height: 1.65;
+}
+
+.fs-ui-risk-dialog__remember {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface-muted);
+    cursor: pointer;
+}
+
+.fs-ui-risk-dialog__remember[hidden] {
+    display: none;
+}
+
+.fs-ui-risk-dialog__remember input {
+    margin-top: 2px;
+    accent-color: var(--color-accent);
+}
+
+.fs-ui-risk-dialog__remember-copy {
+    display: grid;
+    gap: var(--space-1);
+}
+
+.fs-ui-risk-dialog__remember-copy strong {
+    font-size: var(--font-size-small);
+}
+
+.fs-ui-risk-dialog__remember-copy small {
+    color: var(--color-text-soft);
+    font-size: var(--font-size-caption);
+    line-height: 1.5;
+}
+
+.fs-ui-risk-dialog__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-2);
+}
+
+@keyframes fs-ui-risk-dialog-in {
+    from {
+        opacity: 0;
+        transform: translateY(var(--space-2)) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
 .fs-ui-button,
 .fs-ui-icon-button,
 .fs-ui-root,
@@ -626,6 +764,18 @@
 }
 
 @media (max-width: 720px) {
+    .fs-ui-risk-dialog {
+        padding: var(--space-2);
+    }
+
+    .fs-ui-risk-dialog__panel {
+        padding: var(--space-4);
+    }
+
+    .fs-ui-risk-dialog__actions .fs-ui-button {
+        flex: 1 1 120px;
+    }
+
     .fs-ui-header,
     .fs-ui-browser__header,
     .fs-ui-trash-item {

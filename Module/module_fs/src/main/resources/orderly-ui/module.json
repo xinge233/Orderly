@@ -17,7 +17,14 @@
     "countKey": "count",
     "unit": "个文件根"
   },
-  "settings": [],
+  "settings": [
+    {
+      "key": "aiRiskChangeReminderEnabled",
+      "title": "AI 风险变更提醒",
+      "type": "boolean",
+      "default": true
+    }
+  ],
   "examples": [
     { "label": "创建归档目录", "text": "在文件管理器中创建目录 归档" },
     { "label": "总结选中文件", "text": "总结我当前选中的文件" }

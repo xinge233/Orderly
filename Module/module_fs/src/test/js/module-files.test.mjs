@@ -35,6 +35,11 @@ test("module_fs uses host file-root authorization and tokenized reads", async ()
     assert.match(moduleSource, /aiRiskControl\.addEventListener\("click", cycleAiRiskLevel\)/);
     assert.doesNotMatch(moduleSource, /fs-ui-ai-risk__select|make\("select"/);
     assert.match(moduleSource, /label: "删除"/);
+    assert.match(moduleSource, /requestAiRiskConfirmation/);
+    assert.match(moduleSource, /以后切换 AI 风险上限时不再提醒/);
+    assert.match(moduleSource, /saveAiRiskReminderPreference\(false\)/);
+    assert.match(moduleSource, /context\.saveSettings\(/);
+    assert.doesNotMatch(moduleSource, /确认将 AI 风险上限设为/);
     assert.match(moduleSource, /只读/);
     assert.match(moduleSource, /写入/);
     assert.match(moduleSource, /宿主返回了无效的 AI 风险上限/);
@@ -49,6 +54,13 @@ test("module_fs uses host file-root authorization and tokenized reads", async ()
     assert.doesNotMatch(css, /rgb\(|hsl\(/i);
     assert.match(css, /\.fs-ui-ai-risk__track::before\s*\{[\s\S]*?transform:\s*translateX\(calc\(var\(--fs-risk-index\) \* 100%\)\);/);
     assert.match(css, /transform var\(--duration-normal\) var\(--ease-spring\)/);
+    assert.match(css, /\.fs-ui-risk-dialog\s*\{[\s\S]*?position:\s*fixed;/);
+    assert.match(css, /\.fs-ui-risk-dialog\[open\]\s*\{[\s\S]*?display:\s*grid;/);
+    const riskReminderSetting = manifest.settings.find(
+        (setting) => setting.key === "aiRiskChangeReminderEnabled"
+    );
+    assert.equal(riskReminderSetting?.type, "boolean");
+    assert.equal(riskReminderSetting?.default, true);
     assert.equal(manifest.view.caption, "文件管理器");
     assert.equal(manifest.card.queryId, "fs.roots");
 });

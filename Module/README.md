@@ -293,6 +293,7 @@ export default async function mount(root, context) {
     // context.query(...)：调用模块声明的通用查询
     // context.element / context.icon：创建主题一致的界面元素和图标
     // context.fileRoots：宿主本地文件根授权与短时读取令牌入口
+    // context.settings / context.saveSettings(...)：宿主校验后的模块设置与持久化入口
     // context.toast / context.fillCommand / context.openAiWithText / context.formatDate：
     //   宿主交互辅助能力
 }
