@@ -61,7 +61,7 @@ const AI_RISK_OPTIONS = [
     },
     {
         value: "DELETE",
-        label: "完全权限",
+        label: "删除",
         description: "AI 可调用全部文件动作；删除仍只进入项目回收站。"
     }
 ];
@@ -166,16 +166,20 @@ export default async function mount(root, context) {
     const headerActions = make("div", "fs-ui-header__actions");
     const authButton = button("授权目录", "shield", "fs-ui-button--primary");
     const refreshButton = iconButton("刷新当前目录", "refresh");
-    const aiRiskControl = make("label", "fs-ui-ai-risk");
-    aiRiskControl.append(iconNode("shield", 16), make("span", "fs-ui-ai-risk__label", "AI 风险"));
-    const aiRiskSelect = make("select", "fs-ui-ai-risk__select");
-    aiRiskSelect.setAttribute("aria-label", "AI 文件操作风险上限");
-    AI_RISK_OPTIONS.forEach((option) => {
-        const item = make("option", "", option.label);
-        item.value = option.value;
-        aiRiskSelect.append(item);
+    const aiRiskControl = make("button", "fs-ui-ai-risk");
+    aiRiskControl.type = "button";
+    const aiRiskTrack = make("span", "fs-ui-ai-risk__track");
+    const aiRiskOptions = AI_RISK_OPTIONS.map((option) => {
+        const item = make("span", "fs-ui-ai-risk__option", option.label);
+        item.dataset.risk = option.value;
+        aiRiskTrack.append(item);
+        return item;
     });
-    aiRiskControl.append(aiRiskSelect);
+    aiRiskControl.append(
+        iconNode("shield", 16),
+        make("span", "fs-ui-ai-risk__label", "AI 风险"),
+        aiRiskTrack
+    );
     headerActions.append(aiRiskControl, refreshButton, authButton);
     header.append(heading, headerActions);
 
@@ -249,14 +253,26 @@ export default async function mount(root, context) {
 
     function updateAiRiskControl() {
         const option = aiRiskOption(state.aiRiskLevel);
-        aiRiskSelect.value = option.value;
-        aiRiskSelect.disabled = state.aiRiskLoading
+        const optionIndex = AI_RISK_OPTIONS.findIndex((item) => item.value === option.value);
+        const nextOption = AI_RISK_OPTIONS[(optionIndex + 1) % AI_RISK_OPTIONS.length];
+        aiRiskControl.style.setProperty("--fs-risk-index", String(optionIndex));
+        aiRiskOptions.forEach((item, index) => {
+            item.classList.toggle("is-active", index === optionIndex);
+        });
+        aiRiskControl.disabled = state.aiRiskLoading
             || state.aiRiskSaving
             || !state.aiRiskAvailable;
         aiRiskControl.dataset.risk = option.value;
         aiRiskControl.dataset.busy = String(state.aiRiskLoading || state.aiRiskSaving);
+        aiRiskControl.setAttribute("aria-busy", aiRiskControl.dataset.busy);
+        aiRiskControl.setAttribute(
+            "aria-label",
+            state.aiRiskAvailable
+                ? `AI 文件操作风险上限：${option.label}。点击切换为${nextOption.label}。`
+                : "宿主尚未接入模块 AI 风险上限。"
+        );
         aiRiskControl.title = state.aiRiskAvailable
-            ? `AI 文件动作上限：${option.label}。${option.description} 文件根能力位仍单独生效。`
+            ? `AI 文件动作上限：${option.label}。${option.description} 点击切换为${nextOption.label}；文件根能力位仍单独生效。`
             : "宿主尚未接入模块 AI 风险上限。";
     }
 
@@ -286,25 +302,30 @@ export default async function mount(root, context) {
         }
     }
 
-    async function changeAiRiskLevel() {
-        const requested = normalizeAiRiskLevel(aiRiskSelect.value);
+    function nextAiRiskOption() {
+        const currentIndex = AI_RISK_OPTIONS.findIndex(
+            (option) => option.value === state.aiRiskLevel
+        );
+        return AI_RISK_OPTIONS[(currentIndex + 1) % AI_RISK_OPTIONS.length];
+    }
+
+    async function changeAiRiskLevel(requested) {
+        const normalized = normalizeAiRiskLevel(requested, "");
         const previous = state.aiRiskLevel;
-        if (requested === previous) {
+        if (!normalized || normalized === previous) {
             updateAiRiskControl();
             return;
         }
         if (!state.aiRiskAvailable || !context.aiRiskPolicy?.set) {
-            aiRiskSelect.value = previous;
             notify("宿主尚未接入模块 AI 风险上限", true);
             return;
         }
-        const option = aiRiskOption(requested);
-        if (requested !== "READ_ONLY") {
-            const warning = requested === "DELETE"
-                ? "完全权限允许 AI 调用全部文件动作。删除仍只会进入项目回收站，并继续经过确认、快照和审计。"
+        const option = aiRiskOption(normalized);
+        if (normalized !== "READ_ONLY") {
+            const warning = normalized === "DELETE"
+                ? "删除权限允许 AI 调用全部文件动作。删除仍只会进入项目回收站，并继续经过确认、快照和审计。"
                 : "写入权限允许 AI 创建、写入、移动和恢复文件；文件根仍需单独授予写入能力。";
             if (!window.confirm(`${warning}\n\n确认将 AI 风险上限设为“${option.label}”？`)) {
-                aiRiskSelect.value = previous;
                 updateAiRiskControl();
                 return;
             }
@@ -312,7 +333,7 @@ export default async function mount(root, context) {
         state.aiRiskSaving = true;
         updateAiRiskControl();
         try {
-            const payload = await context.aiRiskPolicy.set(requested);
+            const payload = await context.aiRiskPolicy.set(normalized);
             const nextLevel = normalizeAiRiskLevel(payload?.actionAiRiskLevel, "");
             if (!nextLevel) {
                 throw new Error("宿主返回了无效的 AI 风险上限");
@@ -326,6 +347,10 @@ export default async function mount(root, context) {
             state.aiRiskSaving = false;
             updateAiRiskControl();
         }
+    }
+
+    function cycleAiRiskLevel() {
+        void changeAiRiskLevel(nextAiRiskOption().value);
     }
 
     function setBusy(element, busy, label = "处理中…") {
@@ -994,7 +1019,7 @@ export default async function mount(root, context) {
         if (state.mode === "trash") loadTrash();
         else loadDirectory();
     });
-    aiRiskSelect.addEventListener("change", () => void changeAiRiskLevel());
+    aiRiskControl.addEventListener("click", cycleAiRiskLevel);
     authForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         const path = authPath.value.trim();

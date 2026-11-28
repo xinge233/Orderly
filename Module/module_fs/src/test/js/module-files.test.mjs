@@ -30,7 +30,11 @@ test("module_fs uses host file-root authorization and tokenized reads", async ()
     assert.match(moduleSource, /context\.aiRiskPolicy\.get\(/);
     assert.match(moduleSource, /context\.aiRiskPolicy\.set\(/);
     assert.match(moduleSource, /AI 文件操作风险上限/);
-    assert.match(moduleSource, /完全权限/);
+    assert.match(moduleSource, /make\("button", "fs-ui-ai-risk"\)/);
+    assert.match(moduleSource, /function cycleAiRiskLevel\(\)/);
+    assert.match(moduleSource, /aiRiskControl\.addEventListener\("click", cycleAiRiskLevel\)/);
+    assert.doesNotMatch(moduleSource, /fs-ui-ai-risk__select|make\("select"/);
+    assert.match(moduleSource, /label: "删除"/);
     assert.match(moduleSource, /只读/);
     assert.match(moduleSource, /写入/);
     assert.match(moduleSource, /宿主返回了无效的 AI 风险上限/);
@@ -43,6 +47,8 @@ test("module_fs uses host file-root authorization and tokenized reads", async ()
     assert.doesNotMatch(moduleSource, /localStorage|sessionStorage/);
     assert.doesNotMatch(css, /#[0-9a-f]{3,8}\b/i);
     assert.doesNotMatch(css, /rgb\(|hsl\(/i);
+    assert.match(css, /\.fs-ui-ai-risk__track::before\s*\{[\s\S]*?transform:\s*translateX\(calc\(var\(--fs-risk-index\) \* 100%\)\);/);
+    assert.match(css, /transform var\(--duration-normal\) var\(--ease-spring\)/);
     assert.equal(manifest.view.caption, "文件管理器");
     assert.equal(manifest.card.queryId, "fs.roots");
 });
