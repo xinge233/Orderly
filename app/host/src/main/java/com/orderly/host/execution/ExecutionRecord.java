@@ -12,11 +12,13 @@ import java.util.Map;
 /**
  * 可跨重启查询和回滚的完整执行记录。
  *
- * <p>记录保存有序步骤、聚合后的参数/输出/快照和审计事件。聚合映射以 stepId 为键；
- * 记录本身不可变，状态推进通过 {@link #withChanges} 创建新快照。</p>
+ * <p>记录保存可展示目标、有序步骤、聚合后的参数/输出/快照和审计事件。目标字段对
+ * 旧记录保持为空并由摘要层降级；聚合映射以 stepId 为键，状态推进通过
+ * {@link #withChanges} 创建新快照。</p>
  */
 public record ExecutionRecord(
         String executionId,
+        String goal,
         String origin,
         String status,
         List<ExecutionRecordStep> steps,
@@ -30,6 +32,7 @@ public record ExecutionRecord(
         Instant updatedAt
 ) {
     public ExecutionRecord {
+        goal = goal == null ? "" : goal;
         steps = List.copyOf(steps == null ? List.of() : steps);
         arguments = copy(arguments);
         outputs = copy(outputs);
@@ -53,6 +56,7 @@ public record ExecutionRecord(
         List<ExecutionRecordStep> stableSteps = List.copyOf(nextSteps);
         return new ExecutionRecord(
                 executionId,
+                goal,
                 origin,
                 nextStatus,
                 stableSteps,
@@ -64,6 +68,38 @@ public record ExecutionRecord(
                 nextStartedAt,
                 nextCompletedAt,
                 Instant.now()
+        );
+    }
+
+    /** 兼容不包含 goal 的旧调用方和旧记录；新执行应显式提供可展示目标。 */
+    public ExecutionRecord(
+            String executionId,
+            String origin,
+            String status,
+            List<ExecutionRecordStep> steps,
+            Map<String, Object> arguments,
+            Map<String, Object> outputs,
+            Map<String, Object> snapshots,
+            List<ExecutionEvent> events,
+            Instant createdAt,
+            Instant startedAt,
+            Instant completedAt,
+            Instant updatedAt
+    ) {
+        this(
+                executionId,
+                "",
+                origin,
+                status,
+                steps,
+                arguments,
+                outputs,
+                snapshots,
+                events,
+                createdAt,
+                startedAt,
+                completedAt,
+                updatedAt
         );
     }
 

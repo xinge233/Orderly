@@ -1,0 +1,13 @@
+{
+  "executionId": "execution-a1",
+  "goal": "创建待办：提交周报",
+  "origin": "AI_DIRECT",
+  "status": "COMPLETED",
+  "stepCount": 1,
+  "canRollback": true,
+  "rollbackDisabledReason": "",
+  "createdAt": "2026-11-28T02:03:04Z",
+  "startedAt": "2026-11-28T02:03:04Z",
+  "completedAt": "2026-11-28T02:03:05Z",
+  "updatedAt": "2026-11-28T02:03:05Z"
+}

@@ -11,6 +11,7 @@ import com.orderly.host.execution.AiActionService;
 import com.orderly.host.execution.ExecutionRecord;
 import com.orderly.host.execution.ExecutionRecordStep;
 import com.orderly.host.execution.ExecutionRecordStore;
+import com.orderly.host.execution.ExecutionRollbackPolicy;
 import com.orderly.host.execution.ExecutionRunResult;
 import com.orderly.host.execution.ExecutionService;
 import com.orderly.host.event.ExecutionJournal;
@@ -674,7 +675,7 @@ class ModuleControlIntegrationTest {
     }
 
     @Test
-    void legacyControlExecutionRecordCanStillRollbackByAlias() {
+    void partiallyRolledBackLegacyControlExecutionCanRetryByAlias() {
         boolean originallyEnabled = preferences.isEnabled("module_business");
         try {
             moduleControl.setActivation("module_business", false);
@@ -686,7 +687,7 @@ class ModuleControlIntegrationTest {
                     "设置模块启停",
                     RiskLevel.WRITE,
                     Map.of("moduleId", "module_business", "enabled", false),
-                    "COMPLETED",
+                    "ROLLBACK_FAILED",
                     Map.of(
                             "moduleId", "module_business",
                             "enabled", originallyEnabled,
@@ -705,7 +706,7 @@ class ModuleControlIntegrationTest {
             ExecutionRecord legacy = new ExecutionRecord(
                     executionId,
                     "AI_DIRECT",
-                    "COMPLETED",
+                    "PARTIALLY_ROLLED_BACK",
                     List.of(step),
                     ExecutionRecord.aggregate(
                             List.of(step),
@@ -727,9 +728,11 @@ class ModuleControlIntegrationTest {
             );
             executionRecords.save(legacy);
 
+            assertThat(ExecutionRollbackPolicy.assess(legacy).canRollback()).isTrue();
             ExecutionRecord rolledBack = execution.rollbackExecution(executionId);
 
             assertThat(rolledBack.status()).isEqualTo("ROLLED_BACK");
+            assertThat(rolledBack.steps().getFirst().status()).isEqualTo("ROLLED_BACK");
             assertThat(preferences.isEnabled("module_business")).isEqualTo(originallyEnabled);
             assertThat(rolledBack.steps().getFirst().moduleId()).isEqualTo("module_control");
             assertThat(rolledBack.steps().getFirst().actionId())

@@ -101,6 +101,7 @@ public class ExecutionService {
             }
             ExecutionRecord record = new ExecutionRecord(
                     plan.id(),
+                    plan.goal(),
                     "PLAN",
                     "RUNNING",
                     recordSteps,
@@ -321,12 +322,13 @@ public class ExecutionService {
                 ? coordinator.beginControlExecution()
                 : coordinator.beginExecution();
         try (permit) {
-            if (!List.of("COMPLETED", "PARTIALLY_ROLLED_BACK", "FAILED_PARTIALLY_ROLLED_BACK")
-                    .contains(record.status())) {
+            ExecutionRollbackPolicy.Assessment rollback =
+                    ExecutionRollbackPolicy.assess(record);
+            if (!rollback.canRollback()) {
                 throw new ApiException(
                         HttpStatus.CONFLICT,
                         "EXECUTION_NOT_ROLLBACKABLE",
-                        "执行记录当前状态不允许回滚：" + record.status()
+                        rollback.reason()
                 );
             }
             List<ExecutionRecordStep> recordSteps = new ArrayList<>(record.steps());
@@ -443,7 +445,7 @@ public class ExecutionService {
         );
         for (int index = steps.size() - 1; index >= 0; index--) {
             ExecutionRecordStep step = steps.get(index);
-            if (!"COMPLETED".equals(step.status())) {
+            if (!ExecutionRollbackPolicy.isRollbackCandidate(step)) {
                 continue;
             }
             try {

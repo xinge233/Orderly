@@ -356,7 +356,10 @@ class OrderlyIntegrationTest {
             mockMvc.perform(get("/api/executions"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$[?(@.executionId=='" + plan.planId() + "')]").exists())
-                    .andExpect(jsonPath("$[?(@.origin=='PLAN')]").exists());
+                    .andExpect(jsonPath("$[?(@.origin=='PLAN')]").exists())
+                    .andExpect(jsonPath("$[?(@.goal=='创建目录 功能关闭测试')]").exists())
+                    .andExpect(jsonPath("$[?(@.canRollback==true)]").exists())
+                    .andExpect(jsonPath("$[?(@.stepCount>0)]").exists());
             mockMvc.perform(get("/api/executions/{id}", plan.planId()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.origin").value("PLAN"))

@@ -248,6 +248,7 @@ public class AiActionService {
             }
             ExecutionRecord record = new ExecutionRecord(
                     executionId,
+                    executionGoal(targets),
                     origin,
                     "RUNNING",
                     steps,
@@ -528,6 +529,15 @@ public class AiActionService {
     /** 仅为 AI 计划与 AI 直执生成日志中的来源文案。 */
     private String actionSourceLabel(String origin) {
         return "AI_PLAN".equals(origin) ? "AI 计划" : "AI 直执";
+    }
+
+    /** 用实际已解析动作标题生成执行记录目标，不虚构自然语言来源。 */
+    private String executionGoal(List<ActionExecutionCore.ResolvedAction> targets) {
+        String firstTitle = targets.getFirst().action().title();
+        if (targets.size() == 1) {
+            return firstTitle;
+        }
+        return firstTitle + " 等 " + targets.size() + " 个动作";
     }
 
     /**

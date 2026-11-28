@@ -72,7 +72,7 @@
 |---|---|
 | `contracts/plan.schema.json` | 宿主计划校验、计划样例 |
 | `contracts/file-root.schema.json`、`file-root-authorization.schema.json` | 显式文件根描述与本地授权请求校验 |
-| `contracts/action-execution.schema.json` | 总体 AI 直执 Action 数组请求 |
+| `contracts/action-execution.schema.json`、`execution-history.schema.json` | 总体 AI 直执 Action 数组请求与执行历史摘要 |
 | `contracts/build-manifest.schema.json` | 源码构建清单、输入指纹和 JAR 产物 |
 | `contracts/ai-settings.schema.json` | AI 模式、临时 API Key 与删除直执设置 |
 | `contracts/ai-turn-request.schema.json` | 自然语言 AI 回合请求 |

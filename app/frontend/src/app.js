@@ -107,11 +107,7 @@ const NAV_SECTIONS = Object.freeze([
 ]);
 
 const HISTORY_VIEWS = new Set(["timeline", "summary"]);
-const ROLLBACK_ORIGINS = new Set([
-    EVENT_ORIGIN.PLAN,
-    EVENT_ORIGIN.AI_DIRECT,
-    EVENT_ORIGIN.AI_PLAN
-]);
+const HISTORY_EVENT_LIMIT = 30;
 
 function normalizeInterfaceFlagMap(input) {
     if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -3853,7 +3849,9 @@ function renderHistory() {
                         <h2>事件时间线</h2>
                         <p>按宿主序号展示计划、AI 直接执行、模块控制与系统事件。</p>
                     </div>
-                    <span class="status-chip">${state.events.length} 条</span>
+                    <span class="status-chip">${state.events.length > HISTORY_EVENT_LIMIT
+                        ? `最近 ${HISTORY_EVENT_LIMIT} / 共 ${state.events.length} 条`
+                        : `共 ${state.events.length} 条`}</span>
                 </header>
                 ${issueNotice}
                 <ol class="timeline" id="history-timeline"></ol>
@@ -3916,7 +3914,12 @@ function renderHistoryRuns(runs) {
         meta.append(element(
             "span",
             "",
-            `${statusLabel(status)} · ${formatDate(run.createdAt)} · ${run.displayId.slice(0, 24)}`
+            [
+                statusLabel(status),
+                formatDate(run.createdAt),
+                run.stepCount == null ? "" : `${run.stepCount} 个步骤`,
+                run.displayId.slice(0, 24)
+            ].filter(Boolean).join(" · ")
         ));
         copy.append(meta);
         if (run.message) {
@@ -3959,12 +3962,6 @@ function executionRollbackDecision(run) {
         return {
             allowed: false,
             reason: "当前兼容运行摘要没有执行记录 ID，无法调用执行回滚。"
-        };
-    }
-    if (!ROLLBACK_ORIGINS.has(run.origin)) {
-        return {
-            allowed: false,
-            reason: "仅计划与 AI 直接执行记录支持回滚。"
         };
     }
     if (!run.canRollback) {
@@ -4019,7 +4016,7 @@ function renderHistoryEvents() {
     if (!timeline) {
         return;
     }
-    const events = state.events.slice(-30);
+    const events = state.events.slice(-HISTORY_EVENT_LIMIT);
     timeline.replaceChildren();
     if (!events.length) {
         timeline.append(emptyState("尚无事件", "当前没有可展示的执行审计。"));

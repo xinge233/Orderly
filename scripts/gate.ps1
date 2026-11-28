@@ -459,6 +459,9 @@ try {
         "contracts\action-execution.schema.json",
         "contracts\samples\valid\action-execution.json",
         "contracts\samples\invalid\action-execution-empty.json",
+        "contracts\execution-history.schema.json",
+        "contracts\samples\valid\execution-history.json",
+        "contracts\samples\invalid\execution-history-rollback-invalid.json",
         "contracts\ai-settings.schema.json",
         "contracts\samples\valid\ai-settings-deepseek.json",
         "contracts\samples\valid\ai-settings-custom.json",
@@ -532,6 +535,8 @@ try {
         }
     }
     foreach ($contractCase in @(
+        @{ Schema = "contracts\execution-history.schema.json"; Sample = "contracts\samples\valid\execution-history.json"; Expected = $true },
+        @{ Schema = "contracts\execution-history.schema.json"; Sample = "contracts\samples\invalid\execution-history-rollback-invalid.json"; Expected = $false },
         @{ Schema = "contracts\ai-settings.schema.json"; Sample = "contracts\samples\valid\ai-settings-deepseek.json"; Expected = $true },
         @{ Schema = "contracts\ai-settings.schema.json"; Sample = "contracts\samples\valid\ai-settings-custom.json"; Expected = $true },
         @{ Schema = "contracts\ai-settings.schema.json"; Sample = "contracts\samples\invalid\ai-settings-custom-missing-base.json"; Expected = $false },

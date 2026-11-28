@@ -129,10 +129,19 @@ test("execution records preserve rollback identity and availability", () => {
         origin: "AI_DIRECT",
         status: "COMPLETED",
         goal: "整理待办",
+        stepCount: 2,
+        canRollback: true,
+        rollbackDisabledReason: "",
         createdAt: "2026-11-15T10:00:00Z"
     });
-    const unsupported = normalizeExecutionRecord({
+    const partial = normalizeExecutionRecord({
         executionId: "exec-2",
+        origin: "MODULE_CONTROL",
+        status: "PARTIALLY_ROLLED_BACK",
+        canRollback: true
+    });
+    const unsupported = normalizeExecutionRecord({
+        executionId: "exec-3",
         origin: "MODULE_CONTROL",
         status: "COMPLETED",
         canRollback: false,
@@ -141,7 +150,10 @@ test("execution records preserve rollback identity and availability", () => {
 
     assert.equal(completed.executionId, "exec-1");
     assert.equal(completed.origin, EVENT_ORIGIN.AI_DIRECT);
+    assert.equal(completed.goal, "整理待办");
+    assert.equal(completed.stepCount, 2);
     assert.equal(completed.canRollback, true);
+    assert.equal(partial.canRollback, true);
     assert.equal(unsupported.canRollback, false);
     assert.equal(unsupported.rollbackDisabledReason, "系统记录不可回滚");
 });
@@ -179,6 +191,10 @@ test("frontend gates plan surfaces with host state and keeps history independent
     assert.doesNotMatch(fillCommand, /aiDialog/);
     assert.match(history, /Promise\.allSettled\(\[\s*api\.getExecutions\(\),\s*api\.getRuns\(\),\s*api\.getEvents\(\)/);
     assert.ok(history.indexOf("api.getExecutions()") < history.indexOf("api.getRuns()"));
+    assert.match(app, /const HISTORY_EVENT_LIMIT = 30;/);
+    assert.doesNotMatch(app, /ROLLBACK_ORIGINS/);
+    assert.match(app, /if \(!run\.canRollback\)/);
+    assert.match(app, /最近 \$\{HISTORY_EVENT_LIMIT\}/);
     assert.match(settings, /api\.setPlanningEnabled\(enabled\)/);
     assert.match(settings, /normalizePlanningFeature/);
     assert.match(settings, /input\.checked = previous;/);

@@ -1,6 +1,6 @@
 # 契约目录
 
-**`plan.schema.json`** 定义计划与澄清问题的公开结构，**`module.schema.json`** 定义模块契约，**`module-ui.schema.json`** 定义模块自带 UI 清单，**`module-catalog.schema.json`** 定义 GitHub 模块分发目录，**`module-build-status.schema.json`** 定义后台模块构建状态，**`module-build-priority-request.schema.json`** 定义受限优先构建请求，**`build-settings.schema.json`** 定义构建设置并发及允许范围，**`host-shutdown-response.schema.json`** 定义本地宿主安全退出的稳定响应，**`theme.schema.json`** 定义目录主题包的 `theme.json`，**`study-data.schema.json`** 定义学习相关模块的只读数据边界，**`samples/`** 提供前端和测试共享的示例。
+**`plan.schema.json`** 定义计划与澄清问题的公开结构，**`execution-history.schema.json`** 定义可跨重启读取的执行历史摘要及宿主回滚结论，**`module.schema.json`** 定义模块契约，**`module-ui.schema.json`** 定义模块自带 UI 清单，**`module-catalog.schema.json`** 定义 GitHub 模块分发目录，**`module-build-status.schema.json`** 定义后台模块构建状态，**`module-build-priority-request.schema.json`** 定义受限优先构建请求，**`build-settings.schema.json`** 定义构建设置并发及允许范围，**`host-shutdown-response.schema.json`** 定义本地宿主安全退出的稳定响应，**`theme.schema.json`** 定义目录主题包的 `theme.json`，**`study-data.schema.json`** 定义学习相关模块的只读数据边界，**`samples/`** 提供前端和测试共享的示例。
 
 **`samples/valid/module.json`、`module-system-control.json`、`module-system-service.json` 与模块 UI 样例**是宿主和前端实际校验逻辑接受的合法样例；`samples/invalid/` 中的模块契约和 UI 清单会被对应逻辑明确拒绝。模块 JAR 契约不得声明静态 `aiCallable`，其属性在 `module.schema.json` 中因 `additionalProperties: false` 被拒绝；动态用户开关不属于模块 JAR 契约。`gate.ps1` 同时执行 Java 模块契约样例测试与 Node 模块 UI 样例测试，防止 schema、样例和运行时规则漂移。
 
@@ -13,6 +13,8 @@
 **模块 UI 的可选 `settings`** 支持对象形式 `{ "fields": [...] }` 或字段数组，字段类型为 `boolean`、`integer`、`select`、`text`。宿主会拒绝重复 key、类型错误、select 默认值不在 options、重复 option value，以及 integer/text 范围非法。模块设置的当前值由 `/api/system/module-preferences` 返回，并保存在宿主单一治理 JSON 中。
 
 **模块 UI 的可选 `icons` 映射**用于声明模块自带单色图标，键必须是小写图标 ID，值必须是 `icons/<安全文件名>.svg` 或 `.png`。宿主只发布清单中登记且 JAR 内实际存在的图标，单枚上限 256 KiB；未声明的路径、目录穿越和任意 classpath 资源均被拒绝。未提供本地图标时，`view.icon` 与 `card.icon` 继续使用框架内置语义图标。
+
+**执行历史摘要**只由宿主生成。`canRollback` 是宿主对持久化步骤、执行状态和回滚策略的唯一结论；合法摘要必须能展示目标、来源、步骤数和时间，允许回滚时 `rollbackDisabledReason` 必须为空，禁止回滚时必须给出具体原因。
 
 **`samples/valid/theme.json` 与 `samples/invalid/theme-*.json`** 覆盖目录主题的合法清单、不支持的 `schemaVersion`、非法 id、越界样式路径、非 CSS 样式路径和不可接受的 SVG 主动内容。宿主运行时必须同时登记 `tokens.css` 与 `motion.css`，并且只能读取清单登记的资源。
 

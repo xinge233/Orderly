@@ -30,6 +30,7 @@ import java.util.stream.Stream;
 public class ExecutionRecordStore {
 
     private static final Pattern SAFE_ID = Pattern.compile("[A-Za-z0-9_-]{1,100}");
+    private static final int SUMMARY_GOAL_LIMIT = 500;
 
     private final ObjectMapper objectMapper;
     private final Path executionsDirectory;
@@ -118,11 +119,16 @@ public class ExecutionRecordStore {
                     .sorted(Comparator.comparing(path -> path.getFileName().toString()))
                     .toList()) {
                 ExecutionRecord record = read(file);
+                ExecutionRollbackPolicy.Assessment rollback =
+                        ExecutionRollbackPolicy.assess(record);
                 summaries.add(new ExecutionRecordSummary(
                         record.executionId(),
+                        summaryGoal(record),
                         record.origin(),
                         record.status(),
                         record.steps().size(),
+                        rollback.canRollback(),
+                        rollback.reason(),
                         record.createdAt(),
                         record.startedAt(),
                         record.completedAt(),
@@ -138,6 +144,26 @@ public class ExecutionRecordStore {
         } catch (IOException exception) {
             throw new IllegalStateException("读取执行记录目录失败：" + executionsDirectory, exception);
         }
+    }
+
+    /** 旧记录没有 goal 时使用首个步骤标题，最后才退化为可识别执行 ID。 */
+    private String summaryGoal(ExecutionRecord record) {
+        if (record.goal() != null && !record.goal().isBlank()) {
+            return limitSummaryText(record.goal());
+        }
+        if (!record.steps().isEmpty()) {
+            String title = record.steps().getFirst().title();
+            if (title != null && !title.isBlank()) {
+                return limitSummaryText(title);
+            }
+        }
+        return "执行 " + record.executionId();
+    }
+
+    /** 摘要契约限制目标长度，完整目标仍保留在持久化执行记录中。 */
+    private String limitSummaryText(String value) {
+        int limit = Math.min(value.length(), SUMMARY_GOAL_LIMIT);
+        return value.substring(0, limit);
     }
 
     /** 拒绝符号链接和非普通文件，并校验反序列化记录至少包含 executionId。 */

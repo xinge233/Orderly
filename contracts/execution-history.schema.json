@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orderly.local/contracts/execution-history.schema.json",
+  "title": "Orderly Execution History Summary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "executionId",
+    "goal",
+    "origin",
+    "status",
+    "stepCount",
+    "canRollback",
+    "rollbackDisabledReason",
+    "createdAt",
+    "startedAt",
+    "completedAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "executionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,100}$"
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "origin": {
+      "type": "string",
+      "enum": ["PLAN", "AI_DIRECT", "AI_PLAN", "MODULE_CONTROL"]
+    },
+    "status": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "stepCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "canRollback": {
+      "type": "boolean"
+    },
+    "rollbackDisabledReason": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "startedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "completedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "canRollback": {
+            "const": true
+          }
+        },
+        "required": ["canRollback"]
+      },
+      "then": {
+        "properties": {
+          "rollbackDisabledReason": {
+            "const": ""
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "canRollback": {
+            "const": false
+          }
+        },
+        "required": ["canRollback"]
+      },
+      "then": {
+        "properties": {
+          "rollbackDisabledReason": {
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ]
+}

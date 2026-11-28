@@ -829,8 +829,8 @@ function normalizeOrigin(value) {
  * @param {number} fallbackIndex 缺省索引
  * @returns {object} 执行记录
  *
- * `canRollback` 在宿主未明确给出时，仅对已成功或部分完成的终态做乐观展示；真正可回滚性
- * 仍由宿主接口决定，点击后不能依赖该界面默认值。
+ * `canRollback` 只接受宿主明确给出的布尔值。旧接口缺少该字段时保守禁用，避免历史
+ * 摘要和宿主回滚策略各自推断。
  */
 export function normalizeExecutionRecord(raw, fallbackIndex = 0) {
     const source = raw && typeof raw === "object" ? raw : {};
@@ -844,6 +844,7 @@ export function normalizeExecutionRecord(raw, fallbackIndex = 0) {
     const canRollbackValue = source.canRollback
         ?? source.rollbackAvailable
         ?? source.rollbackable;
+    const stepCountValue = Number(source.stepCount ?? source.steps);
     return {
         executionId,
         displayId: String(source.executionId ?? source.id ?? source.planId ?? fallbackIndex + 1),
@@ -852,10 +853,11 @@ export function normalizeExecutionRecord(raw, fallbackIndex = 0) {
         goal: String(source.goal ?? source.title ?? source.message ?? "未命名执行"),
         message: String(source.message ?? source.summary ?? ""),
         status,
+        stepCount: Number.isInteger(stepCountValue) && stepCountValue >= 0 ? stepCountValue : null,
         createdAt: String(source.createdAt ?? source.finishedAt ?? source.timestamp ?? source.time ?? ""),
         canRollback: typeof canRollbackValue === "boolean"
             ? canRollbackValue
-            : ["COMPLETED", "SUCCESS", "SUCCEEDED", "PARTIAL"].includes(status),
+            : false,
         rollbackDisabledReason: String(
             source.rollbackDisabledReason
             ?? source.rollbackMessage

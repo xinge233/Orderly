@@ -259,6 +259,7 @@ POST /api/executions/{executionId}/rollback
 ```
 
 旧版计划由宿主设置控制，默认关闭。关闭时旧计划生成、确认和计划回滚接口返回 `FEATURE_DISABLED`，历史执行仍可读取和回滚。独立 AI 计划不复用该开关或接口。AI 直执请求只由宿主设置 `AI_DIRECT` 或 `AI_PLAN` 来源，客户端不能覆盖风险等级、模型返回结构或确认状态。
+`GET /api/executions` 返回宿主生成的执行历史摘要，包含可展示目标、来源、状态、步骤数及 `canRollback`/`rollbackDisabledReason`。前端不得自行按来源或状态推断回滚资格，实际回滚仍由 `/api/executions/{executionId}/rollback` 重新校验。
 `POST /api/ai/turns` 必须携带 `clientRequestId`；同一设置代次、会话和请求 ID 的重复提交返回首次结果，不会再次调用模型或重复执行写入。模块 Query 可声明 `outputSchema` 与 `display`；受限 Query 结果会始终回传 Python，Python 可返回只描述展示的 `VIEW`，非法或缺失时前端回退到模块声明或通用可读视图。
 
 `sidebarOrder` 和 `managementOrder` 都必须完整包含当前业务模块和 `module_system_control` 的 ID。`module_system_control` 默认位于最后，但用户可以在侧边栏和模块设置列表中拖动它；旧治理文件中的 `module_control` 顺序 ID 会在读取时迁移为新 ID。两份排序独立持久化且不得重复。
