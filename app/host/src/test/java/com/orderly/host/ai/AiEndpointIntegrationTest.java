@@ -120,11 +120,11 @@ class AiEndpointIntegrationTest {
                 new AiContracts.ServiceDecision(
                         "QUERY",
                         "integration-query-conversation",
-                        "需要读取待办",
+                        "需要读取日程",
                         null,
                         List.of(new AiContracts.QueryCall(
-                                "module_todo",
-                                "todo.list",
+                                "module_calendar",
+                                "calendar.list",
                                 java.util.Map.of()
                         )),
                         null
@@ -134,20 +134,20 @@ class AiEndpointIntegrationTest {
                 new AiContracts.ServiceDecision(
                         "VIEW",
                         "integration-query-conversation",
-                        "已整理待办",
+                        "已整理日程",
                         null,
                         null,
                         null,
                         new AiContracts.QueryView(
                                 1,
                                 "list",
-                                "待办列表",
+                                "日程列表",
                                 "items",
                                 List.of(
                                         new AiContracts.ViewField("title", "标题", "text"),
                                         new AiContracts.ViewField("status", "状态", "status")
                                 ),
-                                "暂无待办"
+                                "暂无日程"
                         )
                 )
         );
@@ -156,14 +156,14 @@ class AiEndpointIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "goal": "查看待办",
+                                  "goal": "查看日程",
                                   "conversationId": null,
                                   "clientRequestId": "integration-query-view"
                                 }
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.kind").value("VIEW"))
-                .andExpect(jsonPath("$.view.title").value("待办列表"))
+                .andExpect(jsonPath("$.view.title").value("日程列表"))
                 .andExpect(jsonPath("$.view.fields[0].key").value("title"))
                 .andExpect(jsonPath("$.queryResults[0].status").value("OK"));
     }

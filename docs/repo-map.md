@@ -33,11 +33,7 @@
 | `Module/module_system_codegen/` | 受保护模块与动效生成器；UI、模块专属 Python 提案、步骤回滚、镜像预览入口 |
 | `Module/module_fs/` | 显式授权文件根浏览、文本/Office/PDF 读取、默认应用打开、可回滚写入、上传、移动、回收站与资料视图 |
 | `Module/module_materials/` | 本地资料导入、检索、编辑、回收站与恢复 |
-| `Module/module_todo/` | 待办查询与创建 |
 | `Module/module_calendar/` | 日程查询与时间修改 |
-| `Module/module_study_assistant/` | 只读学习助手参考视图 |
-| `Module/module_study_map/` | 只读知识脉络参考视图 |
-| `Module/module_study_review/` | 只读复习自测参考视图 |
 
 模块入口通常从 `pom.xml`、`src/main/java/`、`src/main/resources/orderly-modules/`、`src/main/resources/orderly-ui/` 和模块测试开始定位。模块自有 Java 测试位于 `src/test/java`，模块自有 JavaScript 测试位于 `src/test/js/**/*.test.mjs`，由 Maven 或 `scripts/gate.ps1` 自动发现。
 

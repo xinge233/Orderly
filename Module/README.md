@@ -76,11 +76,10 @@ Module/
 图标只允许单文件 SVG 或 PNG，单枚不超过 256 KiB。框架内置 `file`、`check`、
 `calendar`、`spark`、`route`、`modules` 等通用图标仍可直接引用，不必复制进模块。
 
-学习相关模块如果使用 `contracts/study-data.schema.json`，还必须把只读数据本体放在
+模块如果使用 `contracts/study-data.schema.json`，还必须把只读数据本体放在
 自己的 `src/main/resources/orderly-data/<moduleId>.json`，不得建立集中式学习数据目录，
-也不得读取其他模块的数据文件。当前 `module_study_assistant`、`module_study_map`、
-`module_study_review` 与 `module_fs` 分别用自身声明的查询暴露 `assistant`、
-`knowledge-map`、`review` 与 `materials` 四类只读负载。
+也不得读取其他模块的数据文件。当前 `module_fs` 用自身声明的查询暴露 `materials`
+只读负载。
 
 一个 `module_*` 目录应只对应一个模块，并只产出一个可运行 JAR。普通用户模块使用
 `module_<id>`；`module_system_*` 是宿主内置受保护模块的保留前缀，用户模块不得占用。
@@ -124,7 +123,7 @@ Module/
 
 可先复制现有模块作为起点：
 
-- [`module_todo`](module_todo)：包含可撤销写操作、只读查询和计划规则的完整示例。
+- [`module_calendar`](module_calendar)：包含只读查询、可撤销写操作和计划规则的完整示例。
 - [`module_fs`](module_fs)：显式授权文件根浏览、文本/Office/PDF 读取、默认应用打开、可回滚写入、64 MiB 上传、移动和项目回收站。
 - [`module_materials`](module_materials)：包含资料文件导入、元数据搜索、回收站与恢复动作的示例。
 - [`module_calendar`](module_calendar)：包含日程查询和时间修改动作的示例。

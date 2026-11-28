@@ -2,10 +2,10 @@
 
 /*
  * 用途：
- *   对齐 contracts/study-data.schema.json 校验四种只读学习数据，并验证模块清单、模块自有数据及合法/非法样例。
+ *   对齐 contracts/study-data.schema.json 校验合法/非法样例，并验证当前使用该契约的模块清单与自有数据。
  *
  * 输入：
- *   读取四个模块的 orderly-modules 契约、orderly-ui 清单和 orderly-data 数据，以及 study-* 契约样例。
+ *   读取当前使用 study-data 契约的模块文件，以及 study-* 契约样例。
  *
  * 副作用：
  *   只读仓库文件并输出结果；不联网、不写数据、不启动服务。任一样例或模块数据不合格时以退出码 1 结束。
@@ -23,12 +23,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const scriptRoot = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptRoot, "..");
 
-const MODULE_IDS = [
-    "module_study_assistant",
-    "module_study_map",
-    "module_study_review",
-    "module_fs"
-];
+const MODULE_IDS = ["module_fs"];
 
 const KINDS_BY_MODULE = new Map([
     ["module_study_assistant", "assistant"],

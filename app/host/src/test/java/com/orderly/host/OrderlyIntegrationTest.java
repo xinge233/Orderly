@@ -243,7 +243,7 @@ class OrderlyIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value(2))
                 .andExpect(jsonPath("$.entries.length()").value(2));
-        mockMvc.perform(get("/api/modules/module_todo/query/todo.list"))
+        mockMvc.perform(get("/api/modules/module_calendar/query/calendar.todo.list"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value(1));
         mockMvc.perform(get("/api/modules/module_calendar/query/calendar.list"))
@@ -651,7 +651,7 @@ class OrderlyIntegrationTest {
 
     @Test
     void executesAiActionsWithStructuredReferenceAndRollsBackRecord() throws Exception {
-        int before = runtime.readItems("todos").size();
+        int before = runtime.readItems("module_calendar_todos").size();
         MvcResult result = mockMvc.perform(post("/api/ai/actions/execute")
                         .contentType("application/json")
                         .content("""
@@ -664,8 +664,8 @@ class OrderlyIntegrationTest {
                                       "arguments": {"path": "收件箱/引用测试"}
                                     },
                                     {
-                                      "moduleId": "module_todo",
-                                      "actionId": "todo.create",
+                                      "moduleId": "module_calendar",
+                                      "actionId": "calendar.todo.create",
                                       "arguments": {
                                         "title": {
                                           "$fromAction": 0,
@@ -689,15 +689,15 @@ class OrderlyIntegrationTest {
                 .path("executionId")
                 .asText();
         assertThat(executionId).isNotBlank();
-        assertThat(runtime.readItems("todos")).hasSize(before + 1);
-        assertThat(runtime.readItems("todos"))
+        assertThat(runtime.readItems("module_calendar_todos")).hasSize(before + 1);
+        assertThat(runtime.readItems("module_calendar_todos"))
                 .anyMatch(item -> "收件箱/引用测试".equals(item.get("title")));
 
         mockMvc.perform(post("/api/executions/{id}/rollback", executionId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ROLLED_BACK"))
                 .andExpect(jsonPath("$.origin").value("AI_DIRECT"));
-        assertThat(runtime.readItems("todos")).hasSize(before);
+        assertThat(runtime.readItems("module_calendar_todos")).hasSize(before);
     }
 
     @Test
@@ -706,11 +706,9 @@ class OrderlyIntegrationTest {
         assertThat(archive.steps()).hasSize(2);
         assertThat(archive.steps().getFirst().arguments()).containsEntry("path", "归档");
 
-        PlanView todo = plans.create("创建待办：提交周报；截止：2026-11-20");
+        PlanView todo = plans.create("创建日历待办 提交周报");
         assertThat(todo.steps()).hasSize(1);
-        assertThat(todo.steps().getFirst().arguments())
-                .containsEntry("title", "提交周报")
-                .containsEntry("dueAt", "2026-11-20");
+        assertThat(todo.steps().getFirst().arguments()).containsEntry("title", "提交周报");
 
         PlanView calendar = plans.create("把日程 项目评审 改到 2026-11-20 15:00");
         assertThat(calendar.steps()).hasSize(1);
@@ -778,13 +776,13 @@ class OrderlyIntegrationTest {
     }
 
     @Test
-    void createsAndRollsBackTodoAndCalendarChange() {
-        int todoCount = runtime.readItems("todos").size();
-        PlanView todoPlan = plans.create("创建待办 集成测试事项 截止 2026-12-01");
+    void createsAndRollsBackCalendarTodoAndEventChange() {
+        int todoCount = runtime.readItems("module_calendar_todos").size();
+        PlanView todoPlan = plans.create("创建日历待办 集成测试事项");
         execution.confirm(todoPlan.planId(), true, "");
-        assertThat(runtime.readItems("todos")).hasSize(todoCount + 1);
+        assertThat(runtime.readItems("module_calendar_todos")).hasSize(todoCount + 1);
         execution.rollback(todoPlan.planId());
-        assertThat(runtime.readItems("todos")).hasSize(todoCount);
+        assertThat(runtime.readItems("module_calendar_todos")).hasSize(todoCount);
 
         List<Map<String, Object>> before = runtime.readItems("calendar");
         String originalStart = before.stream()

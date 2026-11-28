@@ -39,7 +39,7 @@ class ContractCatalogTest {
     @Test
     void jarNameMustMatchContractModuleId() throws Exception {
         Path directory = testDirectory("module-id-mismatch");
-        Path source = stagedJar("module_todo.jar");
+        Path source = stagedJar("module_calendar.jar");
         Files.copy(source, directory.resolve("a.jar"));
 
         assertThatThrownBy(() -> new ContractCatalog(objectMapper, directory.toString()))
@@ -50,7 +50,7 @@ class ContractCatalogTest {
     @Test
     void duplicateActionsFailAtStartup() throws Exception {
         Path directory = testDirectory("duplicate-action");
-        rewriteStagedJar(directory.resolve("module_todo.jar"), "module_todo.json", root -> {
+        rewriteStagedJar(directory.resolve("module_calendar.jar"), "module_calendar.json", root -> {
             ArrayNode actions = (ArrayNode) root.path("actions");
             actions.add(actions.get(0).deepCopy());
         });
@@ -63,7 +63,7 @@ class ContractCatalogTest {
     @Test
     void duplicateQueriesFailAtStartup() throws Exception {
         Path directory = testDirectory("duplicate-query");
-        rewriteStagedJar(directory.resolve("module_todo.jar"), "module_todo.json", root -> {
+        rewriteStagedJar(directory.resolve("module_calendar.jar"), "module_calendar.json", root -> {
             ArrayNode queries = (ArrayNode) root.path("queries");
             queries.add(queries.get(0).deepCopy());
         });
@@ -76,7 +76,7 @@ class ContractCatalogTest {
     @Test
     void plannerRuleMustReferenceOwnedAction() throws Exception {
         Path directory = testDirectory("planner-rule");
-        rewriteStagedJar(directory.resolve("module_todo.jar"), "module_todo.json", root ->
+        rewriteStagedJar(directory.resolve("module_calendar.jar"), "module_calendar.json", root ->
                 ((ObjectNode) root.path("plannerRules").get(0)).put("actionId", "fs.mkdir"));
 
         assertThatThrownBy(() -> new ContractCatalog(objectMapper, directory.toString()))
@@ -87,7 +87,7 @@ class ContractCatalogTest {
     @Test
     void contractWithoutMatchingExecutorFailsAtStartup() throws Exception {
         Path directory = testDirectory("contract-mismatch");
-        rewriteStagedJar(directory.resolve("module_without_executor.jar"), "module_todo.json", root ->
+        rewriteStagedJar(directory.resolve("module_without_executor.jar"), "module_calendar.json", root ->
                 root.put("moduleId", "module_without_executor"));
 
         assertThatThrownBy(() -> new ContractCatalog(objectMapper, directory.toString()))
@@ -99,25 +99,25 @@ class ContractCatalogTest {
     void declaredModuleIconAssetsAreServedFromTheModuleJar() throws Exception {
         Path directory = testDirectory("module-local-icon");
         rewriteStagedJar(
-                directory.resolve("module_todo.jar"),
+                directory.resolve("module_calendar.jar"),
                 "orderly-ui/module.json",
                 root -> root.set(
                         "icons",
-                        objectMapper.createObjectNode().put("todo-local", "icons/todo-local.svg")
+                        objectMapper.createObjectNode().put("calendar-local", "icons/calendar-local.svg")
                 ),
                 Map.of(
-                        "orderly-ui/icons/todo-local.svg",
+                        "orderly-ui/icons/calendar-local.svg",
                         "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"></svg>"
                                 .getBytes(StandardCharsets.UTF_8)
                 )
         );
 
         try (ContractCatalog catalog = new ContractCatalog(objectMapper, directory.toString())) {
-            ModuleUiAsset asset = catalog.readUiAsset("module_todo", "icons/todo-local.svg")
+            ModuleUiAsset asset = catalog.readUiAsset("module_calendar", "icons/calendar-local.svg")
                     .orElseThrow();
             assertThat(asset.contentType()).isEqualTo("image/svg+xml");
             assertThat(asset.content()).startsWith("<svg".getBytes(StandardCharsets.UTF_8));
-            assertThat(catalog.readUiAsset("module_todo", "icons/undeclared.svg")).isEmpty();
+            assertThat(catalog.readUiAsset("module_calendar", "icons/undeclared.svg")).isEmpty();
         }
     }
 
@@ -125,11 +125,11 @@ class ContractCatalogTest {
     void declaredButMissingModuleIconFailsAtStartup() throws Exception {
         Path directory = testDirectory("missing-module-icon");
         rewriteStagedJar(
-                directory.resolve("module_todo.jar"),
+                directory.resolve("module_calendar.jar"),
                 "orderly-ui/module.json",
                 root -> root.set(
                         "icons",
-                        objectMapper.createObjectNode().put("todo-local", "icons/todo-local.svg")
+                        objectMapper.createObjectNode().put("calendar-local", "icons/calendar-local.svg")
                 )
         );
 
@@ -167,7 +167,7 @@ class ContractCatalogTest {
             Consumer<ObjectNode> mutation,
             Map<String, byte[]> additionalEntries
     ) throws IOException {
-        Path source = stagedJar("module_todo.jar");
+        Path source = stagedJar("module_calendar.jar");
         try (JarFile input = new JarFile(source.toFile(), false);
              JarOutputStream output = new JarOutputStream(Files.newOutputStream(destination))) {
             Enumeration<JarEntry> entries = input.entries();
