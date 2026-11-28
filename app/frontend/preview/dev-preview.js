@@ -1,5 +1,11 @@
+import { icon } from "../src/icons.js";
+
 const SETTINGS_KEY = "orderly.settings.v1";
 const MOTION_VALUES = new Set(["gentle", "minimal", "none"]);
+const DESKTOP_SIDEBAR_QUERY = "(min-width: 821px)";
+const AI_CALL_RUNNING_MS = 1200;
+const AI_CALL_RESULT_HOLD_MS = 2600;
+const AI_CALL_RESULT_EXIT_MS = 180;
 
 function readSettings() {
     try {
@@ -29,103 +35,120 @@ function delay(milliseconds) {
     });
 }
 
-function parseCssDuration(value, fallback) {
-    const match = String(value ?? "").trim().match(/^(\d+(?:\.\d+)?)(ms|s)$/i);
-    if (!match) {
-        return fallback;
-    }
-    const amount = Number.parseFloat(match[1]);
-    return match[2].toLowerCase() === "s" ? amount * 1000 : amount;
+function previewModuleButton() {
+    const buttons = [...document.querySelectorAll(".nav-item--module[data-module-id]")];
+    return buttons.find((button) => button.classList.contains("is-active"))
+        || buttons.find((button) => button.getClientRects().length > 0)
+        || buttons[0]
+        || null;
 }
 
-async function waitForCondition(condition, timeoutMs = 1600) {
-    const deadline = performance.now() + timeoutMs;
-    while (performance.now() < deadline) {
-        if (condition()) {
-            return true;
-        }
-        await delay(40);
+function positionPreviewAiResult(result, button) {
+    const sidebar = document.querySelector("#sidebar");
+    if (!result || !button?.isConnected || !sidebar
+        || !window.matchMedia(DESKTOP_SIDEBAR_QUERY).matches) {
+        return false;
     }
-    throw new Error("等待 AI 界面状态超时。");
+    const sidebarRect = sidebar.getBoundingClientRect();
+    const rootStyle = getComputedStyle(document.documentElement);
+    const collapsedWidth = Number.parseFloat(rootStyle.getPropertyValue("--sidebar-width"))
+        || sidebarRect.width;
+    const gap = Number.parseFloat(rootStyle.getPropertyValue("--space-2")) || 8;
+    const visibleRight = sidebar.classList.contains("is-expanded")
+        ? sidebarRect.right
+        : Math.min(sidebarRect.right, sidebarRect.left + collapsedWidth);
+    const buttonRect = button.getBoundingClientRect();
+    result.style.left = `${visibleRight + gap}px`;
+    result.style.top = `${buttonRect.top + buttonRect.height / 2}px`;
+    return true;
 }
 
-async function playAiMotionSequence(button, hint, defaultHint) {
+async function playAiModuleCallSequence(button, hint, defaultHint) {
     if (button.dataset.playing === "true") {
         return;
     }
-    const dock = document.querySelector("#ai-dock");
-    const launcher = document.querySelector("#ai-launcher");
-    if (!dock || !launcher) {
-        hint.textContent = "未找到 AI Dock，无法播放动效。";
+    const moduleButton = previewModuleButton();
+    const resultLayer = document.querySelector("#nav-ai-result-layer");
+    if (!moduleButton || !resultLayer) {
+        hint.textContent = "未找到可预览的模块导航，无法播放 AI 调用动效。";
         return;
     }
-    if (["planning", "running"].includes(dock.dataset.mode)) {
-        hint.textContent = "AI 当前正在执行，未覆盖运行中的界面状态。";
+    if (document.querySelector(".nav-item[data-ai-activity]")) {
+        hint.textContent = "侧栏已有 AI 模块调用状态，未叠加预览动效。";
         return;
     }
 
-    const consoleNode = button.closest(".preview-console");
-    const toggleButton = consoleNode?.querySelector(".preview-console__toggle");
-    const shouldRestoreConsole = window.matchMedia("(max-width: 820px)").matches
-        && consoleNode?.dataset.collapsed !== "true";
-    if (shouldRestoreConsole) {
-        consoleNode.dataset.collapsed = "true";
-        if (toggleButton) {
-            toggleButton.textContent = "+";
-        }
-    }
     const root = document.documentElement;
     const previousMotion = root.dataset.motion || "gentle";
-    const style = getComputedStyle(dock);
-    const transitionMs = Math.max(
-        parseCssDuration(style.getPropertyValue("--duration-normal"), 240),
-        parseCssDuration(style.getPropertyValue("--duration-slow"), 420)
-    );
     button.dataset.playing = "true";
     button.disabled = true;
     button.setAttribute("aria-busy", "true");
-    hint.textContent = "正在播放 AI 展开与收起动效；不会请求模型或执行 Action。";
+    hint.textContent = "正在预览 AI 调用模块：侧栏进度条后将显示成功标记；不会请求模型或执行 Action。";
     if (previousMotion === "none") {
         root.dataset.motion = "gentle";
     }
-    root.dataset.orderlyPreviewAiPlaying = "true";
+    root.dataset.orderlyPreviewAiCallPlaying = "true";
 
-    let resultHint = "AI 动效播放完成。";
+    let progress = null;
+    let result = null;
+    let openedMobileSidebar = false;
+    let resultHint = "AI 调用模块动效播放完成。";
     try {
-        if (dock.dataset.panel === "open") {
-            document.querySelector("#ai-plan-close")?.click();
+        const sidebar = document.querySelector("#sidebar");
+        if (window.matchMedia("(max-width: 820px)").matches
+            && sidebar && !sidebar.classList.contains("is-open")) {
+            document.querySelector("#mobile-menu")?.click();
+            openedMobileSidebar = sidebar.classList.contains("is-open");
+            if (openedMobileSidebar) {
+                await delay(220);
+            }
         }
-        if (dock.dataset.composer === "open") {
-            document.querySelector("#ai-composer-close")?.click();
-        }
-        await waitForCondition(
-            () => dock.dataset.panel !== "open" && dock.dataset.composer !== "open",
-            1400
+        moduleButton.dataset.aiActivity = "running";
+        progress = element("span", "nav-ai-progress");
+        progress.setAttribute("role", "progressbar");
+        const moduleLabel = moduleButton.querySelector(".nav-copy strong")?.textContent?.trim() || "模块";
+        progress.setAttribute("aria-label", `AI 正在调用${moduleLabel}`);
+        moduleButton.append(progress);
+        await delay(AI_CALL_RUNNING_MS);
+        progress.remove();
+
+        result = element("span", "nav-ai-result");
+        const resultIcon = element("span", "nav-ai-result__icon");
+        resultIcon.innerHTML = icon("check-plain", 12);
+        result.append(
+            resultIcon,
+            element("span", "sr-only", `AI 调用${moduleLabel}成功`)
         );
-        await delay(Math.min(transitionMs, 420));
-
-        launcher.click();
-        await waitForCondition(() => dock.dataset.composer === "open", 1600);
-        await delay(transitionMs + 520);
-
-        document.querySelector("#ai-composer-close")?.click();
-        await waitForCondition(() => dock.dataset.composer !== "open", 1600);
-        await delay(Math.min(transitionMs, 420));
+        result.setAttribute("role", "status");
+        result.setAttribute("aria-live", "polite");
+        result.dataset.phase = "success";
+        result.dataset.moduleId = moduleButton.dataset.moduleId;
+        moduleButton.dataset.aiActivity = "success";
+        if (window.matchMedia(DESKTOP_SIDEBAR_QUERY).matches) {
+            positionPreviewAiResult(result, moduleButton);
+            resultLayer.append(result);
+        } else {
+            moduleButton.append(result);
+        }
+        await delay(AI_CALL_RESULT_HOLD_MS);
+        result.classList.add("is-leaving");
+        await delay(AI_CALL_RESULT_EXIT_MS);
+        result.remove();
     } catch {
-        resultHint = "AI 入口当前不可用，未播放动效。";
+        resultHint = "AI 调用动效预览中断，未修改其他界面状态。";
     } finally {
-        delete root.dataset.orderlyPreviewAiPlaying;
+        progress?.remove();
+        result?.remove();
+        delete moduleButton.dataset.aiActivity;
+        delete root.dataset.orderlyPreviewAiCallPlaying;
         root.dataset.motion = previousMotion;
+        if (openedMobileSidebar) {
+            document.querySelector("#mobile-scrim")?.click();
+        }
         button.dataset.playing = "false";
         button.disabled = false;
         button.setAttribute("aria-busy", "false");
         hint.textContent = resultHint;
-        if (shouldRestoreConsole && consoleNode?.dataset.collapsed === "true") {
-            consoleNode.dataset.collapsed = "false";
-            if (toggleButton) {
-                toggleButton.textContent = "−";
-            }
-        }
         window.setTimeout(() => {
             if (button.dataset.playing !== "true") {
                 hint.textContent = defaultHint;
@@ -180,10 +203,10 @@ function createConsole() {
 
     const actions = element("div", "preview-console__actions");
 
-    const aiMotionButton = element("button", "preview-console__ai-motion", "AI 动效");
+    const aiMotionButton = element("button", "preview-console__ai-motion", "AI 调用");
     aiMotionButton.type = "button";
     aiMotionButton.dataset.playing = "false";
-    aiMotionButton.title = "播放 AI 输入区展开与收起动效，仅操作预览界面";
+    aiMotionButton.title = "播放 AI 调用模块时的侧栏进度与成功标记动效，仅操作预览界面";
 
     const scopesButton = element("button", "preview-console__scopes", "挂点");
     scopesButton.type = "button";
@@ -230,7 +253,7 @@ function createConsole() {
 
     const defaultHint = hint.textContent;
     aiMotionButton.addEventListener("click", () => {
-        void playAiMotionSequence(aiMotionButton, hint, defaultHint);
+        void playAiModuleCallSequence(aiMotionButton, hint, defaultHint);
     });
 
     scopesButton.addEventListener("click", () => {

@@ -223,24 +223,31 @@ test("motion preview iframes do not hold host event-stream connections", async (
     assert.match(bootstrap, /if \(!previewRequest\) \{\s*scheduleModuleBuildPoll\(\);/);
 });
 
-test("preview console can replay AI motion without model or host side effects", async () => {
+test("preview console replays AI module-call feedback without host side effects", async () => {
     const preview = await read("../preview/dev-preview.js");
     const css = await read("../preview/dev-preview.css");
-    const playback = between(preview, "async function playAiMotionSequence", "function createConsole");
+    const playback = between(preview, "async function playAiModuleCallSequence", "function createConsole");
 
-    assert.match(preview, /element\("button", "preview-console__ai-motion", "AI 动效"\)/);
-    assert.match(playback, /querySelector\("#ai-launcher"\)/);
-    assert.match(playback, /launcher\.click\(\)/);
-    assert.match(playback, /querySelector\("#ai-composer-close"\)\?\.click\(\)/);
-    assert.match(playback, /root\.dataset\.orderlyPreviewAiPlaying = "true"/);
+    assert.match(preview, /import \{ icon \} from "\.\.\/src\/icons\.js";/);
+    assert.match(preview, /element\("button", "preview-console__ai-motion", "AI 调用"\)/);
+    assert.match(preview, /querySelectorAll\("\.nav-item--module\[data-module-id\]"\)/);
+    assert.match(playback, /moduleButton\.dataset\.aiActivity = "running"/);
+    assert.match(playback, /element\("span", "nav-ai-progress"\)/);
+    assert.match(playback, /element\("span", "nav-ai-result"\)/);
+    assert.match(playback, /icon\("check-plain", 12\)/);
+    assert.match(playback, /result\.dataset\.phase = "success"/);
+    assert.match(playback, /querySelector\("#nav-ai-result-layer"\)/);
+    assert.match(playback, /result\.classList\.add\("is-leaving"\)/);
+    assert.match(playback, /root\.dataset\.orderlyPreviewAiCallPlaying = "true"/);
+    assert.match(playback, /querySelector\("#mobile-menu"\)\?\.click\(\)/);
+    assert.match(playback, /openedMobileSidebar[\s\S]*?querySelector\("#mobile-scrim"\)\?\.click\(\)/);
     assert.match(playback, /root\.dataset\.motion = previousMotion/);
     assert.match(playback, /previousMotion === "none"[\s\S]*?root\.dataset\.motion = "gentle"/);
-    assert.match(playback, /shouldRestoreConsole[\s\S]*?dataset\.collapsed = "true"/);
     assert.doesNotMatch(playback, /fetch\(|OrderlyApi|interpretGoal|confirmAiPlan/);
+    assert.doesNotMatch(playback, /#ai-launcher|ai-composer-close/);
     assert.match(css, /\.preview-console__actions/);
-    assert.match(css, /data-orderly-preview-ai-playing="true"[\s\S]*?\.ai-launcher__ring/);
-    assert.match(css, /data-orderly-preview-ai-playing="true"[\s\S]*?\.preview-console\[data-collapsed="true"\]/);
-    assert.match(css, /@keyframes orderly-preview-ai-ring/);
+    assert.match(css, /\.preview-console__ai-motion\[data-playing="true"\]/);
+    assert.doesNotMatch(css, /preview-ai-ring|ai-launcher__ring|ai-launcher__status/);
 });
 
 test("settings provide reusable accessible help tooltips", async () => {
