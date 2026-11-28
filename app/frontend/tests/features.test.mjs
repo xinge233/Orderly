@@ -78,6 +78,19 @@ test("feature and execution API calls use the host contract", async () => {
     );
 });
 
+test("external file drags are limited to declared module drop zones", async () => {
+    const app = await read("../src/app.js");
+    const mainForm = await read("../../../app/desktop/webview2-host/src/MainForm.cs");
+    const previewWindow = await read("../../../app/desktop/webview2-host/src/PreviewWindow.cs");
+
+    assert.match(app, /INTERNAL_MODULE_DRAG_MIME = "application\/x-orderly-module-card"/);
+    assert.match(app, /closest\("\[data-orderly-file-drop-zone\]"\)/);
+    assert.match(app, /executeActionWithFile: \(actionId, argumentsValue, file, confirmed = true, options = \{\}\)/);
+    assert.match(app, /event\.dataTransfer\?\.setData\(INTERNAL_MODULE_DRAG_MIME, module\.moduleId\)/);
+    assert.match(mainForm, /webView\.AllowExternalDrop = true/);
+    assert.match(previewWindow, /webView\.AllowExternalDrop = false/);
+});
+
 test("planning features default to disabled and never enter local appearance storage", () => {
     assert.equal(normalizePlanningFeature(undefined), false);
     assert.equal(normalizePlanningFeature({ planningEnabled: true }), true);

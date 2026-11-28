@@ -3,10 +3,126 @@
     display: grid;
     gap: var(--space-5);
     min-width: 0;
+    position: relative;
 }
 
 .materials-ui [hidden] {
     display: none !important;
+}
+
+.materials-ui-drop-overlay {
+    position: absolute;
+    z-index: 30;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: var(--space-3);
+    padding: var(--space-8);
+    border: 2px dashed var(--color-accent);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--color-surface) 88%, var(--color-accent) 12%);
+    color: var(--color-text);
+    pointer-events: none;
+    text-align: center;
+}
+
+.materials-ui-drop-title {
+    font-size: var(--font-size-panel-title);
+}
+
+.materials-ui-drop-copy {
+    color: var(--color-text-soft);
+    font-size: var(--font-size-small);
+}
+
+.materials-ui-upload-alert {
+    position: fixed;
+    z-index: 2147483000;
+    top: var(--space-4);
+    left: 50%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-3);
+    box-sizing: border-box;
+    width: min(680px, calc(100vw - 32px));
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    box-shadow: var(--shadow-card);
+    transform: translateX(-50%);
+}
+
+.materials-ui-upload-alert[hidden] {
+    display: none !important;
+}
+
+.materials-ui-upload-indicator {
+    width: 18px;
+    height: 18px;
+    border: 2px solid color-mix(in srgb, var(--color-accent) 28%, transparent);
+    border-top-color: var(--color-accent);
+    border-radius: 50%;
+    animation: materials-ui-upload-spin var(--duration-ai-activity) linear infinite;
+}
+
+.materials-ui-upload-alert[data-state="success"] .materials-ui-upload-indicator {
+    border-color: var(--color-accent);
+    background: var(--color-accent);
+    animation: none;
+}
+
+.materials-ui-upload-alert[data-state="error"] .materials-ui-upload-indicator {
+    border-color: var(--color-danger);
+    background: var(--color-danger);
+    animation: none;
+}
+
+.materials-ui-upload-alert[data-state="cancelled"] .materials-ui-upload-indicator {
+    border-color: var(--color-text-faint);
+    background: var(--color-text-faint);
+    animation: none;
+}
+
+.materials-ui-upload-copy {
+    display: grid;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.materials-ui-upload-title,
+.materials-ui-upload-detail {
+    overflow-wrap: anywhere;
+}
+
+.materials-ui-upload-detail {
+    color: var(--color-text-soft);
+    font-size: var(--font-size-small);
+}
+
+.materials-ui-upload-cancel {
+    min-height: 34px;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--color-danger);
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--color-danger);
+    font: inherit;
+    cursor: pointer;
+}
+
+.materials-ui-upload-cancel:disabled {
+    cursor: wait;
+    opacity: 0.58;
+}
+
+@keyframes materials-ui-upload-spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .materials-ui-header,
@@ -690,6 +806,14 @@ textarea.materials-ui-field-control {
 }
 
 @media (max-width: 760px) {
+    .materials-ui-upload-alert {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .materials-ui-upload-cancel {
+        grid-column: 1 / -1;
+    }
+
     .materials-ui-header {
         align-items: flex-start;
         flex-direction: column;

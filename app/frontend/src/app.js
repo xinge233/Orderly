@@ -86,6 +86,7 @@ const SIDEBAR_COLLAPSE_DELAY_MS = 120;
 const AI_MODULE_RESULT_HOLD_MS = 2800;
 const AI_MODULE_RESULT_EXIT_MS = 180;
 const AI_ANONYMOUS_STEP = Symbol("ai-anonymous-step");
+const INTERNAL_MODULE_DRAG_MIME = "application/x-orderly-module-card";
 const aiModuleActivities = new Map();
 let aiModuleResultLayerBound = false;
 let settingHelpSequence = 0;
@@ -1507,6 +1508,7 @@ function bindGlobalControls() {
 
     bindDesktopSidebarControls();
     bindSidebarViewport();
+    bindExternalDragPolicy();
 
     document.addEventListener("pointermove", moveNavigationDrag, { passive: false });
     document.addEventListener("pointerup", finishNavigationDrag);
@@ -1517,6 +1519,39 @@ function bindGlobalControls() {
         cancelNavigationDrag();
         eventStream?.close();
     }, { once: true });
+}
+
+/**
+ * 封闭 WebView2 的外部拖入默认行为，只允许资料模块声明的文件拖拽区接收文件。
+ * 内部卡片排序通过专用 MIME 标记，不依赖也不放行外部文本或 URL。
+ */
+function bindExternalDragPolicy() {
+    ["dragenter", "dragover", "drop"].forEach((eventName) => {
+        document.addEventListener(eventName, guardExternalDrag, { capture: true });
+    });
+}
+
+function guardExternalDrag(event) {
+    const types = Array.from(event.dataTransfer?.types ?? []);
+    if (types.includes(INTERNAL_MODULE_DRAG_MIME)) {
+        return;
+    }
+    const fileDrag = types.includes("Files");
+    const dropZone = event.target instanceof Element
+        ? event.target.closest("[data-orderly-file-drop-zone]")
+        : null;
+    if (fileDrag && dropZone) {
+        event.preventDefault();
+        if (event.dataTransfer) {
+            event.dataTransfer.dropEffect = "copy";
+        }
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (fileDrag && event.dataTransfer) {
+        event.dataTransfer.dropEffect = "none";
+    }
 }
 
 /**
@@ -2783,13 +2818,14 @@ async function mountModule(module) {
             summarizeModuleData: (storagePath) =>
                 api.summarizeModuleData(module.moduleId, storagePath),
             moduleDataUrl: (relativePath) => api.moduleDataUrl(module.moduleId, relativePath),
-            executeActionWithFile: (actionId, argumentsValue, file, confirmed = true) =>
+            executeActionWithFile: (actionId, argumentsValue, file, confirmed = true, options = {}) =>
                 api.executeModuleActionWithFile(
                     module.moduleId,
                     actionId,
                     argumentsValue,
                     file,
-                    confirmed
+                    confirmed,
+                    options
                 ),
             element: contextElement,
             icon,
@@ -3205,6 +3241,7 @@ function renderModuleCards() {
             article.dataset.motionState = "reordering";
             article.classList.add("is-dragging");
             event.dataTransfer?.setData("text/plain", module.moduleId);
+            event.dataTransfer?.setData(INTERNAL_MODULE_DRAG_MIME, module.moduleId);
             if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
         });
         article.addEventListener("dragover", (event) => {

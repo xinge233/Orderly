@@ -10,8 +10,11 @@ const moduleUrl = new URL(
 test("module_materials filters metadata locally and formats file sizes", async () => {
     const {
         formatBytes,
+        materialDropTitle,
         materialFormatGroup,
+        materialHasFileDrag,
         materialSummarySupported,
+        materialUploadIssue,
         materialMatches
     } = await import(moduleUrl);
     const item = {
@@ -36,6 +39,26 @@ test("module_materials filters metadata locally and formats file sizes", async (
     assert.equal(materialFormatGroup("xlsx"), "sheet");
     assert.equal(materialFormatGroup("pptx"), "slide");
     assert.equal(materialFormatGroup("webm"), "video");
+});
+
+test("module_materials accepts file drags and rejects unsupported or oversized files", async () => {
+    const {
+        materialDropTitle,
+        materialHasFileDrag,
+        materialUploadIssue
+    } = await import(moduleUrl);
+
+    assert.equal(materialHasFileDrag({ types: ["Files"] }), true);
+    assert.equal(materialHasFileDrag({ types: ["text/plain"] }), false);
+    assert.equal(materialHasFileDrag(null), false);
+    assert.equal(materialUploadIssue({ name: "讲义.pdf", size: 1024 }), "");
+    assert.equal(materialUploadIssue({ name: "脚本.exe", size: 1024 }), "该文件格式暂不支持。");
+    assert.equal(
+        materialUploadIssue({ name: "大文件.mp4", size: 64 * 1024 * 1024 + 1 }),
+        "文件不能超过 64 MB。"
+    );
+    assert.equal(materialDropTitle("系统设计.pdf"), "系统设计");
+    assert.equal(materialDropTitle("无扩展名"), "无扩展名");
 });
 
 test("module_materials skips cached, failed, trashed and unsupported auto summaries", async () => {
@@ -106,5 +129,10 @@ test("module_materials exposes guarded import, trash, restore and cleanup paths"
     assert.match(source, /summaries: MATERIAL_SUMMARY_CACHE/);
     assert.match(source, /context\.summarizeModuleData\(/);
     assert.match(source, /context\.saveSettings\(/);
+    assert.match(source, /new AbortController\(\)/);
+    assert.match(source, /uploadController\?\.abort\(\)/);
+    assert.match(source, /materials-ui-upload-alert/);
+    assert.match(source, /dataset\.orderlyFileDropZone/);
+    assert.match(source, /uploadController\.signal/);
     assert.doesNotMatch(source, /openAiWithText/);
 });

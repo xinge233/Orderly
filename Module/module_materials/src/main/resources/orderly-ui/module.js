@@ -28,6 +28,49 @@ const SUMMARY_FORMATS = new Set([
 const MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
 
 /**
+ * 判断拖拽数据是否来自本地文件。
+ *
+ * @param {DataTransfer | null | undefined} dataTransfer 拖拽数据
+ * @returns {boolean} 是否包含文件
+ */
+export function materialHasFileDrag(dataTransfer) {
+    return Array.from(dataTransfer?.types ?? []).includes("Files");
+}
+
+/**
+ * 返回拖入文件在本地预检阶段的问题。空字符串表示可以进入上传。
+ *
+ * @param {File | {name?: string, size?: number}} file 文件
+ * @returns {string} 用户可读问题
+ */
+export function materialUploadIssue(file) {
+    const extension = materialFileExtension(file?.name);
+    if (!SUPPORTED_FORMATS.has(extension)) {
+        return "该文件格式暂不支持。";
+    }
+    const size = Number(file?.size);
+    if (!Number.isFinite(size) || size < 0) {
+        return "无法读取文件大小。";
+    }
+    if (size > MAX_UPLOAD_BYTES) {
+        return "文件不能超过 64 MB。";
+    }
+    return "";
+}
+
+/**
+ * 从文件名生成资料标题。
+ *
+ * @param {unknown} fileName 文件名
+ * @returns {string} 不包含扩展名的标题
+ */
+export function materialDropTitle(fileName) {
+    const name = String(fileName ?? "").trim();
+    const title = name.replace(/\.[^.]+$/, "").trim() || name;
+    return title.slice(0, 200);
+}
+
+/**
  * 资料摘要只保存在当前页面会话内，跨模块视图重挂载复用，刷新页面后重新生成。
  * 该缓存不写入 localStorage、模块设置、审计或执行记录。
  */
@@ -214,9 +257,15 @@ export default async function mount(root, context) {
     let autoSummaryRunning = false;
     let autoSummaryRunVersion = 0;
     let aiConfigured = null;
+    let materialDragDepth = 0;
+    let uploadInProgress = false;
+    let uploadCancelRequested = false;
+    let uploadController = null;
+    let uploadAlertTimer = null;
 
     const workspace = make("section", "materials-ui");
     workspace.setAttribute("aria-label", "本地资料库");
+    workspace.dataset.orderlyFileDropZone = "true";
 
     const header = make("header", "materials-ui-header");
     const heading = make("div", "materials-ui-heading");
@@ -286,7 +335,19 @@ export default async function mount(root, context) {
 
     const detailPanel = make("aside", "materials-ui-detail");
     body.append(categoryRail, listPanel, detailPanel);
-    workspace.append(header, controls, body);
+
+    const dropOverlay = make("div", "materials-ui-drop-overlay");
+    dropOverlay.hidden = true;
+    dropOverlay.setAttribute("aria-hidden", "true");
+    dropOverlay.append(
+        iconNode(context, "file", 30),
+        make("strong", "materials-ui-drop-title", "释放文件立即上传"),
+        make("span", "materials-ui-drop-copy", "仅限当前支持的资料格式，单文件不超过 64 MB")
+    );
+    workspace.append(header, controls, body, dropOverlay);
+
+    const uploadAlert = createUploadAlert();
+    document.body.append(uploadAlert.alert);
 
     const importDialog = createImportDialog();
     const editDialog = createEditDialog();
@@ -296,6 +357,12 @@ export default async function mount(root, context) {
 
     importButton.addEventListener("click", importDialog.open);
     refreshButton.addEventListener("click", () => void refreshData());
+    workspace.addEventListener("dragenter", handleMaterialDragEnter);
+    workspace.addEventListener("dragover", handleMaterialDragOver);
+    workspace.addEventListener("dragleave", handleMaterialDragLeave);
+    workspace.addEventListener("drop", handleMaterialDrop);
+    window.addEventListener("dragend", resetMaterialDragState);
+    window.addEventListener("blur", resetMaterialDragState);
     searchInput.addEventListener("input", () => {
         state.keyword = searchInput.value;
         renderView();
@@ -909,6 +976,250 @@ export default async function mount(root, context) {
         }
     }
 
+    function handleMaterialDragEnter(event) {
+        if (!materialHasFileDrag(event.dataTransfer)
+            || state.view !== "active"
+            || uploadInProgress) {
+            return;
+        }
+        event.preventDefault();
+        materialDragDepth += 1;
+        dropOverlay.hidden = false;
+    }
+
+    function handleMaterialDragOver(event) {
+        if (!materialHasFileDrag(event.dataTransfer)) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        const canUpload = state.view === "active" && !uploadInProgress;
+        if (event.dataTransfer) {
+            event.dataTransfer.dropEffect = canUpload ? "copy" : "none";
+        }
+        if (canUpload) {
+            dropOverlay.hidden = false;
+        }
+    }
+
+    function handleMaterialDragLeave(event) {
+        if (!materialHasFileDrag(event.dataTransfer)) {
+            return;
+        }
+        event.preventDefault();
+        materialDragDepth = Math.max(0, materialDragDepth - 1);
+        if (materialDragDepth === 0) {
+            dropOverlay.hidden = true;
+        }
+    }
+
+    function handleMaterialDrop(event) {
+        if (!materialHasFileDrag(event.dataTransfer)) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        resetMaterialDragState();
+
+        if (state.view !== "active") {
+            context.toast?.("请先切换到资料库再拖入文件", "error");
+            return;
+        }
+        if (uploadInProgress) {
+            context.toast?.("已有资料正在上传，请等待或取消当前上传", "error");
+            return;
+        }
+        const files = Array.from(event.dataTransfer?.files ?? []);
+        if (!files.length) {
+            context.toast?.("没有读取到可上传的文件", "error");
+            return;
+        }
+        void startImmediateUploads(files);
+    }
+
+    function resetMaterialDragState() {
+        materialDragDepth = 0;
+        dropOverlay.hidden = true;
+    }
+
+    async function startImmediateUploads(files) {
+        const accepted = [];
+        const rejected = [];
+        files.forEach((file) => {
+            const issue = materialUploadIssue(file);
+            if (issue) {
+                rejected.push({ file, issue });
+            } else {
+                accepted.push(file);
+            }
+        });
+        if (rejected.length) {
+            const first = rejected[0];
+            const message = rejected.length === 1
+                ? `${first.file.name}：${first.issue}`
+                : `已跳过 ${rejected.length} 个文件；${first.file.name}：${first.issue}`;
+            context.toast?.(message, "error");
+        }
+        if (!accepted.length) {
+            return;
+        }
+        if (typeof context.executeActionWithFile !== "function") {
+            context.toast?.("当前宿主未提供资料上传接口", "error");
+            return;
+        }
+
+        uploadInProgress = true;
+        uploadCancelRequested = false;
+        uploadController = null;
+        let completed = 0;
+        const failures = [];
+        showUploadAlert(
+            "正在上传资料",
+            `准备上传 ${accepted.length} 个文件`
+        );
+
+        for (let index = 0; index < accepted.length; index += 1) {
+            if (uploadCancelRequested) {
+                break;
+            }
+            const file = accepted[index];
+            const extension = materialFileExtension(file.name);
+            uploadController = new AbortController();
+            updateUploadAlert(
+                `正在上传 ${index + 1}/${accepted.length}`,
+                file.name
+            );
+            try {
+                const uploadPath = `uploads/${createUploadId()}.${extension}`;
+                const uploadFile = normalizeFileType(file, extension);
+                await context.executeActionWithFile(
+                    "materials.import",
+                    {
+                        uploadPath,
+                        fileName: file.name,
+                        title: materialDropTitle(file.name),
+                        category: "",
+                        tags: "",
+                        description: "",
+                        contentType: uploadFile.type
+                    },
+                    uploadFile,
+                    true,
+                    { signal: uploadController.signal }
+                );
+                completed += 1;
+            } catch (error) {
+                if (uploadCancelRequested || error?.name === "AbortError") {
+                    break;
+                }
+                failures.push(`${file.name}：${error?.message || "上传失败"}`);
+            } finally {
+                uploadController = null;
+            }
+        }
+
+        const canceled = uploadCancelRequested;
+        uploadInProgress = false;
+        uploadCancelRequested = false;
+        uploadAlert.cancel.hidden = true;
+        uploadAlert.alert.setAttribute("aria-busy", "false");
+        if (workspace.isConnected) {
+            updateUploadAlert("正在刷新资料列表", "上传结果即将更新");
+            await refreshData();
+        }
+        if (!workspace.isConnected) {
+            return;
+        }
+
+        if (canceled) {
+            finishUploadAlert(
+                "已取消上传请求",
+                "剩余文件未继续，实际导入结果已按资料库刷新结果为准",
+                "cancelled"
+            );
+            return;
+        }
+        if (failures.length) {
+            finishUploadAlert(
+                "部分资料上传失败",
+                `${completed} 个成功，${failures.length} 个失败；${failures[0]}`,
+                "error"
+            );
+            return;
+        }
+        finishUploadAlert(
+            "资料上传完成",
+            `已导入 ${completed} 个文件`,
+            "success"
+        );
+    }
+
+    function createUploadAlert() {
+        const alert = make("section", "materials-ui-upload-alert");
+        alert.hidden = true;
+        alert.dataset.state = "idle";
+        alert.setAttribute("role", "alert");
+        alert.setAttribute("aria-live", "assertive");
+        alert.setAttribute("aria-atomic", "true");
+        const indicator = make("span", "materials-ui-upload-indicator");
+        indicator.setAttribute("aria-hidden", "true");
+        const copy = make("div", "materials-ui-upload-copy");
+        const title = make("strong", "materials-ui-upload-title");
+        const detail = make("span", "materials-ui-upload-detail");
+        copy.append(title, detail);
+        const cancel = make("button", "materials-ui-upload-cancel", "取消上传");
+        cancel.type = "button";
+        cancel.addEventListener("click", cancelActiveUpload);
+        alert.append(indicator, copy, cancel);
+        return { alert, title, detail, cancel };
+    }
+
+    function showUploadAlert(title, detail) {
+        if (uploadAlertTimer !== null) {
+            window.clearTimeout(uploadAlertTimer);
+            uploadAlertTimer = null;
+        }
+        uploadAlert.alert.hidden = false;
+        uploadAlert.alert.dataset.state = "uploading";
+        uploadAlert.alert.setAttribute("aria-busy", "true");
+        uploadAlert.title.textContent = title;
+        uploadAlert.detail.textContent = detail;
+        uploadAlert.cancel.hidden = false;
+        uploadAlert.cancel.disabled = false;
+    }
+
+    function updateUploadAlert(title, detail) {
+        uploadAlert.title.textContent = title;
+        uploadAlert.detail.textContent = detail;
+    }
+
+    function cancelActiveUpload() {
+        if (!uploadInProgress) {
+            return;
+        }
+        uploadCancelRequested = true;
+        uploadAlert.cancel.disabled = true;
+        uploadAlert.title.textContent = "正在取消上传";
+        uploadAlert.detail.textContent = "正在中止当前请求，已完成文件会保留";
+        uploadController?.abort();
+    }
+
+    function finishUploadAlert(title, detail, state) {
+        uploadAlert.alert.hidden = false;
+        uploadAlert.alert.dataset.state = state;
+        uploadAlert.alert.setAttribute("aria-busy", "false");
+        uploadAlert.title.textContent = title;
+        uploadAlert.detail.textContent = detail;
+        uploadAlert.cancel.hidden = true;
+        if (uploadAlertTimer !== null) {
+            window.clearTimeout(uploadAlertTimer);
+        }
+        uploadAlertTimer = window.setTimeout(() => {
+            uploadAlertTimer = null;
+            uploadAlert.alert.hidden = true;
+        }, state === "success" ? 2200 : 4200);
+    }
+
     function createImportDialog() {
         const dialog = make("dialog", "materials-ui-dialog");
         const form = make("form", "materials-ui-dialog-form");
@@ -1133,6 +1444,17 @@ export default async function mount(root, context) {
             window.clearTimeout(refreshTimer);
             refreshTimer = null;
         }
+        if (uploadInProgress || uploadController) {
+            uploadCancelRequested = true;
+            uploadController?.abort();
+        }
+        if (uploadAlertTimer !== null) {
+            window.clearTimeout(uploadAlertTimer);
+            uploadAlertTimer = null;
+        }
+        uploadAlert.alert.remove();
+        window.removeEventListener("dragend", resetMaterialDragState);
+        window.removeEventListener("blur", resetMaterialDragState);
         autoSummaryRunVersion += 1;
         refreshRequested = false;
         unsubscribeEvents?.();
@@ -1180,6 +1502,12 @@ export default async function mount(root, context) {
             dialog.removeAttribute("open");
         }
     }
+}
+
+function materialFileExtension(fileName) {
+    const name = String(fileName ?? "").trim();
+    const dot = name.lastIndexOf(".");
+    return dot > -1 ? name.slice(dot + 1).toLowerCase() : "";
 }
 
 function createUploadId() {

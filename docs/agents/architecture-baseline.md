@@ -116,7 +116,7 @@ docs/                       产品与协作文档
 - 已加载模块的源码或 JAR 更新、源码删除或 JAR 删除只返回 `RESTART_REQUIRED`，不得替换、更新、热卸载或删除当前运行快照。业务模块删除请求先把源码移入 `.orderly-data/trash/modules`，停用模块并写入 `.orderly-data/module-removals.json`；宿主启动扫描在加载 JAR 前排除待移除模块，重启后再把 JAR 移入同一模块回收站。重启前允许撤销并恢复源码与启用状态，禁止物理删除。刷新单个新增模块失败必须保留旧快照，不允许用新 JAR 替换已有模块。
 - 宿主退出通过仅限本机的 `POST /api/system/shutdown` 请求，并要求 `X-Orderly-Action: shutdown`。Action 或计划执行期间拒绝退出；接受后先返回 `STOPPING`，再异步关闭 Java 宿主，由启动脚本清理 AI 服务与后台模块构建器。
 - ClassLoader 随宿主关闭而关闭，不在运行中替换 JAR。
-- Windows 完整版由 jpackage Java 启动器在宿主健康检查通过后打开 `app/desktop` 中的 WebView2 宿主。该宿主只加载当前 `http://127.0.0.1:<port>/`，不得调用 `AddHostObjectToScript`，不得直接访问工作区或业务状态；关闭窗口必须通过宿主退出接口完成受控清理。
+- Windows 完整版由 jpackage Java 启动器在宿主健康检查通过后打开 `app/desktop` 中的 WebView2 宿主。该宿主只加载当前 `http://127.0.0.1:<port>/`，不得调用 `AddHostObjectToScript`，不得直接访问工作区或业务状态；关闭窗口必须通过宿主退出接口完成受控清理。主窗口仅可为资料模块的显式文件拖拽区允许本地文件拖入，前端必须阻止文件导航和其他外部拖入；预览窗口继续完全禁用外部拖入。
 - 外部模块 JAR 是本地受信任的可执行代码，不是安全沙箱。远程模块只允许从配置中的官方 `raw.githubusercontent.com` 分发分支读取，源码包必须与目录 SHA-256 一致；第一版不提供发布者签名、证书链、代码隔离或第三方仓库信任。下载与安装必须由本机用户在模组设置中显式触发，不开放给 AI。
 
 ### 模块治理状态

@@ -32,7 +32,7 @@ namespace Orderly.Desktop
 
             webView = new WebView2();
             webView.Dock = DockStyle.Fill;
-            webView.AllowExternalDrop = false;
+            webView.AllowExternalDrop = true;
             webView.DefaultBackgroundColor = Color.White;
             Controls.Add(webView);
 

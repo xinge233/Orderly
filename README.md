@@ -197,7 +197,7 @@ DOCX 结构校验不判断文字内容和页面排版。实际修改 DOCX 内容
 - `ai/`：唯一的 Python AI 实现，负责模型配置与临时 Key、模型请求、提示词、会话、`ACTIONS / PLAN / QUERY / QUESTION / VIEW` 解析和 Query 展示整理；不持有文件权限或执行能力。
 - `app/frontend/`：静态本地界面。
 - `app/desktop/`：Windows WebView2 显示外壳，只加载本机回环界面；不持有文件权限，不直接执行 Action。
-- `Module/module_fs/`、`module_materials/`、`module_calendar/`：各自携带契约、查询、计划规则、执行器、逆操作和 `orderly-ui/` 资源；构建脚本会自动发现新的 `Module/module_*`。模块规范见 `Module/AGENTS.md`。
+- `Module/module_fs/`、`module_materials/`、`module_calendar/`：各自携带契约、查询、计划规则、执行器、逆操作和 `orderly-ui/` 资源；`module_materials` 支持拖入受支持文件后立即上传，并在顶部状态条中实时取消；构建脚本会自动发现新的 `Module/module_*`。模块规范见 `Module/AGENTS.md`。
 - `Module/module_system_control/`：唯一的受保护控制模块，只提供模块治理入口，不作为业务模块出现在 `/api/modules`。
 - `contracts/`：计划、接口和样例的唯一真相源。
 - `themes/`：目录主题包，只包含清单、语义变量、动效 CSS 与登记资源，不包含界面结构或 JavaScript。
